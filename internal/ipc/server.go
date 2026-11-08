@@ -19,6 +19,16 @@ import (
 // connection never delays the others.
 const connQueueSize = 16
 
+// Backoff of Accept errors that leave the listener usable (anything other than
+// net.ErrClosed): the wait starts at acceptBackoffMin, doubles after each
+// consecutive failure up to acceptBackoffMax, and resets after a successful
+// Accept. At the maxAcceptFailures-th consecutive failure Serve gives up.
+const (
+	acceptBackoffMin  = 100 * time.Millisecond
+	acceptBackoffMax  = 5 * time.Second
+	maxAcceptFailures = 10
+)
+
 var errServerServed = errors.New("ipc: Serve already called")
 
 // serverConfig holds the values set by ServerOption.
@@ -165,14 +175,35 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 }
 
 func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) error {
+	failures := 0
+	backoff := acceptBackoffMin
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			if s.isClosed() || ctx.Err() != nil {
 				return nil
 			}
-			return fmt.Errorf("ipc: accept: %w", err)
+			if errors.Is(err, net.ErrClosed) {
+				return fmt.Errorf("ipc: accept: %w", err)
+			}
+			// The listener is still usable (e.g. go-winio failed to create the
+			// next pipe instance): log and retry with backoff, up to a limit.
+			failures++
+			if failures >= maxAcceptFailures {
+				s.log.Error("ipc: accept failed repeatedly, giving up", "error", err.Error(), "failures", failures)
+				return fmt.Errorf("ipc: accept failed %d times in a row: %w", failures, err)
+			}
+			s.log.Warn("ipc: accept failed, retrying", "error", err.Error(), "failures", failures, "retry_in", backoff.String())
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-s.clock.After(backoff):
+			}
+			backoff = min(2*backoff, acceptBackoffMax)
+			continue
 		}
+		failures = 0
+		backoff = acceptBackoffMin
 		s.startConn(ctx, conn)
 	}
 }

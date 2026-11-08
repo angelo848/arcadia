@@ -323,9 +323,10 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 - Depende de: T06
 
 ## T08 — IPC: named pipe do usuário (Windows)
-- Requisitos: IPC-007
+- Requisitos: IPC-007; IPC-018, IPC-019 (· alterado em 2026-11-08, revisão da T08)
 - Responsável: implementer · Testes: test-writer
-- Arquivos: `internal/ipc/pipe.go` (portável), `internal/ipc/pipe_windows.go`; teste `pipe_windows_test.go`
+- Arquivos: `internal/ipc/pipe.go` (portável), `internal/ipc/pipe_windows.go`; testes `pipe_test.go` (portável:
+  `PipeName`), `pipe_windows_test.go` · alterado em 2026-11-08: incluído `pipe_test.go` (revisão da T08)
 - Assinaturas públicas:
   ```go
   package ipc
@@ -338,9 +339,57 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   ```
 - Testes (nome único `PipeName(sid)+"-test-<rand>"`): "IPC-007/nome segue arcadia-agent-<SID>",
   "IPC-007/usuário atual conecta e faz ping via Server", "IPC-007/segunda escuta no mesmo nome falha",
-  "IPC-007/DACL protegida só com o SID atual"
-- Dependências: `github.com/Microsoft/go-winio` v0.6.2 (ou última estável) · `golang.org/x/sys` (última estável)
+  "IPC-007/DACL protegida só com o SID atual" (com `Accept` pendente; · alterado em 2026-11-08);
+  extra em `server_test.go`: `TestServerAcceptError` "IPC-006/erro transitório de Accept é logado e o accept continua"
+  e "IPC-006/Close durante a espera após erro de Accept encerra" (listener fake)
+  · alterado em 2026-11-08 (revisão da T08): os dois casos de `TestServerAcceptError` passam a IPC-018 (ver abaixo);
+  "IPC-007/segunda escuta no mesmo nome falha" fica mais forte: além de `err != nil`, confere
+  `errors.As(err, &pathErr)` com `*os.PathError` (`Op == "open"`) e `errors.As(err, &errno)` com `windows.Errno`
+  igual ao código observado (esperado `windows.ERROR_ALREADY_EXISTS`; se for outro, o test-writer fixa o observado e
+  registra no relatório), e que a primeira escuta continua aceitando (um `ping` depois ainda funciona).
+- Dependências: `github.com/Microsoft/go-winio` v0.6.4 (efetiva; · alterado em 2026-11-08, era "v0.6.2 ou última
+  estável") · `golang.org/x/sys` (última estável)
 - Depende de: T07
+- · alterado em 2026-11-08 (revisão da T08) — erro de Accept com backoff e anti-squatting:
+  - Requisitos: IPC-018, IPC-019
+  - Arquivos: `internal/ipc/server.go`, `internal/ipc/pipe_windows.go` (e `pipe.go` se o sentinela ficar portável);
+    testes `server_test.go`, `pipe_windows_test.go`
+  - Assinaturas:
+    ```go
+    package ipc
+    var ErrUntrustedServer = errors.New("ipc: untrusted pipe server") // public
+
+    // internal (server.go), replace acceptRetryDelay:
+    const (
+        acceptBackoffMin  = 100 * time.Millisecond
+        acceptBackoffMax  = 5 * time.Second
+        maxAcceptFailures = 10
+    )
+    // internal (pipe_windows.go), test seam; tests swap it without t.Parallel and restore in t.Cleanup:
+    var pipeServerSID = realPipeServerSID
+    func realPipeServerSID(h windows.Handle) (string, error) // GetNamedPipeServerProcessId -> OpenProcess(QUERY_LIMITED) -> OpenProcessToken(TOKEN_QUERY) -> token user SID
+    ```
+    `DialPipe` mantém a assinatura; em falha de verificação fecha a `conn` e retorna erro com
+    `errors.Is(err, ErrUntrustedServer)`. `ListenPipe` mantém a assinatura e a cadeia `%w` até `*os.PathError`/`windows.Errno`.
+  - Testes (`server_test.go`, listener fake com fila programável, `FakeClock` + `BlockUntilWaiters`, handler de log de teste):
+    - `TestServerAcceptError`: "IPC-018/erro transitório de Accept é logado em Warn e o accept continua" (renomeado de
+      IPC-006), "IPC-018/Close durante a espera após erro de Accept faz Serve retornar nil" (renomeado de IPC-006),
+      "IPC-018/fim do ctx durante a espera faz Serve retornar ctx.Err()",
+      "IPC-018/esperas 100 200 400 800 1600 3200 5000 5000 5000 ms", "IPC-018/sem jitter (nada dispara 1ns antes)",
+      "IPC-018/Accept bem-sucedido zera o backoff para 100 ms",
+      "IPC-018/10ª falha seguida: Serve retorna errors.Is último erro e loga Error",
+      "IPC-018/net.ErrClosed sem Close continua encerrando Serve com erro"
+  - Testes (`pipe_windows_test.go`, sem `t.Parallel` nos casos que trocam `pipeServerSID`):
+    - `TestDialPipeOwner`: "IPC-019/servidor do mesmo usuário é aceito e responde ping",
+      "IPC-019/realPipeServerSID do próprio pipe devolve CurrentUserSID",
+      "IPC-019/SID diferente retorna ErrUntrustedServer e fecha a conexão",
+      "IPC-019/falha ao ler o SID do servidor retorna ErrUntrustedServer e fecha a conexão",
+      "IPC-019/Client com PipeDialer trata ErrUntrustedServer como falha de dial e não envia Call"
+    - `TestListenPipeExists`: "IPC-019/ListenPipe em nome existente preserva os.PathError e windows.Errno"
+      (pode ser o mesmo teste de "IPC-007/segunda escuta no mesmo nome falha", com os dois nomes de caso)
+  - Handles: processo (`defer windows.CloseHandle`) e token (`defer tok.Close()`) em `realPipeServerSID`; o handle da
+    `conn` é da `conn` e não é fechado ali; em falha, `conn.Close()` antes de retornar.
+  - O log "pipe já existe: outra instância ou outro processo" é do agente e entra na T10 (usa a cadeia de erro de `ListenPipe`).
 
 ## T09 — winapi: instância única, fim de sessão e criação desacoplada
 - Requisitos: AGT-002, AGT-006, AGT-007, DSK-004, DSK-005
@@ -378,7 +427,8 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 - Depende de: T02
 
 ## T10 — cmd/agent: subida, versão, log, bandeja, "Abrir Arcadia" e shutdown
-- Requisitos: AGT-001, AGT-002, AGT-003, AGT-004, AGT-005, AGT-006, AGT-007, AGT-008
+- Requisitos: AGT-001, AGT-002, AGT-003, AGT-004, AGT-005, AGT-006, AGT-007, AGT-008, IPC-019 (log do nome existente;
+  · alterado em 2026-11-08)
 - Responsável: implementer · Testes: test-writer
 - Arquivos: `cmd/agent/app.go` (subida/shutdown injetáveis), `cmd/agent/openui.go`, `cmd/agent/main_windows.go`,
   `cmd/agent/tray_windows.go`, `cmd/agent/assets/icon.ico` (placeholder); testes `app_test.go`, `openui_test.go`
@@ -418,6 +468,11 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   `goleak.VerifyNone(t, goleak.IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun"))` — a goroutine
   `millRun` não é encerrada por `Close` (ver design.md, `internal/logging`). O teste chama `Shutdown` e `CloseLog` antes
   do `VerifyNone`.
+- · alterado em 2026-11-08 (revisão da T08): IPC-019 (parte do agente). Quando `listen()` falha com nome já existente
+  (`errors.Is(err, windows.ERROR_ALREADY_EXISTS)` ou `windows.ERROR_ACCESS_DENIED`, via cadeia de `ListenPipe`),
+  `startAgent` loga em `Error` "pipe já existe: outra instância ou outro processo" (atributos `pipe`, `error`) e
+  retorna o erro. Teste: "IPC-019/listen com nome existente loga Error explícito" (`listen` fake devolvendo
+  `&os.PathError{Op: "open", Err: windows.ERROR_ALREADY_EXISTS}`).
 - Dependências: `fyne.io/systray` v1.11.0 (ou última estável) · `go.uber.org/goleak` v1.3.0 (só teste)
 - Depende de: T03, T04, T05, T08, T09
 
@@ -550,6 +605,7 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 | Mutex `Local\arcadia-agent` | `NamedMutex.Close()`, por último; no caso "já existe", dentro de `AcquireSingleInstance` |
 | Pipe e conexões | `listener.Close()` em `Server.Close`, `conn.Close()` |
 | Token do processo (SID) | `defer token.Close()` em `CurrentUserSID` |
+| Processo e token do servidor do pipe (IPC-019) | `defer windows.CloseHandle(hp)` e `defer tok.Close()` em `realPipeServerSID`; `conn.Close()` em `DialPipe` se a verificação falha |
 | Janela oculta e classe | goroutine do watcher (`DestroyWindow`, `UnregisterClass`) |
 | `hProcess`/`hThread` de UI e agente criados | `CreateDetached`, logo após `CreateProcessW` |
 | Logs | `io.Closer` do `logging.New` — agente em `agent.CloseLog` (último passo do `main`); UI por último no `OnShutdown` |
@@ -599,4 +655,5 @@ relatório); fallback sem breakaway (DSK-005) pode fazer o agente morrer com o j
 | IPC-006 | T07 | | UI-001 | T11 |
 | IPC-007 | T08 | | UI-002 | T11 |
 | IPC-008 | T06 | | UI-003 | T11 |
-| IPC-009 | T06 | | | |
+| IPC-009 | T06 | | IPC-018 | T08 |
+| | | | IPC-019 | T08, T10 |

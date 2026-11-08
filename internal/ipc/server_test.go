@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -292,6 +293,425 @@ func TestServerHandlerError(t *testing.T) {
 			t.Fatalf("handler error not logged at Error as \"ipc: handler failed\"; logs: %v", logs.all())
 		}
 		r.ping(t, 2)
+	})
+}
+
+var errTransientAccept = errors.New("test: transient accept failure 4c1d")
+
+// acceptBackoffs is the IPC-018 sequence of waits between consecutive failed
+// Accepts: doubles from 100 ms, capped at 5 s, no jitter. The 10th consecutive
+// failure ends Serve without waiting, so there are 9 waits.
+var acceptBackoffs = []time.Duration{
+	100 * time.Millisecond,
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1600 * time.Millisecond,
+	3200 * time.Millisecond,
+	5000 * time.Millisecond,
+	5000 * time.Millisecond,
+	5000 * time.Millisecond,
+}
+
+// maxAcceptFailures is the IPC-018 number of consecutive Accept failures after
+// which Serve gives up.
+const maxAcceptFailures = 10
+
+// acceptResult is one programmed outcome of scriptListener.Accept.
+type acceptResult struct {
+	conn net.Conn
+	err  error
+}
+
+// failures returns one acceptResult per error, in order.
+func failures(errs ...error) []acceptResult {
+	out := make([]acceptResult, len(errs))
+	for i, err := range errs {
+		out[i] = acceptResult{err: err}
+	}
+	return out
+}
+
+// scriptListener is a net.Listener whose Accept hands out programmed results
+// in order and blocks while the queue is empty, until push or Close. Every
+// Accept call announces its 1-based number on called when it starts.
+type scriptListener struct {
+	mu     sync.Mutex
+	queue  []acceptResult
+	calls  int
+	wake   chan struct{} // cap 1: the queue changed
+	called chan int      // buffered: number of each Accept call
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newScriptListener(results ...acceptResult) *scriptListener {
+	return &scriptListener{
+		queue:  results,
+		wake:   make(chan struct{}, 1),
+		called: make(chan int, 64),
+		done:   make(chan struct{}),
+	}
+}
+
+func (l *scriptListener) Accept() (net.Conn, error) {
+	l.mu.Lock()
+	l.calls++
+	n := l.calls
+	l.mu.Unlock()
+	select {
+	case l.called <- n:
+	default:
+	}
+	for {
+		select {
+		case <-l.done:
+			return nil, net.ErrClosed
+		default:
+		}
+		l.mu.Lock()
+		if len(l.queue) > 0 {
+			r := l.queue[0]
+			l.queue = l.queue[1:]
+			l.mu.Unlock()
+			return r.conn, r.err
+		}
+		l.mu.Unlock()
+		select {
+		case <-l.wake:
+		case <-l.done:
+			return nil, net.ErrClosed
+		}
+	}
+}
+
+func (l *scriptListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return nil
+}
+
+func (l *scriptListener) Addr() net.Addr { return memAddr{} }
+
+// push appends results to the queue and wakes a blocked Accept.
+func (l *scriptListener) push(results ...acceptResult) {
+	l.mu.Lock()
+	l.queue = append(l.queue, results...)
+	l.mu.Unlock()
+	select {
+	case l.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (l *scriptListener) acceptCalls() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.calls
+}
+
+// nextAccept waits for the server's next Accept call and checks its number.
+func (l *scriptListener) nextAccept(t *testing.T, want int) {
+	t.Helper()
+	if n := recv(t, l.called, fmt.Sprintf("Accept call #%d", want)); n != want {
+		t.Fatalf("Accept call #%d, want #%d", n, want)
+	}
+}
+
+// expectNoAccept checks, right after an Advance, that the server did not call
+// Accept again. The heartbeat waiter may have fired in that Advance and is
+// re-registered asynchronously, so it waits until the clock has its 2 waiters
+// (heartbeat + backoff) back. If the backoff had fired instead, the server
+// calls Accept before registering any new wait, so the call is already on
+// l.called by then (or the server blocks in Accept and the call shows up
+// without the waiters coming back).
+func (l *scriptListener) expectNoAccept(t *testing.T, clk *domain.FakeClock, when string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), guardTimeout)
+	defer cancel()
+	waited := make(chan error, 1)
+	go func() { waited <- clk.BlockUntilWaiters(ctx, 2) }()
+	select {
+	case n := <-l.called:
+		cancel()
+		<-waited
+		t.Fatalf("Accept call #%d happened %s", n, when)
+	case err := <-waited:
+		if err != nil {
+			t.Fatalf("waiting for heartbeat + backoff waiters %s: %v", when, err)
+		}
+		select {
+		case n := <-l.called:
+			t.Fatalf("Accept call #%d happened %s", n, when)
+		default:
+		}
+	}
+}
+
+// stepBackoff is called with Accept call #call having just failed. It waits for
+// the backoff wait d to be registered and fires it, checking that the next
+// Accept (#call+1) happens. With strict it first advances d-1ns and checks
+// that nothing fired (no jitter, no shorter wait).
+func (l *scriptListener) stepBackoff(t *testing.T, clk *domain.FakeClock, call int, d time.Duration, strict bool) {
+	t.Helper()
+	blockUntilWaiters(t, clk, 2) // heartbeat (5 s) + accept backoff
+	if strict {
+		clk.Advance(d - time.Nanosecond)
+		l.expectNoAccept(t, clk, fmt.Sprintf("1ns before the %v backoff after failure #%d", d, call))
+		clk.Advance(time.Nanosecond)
+	} else {
+		clk.Advance(d)
+	}
+	l.nextAccept(t, call+1)
+}
+
+// recordingClock is a FakeClock that records the duration of every After call,
+// so a test can see which waits the server asked for.
+type recordingClock struct {
+	*domain.FakeClock
+	mu     sync.Mutex
+	afters []time.Duration
+}
+
+func (c *recordingClock) After(d time.Duration) <-chan time.Time {
+	c.mu.Lock()
+	c.afters = append(c.afters, d)
+	c.mu.Unlock()
+	return c.FakeClock.After(d)
+}
+
+// take returns the durations recorded since the previous take.
+func (c *recordingClock) take() []time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.afters
+	c.afters = nil
+	return out
+}
+
+// serveNotReturned fails if Serve has already returned.
+func serveNotReturned(t *testing.T, r *serverRun, when string) {
+	t.Helper()
+	select {
+	case <-r.done:
+		t.Fatalf("Serve returned %s: %v", when, r.serveErr)
+	default:
+	}
+}
+
+// TestServerAcceptError covers IPC-018: an Accept error other than
+// net.ErrClosed is logged at Warn and Accept is retried after a backoff on the
+// server clock (100 ms doubling to 5 s, no jitter, reset by a successful
+// Accept); the 10th consecutive failure ends Serve with that error, logged at
+// Error; Close or the end of ctx during the wait shut down normally.
+//
+// Waiter count: the heartbeat loop always has one pending After(5 s) on the
+// same clock, so "backoff wait registered" means 2 waiters. Long sequences do
+// fire the heartbeat (no connections, so it sends nothing); helpers always wait
+// for both waiters to be back before advancing.
+func TestServerAcceptError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-018/erro transitório de Accept é logado em Warn e o accept continua", func(t *testing.T) {
+		t.Parallel()
+		ln := newScriptListener(failures(errTransientAccept)...)
+		clk := domain.NewFakeClock(testStart)
+		log, logs := newCaptureLogger()
+		r := startServer(t, ln, clk, testHandlers(), log)
+
+		ln.nextAccept(t, 1)
+		blockUntilWaiters(t, clk, 2) // heartbeat (5 s) + accept backoff (100 ms)
+
+		if !logs.containsAt(slog.LevelWarn, "", errTransientAccept.Error()) {
+			t.Fatalf("transient Accept error not logged at Warn with its text; logs: %v", logs.all())
+		}
+		serveNotReturned(t, r, "after a transient Accept error")
+
+		clk.Advance(acceptBackoffs[0])
+		ln.nextAccept(t, 2)
+
+		// The retried Accept takes a connection, which is served.
+		client, server := net.Pipe()
+		c := newRawConn(t, client)
+		ln.push(acceptResult{conn: server})
+		c.ping(t, 1)
+		serveNotReturned(t, r, "after the retried Accept succeeded")
+	})
+
+	t.Run("IPC-018/Close durante a espera após erro de Accept faz Serve retornar nil", func(t *testing.T) {
+		t.Parallel()
+		ln := newScriptListener(failures(errTransientAccept)...)
+		clk := domain.NewFakeClock(testStart)
+		r := startServer(t, ln, clk, testHandlers(), nil)
+
+		ln.nextAccept(t, 1)
+		blockUntilWaiters(t, clk, 2) // server is inside the 100 ms backoff wait
+
+		r.stop(t) // Server.Close and Serve must return within guardTimeout
+		if r.serveErr != nil {
+			t.Fatalf("Serve after Close during the backoff wait = %v, want nil", r.serveErr)
+		}
+	})
+
+	t.Run("IPC-018/fim do ctx durante a espera faz Serve retornar ctx.Err()", func(t *testing.T) {
+		t.Parallel()
+		ln := newScriptListener(failures(errTransientAccept)...)
+		clk := domain.NewFakeClock(testStart)
+		srv := ipc.NewServer(clk, testHandlers(), discardLogger())
+		ctx, cancel := context.WithCancel(context.Background())
+		served := make(chan error, 1)
+		go func() { served <- srv.Serve(ctx, ln) }()
+		t.Cleanup(func() {
+			cancel()
+			within(t, "Server.Close", func() { _ = srv.Close() })
+		})
+
+		ln.nextAccept(t, 1)
+		blockUntilWaiters(t, clk, 2) // server is inside the 100 ms backoff wait
+
+		cancel()
+		err := recv(t, served, "Serve to return after ctx cancel during the backoff wait")
+		if !errors.Is(err, context.Canceled) || err != ctx.Err() {
+			t.Fatalf("Serve after ctx cancel during the backoff wait = %v, want ctx.Err() (%v)", err, ctx.Err())
+		}
+		if n := ln.acceptCalls(); n != 1 {
+			t.Fatalf("Accept called %d times, want 1 (ctx ended during the first wait)", n)
+		}
+	})
+
+	t.Run("IPC-018/esperas 100 200 400 800 1600 3200 5000 5000 5000 ms", func(t *testing.T) {
+		t.Parallel()
+		// 9 failures, then Accept blocks (empty queue): the 10th call never fails.
+		errs := make([]error, len(acceptBackoffs))
+		for i := range errs {
+			errs[i] = fmt.Errorf("test: accept failure #%d", i+1)
+		}
+		ln := newScriptListener(failures(errs...)...)
+		clk := &recordingClock{FakeClock: domain.NewFakeClock(testStart)}
+		r := startServer(t, ln, clk, testHandlers(), nil)
+
+		ln.nextAccept(t, 1)
+		for i, d := range acceptBackoffs {
+			blockUntilWaiters(t, clk.FakeClock, 2) // heartbeat + backoff after failure #i+1
+			// Since the previous step the server asked for exactly one backoff
+			// wait, d; anything else must be the heartbeat re-arming.
+			var backoffs []time.Duration
+			for _, got := range clk.take() {
+				if got != ipc.HeartbeatInterval || d == ipc.HeartbeatInterval {
+					backoffs = append(backoffs, got)
+				}
+			}
+			wrong := !slices.Contains(backoffs, d)
+			if d != ipc.HeartbeatInterval {
+				wrong = !slices.Equal(backoffs, []time.Duration{d})
+			}
+			if wrong {
+				t.Fatalf("after Accept failure #%d the server waited %v, want %v (sequence %v)", i+1, backoffs, d, acceptBackoffs)
+			}
+			clk.Advance(d) // exactly d fires it
+			ln.nextAccept(t, i+2)
+		}
+		serveNotReturned(t, r, "with the 10th Accept still pending")
+	})
+
+	t.Run("IPC-018/sem jitter (nada dispara 1ns antes)", func(t *testing.T) {
+		t.Parallel()
+		errs := make([]error, len(acceptBackoffs))
+		for i := range errs {
+			errs[i] = fmt.Errorf("test: accept failure #%d", i+1)
+		}
+		ln := newScriptListener(failures(errs...)...)
+		clk := domain.NewFakeClock(testStart)
+		r := startServer(t, ln, clk, testHandlers(), nil)
+
+		ln.nextAccept(t, 1)
+		for i, d := range acceptBackoffs {
+			// d-1ns fires nothing; the last nanosecond fires the wait.
+			ln.stepBackoff(t, clk, i+1, d, true)
+		}
+		serveNotReturned(t, r, "with the 10th Accept still pending")
+	})
+
+	t.Run("IPC-018/Accept bem-sucedido zera o backoff para 100 ms", func(t *testing.T) {
+		t.Parallel()
+		client, server := net.Pipe()
+		c := newRawConn(t, client)
+		results := failures(errTransientAccept, errTransientAccept, errTransientAccept)
+		results = append(results, acceptResult{conn: server})
+		results = append(results, failures(errTransientAccept)...)
+		ln := newScriptListener(results...)
+		clk := domain.NewFakeClock(testStart)
+		r := startServer(t, ln, clk, testHandlers(), nil)
+
+		ln.nextAccept(t, 1)
+		ln.stepBackoff(t, clk, 1, acceptBackoffs[0], true) // 100 ms
+		ln.stepBackoff(t, clk, 2, acceptBackoffs[1], true) // 200 ms
+		ln.stepBackoff(t, clk, 3, acceptBackoffs[2], true) // 400 ms; call #4 accepts the conn
+		ln.nextAccept(t, 5)                                // fails again
+		// The failure after a successful Accept waits 100 ms again, not 800 ms.
+		ln.stepBackoff(t, clk, 5, acceptBackoffs[0], true)
+
+		c.ping(t, 1) // the connection accepted between the failures is served
+		serveNotReturned(t, r, "after the backoff reset")
+	})
+
+	t.Run("IPC-018/10ª falha seguida: Serve retorna errors.Is último erro e loga Error", func(t *testing.T) {
+		t.Parallel()
+		errs := make([]error, maxAcceptFailures)
+		for i := range errs {
+			errs[i] = fmt.Errorf("test: accept failure #%d 9b2e", i+1)
+		}
+		ln := newScriptListener(failures(errs...)...)
+		clk := domain.NewFakeClock(testStart)
+		log, logs := newCaptureLogger()
+		r := startServer(t, ln, clk, testHandlers(), log)
+
+		ln.nextAccept(t, 1)
+		for i, d := range acceptBackoffs {
+			ln.stepBackoff(t, clk, i+1, d, false)
+		}
+		// The 10th failure ends Serve without any further wait or Advance.
+		recv(t, r.done, "Serve to return after the 10th consecutive Accept failure")
+
+		last := errs[maxAcceptFailures-1]
+		if r.serveErr == nil || !errors.Is(r.serveErr, last) {
+			t.Fatalf("Serve = %v, want an error with errors.Is(err, %q)", r.serveErr, last)
+		}
+		if errors.Is(r.serveErr, net.ErrClosed) {
+			t.Fatalf("Serve = %v, want the last Accept error, not net.ErrClosed", r.serveErr)
+		}
+		if n := ln.acceptCalls(); n != maxAcceptFailures {
+			t.Fatalf("Accept called %d times, want %d", n, maxAcceptFailures)
+		}
+		if !logs.containsAt(slog.LevelError, "", last.Error()) {
+			t.Fatalf("giving up not logged at Error with the last Accept error; logs: %v", logs.all())
+		}
+		warns := 0
+		for _, l := range logs.all() {
+			if strings.HasPrefix(l, slog.LevelWarn.String()+" ") && strings.Contains(l, "9b2e") {
+				warns++
+			}
+		}
+		if warns != len(acceptBackoffs) {
+			t.Fatalf("%d Warn logs for Accept failures, want %d (one per retried failure); logs: %v",
+				warns, len(acceptBackoffs), logs.all())
+		}
+	})
+
+	t.Run("IPC-018/net.ErrClosed sem Close continua encerrando Serve com erro", func(t *testing.T) {
+		t.Parallel()
+		ln := newScriptListener(failures(net.ErrClosed)...)
+		clk := domain.NewFakeClock(testStart)
+		r := startServer(t, ln, clk, testHandlers(), nil)
+
+		ln.nextAccept(t, 1)
+		// No Close, no ctx end, no Advance: Serve ends on its own.
+		recv(t, r.done, "Serve to return after Accept returned net.ErrClosed")
+		if r.serveErr == nil || !errors.Is(r.serveErr, net.ErrClosed) {
+			t.Fatalf("Serve = %v, want an error with errors.Is(err, net.ErrClosed)", r.serveErr)
+		}
+		if n := ln.acceptCalls(); n != 1 {
+			t.Fatalf("Accept called %d times, want 1 (net.ErrClosed is not retried)", n)
+		}
 	})
 }
 

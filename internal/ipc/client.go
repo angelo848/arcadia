@@ -215,7 +215,11 @@ func (c *Client) run() {
 			return
 		}
 		if err != nil {
-			c.log.Debug("ipc: dial failed", "error", err.Error(), "retry_in", backoff.String())
+			level := slog.LevelDebug
+			if errors.Is(err, ErrUntrustedServer) {
+				level = slog.LevelWarn // possible pipe squatting
+			}
+			c.log.Log(c.ctx, level, "ipc: dial failed", "error", err.Error(), "retry_in", backoff.String())
 		} else {
 			backoff = backoffMin
 			c.serve(conn)

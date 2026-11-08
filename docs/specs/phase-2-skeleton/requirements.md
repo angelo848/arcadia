@@ -181,6 +181,33 @@ Dado um cliente fechado com `Close()`, quando chamo `Call`, então recebo erro c
 Dado um consumidor que não lê `Notifications()`, quando chegam 20 notificações, então o canal contém as 16 primeiras,
 as demais são descartadas e `Call` continua sendo respondida na mesma conexão.
 
+### IPC-018 — Erro de Accept no servidor
+Dado um servidor em `Serve` (relógio injetado) cujo listener devolve, em `Accept`, um erro que não é `net.ErrClosed`
+(sem `Close` nem fim do `ctx`), quando o erro ocorre, então `Serve` não retorna, o erro é logado em `Warn` com o
+texto do erro e o `Accept` é tentado de novo após a espera do backoff.
+Dado esse servidor, quando os `Accept` falham seguidamente, então as esperas entre tentativas são 100 ms, 200 ms,
+400 ms, 800 ms, 1600 ms, 3200 ms, 5000 ms, 5000 ms, 5000 ms (dobra a cada falha seguida, teto 5 s, sem jitter: nada
+dispara 1 ns antes).
+Dado um `Accept` bem-sucedido depois de falhas, quando o próximo `Accept` falha, então a espera volta a 100 ms.
+Quando ocorre a 10ª falha seguida de `Accept`, então `Serve` não espera mais: loga em `Error` e retorna um erro com
+`errors.Is(err, <último erro de Accept>)`.
+Dado o servidor esperando o backoff após um erro de `Accept`, quando chamo `Close`, então `Serve` retorna `nil`; quando
+o `ctx` passado a `Serve` termina, então `Serve` retorna `ctx.Err()`.
+· alterado em 2026-11-08 (revisão da T08): requisito novo, decidido pelo usuário; substitui o retry fixo de 100 ms.
+
+### IPC-019 — Cliente confere o dono do servidor do pipe (anti-squatting)
+Dado um pipe `\\.\pipe\arcadia-agent-<SID>` criado por um processo do usuário atual, quando chamo `DialPipe`, então a
+conexão é devolvida e um `ping` por ela é respondido.
+Dado que a verificação do dono do servidor do pipe indica outro usuário ou não consegue ser feita (PID, processo,
+token ou SID ilegíveis), quando chamo `DialPipe`, então recebo erro com `errors.Is(err, ipc.ErrUntrustedServer)`,
+nenhuma conexão é devolvida e o servidor observa a conexão fechada (leitura retorna EOF/erro).
+Dado um `Client` cujo `Dialer` é `PipeDialer`, quando `DialPipe` retorna `ErrUntrustedServer`, então o cliente trata
+como falha de dial (log e backoff de IPC-013) e nenhuma `Call` é enviada a esse servidor.
+Dado um pipe com o mesmo nome já existente, quando chamo `ListenPipe`, então o erro retornado preserva a cadeia até
+o `*os.PathError` do go-winio e o código Windows (`windows.Errno`), de modo que o agente (T10) identifique "nome já
+existe" e logue em `Error` "pipe já existe: outra instância ou outro processo".
+· alterado em 2026-11-08 (revisão da T08): requisito novo, decidido pelo usuário (ADR 0003).
+
 ## Agente (AGT)
 
 ### AGT-001 — Inicialização

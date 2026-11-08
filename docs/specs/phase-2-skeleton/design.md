@@ -139,6 +139,8 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
 ### Servidor
 - `Server`, codec e dispatcher sobre `net.Listener`/`net.Conn` (testáveis com `net.Pipe()`/`net.Listen("tcp", "127.0.0.1:0")`).
   Só `Listen`/`Dial` do pipe ficam em `*_windows.go` (`go-winio`, SDDL `D:P(A;;GA;;;<SID>)`) [IPC-007].
+  · alterado em 2026-11-08 (revisão da T08): o `Dial` também confere o dono do servidor [IPC-019]; ver
+  "Dono do servidor do pipe".
 - Construção com opções funcionais:
   ```go
   type ServerOption func(*serverConfig)
@@ -163,6 +165,88 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   então lê a próxima linha); reavaliar quando houver handlers lentos (fase 3+). `Close` antes de `Serve` faz o
   `Serve` posterior retornar `nil` (encerramento pedido, não erro); só um segundo `Serve` retorna erro. Na T08,
   conferir se o `Accept` do go-winio pode devolver erro transitório; se puder, logar e continuar em vez de encerrar.
+- · alterado em 2026-11-08 (T08): no go-winio v0.6.4 `ERROR_NO_DATA` e `ERROR_PIPE_CONNECTED` já são absorvidos, mas
+  falhas ao criar a próxima instância chegam ao `Accept` com o listener ainda utilizável. Por isso: erro de `Accept`
+  que não seja `net.ErrClosed` (nem `Close`/fim do `ctx`) é logado em `Warn` e o accept é tentado de novo após
+  `100 ms` via `clock.After` (único outro uso do relógio do servidor, só nesse caminho de erro); `Close`/`ctx` durante
+  essa espera encerram normalmente [IPC-006, IPC-007].
+  · **substituído por IPC-018** (2026-11-08, revisão da T08): o retry fixo de 100 ms deu lugar ao backoff com
+  desistência descrito em "Erro de Accept" abaixo.
+- · alterado em 2026-11-08 (revisão da T08) — **Erro de Accept** [IPC-018, IPC-006]:
+  - Constantes não exportadas em `server.go`: `acceptBackoffMin = 100 * time.Millisecond`,
+    `acceptBackoffMax = 5 * time.Second`, `maxAcceptFailures = 10` (substituem `acceptRetryDelay`).
+  - `acceptLoop` mantém `failures int` e `backoff time.Duration` locais (a goroutine de accept é a única dona; sem
+    mutex). Em erro de `Accept`:
+    1. `Close` pedido ou `ctx` encerrado → sai sem erro (o `Serve` decide `nil`/`ctx.Err()`, como hoje).
+    2. `errors.Is(err, net.ErrClosed)` sem `Close`/`ctx` → retorna `fmt.Errorf("ipc: accept: %w", err)` (inalterado).
+    3. Senão `failures++`. Se `failures == maxAcceptFailures` → log `Error` (`"ipc: accept failed repeatedly, giving up"`,
+       `error`, `failures`) e retorna `fmt.Errorf("ipc: accept failed %d times in a row: %w", failures, err)` sem esperar.
+    4. Caso contrário log `Warn` (`"ipc: accept failed, retrying"`, `error` = `err.Error()`, `failures`, `retry_in`) e
+       `select` em `s.closed`/`ctx.Done()`/`s.clock.After(backoff)`; depois `backoff = min(2*backoff, acceptBackoffMax)`.
+  - `Accept` bem-sucedido → `failures = 0`, `backoff = acceptBackoffMin`.
+  - Sequência resultante (9 esperas antes da 10ª falha): 100, 200, 400, 800, 1600, 3200, 5000, 5000, 5000 ms.
+  - Ao desistir, `Serve` segue o caminho de erro já existente: fecha conexões, para o heartbeat, aguarda as goroutines
+    e devolve o erro (o `errors.Is` com o último erro de Accept vale pela cadeia `%w`). O servidor não é reutilizável
+    depois disso (vale a regra "Server serve uma vez").
+  - O relógio do servidor passa a ter três usos: `Now`, heartbeat e esta espera (só no caminho de erro).
+  - Testes: listener fake com fila programável de resultados (`err` ou `net.Conn`) e `Accept` bloqueante quando a
+    fila esvazia; `FakeClock.BlockUntilWaiters` antes de cada `Advance`. Os waiters do heartbeat (5 s) e do backoff
+    coexistem: o teste conta 2 waiters (ou usa `WithStartedAt` e só avança o necessário) e confere "nada dispara 1 ns
+    antes" avançando `backoff − 1ns` e verificando que nenhum novo `Accept` ocorreu. Log capturado num
+    `slog.Handler` de teste para conferir nível e texto.
+- · alterado em 2026-11-08 (T08): a primeira instância do go-winio é criada sem aceitar clientes; só há instância
+  conectável enquanto existe um `Accept` pendente. Um `ListenPipe` sem `Serve` recusa clientes com `ERROR_PIPE_BUSY`
+  (testes que inspecionam o pipe mantêm um `Accept` pendente). A exclusividade do nome vem de `FILE_CREATE` na
+  primeira instância (equivalente a `FILE_FLAG_FIRST_PIPE_INSTANCE`).
+
+### Dono do servidor do pipe (anti-squatting) [IPC-019, IPC-007]
+· alterado em 2026-11-08 (revisão da T08): seção nova, decidida pelo usuário. Complementa o ADR 0003 (pipe por
+usuário com ACL só do usuário atual): a DACL protege o pipe que **nós** criamos, mas não impede que outro usuário local
+crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL que nos permita conectar. Sem ADR novo:
+é uma verificação adicional dentro da decisão do ADR 0003, não uma mudança dela.
+
+- API pública nova (`pipe_windows.go`; o sentinela pode ficar em `pipe.go` para ser portável):
+  ```go
+  var ErrUntrustedServer = errors.New("ipc: untrusted pipe server")
+  ```
+- `DialPipe(ctx, name)`, depois de `winio.DialPipeContext` ter sucesso:
+  1. Obtém o handle da conexão via `conn.(interface{ Fd() uintptr })` (o `win32Pipe` do go-winio v0.6.4 expõe `Fd`);
+     o handle continua sendo da `conn` — **não** é fechado aqui. Sem `Fd` → não verificável.
+  2. `windows.GetNamedPipeServerProcessId(h, &pid)`.
+  3. `windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)` → `defer windows.CloseHandle(hp)`.
+  4. `windows.OpenProcessToken(hp, windows.TOKEN_QUERY, &tok)` → `defer tok.Close()`.
+  5. `tok.GetTokenUser()` → `User.Sid.String()`; compara com `CurrentUserSID()` (comparação de string SID exata).
+  - Qualquer falha nos passos 1–5 ou SID diferente → `conn.Close()` e retorna
+    `fmt.Errorf("ipc: dial pipe %s: %w: %v", name, ErrUntrustedServer, cause)` (o motivo vai no texto; `errors.Is` com
+    `ErrUntrustedServer` vale; a causa não precisa ser alcançável por `errors.Is`). Nenhum handle fica aberto.
+- Ponto de injeção para teste (não exportado, em `pipe_windows.go`):
+  ```go
+  // pipeServerSID returns the string SID of the user owning the server process of the pipe handle h.
+  var pipeServerSID = realPipeServerSID // func(h windows.Handle) (string, error): steps 2–5
+  ```
+  `DialPipe` chama `pipeServerSID(h)` e compara com `CurrentUserSID()`. Testes do pacote (`pipe_windows_test.go`,
+  **sem `t.Parallel`**, restaurando com `t.Cleanup`) substituem a variável por uma função que devolve um SID diferente
+  (ex.: `"S-1-5-18"`) ou um erro, e conferem: `errors.Is(err, ErrUntrustedServer)`, `conn == nil`, e que a conexão
+  aceita pelo lado servidor (listener real com `Accept` pendente) lê EOF/erro em prazo curto. Não é preciso outro
+  usuário real. Um teste sem substituição confere o caminho real: `realPipeServerSID` sobre uma conexão a um pipe
+  do próprio processo devolve `CurrentUserSID()` e o `ping` via `Server` funciona.
+- Cliente: nenhuma mudança em `client.go` — `PipeDialer` devolve o erro, que o `Client` trata como falha de dial
+  (log `Debug` existente + backoff IPC-013). Nada é escrito na conexão antes da verificação.
+  · alterado em 2026-11-08: exceção — quando `errors.Is(err, ErrUntrustedServer)`, o `Client` loga em `Warn`
+  (sinal de possível ataque) em vez de `Debug`; única mudança em `client.go`.
+- Agente (T10): `ListenPipe` mantém a cadeia `%w` até o `*os.PathError` do go-winio (`Op: "open"`) e o
+  `windows.Errno`. Com `FILE_CREATE` num nome existente o esperado é `ERROR_ALREADY_EXISTS` (de
+  `STATUS_OBJECT_NAME_COLLISION`); um pipe de outro usuário com DACL restritiva pode render `ERROR_ACCESS_DENIED`.
+  O teste da T08 fixa o código observado; o agente trata ambos como "nome já existe" e loga em `Error`
+  `"pipe já existe: outra instância ou outro processo"` com `pipe` e `error`.
+  · alterado em 2026-11-08 (testes da T08): o código observado (Windows 11 26200, go-winio v0.6.4) é
+  `ERROR_ACCESS_DENIED` (5), mesmo com o pipe do próprio usuário. Como o agente só chama `ListenPipe` depois de obter
+  o mutex de instância única (T09), uma falha aqui com 5 ou 183 significa outro processo segurando o nome.
+- Riscos: (a) corrida de PID — o processo servidor pode sair e o PID ser reutilizado entre os passos 2 e 3; o pior
+  caso é recusar (falha segura) ou aceitar um processo do mesmo usuário, aceitável. (b) agente do mesmo usuário
+  rodando elevado e UI não elevada: `OpenProcessToken` pode ser negado → recusado (falha segura); a fase 2 não prevê
+  agente elevado (questão em aberto se isso mudar).
+  (c) Serviço/SYSTEM servindo o nome → SID diferente → recusado.
 
 ### Cliente
 - ```go
