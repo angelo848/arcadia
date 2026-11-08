@@ -261,6 +261,9 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
     "AGT-004/status devolve AgentInfo.Version"
   - `TestContract` (lê `contracts/ipc.openrpc.json`): "IPC-001/status tem exatamente os campos do schema",
     "IPC-001/startedAt RFC 3339 em UTC", "IPC-002/códigos batem com components.errors", "IPC-012/limite bate com x-limits.maxMessageBytes"
+  - Acrescentados em 2026-11-08 (lacunas e revisão da T06): `TestDispatchHandlerErrors`, `TestDispatchErrorMessages`,
+    `TestEncoder` e casos extras de `TestDispatch`/`TestDecoder` (`id: null` explícito, `id` de tipo inválido, CRLF,
+    linhas vazias, EOF sem `\n`, memória limitada, erro preso, uptime nunca negativo).
   - `TestDecoder`: "IPC-012/exatamente 1.048.576 bytes aceito", "IPC-003/1.048.577 bytes retorna ErrMessageTooLarge",
     "IPC-012/várias mensagens no stream"
 - Dependências: —
@@ -399,6 +402,8 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   "AGT-003/Shutdown sem goroutines sobrando (goleak)", "AGT-003/Shutdown fecha o store", "AGT-003/Shutdown idempotente",
   "AGT-003/CloseLog idempotente",
   "AGT-007/arcadia.exe existe: spawn com flags desacopladas", "AGT-008/arcadia.exe ausente: loga erro e não chama spawn"
+  · nota 2026-11-08: o caso "dev" sem `-ldflags` de AGT-004 é testado só aqui (T10); a T06 cobre apenas que
+  `agent.status` devolve o `AgentInfo.Version` recebido (lacunas da T06).
 - goleak · alterado em 2026-11-08: exceção da goroutine do lumberjack (revisão da T05): o teste "AGT-003/Shutdown sem
   goroutines sobrando (goleak)" (e qualquer `goleak.VerifyNone`/`VerifyTestMain` deste pacote) usa
   `goleak.VerifyNone(t, goleak.IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun"))` — a goroutine

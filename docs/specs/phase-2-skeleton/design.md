@@ -103,13 +103,38 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   1. Não é JSON → `-32700`, `id: null` [IPC-002].
   2. É array → uma resposta `-32600`, `id: null`; conexão segue [IPC-010].
   3. Não é objeto, `jsonrpc` ≠ `"2.0"`, `method` não string, ou `params` presente e não for `null`/array/objeto →
-     `-32600` (com o `id` se legível, senão `null`) [IPC-009].
+     `-32600` (com o `id` se legível, senão `null`) [IPC-009]. `id` presente que não seja string, número ou `null`
+     (objeto, array, bool) → `-32600` com `id: null`.
+     · alterado em 2026-11-08: tipo inválido de `id` (lacunas da T06).
   4. Sem `id` → notificação: processa (ou ignora se o método não existe) e **não responde** [IPC-011].
+     Só a **ausência do membro** `id` caracteriza notificação; `"id": null` explícito é requisição, é respondida e a
+     resposta leva `id: null` [IPC-011]. · alterado em 2026-11-08: distingue `id` ausente de `id: null` (lacunas da T06).
   5. Método desconhecido → `-32601` [IPC-002].
   6. Método sem parâmetros: `params` ausente, `null`, `[]` ou `{}` → ok [IPC-008]; array/objeto não vazio →
      `-32602` [IPC-002].
+- Decoder de linhas (· alterado em 2026-11-08: comportamento de borda definido (lacunas da T06)):
+  - A última linha sem `\n` antes do EOF é devolvida normalmente (se ≤ `MaxMessageSize`); o `io.EOF` só vem na
+    chamada seguinte [IPC-012].
+  - Um `\r` final imediatamente antes do `\n` é removido (CRLF tolerado); o limite de `MaxMessageSize` vale para a
+    linha já sem `\r`/`\n`. O mesmo vale para a última linha sem `\n`: um `\r` final antes do EOF também é removido.
+  - Depois de `ErrMessageTooLarge`, `io.EOF` ou erro de leitura, o decoder fica preso nesse erro (o servidor fecha a
+    conexão). · alterado em 2026-11-08: `\r` no EOF e erro preso (revisão da T06).
+- Handler que devolve `*Error` nil dentro de um `error` não nulo é tratado como erro genérico (`-32603`).
+  · alterado em 2026-11-08 (revisão da T06).
+- Notas para a T07 (revisão da T06): `Dispatch` devolve `[]byte` — o servidor deve escrever com
+  `Encoder.Encode(json.RawMessage(resp))` (com `[]byte` o `json.Marshal` geraria base64); o heartbeat usa
+  `Request{JSONRPC: Version, Method: MethodHeartbeat, Params: ...}` sem `ID`; para logar erros genéricos de handler, o
+  `Server` embrulha cada `Handler` num decorador que loga erros que não são `*Error` (a API de `Dispatch` não muda).
+  - Linhas vazias (zero bytes, ou só `\r`) são ignoradas: não geram resposta nem erro; o decoder segue para a próxima.
 - Handlers: `type Handler func(ctx context.Context, params json.RawMessage) (any, error)`; o dispatcher normaliza
   "params vazios" antes de chamar.
+- Erro de handler (· alterado em 2026-11-08: mapeamento definido (lacunas da T06)): se o handler devolve `*Error`,
+  ele vai ao cliente como está; qualquer outro `error` vira `-32603` com message `"Internal error"` — o texto do erro
+  original **não** vai ao cliente (é logado pelo servidor, T07).
+- Textos das `message` (· alterado em 2026-11-08: textos fixados (lacunas da T06)): as respostas de erro geradas pelo
+  dispatcher usam exatamente os textos de `components.errors` em [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json):
+  `-32700` `"Parse error"`, `-32600` `"Invalid Request"`, `-32601` `"Method not found"`, `-32602` `"Invalid params"`,
+  `-32603` `"Internal error"`.
 
 ### Servidor
 - `Server`, codec e dispatcher sobre `net.Listener`/`net.Conn` (testáveis com `net.Pipe()`/`net.Listen("tcp", "127.0.0.1:0")`).
