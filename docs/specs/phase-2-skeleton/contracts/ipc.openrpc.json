@@ -1,0 +1,81 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "arcadia-agent IPC",
+    "version": "0.2.0",
+    "description": "JSON-RPC 2.0 over NDJSON on \\\\.\\pipe\\arcadia-agent-<SID>. One message per line; max 1048576 bytes per message excluding the trailing \\n [IPC-012]; larger messages close only that connection, response not guaranteed [IPC-003]. Batches (JSON arrays) are rejected with a single -32600, id null [IPC-010]. Requests without id are notifications and get no response [IPC-011]. jsonrpc must be exactly \"2.0\" and params, if present, must be null, an array or an object, otherwise -32600 [IPC-009]. Methods without params accept params absent, null, [] or {} [IPC-008]; any non-empty array/object is -32602 [IPC-002].",
+    "x-limits": {
+      "maxMessageBytes": 1048576,
+      "heartbeatIntervalSeconds": 5,
+      "clientBackoff": { "initialMs": 250, "factor": 2, "maxMs": 5000, "jitter": false, "resetOnConnect": true },
+      "clientNotificationBuffer": 16
+    }
+  },
+  "methods": [
+    {
+      "name": "agent.ping",
+      "summary": "Liveness check [IPC-001]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "pong",
+        "schema": {
+          "type": "object",
+          "required": ["pong"],
+          "properties": { "pong": { "type": "boolean", "const": true } },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.status",
+      "summary": "Agent identity and uptime [IPC-001, AGT-004]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "status", "schema": { "$ref": "#/components/schemas/AgentStatus" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.heartbeat",
+      "summary": "Server-to-client notification every 5 s (no id, no response) [IPC-004]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "uptimeSeconds",
+          "required": true,
+          "schema": { "type": "integer", "minimum": 0 }
+        }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "AgentStatus": {
+        "type": "object",
+        "required": ["version", "pid", "startedAt", "dataDir", "uptimeSeconds"],
+        "properties": {
+          "version": { "type": "string", "description": "From -ldflags -X main.version; \"dev\" when not set [AGT-004]" },
+          "pid": { "type": "integer" },
+          "startedAt": { "type": "string", "format": "date-time", "description": "RFC 3339, UTC" },
+          "dataDir": { "type": "string", "description": "Absolute Root resolved by the agent [DSK-006]" },
+          "uptimeSeconds": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "ParseError": { "code": -32700, "message": "Parse error" },
+      "InvalidRequest": { "code": -32600, "message": "Invalid Request" },
+      "MethodNotFound": { "code": -32601, "message": "Method not found" },
+      "InvalidParams": { "code": -32602, "message": "Invalid params" },
+      "InternalError": { "code": -32603, "message": "Internal error" }
+    }
+  }
+}

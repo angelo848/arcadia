@@ -1,0 +1,7 @@
+build/bin/
+cmd/desktop/build/bin/
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.gitkeep
+.devdata/
+*.log
