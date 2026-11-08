@@ -1,0 +1,439 @@
+package main
+
+// Tests for T10 (docs/specs/phase-2-skeleton/tasks.md): agent startup, version,
+// log level and ordered shutdown. These tests touch the package-level `version`
+// variable, so none of them run in parallel.
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"testing"
+	"time"
+
+	"go.uber.org/goleak"
+
+	"github.com/arcadia-launcher/arcadia/internal/domain"
+	"github.com/arcadia-launcher/arcadia/internal/ipc"
+	"github.com/arcadia-launcher/arcadia/internal/store"
+)
+
+// lumberjackMillRun is the lumberjack cleanup goroutine that Close does not stop
+// (ADR 0013, design.md internal/logging).
+const lumberjackMillRun = "gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun"
+
+const testTimeout = 5 * time.Second
+
+// tcpListen records the TCP listeners handed to startAgent and how many times
+// listen was called.
+type tcpListen struct {
+	mu    sync.Mutex
+	calls int
+	addr  string
+}
+
+func (l *tcpListen) listen() (net.Listener, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls++
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	l.addr = ln.Addr().String()
+	return ln, nil
+}
+
+func (l *tcpListen) snapshot() (calls int, addr string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.calls, l.addr
+}
+
+func emptyEnv(string) string { return "" }
+
+func testClock() *domain.FakeClock {
+	return domain.NewFakeClock(time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC))
+}
+
+// testConfig returns a config whose data dir is a fresh, not-yet-created
+// directory inside t.TempDir().
+func testConfig(t *testing.T, level string) config {
+	t.Helper()
+	base := t.TempDir()
+	return config{
+		DataDir:  filepath.Join(base, "data"),
+		LogLevel: level,
+		ExeDir:   filepath.Join(base, "bin"),
+	}
+}
+
+// startTestAgent starts an agent and registers a cleanup that shuts it down and
+// closes its log (both idempotent per T10), before t.TempDir is removed.
+func startTestAgent(t *testing.T, cfg config, ln *tcpListen) *agent {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+	if err != nil {
+		cancel()
+		t.Fatalf("startAgent: %v", err)
+	}
+	if a == nil {
+		cancel()
+		t.Fatal("startAgent returned nil agent without error")
+	}
+	t.Cleanup(func() {
+		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+		defer scancel()
+		if err := a.Shutdown(sctx); err != nil {
+			t.Errorf("cleanup Shutdown: %v", err)
+		}
+		if err := a.CloseLog(); err != nil {
+			t.Errorf("cleanup CloseLog: %v", err)
+		}
+		cancel()
+	})
+	return a
+}
+
+func shutdown(t *testing.T, a *agent) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	if err := a.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+}
+
+// newTCPClient returns an ipc.Client dialing addr over TCP; the caller closes it.
+func newTCPClient(addr string) *ipc.Client {
+	dial := func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	}
+	return ipc.NewClient(dial, testClock(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func callStatus(t *testing.T, c *ipc.Client) ipc.AgentStatus {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	var st ipc.AgentStatus
+	if err := c.Call(ctx, ipc.MethodStatus, nil, &st); err != nil {
+		t.Fatalf("Call(%s): %v", ipc.MethodStatus, err)
+	}
+	return st
+}
+
+// logLines parses every line of a JSON log file; a non-JSON line fails the test.
+func logLines(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log %s: %v", path, err)
+	}
+	var out []map[string]any
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var rec map[string]any
+		if err := json.Unmarshal(line, &rec); err != nil {
+			t.Fatalf("log line is not JSON: %q: %v", line, err)
+		}
+		out = append(out, rec)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("scan log %s: %v", path, err)
+	}
+	return out
+}
+
+func agentLogPath(cfg config) string { return filepath.Join(cfg.DataDir, "logs", "agent.log") }
+func dbPath(cfg config) string       { return filepath.Join(cfg.DataDir, "library.db") }
+
+func TestStartAgent(t *testing.T) {
+	t.Run("AGT-001/cria library.db migrado e logs/agent.log", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		ln := &tcpListen{}
+		a := startTestAgent(t, cfg, ln)
+
+		if calls, _ := ln.snapshot(); calls != 1 {
+			t.Errorf("listen called %d times, want 1", calls)
+		}
+		if _, err := os.Stat(dbPath(cfg)); err != nil {
+			t.Fatalf("library.db: %v", err)
+		}
+		if _, err := os.Stat(agentLogPath(cfg)); err != nil {
+			t.Fatalf("logs/agent.log: %v", err)
+		}
+
+		shutdown(t, a)
+		if err := a.CloseLog(); err != nil {
+			t.Fatalf("CloseLog: %v", err)
+		}
+
+		// The database must be migrated: opening it without migration succeeds at SchemaVersion.
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+		st, err := store.Open(ctx, dbPath(cfg), store.OpenOptions{Migrate: false})
+		if err != nil {
+			t.Fatalf("store.Open(Migrate:false) on agent database: %v", err)
+		}
+		defer st.Close()
+		v, err := st.CurrentVersion(ctx)
+		if err != nil {
+			t.Fatalf("CurrentVersion: %v", err)
+		}
+		if v != store.SchemaVersion {
+			t.Errorf("schema version = %d, want %d", v, store.SchemaVersion)
+		}
+
+		// agent.log is JSON lines (slog JSON handler) and has at least one record.
+		if lines := logLines(t, agentLogPath(cfg)); len(lines) == 0 {
+			t.Error("agent.log is empty, want at least one JSON record")
+		}
+	})
+}
+
+func TestVersion(t *testing.T) {
+	t.Run("AGT-004/sem -X version é dev", func(t *testing.T) {
+		if version != "dev" {
+			t.Fatalf("version = %q, want %q (test binary built without -X main.version)", version, "dev")
+		}
+		a := startTestAgent(t, testConfig(t, ""), &tcpListen{})
+		if got := a.Info().Version; got != "dev" {
+			t.Errorf("Info().Version = %q, want %q", got, "dev")
+		}
+	})
+
+	t.Run("AGT-004/agent.status reflete a variável version", func(t *testing.T) {
+		old := version
+		version = "1.2.3"
+		t.Cleanup(func() { version = old })
+
+		cfg := testConfig(t, "")
+		ln := &tcpListen{}
+		a := startTestAgent(t, cfg, ln)
+
+		if got := a.Info().Version; got != "1.2.3" {
+			t.Errorf("Info().Version = %q, want %q", got, "1.2.3")
+		}
+
+		_, addr := ln.snapshot()
+		c := newTCPClient(addr)
+		defer c.Close()
+		st := callStatus(t, c)
+		if st.Version != "1.2.3" {
+			t.Errorf("agent.status version = %q, want %q", st.Version, "1.2.3")
+		}
+		if st.PID != os.Getpid() {
+			t.Errorf("agent.status pid = %d, want %d", st.PID, os.Getpid())
+		}
+	})
+}
+
+func TestLogLevel(t *testing.T) {
+	t.Run("AGT-005/nível inválido falha sem criar library.db", func(t *testing.T) {
+		cfg := testConfig(t, "verbose")
+		ln := &tcpListen{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err == nil {
+			// Release whatever was started so the test does not leak.
+			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+			defer scancel()
+			if a != nil {
+				_ = a.Shutdown(sctx)
+				_ = a.CloseLog()
+			}
+			t.Fatal("startAgent with --log-level verbose: want error, got nil")
+		}
+		if a != nil {
+			t.Errorf("startAgent returned non-nil agent with error %v", err)
+		}
+		if _, statErr := os.Stat(dbPath(cfg)); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("library.db stat = %v, want not exist", statErr)
+		}
+		// ParseLevel runs before paths.EnsureDirs and logging.New: no file at all.
+		if _, statErr := os.Stat(cfg.DataDir); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("data dir stat = %v, want not exist (invalid level must fail before any file)", statErr)
+		}
+		if calls, _ := ln.snapshot(); calls != 0 {
+			t.Errorf("listen called %d times, want 0", calls)
+		}
+	})
+
+	t.Run("AGT-005/sem flag usa info", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		ln := &tcpListen{}
+		a := startTestAgent(t, cfg, ln)
+
+		// Exercise the IPC server (it logs connection events at Debug).
+		_, addr := ln.snapshot()
+		c := newTCPClient(addr)
+		_ = callStatus(t, c)
+		if err := c.Close(); err != nil {
+			t.Fatalf("client Close: %v", err)
+		}
+
+		shutdown(t, a)
+		if err := a.CloseLog(); err != nil {
+			t.Fatalf("CloseLog: %v", err)
+		}
+
+		lines := logLines(t, agentLogPath(cfg))
+		var info int
+		for _, rec := range lines {
+			switch rec["level"] {
+			case "DEBUG":
+				t.Errorf("DEBUG record written with default level: %v", rec)
+			case "INFO":
+				info++
+			}
+		}
+		if info == 0 {
+			t.Error("no INFO record in agent.log, want at least one with the default level")
+		}
+	})
+}
+
+func TestShutdown(t *testing.T) {
+	t.Run("AGT-003/Shutdown sem goroutines sobrando (goleak)", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		ln := &tcpListen{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err != nil {
+			t.Fatalf("startAgent: %v", err)
+		}
+
+		// Keep a live connection open across Shutdown: the server must close it.
+		_, addr := ln.snapshot()
+		c := newTCPClient(addr)
+		_ = callStatus(t, c)
+
+		shutdown(t, a)
+		if err := a.CloseLog(); err != nil {
+			t.Fatalf("CloseLog: %v", err)
+		}
+		if err := c.Close(); err != nil {
+			t.Fatalf("client Close: %v", err)
+		}
+
+		goleak.VerifyNone(t, goleak.IgnoreTopFunction(lumberjackMillRun))
+	})
+
+	t.Run("AGT-003/Shutdown fecha o store", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		a := startTestAgent(t, cfg, &tcpListen{})
+
+		// Sanity check of the method: on Windows an open SQLite file cannot be removed.
+		if runtime.GOOS == "windows" {
+			if err := os.Remove(dbPath(cfg)); err == nil {
+				t.Fatal("library.db removed while the agent is running; store is not open?")
+			}
+		}
+
+		shutdown(t, a)
+
+		for _, p := range []string{dbPath(cfg), dbPath(cfg) + "-wal", dbPath(cfg) + "-shm"} {
+			if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("remove %s after Shutdown: %v (store still open)", filepath.Base(p), err)
+			}
+		}
+	})
+
+	t.Run("AGT-003/Shutdown idempotente", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		ln := &tcpListen{}
+		a := startTestAgent(t, cfg, ln)
+
+		shutdown(t, a)
+		shutdown(t, a)
+
+		// After Shutdown the IPC server no longer accepts connections.
+		_, addr := ln.snapshot()
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			conn.Close()
+			t.Error("dial after Shutdown succeeded, want listener closed")
+		}
+	})
+
+	t.Run("AGT-003/falha ao abrir o store fecha o log", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		// A directory named library.db makes store.Open fail after agent.log is open.
+		if err := os.MkdirAll(dbPath(cfg), 0o755); err != nil {
+			t.Fatalf("mkdir library.db: %v", err)
+		}
+		ln := &tcpListen{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err == nil {
+			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+			defer scancel()
+			if a != nil {
+				_ = a.Shutdown(sctx)
+				_ = a.CloseLog()
+			}
+			t.Fatal("startAgent with library.db as a directory: want error, got nil")
+		}
+		if a != nil {
+			t.Errorf("startAgent returned non-nil agent with error %v", err)
+		}
+		if calls, _ := ln.snapshot(); calls != 0 {
+			t.Errorf("listen called %d times, want 0 (store fails first)", calls)
+		}
+
+		var errs int
+		for _, rec := range logLines(t, agentLogPath(cfg)) {
+			if rec["level"] == "ERROR" {
+				errs++
+			}
+		}
+		if errs == 0 {
+			t.Error("no ERROR record in agent.log after store.Open failed")
+		}
+
+		// The log handle was released (on Windows an open file cannot be removed).
+		if err := os.Remove(agentLogPath(cfg)); err != nil {
+			t.Errorf("remove agent.log after failed startAgent: %v (log still open)", err)
+		}
+	})
+
+	t.Run("AGT-003/CloseLog idempotente", func(t *testing.T) {
+		cfg := testConfig(t, "")
+		a := startTestAgent(t, cfg, &tcpListen{})
+
+		shutdown(t, a)
+		if err := a.CloseLog(); err != nil {
+			t.Fatalf("first CloseLog: %v", err)
+		}
+		if err := a.CloseLog(); err != nil {
+			t.Fatalf("second CloseLog: %v", err)
+		}
+		// The log file handle is released (on Windows an open file cannot be removed).
+		if err := os.Remove(agentLogPath(cfg)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("remove agent.log after CloseLog: %v (log still open)", err)
+		}
+	})
+}

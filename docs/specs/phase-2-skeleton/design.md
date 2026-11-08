@@ -303,7 +303,9 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
   caixa-branca, `func (w *SessionEndWatcher) windowHandle() windows.HWND` devolve o hwnd (válido após `Start`).
 - · alterado em 2026-11-08 (revisão da T09):
   - `AcquireSingleInstance`: `ERROR_ACCESS_DENIED` do `CreateMutexW` (mutex criado por um agente elevado) também é
-    `already = true` (sem handle; o `main` loga `Warn`) — atende AGT-002 (segundo agente sai com código 0).
+    `already = true` (sem handle) — atende AGT-002 (segundo agente sai com código 0). · alterado em 2026-11-08
+    (revisão da T10): o `main` **não** loga nesse caso (AGT-002: segundo agente não toca nos logs); `already = true`
+    tem precedência sobre `err` (erro ao fechar o handle duplicado também sai com 0).
   - O loop do watcher é parado por uma mensagem privada (`WM_APP+1`), não por `WM_CLOSE`. `WM_CLOSE` vindo de fora
     (ex.: `taskkill` sem `/F`) é ignorado com log `Warn` e não derruba o watcher. Substitui "Close posta `WM_CLOSE`".
   - A mensagem de parada só é postada enquanto o loop está vivo (canal `exited` fechado pelo loop ao sair), para não
@@ -359,6 +361,22 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
 - Ordem de subida: `logging.ParseLevel` → mutex → paths → logs (`slog` JSON + `lumberjack`, 10 MB × 3, `logs/agent.log`) → store
   (`OpenOptions{Migrate: true}`) → servidor IPC (`WithStartedAt`) → `SessionEndWatcher` → bandeja
   (`fyne.io/systray`: **Abrir Arcadia**, **Sair**) [AGT-001].
+- · alterado em 2026-11-08 (T10): `config.PipeName` (preenchido pelo `main` com `ipc.PipeName(sid)`) é o atributo
+  `pipe` do log de IPC-019. Se `startAgent` falha depois de abrir store/log, ele loga o motivo em `Error` e fecha o que
+  abriu antes de retornar. Ao fim da subida loga `Info` "agente iniciado" (`version`, `pid`, `data_dir`). `Shutdown`
+  não loga. Antes do `agent.log` existir, erros de bootstrap vão para um `slog` em stderr. Se `watcher.Start` falha,
+  o agente loga `Error` e segue sem detecção de fim de sessão (o resto continua útil). `cmd/agent/main_other.go`
+  (`!windows`) só sai com código 1. Ícone placeholder gerado por `scripts/gen-icon.go` (`//go:build ignore`).
+- · alterado em 2026-11-08 (revisão da T10):
+  - Bandeja: se o `onReady` do systray nunca roda (ex.: `Shell_NotifyIcon` falha porque o Explorer não subiu), o
+    agente ainda encerra por Ctrl+C/SIGTERM e por fim de sessão: o laço da bandeja trata `ctx.Done()` e o canal do
+    watcher também antes do `onReady` e encerra o loop de mensagens com `PostThreadMessageW(<thread do systray>,
+    WM_QUIT)` (o `systray.Quit()` não funciona sem janela). Se o `onReady` não vier em 30 s (via `domain.Clock`),
+    loga `Error` "bandeja não inicializou" (o agente segue servindo IPC).
+  - O prazo de 2 s do `Shutdown` é meta medida e reportada (excedido → log `Warn` e código de saída 1); o fechamento
+    não é abandonado no meio, para não deixar o store aberto.
+  - "Abrir Arcadia" roda o `spawn` de forma síncrona no laço da bandeja; um clique em "Sair" durante o
+    `CreateProcess` pode ser descartado pela biblioteca (aceito).
 - **Ordem de shutdown** (disparado por "Sair", `WM_ENDSESSION` ou Ctrl+C) — não é o inverso exato da subida
   [AGT-003, AGT-006]:
   · alterado em 2026-11-08: fechamento do log movido para o último passo (revisão da T05)

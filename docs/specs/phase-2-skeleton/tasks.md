@@ -473,7 +473,7 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   `startAgent` loga em `Error` "pipe já existe: outra instância ou outro processo" (atributos `pipe`, `error`) e
   retorna o erro. Teste: "IPC-019/listen com nome existente loga Error explícito" (`listen` fake devolvendo
   `&os.PathError{Op: "open", Err: windows.ERROR_ALREADY_EXISTS}`).
-- Dependências: `fyne.io/systray` v1.11.0 (ou última estável) · `go.uber.org/goleak` v1.3.0 (só teste)
+- Dependências: `fyne.io/systray` v1.11.0 (ou última estável; efetiva v1.12.2) · `go.uber.org/goleak` v1.3.0 (só teste)
 - Depende de: T03, T04, T05, T08, T09
 
 ## T11 — Frontend: indicador, estado vazio e uptime

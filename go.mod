@@ -3,6 +3,7 @@ module github.com/arcadia-launcher/arcadia
 go 1.27
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/pressly/goose/v3 v3.29.0
 	go.uber.org/goleak v1.3.0
@@ -13,6 +14,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
