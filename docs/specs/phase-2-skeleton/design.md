@@ -437,6 +437,15 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
   singular) [UI-001, UI-002].
 - `formatUptime(seconds: number): string` pura: `< 60` → `Ns`; `< 3600` → `Mm SSs`; senão `Hh MMm SSs`
   (minutos e segundos com 2 dígitos quando há unidade maior) [UI-003].
+- Atualização [DSK-003]: `AgentStatus()` consultado a cada 1 s e a cada evento `agent:heartbeat`; o binding usa
+  timeout de 500 ms, então a queda do agente aparece como "Desconectado" em ≤ ~1,5 s. Enquanto o status carrega ou
+  falha, o indicador mostra "Desconectado".
+- Resumo da biblioteca [DSK-007, DSK-008]: enquanto `LibrarySummary()` falha (ex.: `ErrAgentNotReady`), a UI tenta
+  de novo a cada 2 s e não mostra contagem (só "Nenhum jogo ainda"); após o primeiro sucesso não recarrega
+  (limitação conhecida da fase 2, sem escrita na biblioteca). Com `games > 0` o estado vazio não é exibido.
+  Erros dos bindings (string no Wails v2) são normalizados para `Error`.
+· alterado em 2026-11-08: intervalos de status (2 s → 1 s; timeout 1 s → 500 ms) para caber nos 2 s do DSK-003,
+  retry do resumo e ausência de contagem enquanto desconhecida (revisão do T11).
 
 ## Riscos
 - Goroutines do servidor IPC (accept, uma por conexão, heartbeat) e do cliente (reconexão/leitura): todas com

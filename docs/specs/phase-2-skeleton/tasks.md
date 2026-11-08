@@ -481,7 +481,7 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 - Responsável: implementer · Testes: test-writer
 - Arquivos: `frontend/package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx`, `src/App.tsx`,
   `src/components/AgentIndicator.tsx`, `src/components/LibraryEmpty.tsx`, `src/lib/format.ts`,
-  `src/lib/agent.ts` (TanStack Query `refetchInterval` 2 s + evento `agent:heartbeat`), `src/test/setup.ts`;
+  `src/lib/agent.ts` (TanStack Query `refetchInterval` 1 s + evento `agent:heartbeat`; resumo da biblioteca tenta de novo a cada 2 s enquanto em erro), `src/test/setup.ts`;
   testes `AgentIndicator.test.tsx`, `LibraryEmpty.test.tsx`, `format.test.ts`
 - Assinaturas públicas (TS, componentes puros):
   ```ts
@@ -524,7 +524,7 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   }
   type App struct{ /* client, gate, log, wg */ }
   func NewApp(cfg desktopConfig) *App
-  func (a *App) AgentStatus() StatusView                     // agent.status, 1 s; error => Connected=false
+  func (a *App) AgentStatus() StatusView                     // agent.status, 500 ms; error => Connected=false
   func (a *App) LibrarySummary() (LibrarySummaryView, error) // via libraryGate
   // unexported:
   type desktopConfig struct{ DataDir, ExeDir string } // --data-dir resolved via paths.Resolve (lacuna 3)
