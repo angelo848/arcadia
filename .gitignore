@@ -5,3 +5,4 @@ frontend/dist/*
 !frontend/dist/.gitkeep
 .devdata/
 *.log
+frontend/package.json.md5

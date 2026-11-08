@@ -429,6 +429,20 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
   for `ErrSchemaMismatch`, retorna `ErrAgentNotReady` (mensagem "agente ainda não pronto") e não guarda estado de
   falha — a próxima chamada tenta de novo. Acesso ao store protegido por mutex.
 - Bindings: `AgentStatus()`, `LibrarySummary()`; repassa `agent.heartbeat` como evento Wails `agent:heartbeat`.
+- Ajustes da revisão do T12 [DSK-001, DSK-006, DSK-007] · alterado em 2026-11-08:
+  - O nome implementado de `startAgent` é `startAgentProcess(spawn spawnFunc, exeDir, root, log)` (como no tasks.md).
+  - **Espera do agente sem o backoff do `Client`**: o `ensureAgent` sonda com um `pinger` próprio que abre o pipe
+    (`ipc.DialPipe`) a cada tentativa, em ciclos de 100 ms pelo `Clock`, até 5 s contados a partir do início; a
+    primeira sondagem que encontra o pipe ausente falha na hora e dispara o `start`. O `ipc.Client` de longa duração
+    só é criado depois que o agente respondeu (o primeiro dial dele é imediato), de modo que o backoff do cliente
+    (250 ms → 5 s) não atrasa o DSK-001.
+  - Se o `ensureAgent` falhar, a UI loga Error, cria o `Client` mesmo assim e segue "Desconectado"; no primeiro
+    `agent.heartbeat` recebido chama `gate.MarkConnected()`, consulta `agent.status` uma vez (500 ms) para o
+    DSK-006 e loga Info "agente conectado". O heartbeat conta como "primeira conexão bem-sucedida" do DSK-007.
+  - `LibrarySummary()` usa timeout de 2 s. `StartedAt` zero vira string vazia. Heartbeat com params inválidos é
+    logado como Warn e não é repassado.
+  - Limitação conhecida: falhas antes do log existir (`paths.Resolve`, `setupLogging`) não ficam registradas em
+    lugar visível (binário `windowsgui`); a UI fica "Desconectado".
 
 ## `frontend/` [UI-001..003]
 - Template Wails React-TS + Vite, Tailwind, TanStack Query, Zustand; Vitest + Testing Library.
