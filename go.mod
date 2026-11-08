@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	github.com/pressly/goose/v3 v3.29.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	modernc.org/sqlite v1.62.0
 )
 

@@ -19,7 +19,9 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 1. **`startedAt` do heartbeat:** `NewServer` ganha a opção variádica `WithStartedAt(t)` (padrão `clock.Now()` em `NewServer`);
    `agent.status` e heartbeat usam o mesmo instante.
 2. **Fim de shutdown no `SessionEndWatcher`:** método `ShutdownDone()`; timeout de 2 s via `domain.Clock`. O watcher é
-   fechado **depois** de IPC, store e logs (não logo após a bandeja), senão o Windows mata o processo no meio do shutdown.
+   fechado **depois** de IPC e store (não logo após a bandeja), senão o Windows mata o processo no meio do shutdown.
+   · alterado em 2026-11-08: o `Close` do log passou para o último passo, depois de `mutex.Close` (revisão da T05; ver
+   design.md, `cmd/agent` e `internal/logging`).
 3. **UI e `--data-dir`:** a UI resolve com o mesmo `paths.Resolve` (flag `--data-dir`, env, pasta do exe) e loga em `info` fixo.
 4. **`ParseLevel`:** fica em `internal/logging` (compartilhado) em vez de `parseLogLevel` em `cmd/agent`.
 
@@ -383,17 +385,26 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func(string) string,
       listen func() (net.Listener, error)) (*agent, error)
   func (a *agent) Info() ipc.AgentInfo                // Version: version
-  func (a *agent) Shutdown(ctx context.Context) error // IPC -> store -> logs; idempotent
+  func (a *agent) Shutdown(ctx context.Context) error // IPC -> store; idempotent; does NOT close the log
+  func (a *agent) CloseLog() error                    // closes the logging io.Closer; idempotent; called last by main
   func openUI(exeDir string, stat func(string) error, spawn spawnFunc, log *slog.Logger) // DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP
   ```
   Fluxo do `main`: flags → `AcquireSingleInstance` (já existe → `os.Exit(0)` sem tocar em logs) → `startAgent` (nível de log
   inválido → `os.Exit(2)`) → `watcher.Start` → `systray.Run` ("Sair", Ctrl+C/SIGTERM e o canal do watcher chamam `systray.Quit()`)
-  → `agent.Shutdown` (2 s) → `watcher.ShutdownDone()` → `watcher.Close()` → `mutex.Close()`.
+  → `agent.Shutdown` (2 s) → log "shutdown concluído" → `watcher.ShutdownDone()` → `watcher.Close()` → `mutex.Close()`
+  → `agent.CloseLog()`. · alterado em 2026-11-08: fechamento do log movido para o fim, pois o watcher loga e um `Write`
+  após `Close` reabre o arquivo (revisão da T05).
 - Testes: "AGT-001/cria library.db migrado e logs/agent.log", "AGT-004/sem -X version é dev",
   "AGT-004/agent.status reflete a variável version", "AGT-005/nível inválido falha sem criar library.db", "AGT-005/sem flag usa info",
   "AGT-003/Shutdown sem goroutines sobrando (goleak)", "AGT-003/Shutdown fecha o store", "AGT-003/Shutdown idempotente",
+  "AGT-003/CloseLog idempotente",
   "AGT-007/arcadia.exe existe: spawn com flags desacopladas", "AGT-008/arcadia.exe ausente: loga erro e não chama spawn"
-- Dependências: `fyne.io/systray` v1.11.0 (ou última estável)
+- goleak · alterado em 2026-11-08: exceção da goroutine do lumberjack (revisão da T05): o teste "AGT-003/Shutdown sem
+  goroutines sobrando (goleak)" (e qualquer `goleak.VerifyNone`/`VerifyTestMain` deste pacote) usa
+  `goleak.VerifyNone(t, goleak.IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun"))` — a goroutine
+  `millRun` não é encerrada por `Close` (ver design.md, `internal/logging`). O teste chama `Shutdown` e `CloseLog` antes
+  do `VerifyNone`.
+- Dependências: `fyne.io/systray` v1.11.0 (ou última estável) · `go.uber.org/goleak` v1.3.0 (só teste)
 - Depende de: T03, T04, T05, T08, T09
 
 ## T11 — Frontend: indicador, estado vazio e uptime
@@ -527,10 +538,16 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 | Token do processo (SID) | `defer token.Close()` em `CurrentUserSID` |
 | Janela oculta e classe | goroutine do watcher (`DestroyWindow`, `UnregisterClass`) |
 | `hProcess`/`hThread` de UI e agente criados | `CreateDetached`, logo após `CreateProcessW` |
-| Logs / SQLite | `io.Closer` do `logging.New` / `Store.Close()` (agente em `Shutdown`; UI em `libraryGate.Close`) |
+| Logs | `io.Closer` do `logging.New` — agente em `agent.CloseLog` (último passo do `main`); UI por último no `OnShutdown` |
+| SQLite | `Store.Close()` — agente em `Shutdown`; UI em `libraryGate.Close` |
 
-**Shutdown do agente:** `systray.Quit` → `Server.Close` → `Store.Close` → log `Close` → `watcher.ShutdownDone` → `watcher.Close` → `mutex.Close`.
+**Shutdown do agente:** `systray.Quit` → `Server.Close` → `Store.Close` → log "shutdown concluído" → `watcher.ShutdownDone` → `watcher.Close` → `mutex.Close` → log `Close`.
+· alterado em 2026-11-08: log `Close` movido para o fim (revisão da T05).
 **Shutdown do desktop:** `Client.Close` → `wg.Wait` → `libraryGate.Close` → log `Close`; o agente não é tocado.
+O log `Close` é sempre o último passo: um `Write` depois dele reabre o arquivo (lumberjack) e vaza o handle.
+
+Exceção aceita à tabela de goroutines: `millRun` do `lumberjack` v2.2.1 (uma por processo, sem dono, não encerrada por
+`Close`, não segura handles); testes `goleak` a ignoram com `IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun")`.
 
 Outros riscos: sqlc pode não entender `CREATE VIRTUAL TABLE ... USING fts5` (schema separado só para o sqlc, registrado no
 relatório); fallback sem breakaway (DSK-005) pode fazer o agente morrer com o job do terminal/IDE (aceito, com aviso no log);

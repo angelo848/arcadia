@@ -186,6 +186,21 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   ```
 - O agente usa `ParseLevel` com o valor de `--log-level` (substitui o antigo `parseLogLevel` em `cmd/agent`); a UI
   não tem `--log-level` e chama `New` com `Level: slog.LevelInfo` fixo.
+- Escrita síncrona, sem buffer: o handler JSON do `slog` chama `Write` do `lumberjack`, que escreve direto no
+  `*os.File`. Uma linha cujo `Write` retornou já está no sistema operacional; `Close` só fecha o arquivo (não há
+  flush a fazer). Isso é o que permite fechar o log por último no shutdown (ver `cmd/agent`).
+- **Exceção à regra "toda goroutine tem dono e condição de saída"** · alterado em 2026-11-08: registrada a goroutine
+  do lumberjack (revisão da T05). O `lumberjack` v2.2.1 inicia uma goroutine `millRun` (no primeiro `Write` ou na
+  primeira rotação; uma por `*lumberjack.Logger`) que o `Close` não encerra. Ela vive até o fim do processo e não
+  segura handles (só espera num canal interno). Aceita como dependência de terceiros: uma por processo no agente
+  (`agent.log`) e uma na UI (`desktop.log`). Testes com `goleak` a ignoram com
+  `goleak.IgnoreTopFunction("gopkg.in/natefinch/lumberjack%2ev2.(*Logger).millRun")` (o `.` de `lumberjack.v2`
+  aparece escapado como `%2e` no nome da função).
+- **`Close` não é terminal** · alterado em 2026-11-08: comportamento do lumberjack (revisão da T05). Um `Write`
+  depois de `Close` reabre o arquivo silenciosamente, e esse novo handle não tem quem o feche. Portanto **nada pode
+  logar depois que o `io.Closer` do log é chamado**: o fechamento do log é o último passo de shutdown que pode
+  registrar mensagens, e todo componente que recebeu o `*slog.Logger` (servidor, cliente IPC, watcher, store) tem
+  de estar encerrado antes dele.
 
 ## `cmd/agent` [AGT-001..008]
 - `-ldflags "-H windowsgui -X main.version=<v>"`; `var version = "dev"` em `main` [AGT-004], repassado ao handler
@@ -199,16 +214,26 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   (`fyne.io/systray`: **Abrir Arcadia**, **Sair**) [AGT-001].
 - **Ordem de shutdown** (disparado por "Sair", `WM_ENDSESSION` ou Ctrl+C) — não é o inverso exato da subida
   [AGT-003, AGT-006]:
+  · alterado em 2026-11-08: fechamento do log movido para o último passo (revisão da T05)
   1. `systray.Quit`
   2. `Server.Close`
   3. `Store.Close`
-  4. `Close` do log (lumberjack)
+  4. log `info` "shutdown concluído" — última mensagem com entrega garantida
   5. `watcher.ShutdownDone` — libera o handler de `WM_ENDSESSION`
   6. `watcher.Close`
   7. `mutex.Close`
+  8. `Close` do log (lumberjack) — último passo; nada loga depois dele
 
-  O watcher é fechado **depois** de IPC, store e logs: se o handler de `WM_ENDSESSION` retornasse antes, o Windows
-  poderia matar o processo no meio do shutdown (banco/log sem flush).
+  O watcher é liberado e fechado **depois** de IPC e store: se o handler de `WM_ENDSESSION` retornasse antes, o
+  Windows poderia matar o processo no meio do shutdown (banco sem fechar). O log não precisa estar fechado antes do
+  `ShutdownDone`, porque não tem buffer (ver `internal/logging`): o que foi escrito até o passo 4 já está no sistema
+  operacional, e o `Close` não faz flush. Por isso o fechamento do log vai para o fim — o watcher recebeu o
+  `*slog.Logger` e pode logar em `ShutdownDone`/`Close` (ex.: timeout de 2 s do handler), e um `Write` depois do
+  `Close` reabriria o arquivo e vazaria o handle.
+  Consequência aceita: mensagens dos passos 5–7 são *best effort* — num logoff, o Windows pode encerrar o processo
+  logo após o passo 5, e elas (e o passo 8) não acontecem; o SO fecha o handle do arquivo ao encerrar o processo.
+  `agent.Shutdown` passa a cobrir só IPC → store (passos 2–3); o fechamento do log fica com o `main`, após
+  `mutex.Close`.
 - **Abrir Arcadia** [AGT-007, AGT-008]: função `openUI(exeDir string, stat func(string) error, spawn SpawnFunc, log)`
   procura `exeDir\arcadia.exe`; inexistente → `log.Error` e retorna sem chamar `spawn`; existente →
   `spawn(path, nil, DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP)`. Dependências injetadas para teste.
@@ -221,6 +246,10 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   `--data-dir` ao iniciar o agente.
 - Log: `slog` JSON + `lumberjack` em `<Root>/logs/desktop.log`, 10 MB × 3, via `internal/logging`, em nível
   `info` fixo (a UI não tem `--log-level` nesta fase) [DSK-009].
+- **Ordem de shutdown da UI** (`OnShutdown`) · alterado em 2026-11-08: explicitado que o log fecha por último
+  (revisão da T05): `Client.Close` (aguarda a goroutine de reconexão, que loga) → `wg.Wait` (repasse de
+  notificações) → `libraryGate.Close` → `Close` do log. O log já é o último passo; nenhum código da UI pode logar
+  com o `*slog.Logger` depois dele. O agente não é tocado [DSK-002].
 - **Início do agente** [DSK-001, DSK-004, DSK-005]:
   - `agentCommand(exeDir, root string) (exe string, args []string, flags uint32)` pura: `exeDir\arcadia-agent.exe`,
     `["--data-dir", root]`, `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP|CREATE_BREAKAWAY_FROM_JOB`.

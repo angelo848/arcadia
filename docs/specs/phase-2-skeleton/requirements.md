@@ -192,7 +192,10 @@ Dado um agente rodando, quando inicio outro, então o segundo sai com código 0.
 
 ### AGT-003 — Saída ordenada
 Quando escolho "Sair" na bandeja, então o agente encerra em < 2 s, sem goroutines nem handles vazando.
+Exceção: a goroutine de limpeza do lumberjack (`millRun`), uma por processo, que o `Close` da biblioteca não encerra
+(ADR 0013).
 · verificação: manual
+· alterado em 2026-11-08: exceção do `millRun` do lumberjack (revisão da T05, aprovado pelo usuário).
 
 ### AGT-004 — Versão do agente
 Dado um binário compilado com `-ldflags "-X main.version=1.2.3"`, quando chamo `agent.status`, então `version` é
