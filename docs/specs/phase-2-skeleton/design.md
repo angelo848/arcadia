@@ -296,6 +296,23 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
   `domain.Clock` (`select { case <-done: case <-clock.After(2*time.Second): }`), porque o Windows pode encerrar o
   processo assim que a mensagem retorna. `ShutdownDone()` fecha um canal interno (protegido por `sync.Once`);
   chamá-lo sem `WM_ENDSESSION` pendente é no-op [AGT-006].
+- · alterado em 2026-11-08 (lacunas da T09): `WM_QUERYENDSESSION` retorna `TRUE` (o agente nunca veta o fim da
+  sessão). `WM_ENDSESSION` com `wParam = FALSE` retorna na hora, sem sinalizar nem esperar. Com `TRUE`, o sinal no
+  canal acontece dentro do handler, antes da espera (envio não bloqueante num canal com buffer 1). Cancelar o `ctx` de
+  `Start` equivale a `Close` (posta `WM_CLOSE`), mas quem libera os recursos continua sendo `Close`. Para testes
+  caixa-branca, `func (w *SessionEndWatcher) windowHandle() windows.HWND` devolve o hwnd (válido após `Start`).
+- · alterado em 2026-11-08 (revisão da T09):
+  - `AcquireSingleInstance`: `ERROR_ACCESS_DENIED` do `CreateMutexW` (mutex criado por um agente elevado) também é
+    `already = true` (sem handle; o `main` loga `Warn`) — atende AGT-002 (segundo agente sai com código 0).
+  - O loop do watcher é parado por uma mensagem privada (`WM_APP+1`), não por `WM_CLOSE`. `WM_CLOSE` vindo de fora
+    (ex.: `taskkill` sem `/F`) é ignorado com log `Warn` e não derruba o watcher. Substitui "Close posta `WM_CLOSE`".
+  - A mensagem de parada só é postada enquanto o loop está vivo (canal `exited` fechado pelo loop ao sair), para não
+    atingir um hwnd reciclado. Se o `PostMessageW` falhar, tenta `PostThreadMessageW(WM_QUIT)` na thread do loop; se
+    também falhar, `Close` retorna o erro em vez de esperar para sempre.
+  - `Close` com handler de `WM_ENDSESSION` pendente espera o handler (liberado por `ShutdownDone` ou pelos 2 s); na
+    ordem de shutdown do agente `ShutdownDone` vem antes, então não trava.
+  - Os testes de T09 que citam DSK-004/DSK-005 cobrem só pré-requisitos (errno e quoting); os testes próprios de
+    `agentCommand`/fallback de breakaway continuam obrigatórios na T12.
 - `CreateDetached(exe string, args []string, flags uint32) error` (wrapper de `CreateProcess`): fecha `hProcess` e
   `hThread` logo após a criação. Usado pelo agente e pela UI.
 
