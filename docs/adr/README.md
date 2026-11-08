@@ -25,3 +25,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0009](0009-timestamps-unix-ms.md) | Instantes como INTEGER em milissegundos Unix (UTC) | aceito |
 | [0010](0010-agente-dono-das-migracoes.md) | Só o agente migra o schema | aceito |
 | [0011](0011-clock-com-temporizadores.md) | `domain.Clock` com temporizadores para toda espera | aceito |
+| [0012](0012-enums-validados-no-domain.md) | Enums validados no `domain`, sem CHECK no banco | aceito |

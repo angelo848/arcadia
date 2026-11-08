@@ -52,15 +52,37 @@ Os IDs entre colchetes indicam os requisitos atendidos.
 - `modernc.org/sqlite`; DSN com pragmas `journal_mode(WAL)`, `busy_timeout(5000)`, `foreign_keys(1)`,
   `synchronous(NORMAL)` e `_txlock=immediate` (transações de escrita pegam o lock na abertura, evitando
   `SQLITE_BUSY` em upgrade de lock) [STO-004, STO-005].
+  - `_txlock=immediate` vale para **todo** `BeginTx`, inclusive transações só de leitura: qualquer `Tx` pega o
+    lock de escrita. Use `Tx` só para escrita; leituras vão direto no `*sql.DB` (fora de transação).
+    · alterado em 2026-11-08: escopo do `_txlock` explicitado (revisão da T04, aprovado pelo usuário).
 - `Migrate: true` → goose (`embed.FS`) `Up` até `SchemaVersion` [STO-001, STO-002].
+  - Banco com versão **maior** que `SchemaVersion` (criado por binário mais novo): `Up` não faz nada; em seguida
+    `Open` confere a versão, fecha o `*sql.DB` e retorna `ErrSchemaMismatch` — o agente se recusa a rodar.
+    · alterado em 2026-11-08: caso de banco mais novo definido (revisão da T04, aprovado pelo usuário).
 - `Migrate: false` [STO-008..010]:
   - arquivo inexistente → `ErrSchemaMismatch` sem criar o arquivo (checa com `os.Stat` antes e abre com `mode=rw`).
   - lê a versão atual do goose (`goose.GetDBVersion` ou consulta direta a `goose_db_version`), sem escrever; se a
     tabela não existir ou a versão ≠ `SchemaVersion` → fecha o `*sql.DB` e retorna
     `fmt.Errorf("...: %w", ErrSchemaMismatch)` com as duas versões na mensagem.
   - Nenhuma chamada que crie `goose_db_version` (ex.: `goose.EnsureDBVersion`) pode ser usada nesse caminho.
+  - "Não alterar o banco" refere-se ao **schema** e a `goose_db_version`. O pragma `journal_mode(WAL)` do DSN pode
+    converter o journal de um arquivo não criado pelo Arcadia para WAL e criar `-wal`/`-shm` ao lado dele; isso é
+    aceito (todo banco do Arcadia já nasce em WAL, então no caso normal nada muda).
+    · alterado em 2026-11-08: alcance de "não alterar" explicitado (revisão da T04, aprovado pelo usuário).
 - `00001_initial.sql` = schema completo do §5, FTS5, seeds de `play_mode`, índices `game(platform_id)` e
   `play_session(game_id, started_at)` [STO-001, STO-003].
+  · alterado em 2026-11-08: decisões abaixo registradas após a revisão da T04 (aprovadas pelo usuário).
+  - **Enums sem CHECK no banco**: `game.status`, `game.launch_type`, `media_asset.kind`, `platform.category`,
+    `pause_interval.reason`, `tracking_rule.kind` e `play_session.source` são `TEXT` livre no schema; a validação
+    dos valores fica no `domain`. Motivo: no SQLite mudar um CHECK exige reconstruir a tabela; `game` tem várias
+    filhas com `ON DELETE CASCADE` e o goose roda cada migração numa transação, onde `PRAGMA foreign_keys=OFF` não
+    tem efeito — a reconstrução dispararia os CASCADE. `CHECK (col IN (0,1))` em colunas booleanas é permitido.
+  - **UNIQUE em `name`** de `platform`, `company`, `genre` e `play_mode` (chaves naturais para dedup dos
+    importadores; colação `BINARY`, ou seja, sensível a maiúsculas).
+  - **Índices adicionais** (além dos dois exigidos): `media_asset(game_id, kind)`, `tracking_rule(game_id)`,
+    `pause_interval(session_id)`.
+  - **FKs**: `ON DELETE CASCADE` nas tabelas filhas de `game` e de `play_session`; `ON DELETE RESTRICT` em
+    `game.platform_id`; `ON DELETE SET NULL` em `platform.emulator_id`.
 - **Tempo (ADR 0009)** [STO-006, STO-007]: toda coluna `*_at` é `INTEGER` com milissegundos Unix UTC;
   `release_date` é `TEXT` `YYYY-MM-DD`. Helpers no pacote:
   `func TimeToMillis(t time.Time) int64` (`t.UnixMilli()`), `func MillisToTime(ms int64) time.Time`
