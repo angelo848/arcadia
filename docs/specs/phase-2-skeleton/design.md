@@ -155,6 +155,14 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   `agent.heartbeat` (`uptimeSeconds` calculado a partir de `startedAt`) a todas as conexões [IPC-004]. Testes usam
   `FakeClock.BlockUntilWaiters` + `Advance`.
 - Escrita por conexão serializada (mutex por conexão ou goroutine escritora única).
+- · alterado em 2026-11-08 (lacunas da T07): uma conexão lenta não impede as outras de receber o heartbeat nem
+  trava o `Close` (que fecha as conexões e destrava escritas pendentes). Erro de handler que não é `*Error` é logado
+  em `Error` com o texto original. Mensagem acima do limite fecha a conexão com log em `Warn`. O relógio do servidor
+  só é usado pelo heartbeat (além de `Now`).
+- · alterado em 2026-11-08 (revisão da T07): o despacho é **sequencial por conexão** (a leitora chama o handler e só
+  então lê a próxima linha); reavaliar quando houver handlers lentos (fase 3+). `Close` antes de `Serve` faz o
+  `Serve` posterior retornar `nil` (encerramento pedido, não erro); só um segundo `Serve` retorna erro. Na T08,
+  conferir se o `Accept` do go-winio pode devolver erro transitório; se puder, logar e continuar em vez de encerrar.
 
 ### Cliente
 - ```go
@@ -173,6 +181,19 @@ resultados e notificações. Os tipos Go em `internal/ipc` devem bater com ele.
   250 ms, dobra a cada falha, teto 5 s, sem jitter, volta a 250 ms após conexão bem-sucedida [IPC-005, IPC-013].
 - `Notifications()`: canal com buffer 16; envio não bloqueante — cheio, a notificação é descartada (log em debug)
   e a leitura de respostas não para [IPC-017].
+- · alterado em 2026-11-08 (lacunas da T07): a primeira tentativa de dial é imediata no `NewClient`; o backoff só
+  começa após uma falha ou queda. O relógio do cliente só é usado pelo backoff. Resposta de erro JSON-RPC faz `Call`
+  retornar o `*Error` recebido (`errors.As` funciona). `Close` é idempotente, cancela o `ctx` passado ao `Dialer`,
+  fecha `Notifications()` e só retorna depois que a goroutine do cliente saiu.
+- · alterado em 2026-11-08 (revisão da T07):
+  - `Call` observa o `ctx` também durante o **envio** da requisição: se o servidor não lê, `Call` retorna
+    `errors.Is(err, ctx.Err())` no prazo, sem derrubar a conexão nem as outras chamadas (goroutine escritora por
+    conexão, dona da escrita; uma requisição cujo chamador desistiu antes de ser escrita não é enviada) [IPC-014].
+  - Após uma queda, o cliente espera `250 ms` antes do novo dial (não redial imediato) [IPC-013].
+  - Mensagens do servidor fora do esperado não derrubam a conexão: linha não JSON → ignorada com `Warn`; requisição
+    do servidor com `id` → ignorada; resposta com `id` desconhecido, não numérico ou `null` → ignorada com `Warn`.
+    Linha acima de `MaxMessageSize` derruba a conexão (chamadas pendentes recebem `ErrConnectionLost`).
+  - `Dialer` que devolve `(nil, nil)` é tratado como falha de dial (entra no backoff).
 - `Close()` cancela o ctx interno, fecha a conexão e aguarda a goroutine de reconexão/leitura [IPC-006].
 
 ## `internal/winapi` [AGT-006]

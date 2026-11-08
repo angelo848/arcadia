@@ -277,10 +277,11 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
 - Assinaturas públicas:
   ```go
   package ipc
-  type ServerOption func(*Server)
+  type ServerOption func(*serverConfig) // · alterado em 2026-11-08: alinhado ao design.md
   func WithStartedAt(t time.Time) ServerOption // default: clock.Now() at NewServer (lacuna 1)
   type Server struct{ /* ... */ }
   func NewServer(clock domain.Clock, handlers map[string]Handler, log *slog.Logger, opts ...ServerOption) *Server
+  func (s *Server) StartedAt() time.Time
   func (s *Server) Serve(ctx context.Context, ln net.Listener) error // accept + one heartbeat loop broadcasting to all conns
   func (s *Server) Close() error                                     // closes ln and conns; waits accept, conns, heartbeat
 
@@ -310,6 +311,14 @@ onde houver Win32) · o test-writer só começa depois de T01 criar o `go.mod`.
   - `TestNotificationBuffer`: "IPC-017/canal contém as 16 primeiras", "IPC-017/Call segue respondida na mesma conexão"
   - `TestShutdown` (sem `t.Parallel`, `goleak.VerifyNone`): "IPC-006/Server.Close aguarda goroutines", "IPC-006/Client.Close aguarda goroutines",
     "IPC-006/nenhuma goroutine sobra com conexões abertas", "IPC-006/Close idempotente"
+  - · alterado em 2026-11-08 (revisão da T07), testes extras:
+    `TestServerHandlerError` "IPC-002/erro genérico de handler é logado e vira -32603 Internal error" (confere nível `Error`);
+    `TestHeartbeat` "IPC-004/conexão que não lê não atrasa as outras nem trava o Close";
+    `TestServerLimits` confere log `Warn` na mensagem grande;
+    `TestCallWaits` "IPC-014/servidor que não lê: Call retorna errors.Is ctx.Err() no prazo";
+    `TestServerClose` "IPC-006/Close antes de Serve faz Serve retornar nil";
+    `TestBackoff` "IPC-013/após queda espera 250ms antes do redial";
+    `TestDialer` "IPC-013/Dialer (nil, nil) é tratado como falha".
 - Dependências: `go.uber.org/goleak` v1.3.0 (só teste)
 - Depende de: T06
 
