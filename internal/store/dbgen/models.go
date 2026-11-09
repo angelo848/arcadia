@@ -17,6 +17,12 @@ type AdditionalApp struct {
 	TrackTime int64
 }
 
+type AppSetting struct {
+	Key       string
+	Value     string
+	UpdatedAt int64
+}
+
 type Company struct {
 	ID   int64
 	Name string
