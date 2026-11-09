@@ -14,8 +14,8 @@ export type AgentStatusView = {
 // LibrarySummaryView mirrors cmd/arcadia LibrarySummaryView.
 export type LibrarySummaryView = { games: number; platforms: number }
 
-// The generated Wails bindings (frontend/wailsjs) only exist after T12, so the
-// bound methods and runtime are reached through window with local types.
+// The bound methods and runtime are reached through window with local types
+// (same pattern as lib/games.ts), so tests can fake window.go and window.runtime.
 type WailsApp = {
   AgentStatus?: () => Promise<AgentStatusView>
   LibrarySummary?: () => Promise<LibrarySummaryView>

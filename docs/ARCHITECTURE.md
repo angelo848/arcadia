@@ -100,6 +100,8 @@ Rastrear só o PID inicial — como fazem launchers simples — conta segundos e
 - Todo filho/neto herda o Job automaticamente → **se o exe inicial fecha e o filho continua, o tempo continua**.
 - Sessão termina somente quando o Job fica vazio (`ACTIVE_PROCESS_ZERO`) + período de carência.
 - Não usamos `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` — fechar o agente nunca mata o jogo.
+- O Job tem `JOB_OBJECT_LIMIT_BREAKAWAY_OK` (sem `SILENT`): um processo que pede breakaway sai do Job e não é
+  rastreado ([ADR 0016](adr/0016-job-do-jogo-permite-breakaway.md)).
 
 **Camada 2 — Watcher de processos (jogos fora da árvore)**
 Para lançamentos via Steam/Epic/URI, o jogo nasce como filho do cliente, não nosso.
@@ -135,6 +137,8 @@ Para lançamentos via Steam/Epic/URI, o jogo nasce como filho do cliente, não n
 
 Com só a Camada 1 (fase 3), não existe timeout de Launching: o primeiro processo nasce no Job no próprio
 lançamento, e Launching → Failed só acontece quando o lançamento falha. O timeout de 90 s volta com a Camada 2.
+Paused também não existe ainda (pausa é a fase 4). A tabela completa de transições da fase 3 está em
+[contracts/session-state-machine.md](specs/phase-3-tracker/contracts/session-state-machine.md).
 
 O período de **Grace** cobre jogos que fecham e relançam (atualizadores, troca de DirectX/Vulkan,
 "restart to apply settings").
