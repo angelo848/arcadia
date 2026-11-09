@@ -19,7 +19,12 @@ Campos em memória: `sessionID`, `gameID`, `title`, `startedAt`, `runningSince` 
 `accumulated` (soma dos intervalos Running já fechados), `graceSince` (instante em que o job ficou vazio).
 Tempo ativo em `t`: `accumulated + (t − runningSince)` em Running; `accumulated` em Grace (decisão P4: a carência não
 conta). Durações calculadas com `time.Time.Sub` sobre instantes do `domain.Clock` (o `SystemClock` carrega leitura
-monotônica; mudar o relógio do Windows não altera a duração medida em memória).
+monotônica; mudar o relógio do Windows não altera a duração medida em memória). Um intervalo negativo (instante
+anterior a `runningSince`, possível só sem leitura monotônica) conta 0 e nunca desconta o acumulado (alterado em
+2026-11-09, revisão da T07).
+
+**Launching × Stop não ocorre:** o lançamento inteiro (`Prepare` → `StartSession` → `Resume`) roda na goroutine dona,
+então o pedido de parada só é lido em Idle, Running ou Grace. `Close` pode esperar um lançamento em curso terminar.
 
 ## Eventos
 
@@ -56,12 +61,12 @@ Qualquer combinação ausente da tabela é ignorada (log `Debug`), nunca é erro
 | Running | `ProcessAdded(t)` | Running | nenhum (log `Debug` com `pid`) |
 | Running | `RootExited(pid, code)` | Running | log `Info` "processo inicial do jogo encerrou" (`session_id`, `pid`, `exit_code`) [SES-015] |
 | Running | `HeartbeatTick(t)` | Running | `UpdateSession(running, last_seen = t, ativo em t)`; rearma heartbeat; falha → log `Error`, segue [SES-009, SES-014] |
-| Running | `PollTick(t)`, ativos = 0 | Grace | igual a `TrackedEmpty(t)` [SES-013] |
+| Running | `PollTick(t)`, ativos = 0 | Grace | igual a `TrackedEmpty(t)` e rearma a verificação [SES-013] |
 | Running | `PollTick(t)`, ativos > 0 ou erro | Running | rearma verificação; erro → log `Warn` [SES-013] |
 | Running | `TrackedEmpty(t)` | Grace | `accumulated += t − runningSince`; `graceSince = t`; `UpdateSession(grace, last_seen = t, accumulated)`; para de rearmar o heartbeat; arma carência (15 s); notifica `grace`; falha de escrita → log `Error`, segue [SES-003, SES-014] |
 | Running | `Stop(t)` | Ended → Idle | `accumulated += t − runningSince`; `EndSession(ended_at = t, accumulated, agent-shutdown)`; `Job.Close` (nunca termina processos); sem notificação (o servidor já fechou) [SES-011, TRK-004] |
 | Grace | `ProcessAdded(t)` | Running | `runningSince = t`; `UpdateSession(running, last_seen = t, accumulated)`; descarta a carência pendente (geração); arma heartbeat; notifica `running` [SES-005] |
-| Grace | `PollTick(t)`, ativos > 0 | Running | igual a `ProcessAdded(t)` [SES-013] |
+| Grace | `PollTick(t)`, ativos > 0 | Running | igual a `ProcessAdded(t)` e rearma a verificação [SES-013] |
 | Grace | `PollTick(t)`, ativos = 0 ou erro | Grace | rearma verificação; erro → log `Warn` |
 | Grace | `TrackedEmpty(t)` | Grace | nenhum (já vazio) |
 | Grace | `RootExited(pid, code)` | Grace | log `Info` de SES-015 |
@@ -74,7 +79,10 @@ Notas:
   da sessão/estado; um disparo de geração antiga é ignorado. Testes com `FakeClock` contam os waiters pendentes
   sabendo disso (ver design.md, Testes).
 - **Waiters esperados** (para `BlockUntilWaiters`): Running = heartbeat + verificação (2); Grace = carência +
-  verificação (2) + o heartbeat antigo ainda pendente (1) até ele disparar e ser ignorado.
+  verificação (2) + o heartbeat antigo ainda pendente (1) até ele disparar e ser ignorado. Depois de Grace → Running,
+  somam-se os temporizadores antigos ainda não disparados (a carência e, se pendente, o heartbeat antigo): até 4.
+- **Efeitos de fim sem id:** `EffDeleteSession` e `EffEndSession` não levam o id; a máquina já voltou a Idle quando os
+  devolve, então o coordenador guarda o `sessionID` (de `Inserted`/`Pending()`) **antes** de aplicar o evento.
 - **Eventos do job depois de `Job.Close`** não chegam (o canal de eventos é fechado pelo leitor ao parar).
 - **Estado final** de `EndSession`: `ended` se `accumulated ≥ 30 s`, senão `discarded` (DOM-008); só `ended`
   atualiza o jogo (STO-014, STO-015).
