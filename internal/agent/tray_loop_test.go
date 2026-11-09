@@ -11,6 +11,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -89,11 +90,21 @@ type trayHarness struct {
 	stop       chan struct{}
 	open       chan struct{}
 	quitItem   chan struct{}
+	// autostartItem is the "Iniciar com o Windows" click channel (T07).
+	autostartItem chan struct{}
 
 	ipcFailed chan struct{} // closed by the test to signal EXE-026
 
 	quitCalls, quitBeforeReadyCalls, openCalls atomic.Int32
 	openedCh                                   chan struct{}
+
+	// T07: OnToggle returns toggleResult; calls are recorded in order in
+	// toggleEvents ("toggle", "checked=true", "checked=false") and each
+	// SetChecked is signalled on checkedCh.
+	toggleResult bool
+	toggleMu     sync.Mutex
+	toggleEvents []string
+	checkedCh    chan bool
 
 	// reason is written by the loop goroutine before done is closed; read it
 	// only after waitDone.
@@ -105,6 +116,7 @@ type trayOpts struct {
 	nilSessionEnd bool
 	nilIPCFailed  bool
 	cancelFirst   bool // cancel ctx before trayLoop starts
+	toggleResult  bool // value returned by OnToggle (T07)
 }
 
 func startTray(t *testing.T, o trayOpts) *trayHarness {
@@ -121,6 +133,10 @@ func startTray(t *testing.T, o trayOpts) *trayHarness {
 		ipcFailed:  make(chan struct{}),
 		openedCh:   make(chan struct{}, 8),
 		done:       make(chan struct{}),
+
+		autostartItem: make(chan struct{}),
+		toggleResult:  o.toggleResult,
+		checkedCh:     make(chan bool, 8),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
@@ -148,8 +164,14 @@ func startTray(t *testing.T, o trayOpts) *trayHarness {
 			h.openCalls.Add(1)
 			h.openedCh <- struct{}{}
 		},
-		OnToggle:   func() bool { return false }, // T07
-		SetChecked: func(bool) {},                // T07
+		OnToggle: func() bool { // T07
+			h.recordToggle("toggle")
+			return h.toggleResult
+		},
+		SetChecked: func(checked bool) { // T07
+			h.recordToggle(fmt.Sprintf("checked=%v", checked))
+			h.checkedCh <- checked
+		},
 	}
 
 	go func() {
@@ -180,7 +202,7 @@ func startTray(t *testing.T, o trayOpts) *trayHarness {
 func (h *trayHarness) deliverReady(t *testing.T) {
 	t.Helper()
 	select {
-	case h.ready <- trayItems{open: h.open, quit: h.quitItem}:
+	case h.ready <- trayItems{open: h.open, quit: h.quitItem, autostart: h.autostartItem}:
 	case <-time.After(testTimeout):
 		t.Fatalf("trayLoop did not receive ready within %v", testTimeout)
 	}
@@ -505,4 +527,70 @@ func TestTrayLoopReason(t *testing.T) {
 		h.assertCalls(t, 1, 0, 1)
 		h.assertReason(t, ReasonQuit)
 	})
+}
+
+func (h *trayHarness) recordToggle(ev string) {
+	h.toggleMu.Lock()
+	h.toggleEvents = append(h.toggleEvents, ev)
+	h.toggleMu.Unlock()
+}
+
+func (h *trayHarness) toggleTrace() []string {
+	h.toggleMu.Lock()
+	defer h.toggleMu.Unlock()
+	return append([]string(nil), h.toggleEvents...)
+}
+
+// waitChecked waits for the SetChecked call that follows a click.
+func (h *trayHarness) waitChecked(t *testing.T) bool {
+	t.Helper()
+	select {
+	case v := <-h.checkedCh:
+		return v
+	case <-time.After(testTimeout):
+		t.Fatalf("SetChecked not called within %v", testTimeout)
+		return false
+	}
+}
+
+func TestTrayLoopToggle(t *testing.T) {
+	cases := []struct {
+		name   string
+		result bool
+	}{
+		{"AST-007/clique chama OnToggle e SetChecked(false)", false},
+		{"AST-008/clique chama OnToggle e SetChecked(true)", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{toggleResult: c.result})
+			h.deliverReady(t)
+
+			send(t, h.autostartItem, "Iniciar com o Windows")
+			if got := h.waitChecked(t); got != c.result {
+				t.Errorf("SetChecked(%v), want SetChecked(%v) with OnToggle's result", got, c.result)
+			}
+			want := []string{"toggle", fmt.Sprintf("checked=%v", c.result)}
+			if got := h.toggleTrace(); fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("calls = %v, want %v (OnToggle then SetChecked)", got, want)
+			}
+
+			// The click does not end the loop nor call the other callbacks.
+			h.assertRunning(t)
+			h.assertCalls(t, 0, 0, 0)
+
+			// A second click toggles again.
+			send(t, h.autostartItem, "Iniciar com o Windows (2)")
+			h.waitChecked(t)
+			if got := len(h.toggleTrace()); got != 4 {
+				t.Errorf("%d toggle events after two clicks, want 4 (%v)", got, h.toggleTrace())
+			}
+
+			send(t, h.quitItem, "Sair")
+			h.waitDone(t)
+			h.assertCalls(t, 1, 0, 0)
+			h.assertReason(t, ReasonQuit)
+		})
+	}
 }
