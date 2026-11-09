@@ -136,6 +136,17 @@ func defaultPlatform() platform {
 			wailsruntime.WindowUnminimise(ctx)
 			wailsruntime.WindowShow(ctx)
 		},
+		openFile: func(ctx context.Context, title string, filters []fileFilter) (string, error) {
+			wf := make([]wailsruntime.FileFilter, 0, len(filters))
+			for _, f := range filters {
+				wf = append(wf, wailsruntime.FileFilter{DisplayName: f.DisplayName, Pattern: f.Pattern})
+			}
+			path, err := wailsruntime.OpenFileDialog(ctx, wailsruntime.OpenDialogOptions{Title: title, Filters: wf})
+			if err != nil {
+				return "", fmt.Errorf("desktop: open file dialog: %w", err)
+			}
+			return path, nil
+		},
 	}
 }
 

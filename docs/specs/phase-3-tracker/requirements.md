@@ -380,11 +380,18 @@ executável falha com erro diferente de "não existe" (ex.: acesso negado): ambo
 log."; no caso do lançamento, o estado real chega depois por `session:changed`.
 · alterado em 2026-11-09 (planejamento): explicita dois casos de `-32603` já cobertos por "qualquer outro"; sem
 mudança de comportamento.
+· alterado em 2026-11-09 (testes da T12): «title» e «error» marcam só o valor inserido; as aspas angulares não
+fazem parte do texto (ex.: "Já há um jogo em andamento: Hollow Knight. Feche-o antes de iniciar outro."). Com `data`
+ausente ou inválido: `-32002` → "Já há um jogo em andamento. Feche-o antes de iniciar outro."; `-32003` → "Não foi
+possível iniciar o jogo."; `-32004` com motivo desconhecido → "Dados inválidos.". `context.Canceled` é tratado
+como conexão ("O agente não está respondendo. Tente de novo.").
 
 ### DSK-012 — Seletor de executável
 Quando chamo `PickGameExe`, então abre o diálogo de arquivo com título "Escolha o executável do jogo" e filtro
 "Executáveis (*.exe)" / `*.exe`; dado que o usuário cancela, então o resultado é `{path: "", title: ""}` e nada é
-enviado ao agente; dado um arquivo escolhido `P`, então o resultado é `{path: P, title: DOM-009(P)}`.
+enviado ao agente; dado um arquivo escolhido `P`, então o resultado é `{path: P, title: DOM-009(P)}`; dado que o
+diálogo falha, então o erro é registrado em `Error` e o binding devolve "Erro inesperado. Veja o log.".
+· alterado em 2026-11-09 (testes da T12): falha do diálogo definida.
 
 ## Frontend (UI)
 

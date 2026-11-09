@@ -1438,3 +1438,120 @@ func TestSupervisorHeartbeat(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// T12 (docs/specs/phase-3-tracker/tasks.md): session.changed -> session:changed.
+//
+// Assumptions beyond tasks.md (the implementer must follow them):
+//   - The emitted data is a SessionView value (not a pointer).
+//   - Each invalid session.changed logs exactly one Warn with the message
+//     msgSessionChangedInvalid (design.md) and emits nothing.
+
+const msgSessionChangedInvalid = "session.changed com parâmetros inválidos"
+
+func sessionChangedNote(t *testing.T, s ipc.Session) ipc.Notification {
+	t.Helper()
+	raw, err := json.Marshal(ipc.SessionChangedParams{Session: s})
+	if err != nil {
+		t.Fatalf("marshal session.changed: %v", err)
+	}
+	return ipc.Notification{Method: ipc.MethodSessionChanged, Params: raw}
+}
+
+// collectEmits closes the harness emit channel (run must have returned) and
+// returns what was emitted.
+func collectEmits(h *supHarness) []supEmit {
+	close(h.emits)
+	var got []supEmit
+	for e := range h.emits {
+		got = append(got, e)
+	}
+	return got
+}
+
+func TestSupervisorSessionChanged(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-010/session.changed emite session:changed com a SessionView", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		s := sampleSession()
+		ended := s.StartedAt.Add(5 * time.Minute)
+		s2 := s
+		s2.State = string(domain.SessionEnded)
+		s2.EndedAt = &ended
+		s2.AsOf = ipc.MilliTime{Time: ended}
+		h.client.send(t, sessionChangedNote(t, s))
+		h.client.send(t, sessionChangedNote(t, s2))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 2 {
+			t.Fatalf("emitted %d events, want 2: %#v", len(got), got)
+		}
+		for i, want := range []ipc.Session{s, s2} {
+			if got[i].event != sessionChangedEvent || sessionChangedEvent != "session:changed" {
+				t.Errorf("event %d = %q, want %q", i, got[i].event, "session:changed")
+			}
+			v, ok := got[i].data.(SessionView)
+			if !ok {
+				t.Errorf("event %d data = %#v, want a SessionView", i, got[i].data)
+				continue
+			}
+			wantSessionView(t, v, want)
+		}
+		if n := h.logs.countLevel(slog.LevelWarn); n != 0 {
+			t.Errorf("Warn records = %d, want 0; log:\n%s", n, h.logs.dump())
+		}
+	})
+
+	t.Run("DSK-010/params ausentes ou inválidos logam Warn e não emitem", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		bad := []json.RawMessage{nil, json.RawMessage(`"x"`), json.RawMessage(`{"session":42}`), json.RawMessage(`{}`)}
+		for _, p := range bad {
+			h.client.send(t, ipc.Notification{Method: ipc.MethodSessionChanged, Params: p})
+		}
+		h.client.send(t, sessionChangedNote(t, sampleSession()))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 1 || got[0].event != sessionChangedEvent {
+			t.Fatalf("emitted %#v, want only the valid session:changed", got)
+		}
+		if n := len(h.logs.find(0, slog.LevelWarn, msgSessionChangedInvalid)); n != len(bad) {
+			t.Errorf("%q logged %d times, want %d; log:\n%s", msgSessionChangedInvalid, n, len(bad), h.logs.dump())
+		}
+		if n := h.quitN.Load(); n != 0 {
+			t.Errorf("Quit called %d times for session.changed", n)
+		}
+	})
+
+	t.Run("DSK-010/state desconhecido loga Warn e não emite", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		s := sampleSession()
+		s.State = "paused"
+		h.client.send(t, sessionChangedNote(t, s))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		if got := collectEmits(h); len(got) != 0 {
+			t.Errorf("emitted %#v, want nothing", got)
+		}
+		if n := len(h.logs.find(0, slog.LevelWarn, msgSessionChangedInvalid)); n != 1 {
+			t.Errorf("%q logged %d times, want 1; log:\n%s", msgSessionChangedInvalid, n, h.logs.dump())
+		}
+	})
+}

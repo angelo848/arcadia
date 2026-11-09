@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -218,6 +220,13 @@ func (s *supervisor) handleNote(ctx context.Context, n ipc.Notification) {
 			return
 		}
 		s.cfg.Emit(heartbeatEvent, hb)
+	case ipc.MethodSessionChanged:
+		v, err := decodeSessionChanged(n.Params)
+		if err != nil {
+			s.cfg.Log.Warn("session.changed com parâmetros inválidos", "error", err.Error())
+			return
+		}
+		s.cfg.Emit(sessionChangedEvent, v)
 	case ipc.MethodShutdown:
 		if s.state == stateQuitting {
 			return
@@ -235,6 +244,19 @@ func (s *supervisor) handleNote(ctx context.Context, n ipc.Notification) {
 	default:
 		s.cfg.Log.Debug("notificação ignorada", "method", n.Method)
 	}
+}
+
+// decodeSessionChanged validates session.changed params and converts the
+// session for the frontend (DSK-010).
+func decodeSessionChanged(raw json.RawMessage) (SessionView, error) {
+	if len(raw) == 0 {
+		return SessionView{}, errors.New("params ausentes")
+	}
+	var p ipc.SessionChangedParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return SessionView{}, fmt.Errorf("decode session.changed: %w", err)
+	}
+	return sessionView(p.Session)
 }
 
 // onState handles a StateChanged signal; it reads Connected() after it

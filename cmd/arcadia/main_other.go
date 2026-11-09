@@ -30,5 +30,8 @@ func defaultPlatform() platform {
 		emit:       func(context.Context, string, any) {},
 		quit:       func(context.Context) {},
 		showWindow: func(context.Context) {},
+		openFile: func(context.Context, string, []fileFilter) (string, error) {
+			return "", errUnsupported
+		},
 	}
 }
