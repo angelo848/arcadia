@@ -18,4 +18,6 @@ var (
 	procPostMessageW     = modUser32.NewProc("PostMessageW")
 	procPostThreadMsgW   = modUser32.NewProc("PostThreadMessageW")
 	procPostQuitMessage  = modUser32.NewProc("PostQuitMessage")
+
+	procAllowSetForegroundWindow = modUser32.NewProc("AllowSetForegroundWindow")
 )
