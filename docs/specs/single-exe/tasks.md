@@ -570,6 +570,8 @@ tarefa. Cada tarefa passa pelo ciclo test-writer → implementer → reviewer an
   - **AST-011:** logoff e logon com o item ligado mostram só o ícone na bandeja.
   - **Rastreabilidade:** `spec-trace.ps1` sai com 0 para `single-exe` e para `phase-2-skeleton`.
 - Depende de: T01–T10
+- **Resultado (2026-11-09):** concluída. As checagens automáticas, EXE-008 e a fumaça de EXE-020..023 foram feitas
+  na sessão; EXE-011, EXE-018/AGT-003, DSK-002, AST-006, AST-010 e AST-011 foram conferidas pelo usuário, sem achados.
 
 ---
 
