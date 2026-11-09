@@ -2,6 +2,7 @@ package tracker_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -364,6 +365,25 @@ type fakeStore struct {
 	deleteErr  errPlan
 	updateGate *gate // holds the next UpdateSession call only
 	endGate    *gate // holds the next EndSession call only
+	endCtxHold *ctxHold
+}
+
+// ctxHold holds one fake call until its ctx is done (or release, the test's
+// safety net in t.Cleanup). entered is signalled when the call is held and
+// returned is closed right before the call returns.
+type ctxHold struct {
+	*gate
+	returned chan struct{}
+}
+
+// holdNextEndUntilCancel holds the next EndSession call (before it is
+// recorded) until its ctx is cancelled; the call then returns ctx.Err().
+func (s *fakeStore) holdNextEndUntilCancel(t *testing.T) *ctxHold {
+	h := &ctxHold{gate: newGate(t), returned: make(chan struct{})}
+	s.mu.Lock()
+	s.endCtxHold = h
+	s.mu.Unlock()
+	return h
 }
 
 // blockNextUpdate holds the next UpdateSession call (before it is recorded)
@@ -444,6 +464,27 @@ func (s *fakeStore) UpdateSession(ctx context.Context, id int64, st domain.Sessi
 func (s *fakeStore) EndSession(ctx context.Context, e store.SessionEnd) (domain.SessionState, error) {
 	if g := takeGate(&s.mu, &s.endGate); g != nil {
 		g.pass()
+	}
+	s.mu.Lock()
+	h := s.endCtxHold
+	s.endCtxHold = nil
+	s.mu.Unlock()
+	if h != nil {
+		defer close(h.returned)
+		select {
+		case h.entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-ctx.Done():
+		case <-h.ch:
+		}
+		err := ctx.Err()
+		if err == nil {
+			err = errors.New("fake EndSession released by the test without ctx cancellation")
+		}
+		s.rec.add(call{op: opEnd, id: e.ID, end: e, err: err})
+		return "", err
 	}
 	s.mu.Lock()
 	err := s.endErr.next()

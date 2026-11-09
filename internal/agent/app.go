@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/logging"
 	"github.com/arcadia-launcher/arcadia/internal/paths"
 	"github.com/arcadia-launcher/arcadia/internal/store"
+	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
 
 // Options are the inputs of Run, provided by main.
@@ -33,6 +35,12 @@ type config struct {
 	Exe      string // path of the running executable (launched by "Abrir Arcadia")
 	PipeName string // ipc.PipeName(sid); reported in the IPC-019 log record
 	Version  string // reported by agent.status (AGT-004)
+
+	// Launcher starts the games; nil => tracker.NewLauncher() (tests inject a fake).
+	Launcher tracker.Launcher
+	// Recover closes the sessions left open by a crash [SES-010];
+	// nil => tracker.RecoverOpenSessions.
+	Recover func(context.Context, tracker.RecoveryStore, domain.Clock, *slog.Logger) (int, error)
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -78,6 +86,9 @@ type instance struct {
 	store  *store.Store
 	server *ipc.Server
 
+	tracker  *tracker.Tracker
+	notifier *sessionNotifier
+
 	logCloser io.Closer
 
 	drainTimeout time.Duration // limit of the drain in Shutdown (tests override it)
@@ -95,8 +106,9 @@ type instance struct {
 }
 
 // startAgent validates the log level, resolves and creates the data
-// directory, opens agent.log, opens and migrates the store and starts serving
-// IPC on the listener returned by listen. On failure everything it opened is
+// directory, opens agent.log, opens and migrates the store, recovers the open
+// sessions, starts the tracker and then serves IPC on the listener returned by
+// listen [AGT-009]. On failure everything it opened is
 // closed before returning (no handle leaks).
 func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func(string) string,
 	listen func() (net.Listener, error)) (*instance, error) {
@@ -124,6 +136,39 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		return nil, errors.Join(fmt.Errorf("start agent: %w", err), closeWrap("log", logCloser))
 	}
 
+	// Recovery runs before the tracker and the IPC server [AGT-009, SES-010];
+	// its failure is logged and the startup goes on.
+	recoverFn := cfg.Recover
+	if recoverFn == nil {
+		recoverFn = tracker.RecoverOpenSessions
+	}
+	if _, err := recoverFn(ctx, st, clock, log); err != nil {
+		log.Error("falha ao recuperar as sessões abertas", "error", err.Error())
+	}
+
+	launcher := cfg.Launcher
+	if launcher == nil {
+		launcher = tracker.NewLauncher()
+	}
+	notifier := &sessionNotifier{}
+	tr := tracker.New(tracker.Config{
+		Clock:    clock,
+		Store:    st,
+		Launcher: launcher,
+		Notify:   notifier.Notify,
+		Log:      log,
+	})
+	tr.Start()
+	// closeTracker stops the tracker on a failed startup (no session is open
+	// yet, so it returns at once); it ignores the cancellation of ctx so the
+	// owner goroutine is always waited for.
+	closeTracker := func() error {
+		if err := tr.Close(context.WithoutCancel(ctx)); err != nil {
+			return fmt.Errorf("close tracker: %w", err)
+		}
+		return nil
+	}
+
 	ln, err := listen()
 	if err != nil {
 		if isPipeNameTaken(err) {
@@ -131,7 +176,8 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		} else {
 			log.Error("falha ao abrir o pipe", "pipe", cfg.PipeName, "error", err.Error())
 		}
-		return nil, errors.Join(fmt.Errorf("start agent: listen: %w", err), closeWrap("store", st), closeWrap("log", logCloser))
+		return nil, errors.Join(fmt.Errorf("start agent: listen: %w", err), closeTracker(),
+			closeWrap("store", st), closeWrap("log", logCloser))
 	}
 
 	startedAt := clock.Now()
@@ -141,12 +187,18 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		StartedAt: startedAt,
 		DataDir:   p.Root,
 	}
+	handlers := ipc.AgentHandlers(info, clock)
+	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
+	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
+	notifier.set(server)
 	a := &instance{
 		paths:        p,
 		log:          log,
 		info:         info,
 		store:        st,
-		server:       ipc.NewServer(clock, ipc.AgentHandlers(info, clock), log, ipc.WithStartedAt(startedAt)),
+		server:       server,
+		tracker:      tr,
+		notifier:     notifier,
 		logCloser:    logCloser,
 		drainTimeout: shutdownDrainTimeout,
 		ipcFailed:    make(chan struct{}),
@@ -203,13 +255,17 @@ func (a *instance) IPCFailed() <-chan struct{} { return a.ipcFailed }
 
 // Shutdown notifies the clients with agent.shutdown{reason} and waits up to
 // drainTimeout for them to close the connection (EXE-013, EXE-014), then
-// closes the IPC server (and waits for its goroutines) and the store. A drain
+// closes the IPC server (and waits for its goroutines), the tracker (which
+// ends the open session, SES-011) and the store [AGT-010]. A drain
 // that times out only logs a Warn. It is idempotent (later calls, whatever the
 // reason, return the first result) and does not close the log (see CloseLog).
 // If ctx ends first, Shutdown still finishes closing but reports ctx's error.
 func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 	a.shutdownOnce.Do(func() {
 		var errs []error
+
+		// No game.launch starts a session from here on [AGT-011].
+		a.tracker.BeginShutdown()
 
 		dctx, cancel := context.WithTimeout(ctx, a.drainTimeout)
 		err := a.server.Drain(dctx, ipc.MethodShutdown, ipc.ShutdownParams{Reason: string(reason)})
@@ -227,6 +283,12 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 			errs = append(errs, fmt.Errorf("shutdown: close ipc server: %w", err))
 		}
 		a.wg.Wait()
+		a.notifier.set(nil)
+		// After the server (no request can reach the tracker) and before the
+		// store (the tracker writes the end of the session) [AGT-010, SES-011].
+		if err := a.tracker.Close(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown: %w", err))
+		}
 		if err := a.store.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close store: %w", err))
 		}

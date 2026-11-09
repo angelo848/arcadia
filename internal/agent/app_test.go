@@ -66,7 +66,8 @@ func testClock() *domain.FakeClock {
 }
 
 // testConfig returns a config whose data dir is a fresh, not-yet-created
-// directory inside t.TempDir().
+// directory inside t.TempDir(). The tracker uses a fakeLauncher (T11 of
+// docs/specs/phase-3-tracker/tasks.md): no test creates a real Job Object.
 func testConfig(t *testing.T, level string) config {
 	t.Helper()
 	base := t.TempDir()
@@ -76,6 +77,7 @@ func testConfig(t *testing.T, level string) config {
 		ExeDir:   filepath.Join(base, "bin"),
 		Exe:      filepath.Join(base, "bin", "arcadia.exe"),
 		Version:  "test",
+		Launcher: &fakeLauncher{},
 	}
 }
 

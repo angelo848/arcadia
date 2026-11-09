@@ -1215,6 +1215,52 @@ func TestTrackerClose(t *testing.T) {
 		goleak.VerifyNone(t, ignore)
 	})
 
+	t.Run("TRK-008/Close com ctx vencido cancela a escrita pendente e ainda espera a goroutine dona", func(t *testing.T) {
+		ignore := goleak.IgnoreCurrent()
+		e := newEnv(t, quiet)
+		_, j := e.launch(t)
+		h := e.store.holdNextEndUntilCancel(t)
+
+		// The Close ctx is cancelled by the test (deterministic "expiry") once
+		// the owner is held in EndSession, which only returns when its ctx ends.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		closed := make(chan error, 1)
+		go func() { closed <- e.tr.Close(ctx) }()
+		h.waitEntered(t, "EndSession")
+		select {
+		case err := <-closed:
+			h.release()
+			t.Fatalf("Close returned (%v) while EndSession was still running in the owner goroutine", err)
+		default:
+		}
+		cancel()
+
+		var err error
+		select {
+		case err = <-closed:
+		case <-time.After(waitTimeout):
+			h.release()
+			t.Fatal("Close did not return after its ctx ended: it must cancel the pending EndSession")
+		}
+		select {
+		case <-h.returned:
+		default:
+			t.Error("Close returned before the owner's EndSession returned")
+		}
+		if err == nil || !errors.Is(err, context.Canceled) {
+			t.Errorf("Close error = %v, want the ctx error (context.Canceled)", err)
+		}
+		ends := e.rec.of(opEnd)
+		if len(ends) != 1 || !errors.Is(ends[0].err, context.Canceled) {
+			t.Errorf("EndSession calls = %+v, want 1 ended by the cancellation", ends)
+		}
+		if !j.isClosed() {
+			t.Error("job not closed by the owner after the failed EndSession")
+		}
+		goleak.VerifyNone(t, ignore)
+	})
+
 	t.Run("TRK-008/segundo Close não faz nada", func(t *testing.T) {
 		ignore := goleak.IgnoreCurrent()
 		e := newEnv(t, quiet)

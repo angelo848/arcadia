@@ -77,6 +77,11 @@ type Tracker struct {
 	stop     chan struct{} // closed by Close
 	done     chan struct{} // closed when the owner goroutine exits (or by Close without Start)
 	wg       sync.WaitGroup
+	// work is the parent of every write made by the owner goroutine outside
+	// shutdown (launch, timers, job events); Close cancels it when its ctx
+	// expires so the owner can exit within the budget.
+	work       context.Context
+	cancelWork context.CancelFunc
 
 	mu           sync.Mutex
 	started      bool
@@ -116,17 +121,20 @@ func New(cfg Config) *Tracker {
 		log = slog.New(slog.DiscardHandler)
 	}
 	m := NewMachine(grace, hb, poll)
+	work, cancelWork := context.WithCancel(context.Background())
 	return &Tracker{
-		clock:    cfg.Clock,
-		store:    cfg.Store,
-		launcher: cfg.Launcher,
-		notify:   notify,
-		log:      log,
-		launchCh: make(chan launchReq),
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
-		m:        m,
-		view:     *m,
+		work:       work,
+		cancelWork: cancelWork,
+		clock:      cfg.Clock,
+		store:      cfg.Store,
+		launcher:   cfg.Launcher,
+		notify:     notify,
+		log:        log,
+		launchCh:   make(chan launchReq),
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
+		m:          m,
+		view:       *m,
 	}
 }
 
@@ -194,8 +202,11 @@ func (t *Tracker) BeginShutdown() {
 
 // Close stops the owner goroutine: the open session is ended (EndSession with
 // ctx) and its job closed without killing processes [SES-011, TRK-004]. It
-// waits for the goroutine (or a launch in progress) unless ctx ends first, and
-// is idempotent [TRK-008].
+// always waits for the owner goroutine before returning; if ctx ends first it
+// cancels every pending write (including those of a launch in progress), still
+// waits for the owner and returns the wrapped ctx error. The session whose end
+// could not be written stays open and is recovered on the next start
+// [SES-010]. Close is idempotent [TRK-008].
 func (t *Tracker) Close(ctx context.Context) error {
 	t.mu.Lock()
 	t.shuttingDown = true
@@ -212,15 +223,20 @@ func (t *Tracker) Close(ctx context.Context) error {
 	}
 	t.mu.Unlock()
 	if !started {
+		t.cancelWork()
 		return nil
 	}
+	var err error
 	select {
 	case <-t.done:
-		t.wg.Wait()
-		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("tracker: close: %w", ctx.Err())
+		err = fmt.Errorf("tracker: close: %w", ctx.Err())
 	}
+	// Cancelling is harmless once the owner has exited; when ctx expired it
+	// unblocks the in-flight write so the owner can finish.
+	t.cancelWork()
+	t.wg.Wait()
+	return err
 }
 
 func (t *Tracker) isShuttingDown() bool {
@@ -250,13 +266,13 @@ func (t *Tracker) run() {
 			gen := t.heartbeat.gen
 			t.heartbeat = timer{}
 			now := t.monotonic(fired)
-			t.step(context.Background(), func() []Effect { return t.m.Heartbeat(now, gen) })
+			t.step(t.work, func() []Effect { return t.m.Heartbeat(now, gen) })
 		case now := <-t.grace.ch:
 			// Grace keeps its expiry instant [IPC-031].
 			gen := t.grace.gen
 			t.grace = timer{}
 			t.applied(now)
-			t.step(context.Background(), func() []Effect { return t.m.GraceTimeout(now, gen) })
+			t.step(t.work, func() []Effect { return t.m.GraceTimeout(now, gen) })
 		case fired := <-t.poll.ch:
 			gen := t.poll.gen
 			t.poll = timer{}
@@ -268,8 +284,14 @@ func (t *Tracker) run() {
 // shutdown applies Stop with the Close context [SES-011].
 func (t *Tracker) shutdown() {
 	t.mu.Lock()
-	ctx := t.stopCtx
+	stopCtx := t.stopCtx
 	t.mu.Unlock()
+	// The end write honours the first Close ctx and is also cancelled when
+	// any Close gives up (cancelWork).
+	ctx, cancel := context.WithCancel(stopCtx)
+	defer cancel()
+	stopAfter := context.AfterFunc(t.work, cancel)
+	defer stopAfter()
 	now := t.clock.Now()
 	t.applied(now)
 	t.step(ctx, func() []Effect { return t.m.Stop(now) })
@@ -328,7 +350,7 @@ func (t *Tracker) handleLaunch(spec LaunchSpec) launchResult {
 
 	job, err := t.launcher.Prepare(spec)
 	if err != nil {
-		t.step(context.Background(), t.m.PrepareFailed)
+		t.step(t.work, t.m.PrepareFailed)
 		return t.launchFailed(spec, err)
 	}
 	t.job = job
@@ -341,17 +363,19 @@ func (t *Tracker) handleLaunch(spec LaunchSpec) launchResult {
 			startAt = e.At
 		}
 	}
-	wctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+	// Launch writes derive from t.work so Close can cancel them when its
+	// budget runs out.
+	wctx, cancel := context.WithTimeout(t.work, writeTimeout)
 	id, err := t.store.StartSession(wctx, spec.GameID, startAt)
 	cancel()
 	if err != nil {
-		t.step(context.Background(), t.m.InsertFailed)
+		t.step(t.work, t.m.InsertFailed)
 		return t.launchFailed(spec, err)
 	}
 	t.m.Inserted(id) // [ResumeJob]
 
 	if err := job.Resume(); err != nil {
-		t.step(context.Background(), t.m.ResumeFailed)
+		t.step(t.work, t.m.ResumeFailed)
 		return t.launchFailed(spec, err)
 	}
 	t.events = job.Events()
@@ -363,7 +387,7 @@ func (t *Tracker) handleLaunch(spec LaunchSpec) launchResult {
 			snap = e.Session
 		}
 	}
-	t.exec(context.Background(), effs, id)
+	t.exec(t.work, effs, id)
 	t.publish()
 	return launchResult{snap: snap}
 }
@@ -395,9 +419,9 @@ func (t *Tracker) handleJobEvent(ev JobEvent) {
 	switch ev.Kind {
 	case EventNewProcess:
 		t.log.Debug("processo novo no job", slog.Uint64("pid", uint64(ev.PID)))
-		t.step(context.Background(), func() []Effect { return t.m.ProcessAdded(now) })
+		t.step(t.work, func() []Effect { return t.m.ProcessAdded(now) })
 	case EventActiveZero:
-		t.step(context.Background(), func() []Effect { return t.m.TrackedEmpty(now) })
+		t.step(t.work, func() []Effect { return t.m.TrackedEmpty(now) })
 	case EventExitProcess:
 		if !ev.Root {
 			t.log.Debug("processo do job encerrou", slog.Uint64("pid", uint64(ev.PID)))
@@ -426,7 +450,7 @@ func (t *Tracker) handlePoll(now time.Time, gen uint64) {
 		_, sid, _, _ := t.m.Pending()
 		t.log.Warn("falha ao ler os processos do job", slog.Int64("session_id", sid), slog.Any("error", err))
 	}
-	t.step(context.Background(), func() []Effect { return t.m.Poll(now, gen, n, err) })
+	t.step(t.work, func() []Effect { return t.m.Poll(now, gen, n, err) })
 }
 
 // exec runs effects in order for session sid. Store writes are bounded by

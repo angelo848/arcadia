@@ -413,6 +413,11 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock, stat func
   durante o encerramento da sessão, e antes do store porque grava o fim [AGT-010, SES-011].
 - Orçamento: `Drain` ≤ 500 ms + uma escrita de fim (≤ 2 s de timeout, normalmente < 50 ms) dentro dos 2 s do AGT-003.
   No `WM_ENDSESSION` o handler espera até 2 s (fase 2), o mesmo orçamento.
+- `Tracker.Close(ctx)` **sempre espera a goroutine dona** antes de retornar. Se o `ctx` vencer, ele cancela as escritas
+  pendentes (inclusive as de um lançamento em curso, que passam a derivar de um contexto que o `Close` cancela),
+  espera a dona sair e devolve o erro do `ctx`. Assim o `store.Close` nunca roda com a dona viva; a sessão que não
+  conseguiu gravar o fim fica aberta e é recuperada na próxima subida (SES-010). (Alterado em 2026-11-09, revisão da
+  T10/T11.)
 
 ## `cmd/arcadia` (UI, Go) [DSK-010..012]
 
