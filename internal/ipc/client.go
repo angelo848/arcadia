@@ -47,6 +47,7 @@ type Client struct {
 	cancel context.CancelFunc
 
 	notifications chan Notification
+	state         chan struct{} // buffer 1; coalesced connect/drop signals
 	nextID        atomic.Uint64
 
 	mu        sync.Mutex
@@ -72,6 +73,7 @@ func NewClient(dial Dialer, clock domain.Clock, log *slog.Logger) *Client {
 		ctx:           ctx,
 		cancel:        cancel,
 		notifications: make(chan Notification, NotificationBuffer),
+		state:         make(chan struct{}, 1),
 		connReady:     make(chan struct{}),
 		done:          make(chan struct{}),
 	}
@@ -83,6 +85,30 @@ func NewClient(dial Dialer, clock domain.Clock, log *slog.Logger) *Client {
 // NotificationBuffer values; when full, new notifications are dropped. It is
 // closed by Close.
 func (c *Client) Notifications() <-chan Notification { return c.notifications }
+
+// Connected reports whether a connection to the agent is currently established.
+func (c *Client) Connected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil
+}
+
+// StateChanged returns a channel that receives a value after the client
+// connects or loses its connection (EXE-019). It has a buffer of 1 and signals
+// are coalesced: consecutive changes with no reader leave a single pending
+// signal, so readers must check Connected. A failed dial is not a change.
+// Notifications read before a drop are already in Notifications when the drop
+// is signalled. The channel is closed by Close.
+func (c *Client) StateChanged() <-chan struct{} { return c.state }
+
+// signalState emits a coalesced, non-blocking state signal. Only the run
+// goroutine (via serve) calls it, so it is the only sender on c.state.
+func (c *Client) signalState() {
+	select {
+	case c.state <- struct{}{}:
+	default:
+	}
+}
 
 // Close stops reconnecting, closes the connection and returns after the
 // connection goroutine has exited. It is idempotent.
@@ -202,6 +228,7 @@ func (c *Client) callOn(ctx context.Context, cc *clientConn, method string, para
 func (c *Client) run() {
 	defer close(c.done)
 	defer close(c.notifications) // run is the only sender
+	defer close(c.state)         // run is the only sender
 	backoff := backoffMin
 	for {
 		conn, err := c.dial(c.ctx)
@@ -262,6 +289,7 @@ func (c *Client) serve(conn net.Conn) {
 	c.conn = cc
 	close(c.connReady)
 	c.mu.Unlock()
+	c.signalState()
 	c.log.Debug("ipc: connected")
 
 	c.readLoop(cc)
@@ -270,6 +298,7 @@ func (c *Client) serve(conn net.Conn) {
 	c.conn = nil
 	c.connReady = make(chan struct{})
 	c.mu.Unlock()
+	c.signalState()  // readLoop has returned, so notifications read before EOF are already delivered
 	_ = conn.Close() // unblocks a writer stuck in Write
 	cc.markLost()    // stops an idle writer and fails pending calls
 	writer.Wait()

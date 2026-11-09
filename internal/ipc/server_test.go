@@ -902,6 +902,33 @@ func TestShutdown(t *testing.T) {
 		goleak.VerifyNone(t, ignoreExisting)
 	})
 
+	t.Run("IPC-006/Close com StateChanged sem leitor não deixa goroutines", func(t *testing.T) {
+		fd := newFakeDialer()
+		clk := domain.NewFakeClock(testStart)
+		c := ipc.NewClient(fd.Dial, clk, discardLogger())
+
+		// Nobody reads StateChanged(): connect, drop, connect again (EXE-019).
+		peer := fd.next(t).connect(t)
+		peer.conn.Close()
+		awaitBackoffAfterDrop(t, fd, clk)
+		clk.Advance(250 * time.Millisecond)
+		peer = fd.next(t).connect(t)
+		var pong ipc.PingResult
+		errc := callAsync(guardCtx(t), c, ipc.MethodPing, &pong)
+		peer.respond(t, peer.readRequest(t), `{"pong":true}`)
+		if err := recv(t, errc, "Call over the second connection"); err != nil || !pong.Pong {
+			t.Fatalf("Call = %+v, %v", pong, err)
+		}
+
+		within(t, "Client.Close", func() {
+			if err := c.Close(); err != nil {
+				t.Logf("Client.Close: %v", err)
+			}
+		})
+		peer.conn.Close()
+		goleak.VerifyNone(t, ignoreExisting)
+	})
+
 	t.Run("IPC-006/Close idempotente", func(t *testing.T) {
 		ln := newMemListener()
 		r := startServer(t, ln, domain.NewFakeClock(testStart), testHandlers(), nil)
