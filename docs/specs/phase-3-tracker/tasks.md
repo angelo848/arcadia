@@ -924,7 +924,7 @@ Cada tarefa passa por test-writer → implementer/tracker-specialist → reviewe
 - Arquivos:
   - `frontend/src/lib/games.ts` (novo)
   - `frontend/src/lib/sessionClock.ts` (novo)
-  - testes: `frontend/src/lib/games.test.ts` e `frontend/src/lib/sessionClock.test.ts`
+  - testes: `frontend/src/lib/games.test.tsx` e `frontend/src/lib/sessionClock.test.ts`
 - Assinaturas:
   ```ts
   export type GameView = {
