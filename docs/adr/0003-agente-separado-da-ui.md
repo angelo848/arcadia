@@ -1,6 +1,6 @@
 # 0003 — Agente residente separado da UI, IPC por named pipe
 
-- **Status:** aceito
+- **Status:** aceito · parte "dois executáveis" substituída por [0014](0014-executavel-unico-dois-processos.md)
 - **Data:** 2026-11-07
 
 ## Contexto

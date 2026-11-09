@@ -70,6 +70,7 @@ Dado um `FakeClock` em `T`:
 Dado um arquivo inexistente, quando abro o store **com migração**, então o schema completo da arquitetura (§5)
 existe, com FTS5.
 · alterado em 2026-11-08: migração passa a ser opção de `Open` (ADR 0010).
+· alterado em 2026-11-08: o schema passa a incluir `app_setting` (versão 2) — ver AST-001 (docs/specs/single-exe).
 
 ### STO-002 — Reabrir é no-op
 Dado um banco já migrado, quando abro de novo com migração, então nenhuma migração é reaplicada e os dados permanecem.
@@ -213,9 +214,11 @@ existe" e logue em `Error` "pipe já existe: outra instância ou outro processo"
 ### AGT-001 — Inicialização
 Quando rodo `arcadia-agent --data-dir X`, então `X/library.db` migrado, `X/logs/agent.log` e o ícone na bandeja existem.
 · verificação: manual
+· alterado em 2026-11-08: substituído por EXE-002 (docs/specs/single-exe).
 
 ### AGT-002 — Instância única
 Dado um agente rodando, quando inicio outro, então o segundo sai com código 0. · verificação: manual
+· alterado em 2026-11-08: o agente passa a ser `arcadia.exe --agent`; critério mantido — ver EXE-002 (docs/specs/single-exe).
 
 ### AGT-003 — Saída ordenada
 Quando escolho "Sair" na bandeja, então o agente encerra em < 2 s, sem goroutines nem handles vazando.
@@ -223,6 +226,8 @@ Exceção: a goroutine de limpeza do lumberjack (`millRun`), uma por processo, q
 (ADR 0013).
 · verificação: manual
 · alterado em 2026-11-08: exceção do `millRun` do lumberjack (revisão da T05, aprovado pelo usuário).
+· alterado em 2026-11-08: o shutdown passa a notificar os clientes com `agent.shutdown` e a fechar a UI; prazo < 2 s
+mantido — ver EXE-013, EXE-014, EXE-018 (docs/specs/single-exe).
 
 ### AGT-004 — Versão do agente
 Dado um binário compilado com `-ldflags "-X main.version=1.2.3"`, quando chamo `agent.status`, então `version` é
@@ -240,32 +245,39 @@ top-level oculta), então o agente executa o mesmo shutdown ordenado de AGT-003.
 ### AGT-007 — Menu "Abrir Arcadia"
 Dado `arcadia.exe` na mesma pasta do agente, quando escolho "Abrir Arcadia" na bandeja, então `arcadia.exe` é
 iniciado desacoplado do agente. · verificação: manual
+· alterado em 2026-11-08: substituído por EXE-009 (docs/specs/single-exe).
 
 ### AGT-008 — "Abrir Arcadia" sem a UI instalada
 Dado que não existe `arcadia.exe` na pasta do agente, quando aciono "Abrir Arcadia", então o agente registra um erro
 no log e continua rodando, sem tentar criar processo.
+· alterado em 2026-11-08: substituído por EXE-010 (docs/specs/single-exe).
 
 ## Desktop (DSK)
 
 ### DSK-001 — UI inicia o agente
 Dado o agente parado, quando abro a UI, então ela inicia o agente desacoplado e conecta em até 5 s.
 · verificação: manual
+· alterado em 2026-11-08: substituído por EXE-008 (docs/specs/single-exe).
 
 ### DSK-002 — Fechar a UI não afeta o agente
 Quando fecho a UI, então o agente continua na bandeja. · verificação: manual
 
 ### DSK-003 — Reconexão visível
 Dado que o agente cai, então a UI mostra "Desconectado" e reconecta quando ele volta. · verificação: manual
+· alterado em 2026-11-08: a UI também relança o agente que caiu sem `agent.shutdown` — ver EXE-019..EXE-025
+(docs/specs/single-exe).
 
 ### DSK-004 — Comando de início do agente
 Dada a UI em `P\arcadia.exe` com `Root` resolvido `R`, quando ela monta o comando de início do agente, então o
 executável é `P\arcadia-agent.exe`, os argumentos são `--data-dir R` e as flags de criação são
 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB`.
+· alterado em 2026-11-08: substituído por EXE-007 (docs/specs/single-exe).
 
 ### DSK-005 — Fallback sem breakaway
 Dado que criar o agente com `CREATE_BREAKAWAY_FROM_JOB` falha com `ERROR_ACCESS_DENIED`, quando a UI inicia o
 agente, então ela tenta uma segunda vez com as mesmas flags sem `CREATE_BREAKAWAY_FROM_JOB` e registra um aviso no
 log; qualquer outro erro não gera segunda tentativa.
+· alterado em 2026-11-08: regra mantida, aplicada ao comando de EXE-007 (docs/specs/single-exe).
 
 ### DSK-006 — Agente com outro dataDir
 Dado um agente já rodando cujo `agent.status.dataDir` difere do `Root` da UI, quando a UI conecta, então ela registra

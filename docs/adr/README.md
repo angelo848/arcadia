@@ -16,7 +16,7 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 |---|---|---|
 | [0001](0001-registrar-decisoes-em-adrs.md) | Registrar decisões de arquitetura em ADRs | aceito |
 | [0002](0002-go-wails-react.md) | Go + Wails v2 + React como stack | aceito |
-| [0003](0003-agente-separado-da-ui.md) | Agente residente separado da UI, IPC por named pipe | aceito |
+| [0003](0003-agente-separado-da-ui.md) | Agente residente separado da UI, IPC por named pipe | aceito (em parte substituído por 0014) |
 | [0004](0004-sqlite-modernc-goose-sqlc.md) | SQLite (modernc, sem CGO) + goose + sqlc | aceito |
 | [0005](0005-rastreamento-em-camadas.md) | Rastreamento de tempo em camadas (Job Object + watcher + sinais de loja) | aceito |
 | [0006](0006-biblioteca-portatil.md) | Nome `arcadia` e biblioteca portátil | aceito |
@@ -27,3 +27,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0011](0011-clock-com-temporizadores.md) | `domain.Clock` com temporizadores para toda espera | aceito |
 | [0012](0012-enums-validados-no-domain.md) | Enums validados no `domain`, sem CHECK no banco | aceito |
 | [0013](0013-log-fecha-por-ultimo.md) | O log fecha por último no shutdown | aceito |
+| [0014](0014-executavel-unico-dois-processos.md) | Executável único com dois processos | aceito |
