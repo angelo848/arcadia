@@ -1,8 +1,8 @@
-package main
+package agent
 
-// Tests for T10 (docs/specs/phase-2-skeleton/tasks.md): agent startup, version,
-// log level and ordered shutdown. These tests touch the package-level `version`
-// variable, so none of them run in parallel.
+// Tests for T10 (docs/specs/phase-2-skeleton/tasks.md), moved from cmd/agent in
+// T05 of docs/specs/single-exe/tasks.md: agent startup, version (now from
+// config.Version), log level and ordered shutdown.
 
 import (
 	"bufio"
@@ -74,12 +74,14 @@ func testConfig(t *testing.T, level string) config {
 		DataDir:  filepath.Join(base, "data"),
 		LogLevel: level,
 		ExeDir:   filepath.Join(base, "bin"),
+		Exe:      filepath.Join(base, "bin", "arcadia.exe"),
+		Version:  "test",
 	}
 }
 
 // startTestAgent starts an agent and registers a cleanup that shuts it down and
 // closes its log (both idempotent per T10), before t.TempDir is removed.
-func startTestAgent(t *testing.T, cfg config, ln *tcpListen) *agent {
+func startTestAgent(t *testing.T, cfg config, ln *tcpListen) *instance {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
@@ -105,7 +107,7 @@ func startTestAgent(t *testing.T, cfg config, ln *tcpListen) *agent {
 	return a
 }
 
-func shutdown(t *testing.T, a *agent) {
+func shutdown(t *testing.T, a *instance) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
@@ -209,38 +211,31 @@ func TestStartAgent(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	t.Run("AGT-004/sem -X version é dev", func(t *testing.T) {
-		if version != "dev" {
-			t.Fatalf("version = %q, want %q (test binary built without -X main.version)", version, "dev")
-		}
-		a := startTestAgent(t, testConfig(t, ""), &tcpListen{})
-		if got := a.Info().Version; got != "dev" {
-			t.Errorf("Info().Version = %q, want %q", got, "dev")
-		}
-	})
+	t.Run("AGT-004/Info().Version vem de config.Version", func(t *testing.T) {
+		t.Parallel()
+		for _, v := range []string{"1.2.3", "dev"} {
+			t.Run(v, func(t *testing.T) {
+				t.Parallel()
+				cfg := testConfig(t, "")
+				cfg.Version = v
+				ln := &tcpListen{}
+				a := startTestAgent(t, cfg, ln)
 
-	t.Run("AGT-004/agent.status reflete a variável version", func(t *testing.T) {
-		old := version
-		version = "1.2.3"
-		t.Cleanup(func() { version = old })
+				if got := a.Info().Version; got != v {
+					t.Errorf("Info().Version = %q, want %q", got, v)
+				}
 
-		cfg := testConfig(t, "")
-		ln := &tcpListen{}
-		a := startTestAgent(t, cfg, ln)
-
-		if got := a.Info().Version; got != "1.2.3" {
-			t.Errorf("Info().Version = %q, want %q", got, "1.2.3")
-		}
-
-		_, addr := ln.snapshot()
-		c := newTCPClient(addr)
-		defer c.Close()
-		st := callStatus(t, c)
-		if st.Version != "1.2.3" {
-			t.Errorf("agent.status version = %q, want %q", st.Version, "1.2.3")
-		}
-		if st.PID != os.Getpid() {
-			t.Errorf("agent.status pid = %d, want %d", st.PID, os.Getpid())
+				_, addr := ln.snapshot()
+				c := newTCPClient(addr)
+				defer c.Close()
+				st := callStatus(t, c)
+				if st.Version != v {
+					t.Errorf("agent.status version = %q, want %q", st.Version, v)
+				}
+				if st.PID != os.Getpid() {
+					t.Errorf("agent.status pid = %d, want %d", st.PID, os.Getpid())
+				}
+			})
 		}
 	})
 }

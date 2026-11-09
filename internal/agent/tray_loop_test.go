@@ -1,5 +1,6 @@
-package main
+package agent
 
+// Moved from cmd/agent in T05 of docs/specs/single-exe/tasks.md (names kept).
 // Tests for the T10 review (design.md "## cmd/agent", revisão da T10 de
 // 2026-11-08): the portable tray loop must end on Ctrl+C / end of session even
 // when the systray onReady never runs, and log an Error if the tray does not

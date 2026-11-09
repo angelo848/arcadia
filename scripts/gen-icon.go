@@ -1,9 +1,9 @@
 //go:build ignore
 
-// gen-icon writes the placeholder tray icon cmd/agent/assets/icon.ico: a
+// gen-icon writes the placeholder tray icon internal/agent/assets/icon.ico: a
 // minimal 16x16, 32-bit, BMP-based ICO (no external tools, no downloads).
 //
-//	go run scripts/gen-icon.go cmd/agent/assets/icon.ico
+//	go run scripts/gen-icon.go internal/agent/assets/icon.ico
 package main
 
 import (

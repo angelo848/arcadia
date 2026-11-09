@@ -1,18 +1,18 @@
 //go:build !windows
 
+// Command arcadia-agent is a temporary shell around internal/agent (removed in
+// T08 of docs/specs/single-exe); the agent only runs on Windows.
 package main
 
 import (
-	"log/slog"
 	"os"
+
+	"github.com/arcadia-launcher/arcadia/internal/agent"
 )
 
-// The agent depends on Win32 (named pipe, mutex, tray); on other systems the
-// binary only reports that it is unsupported, so the package still builds and vets.
-func main() {
-	slog.Error("arcadia-agent: suportado apenas no Windows")
-	os.Exit(1)
-}
+// version is reported by agent.status (AGT-004); release builds stamp it.
+var version = "dev"
 
-// isPipeNameTaken has no pipe name semantics outside Windows.
-func isPipeNameTaken(error) bool { return false }
+func main() {
+	os.Exit(agent.Run(agent.Options{Args: os.Args[1:], Version: version}))
+}
