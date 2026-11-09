@@ -28,3 +28,5 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0012](0012-enums-validados-no-domain.md) | Enums validados no `domain`, sem CHECK no banco | aceito |
 | [0013](0013-log-fecha-por-ultimo.md) | O log fecha por último no shutdown | aceito |
 | [0014](0014-executavel-unico-dois-processos.md) | Executável único com dois processos | aceito |
+| [0015](0015-agente-unico-escritor-do-banco.md) | O agente é o único escritor do banco; a UI escreve via IPC | aceito |
+| [0016](0016-job-do-jogo-permite-breakaway.md) | O Job Object do jogo permite breakaway | aceito |

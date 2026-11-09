@@ -51,8 +51,8 @@ Abrir, fechar, atualizar ou até travar a UI **não afeta o tempo de jogo**. O a
 inicia com o Windows (ligado por padrão, desligável na bandeja) e fica na bandeja. "Sair" na bandeja encerra o agente e fecha a UI; se o agente cair, a UI o relança. Se a UI for aberta durante um jogo, ela apenas
 se conecta ao pipe e mostra o cronômetro ao vivo.
 
-**Divisão de escrita no banco:** o agente é dono das tabelas de sessão (`play_session`, `pause_interval`);
-a UI é dona da biblioteca. Ambos usam `busy_timeout` e transações curtas.
+**Escrita no banco:** o agente é o único escritor de `library.db`, incluindo a biblioteca. A UI pede as escritas
+por IPC (`game.add`, `game.launch`) e lê a lista por IPC ([ADR 0015](adr/0015-agente-unico-escritor-do-banco.md)).
 
 ---
 
@@ -132,6 +132,9 @@ Para lançamentos via Steam/Epic/URI, o jogo nasce como filho do cliente, não n
                                    ▼
                                  Ended  → grava sessão, atualiza total e "primeira vez jogado"
 ```
+
+Com só a Camada 1 (fase 3), não existe timeout de Launching: o primeiro processo nasce no Job no próprio
+lançamento, e Launching → Failed só acontece quando o lançamento falha. O timeout de 90 s volta com a Camada 2.
 
 O período de **Grace** cobre jogos que fecham e relançam (atualizadores, troca de DirectX/Vulkan,
 "restart to apply settings").

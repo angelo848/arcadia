@@ -1,0 +1,280 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "arcadia agent IPC",
+    "version": "0.4.0",
+    "description": "JSON-RPC 2.0 over NDJSON on \\\\.\\pipe\\arcadia-agent-<SID>, served by `arcadia.exe --agent`. Supersedes docs/specs/single-exe/contracts/ipc.openrpc.json (v0.3.0) as the source of truth [IPC-030]; v0.4.0 adds game.add, game.list, game.launch, session.current, the session.changed notification and the application error codes -32001..-32004. One message per line; max 1048576 bytes per message excluding the trailing \\n [IPC-012]; larger messages close only that connection, response not guaranteed [IPC-003]. Batches (JSON arrays) are rejected with a single -32600, id null [IPC-010]. Requests without id are notifications and get no response [IPC-011]. jsonrpc must be exactly \"2.0\" and params, if present, must be null, an array or an object, otherwise -32600 [IPC-009]. Methods without params accept params absent, null, [] or {} [IPC-008]; any non-empty array/object is -32602 [IPC-002]. Methods with params take them by name only: a positional array, a missing required member, a member of the wrong type or an unknown member is -32602 [IPC-028]. Requests on one connection are handled sequentially; there is no ordering guarantee between a response and notifications caused by the same request. All instants are RFC 3339 strings in UTC (Session.asOf always carries milliseconds).",
+    "x-limits": {
+      "maxMessageBytes": 1048576,
+      "heartbeatIntervalSeconds": 5,
+      "clientBackoff": { "initialMs": 250, "factor": 2, "maxMs": 5000, "jitter": false, "resetOnConnect": true },
+      "clientNotificationBuffer": 16,
+      "shutdownDrainMs": 500,
+      "maxGameTitleRunes": 200
+    },
+    "x-tracking": {
+      "description": "Phase 3 constants (not configurable yet) [SES-003..SES-013, DOM-008]",
+      "gracePeriodSeconds": 15,
+      "minCountedSessionSeconds": 30,
+      "sessionHeartbeatSeconds": 30,
+      "jobPollSeconds": 5,
+      "maxConcurrentSessions": 1
+    }
+  },
+  "methods": [
+    {
+      "name": "agent.ping",
+      "summary": "Liveness check [IPC-001]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "pong",
+        "schema": {
+          "type": "object",
+          "required": ["pong"],
+          "properties": { "pong": { "type": "boolean", "const": true } },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.status",
+      "summary": "Agent identity and uptime [IPC-001, AGT-004]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "status", "schema": { "$ref": "#/components/schemas/AgentStatus" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.heartbeat",
+      "summary": "Server-to-client notification every 5 s (no id, no response) [IPC-004]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "uptimeSeconds",
+          "required": true,
+          "schema": { "type": "integer", "minimum": 0 }
+        }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    },
+    {
+      "name": "agent.shutdown",
+      "summary": "Server-to-client notification sent once to every connection when the agent starts an orderly shutdown, and as the first message of any connection accepted while draining (no id, no response). The server then waits up to shutdownDrainMs for the clients to close their connections before closing them itself. A client that receives it must not restart the agent; the desktop UI closes itself [EXE-013, EXE-014, EXE-015, EXE-016, EXE-017]. From this point game.launch is refused with LaunchFailed, data.error = \"agente encerrando\" [AGT-011]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "reason",
+          "required": true,
+          "description": "quit: tray \"Sair\"; session-end: WM_ENDSESSION; signal: Ctrl+C/SIGTERM; other: the tray loop ended on its own, or Serve ended with an error (in that case every connection is already closed, so no client receives it) [EXE-016, EXE-026]",
+          "schema": { "type": "string", "enum": ["quit", "session-end", "signal", "other"] }
+        }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    },
+    {
+      "name": "game.add",
+      "summary": "Adds an exe game to the library; the agent writes the row. Adding the same path again creates another, distinct game (no duplicate check) [IPC-020, IPC-021, GAM-001..GAM-003]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "path",
+          "required": true,
+          "description": "Absolute path of an existing regular file ending in .exe (case-insensitive). Stored as filepath.Clean(path).",
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "title",
+          "required": false,
+          "description": "Trimmed; absent or empty after trimming means the default title (file name without .exe) [DOM-009, GAM-003]. More than maxGameTitleRunes after trimming is -32602.",
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": { "name": "game", "schema": { "$ref": "#/components/schemas/Game" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InvalidExecutable" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.list",
+      "summary": "All games ordered by title (case-insensitive), then id [IPC-023, GAM-005]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "games",
+        "schema": {
+          "type": "object",
+          "required": ["games"],
+          "properties": {
+            "games": { "type": "array", "items": { "$ref": "#/components/schemas/Game" }, "description": "Never null; [] when the library is empty" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.launch",
+      "summary": "Launches the game inside a new Job Object and opens a tracked session; returns once the process was resumed. The existence of the game is checked before the active session [IPC-024, IPC-025, SES-001, SES-002, SES-012]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": { "type": "integer", "minimum": 1 }
+        }
+      ],
+      "result": { "name": "session", "schema": { "$ref": "#/components/schemas/Session" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/SessionActive" },
+        { "$ref": "#/components/errors/LaunchFailed" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "session.current",
+      "summary": "The active session (running or grace), or null. activeMs/activeSeconds are measured at asOf, the agent clock reading taken when the call is handled [IPC-026, IPC-031]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "current",
+        "schema": {
+          "type": "object",
+          "required": ["session"],
+          "properties": {
+            "session": { "oneOf": [ { "$ref": "#/components/schemas/Session" }, { "type": "null" } ] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "session.changed",
+      "summary": "Server-to-client notification (no id, no response) sent to every connection once per session transition: opened (running), entered grace, back to running, ended or discarded; session.asOf is the instant of the transition event (for ended/discarded, when the grace period expired) [IPC-031]. Not sent for failed launches, for sessions recovered at startup, nor for the session ended by the agent shutdown (sent after Server.Close). Best effort: dropped for a connection whose output queue is full [IPC-027, IPC-029]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "session",
+          "required": true,
+          "schema": { "$ref": "#/components/schemas/Session" }
+        }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "AgentStatus": {
+        "type": "object",
+        "required": ["version", "pid", "startedAt", "dataDir", "uptimeSeconds"],
+        "properties": {
+          "version": { "type": "string", "description": "From -ldflags -X main.version; \"dev\" when not set [AGT-004]" },
+          "pid": { "type": "integer" },
+          "startedAt": { "type": "string", "format": "date-time", "description": "RFC 3339, UTC" },
+          "dataDir": { "type": "string", "description": "Absolute Root resolved by the agent [DSK-006]" },
+          "uptimeSeconds": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "Game": {
+        "type": "object",
+        "required": ["id", "title", "path", "totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "path": { "type": "string", "description": "game.launch_target (absolute, cleaned)" },
+          "totalPlaySeconds": { "type": "integer", "minimum": 0, "description": "Sum of active_seconds of the game's ended sessions [STO-016]" },
+          "playCount": { "type": "integer", "minimum": 0 },
+          "firstPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ], "description": "started_at of the first counted session" },
+          "lastPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ], "description": "ended_at of the last counted session" }
+        },
+        "additionalProperties": false
+      },
+      "Session": {
+        "type": "object",
+        "required": ["sessionId", "gameId", "title", "state", "startedAt", "endedAt", "activeSeconds", "activeMs", "asOf"],
+        "description": "Snapshot of a session. activeMs and asOf come from the same agent clock reading [IPC-031]. A live display must anchor on activeMs and advance it with the client's own monotonic clock since receipt (in running only); it must not compute elapsed time from startedAt or by comparing asOf with the client's clock [UI-014]. Display-only: the recorded time is the agent's.",
+        "properties": {
+          "sessionId": { "type": "integer", "minimum": 1 },
+          "gameId": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string", "description": "Title of the game when the session was opened" },
+          "state": { "type": "string", "enum": ["running", "grace", "ended", "discarded"], "description": "ended/discarded only appear in session.changed [DOM-007, DOM-008]" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "endedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ], "description": "null while running/grace; for ended/discarded, the instant the job became empty" },
+          "activeSeconds": { "type": "integer", "minimum": 0, "description": "floor(activeMs / 1000)" },
+          "activeMs": { "type": "integer", "minimum": 0, "description": "Time spent in running up to asOf, in milliseconds, truncated (grace excluded) [IPC-031]" },
+          "asOf": { "type": "string", "format": "date-time", "description": "Agent clock instant at which activeMs was measured, RFC 3339 UTC with milliseconds (e.g. 2026-11-09T14:03:12.345Z) [IPC-031]" }
+        },
+        "additionalProperties": false
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": ["sessionId", "gameId", "title"],
+        "properties": {
+          "sessionId": { "type": "integer", "minimum": 0, "description": "0 while the other launch is still being prepared" },
+          "gameId": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "ParseError": { "code": -32700, "message": "Parse error" },
+      "InvalidRequest": { "code": -32600, "message": "Invalid Request" },
+      "MethodNotFound": { "code": -32601, "message": "Method not found" },
+      "InvalidParams": { "code": -32602, "message": "Invalid params" },
+      "InternalError": { "code": -32603, "message": "Internal error" },
+      "GameNotFound": {
+        "code": -32001,
+        "message": "Game not found",
+        "data": { "type": "object", "required": ["gameId"], "properties": { "gameId": { "type": "integer" } }, "additionalProperties": false }
+      },
+      "SessionActive": {
+        "code": -32002,
+        "message": "Session already active",
+        "data": { "$ref": "#/components/schemas/SessionRef" }
+      },
+      "LaunchFailed": {
+        "code": -32003,
+        "message": "Launch failed",
+        "data": {
+          "type": "object",
+          "required": ["error"],
+          "properties": {
+            "error": { "type": "string", "description": "Error text (Windows messages come localized); \"agente encerrando\" during shutdown [AGT-011]" },
+            "winError": { "type": "integer", "description": "Windows error code (windows.Errno), only when the failure came from a Win32 call" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "InvalidExecutable": {
+        "code": -32004,
+        "message": "Invalid executable",
+        "data": {
+          "type": "object",
+          "required": ["reason"],
+          "properties": { "reason": { "type": "string", "enum": ["not-absolute", "not-found", "not-a-file", "not-exe"] } },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
