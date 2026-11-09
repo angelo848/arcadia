@@ -446,11 +446,10 @@ crie antes o mesmo nome `\\.\pipe\arcadia-agent-<SID da vítima>` com uma DACL q
 
 ## `frontend/` [UI-001..003]
 - Template Wails React-TS + Vite, Tailwind, TanStack Query, Zustand; Vitest + Testing Library.
-- Uma tela: cabeçalho com o indicador do agente ("Conectado" verde + versão + uptime / "Desconectado" vermelho) e
+- Uma tela: cabeçalho com o indicador do agente ("Conectado" verde + versão / "Desconectado" vermelho) e
   o estado vazio da biblioteca ("Nenhum jogo ainda", "N jogos · M plataformas", sempre no plural, sem tratar
   singular) [UI-001, UI-002].
-- `formatUptime(seconds: number): string` pura: `< 60` → `Ns`; `< 3600` → `Mm SSs`; senão `Hh MMm SSs`
-  (minutos e segundos com 2 dígitos quando há unidade maior) [UI-003].
+- ~~`formatUptime`~~ — removido em 2026-11-09 junto com UI-003 (o indicador não mostra mais o uptime).
 - Atualização [DSK-003]: `AgentStatus()` consultado a cada 1 s e a cada evento `agent:heartbeat`; o binding usa
   timeout de 500 ms, então a queda do agente aparece como "Desconectado" em ≤ ~1,5 s. Enquanto o status carrega ou
   falha, o indicador mostra "Desconectado".

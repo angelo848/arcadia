@@ -298,9 +298,10 @@ Dado `Root` `R`, quando a UI inicia, então ela registra em `R/logs/desktop.log`
 ## Frontend (UI)
 
 ### UI-001 — Indicador de status
-Dado o agente conectado, então o indicador mostra "Conectado" em verde, a versão e o uptime; dado desconectado, então
-mostra "Desconectado" em vermelho, sem versão nem uptime.
+Dado o agente conectado, então o indicador mostra "Conectado" em verde e a versão, sem uptime; dado desconectado,
+então mostra "Desconectado" em vermelho, sem versão.
 · alterado em 2026-11-08: textos exatos.
+· alterado em 2026-11-09: o uptime saiu do indicador, decidido pelo usuário (o estado da conexão basta).
 
 ### UI-002 — Estado vazio da biblioteca
 Dada uma biblioteca com 0 jogos e M plataformas, então a tela mostra "Nenhum jogo ainda" e "0 jogos · M plataformas".
@@ -312,6 +313,8 @@ A contagem é sempre no plural, com o texto literal "N jogos · M plataformas" (
 Dado `uptimeSeconds`, então o texto é: `0` → `0s`; `59` → `59s`; `60` → `1m 00s`; `3599` → `59m 59s`;
 `3600` → `1h 00m 00s`; `3723` → `1h 02m 03s`.
 · alterado em 2026-11-08: formato entre 1 min e 1 h (`1m 00s` … `59m 59s`) confirmado pelo usuário.
+· alterado em 2026-11-09: removido; substituído por UI-001 (o indicador não mostra mais o uptime). O campo
+  `uptimeSeconds` continua no IPC (IPC-001, IPC-004).
 
 ---
 

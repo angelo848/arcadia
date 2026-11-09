@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AgentIndicator } from './AgentIndicator'
-import { formatUptime } from '../lib/format'
 import type { AgentStatusView } from '../lib/agent'
 
 const baseStatus: AgentStatusView = {
@@ -24,7 +23,7 @@ const greenRe = /green|emerald/
 const redRe = /red|rose/
 
 describe('AgentIndicator', () => {
-  it('UI-001/conectado mostra Conectado em verde com versão e uptime', () => {
+  it('UI-001/conectado mostra Conectado em verde com versão e sem uptime', () => {
     render(<AgentIndicator status={baseStatus} />)
 
     const indicator = screen.getByRole('status')
@@ -33,16 +32,19 @@ describe('AgentIndicator', () => {
     expect(indicator).toHaveTextContent(/\bConectado\b/)
     expect(indicator).not.toHaveTextContent(/Desconectado/)
     expect(indicator).toHaveTextContent(baseStatus.version)
-    expect(indicator).toHaveTextContent(formatUptime(baseStatus.uptimeSeconds))
+    // The uptime is no longer displayed (UI-003 removed): uptimeSeconds 3723
+    // must not appear as "1h 02m 03s" nor as any uptime-like text.
+    expect(indicator).not.toHaveTextContent('1h 02m 03s')
+    expect(indicator).not.toHaveTextContent(/\b\d+s\b/)
 
     const classes = classesInTree(indicator)
     expect(classes.some((c) => greenRe.test(c))).toBe(true)
     expect(classes.some((c) => redRe.test(c))).toBe(false)
   })
 
-  it('UI-001/desconectado mostra Desconectado em vermelho sem versão nem uptime', () => {
-    // Stale version/uptime are passed on purpose: the indicator must hide them
-    // whenever the agent is disconnected.
+  it('UI-001/desconectado mostra Desconectado em vermelho sem versão', () => {
+    // A stale version/uptime is passed on purpose: the indicator must hide the
+    // version whenever the agent is disconnected.
     const status: AgentStatusView = { ...baseStatus, connected: false }
     render(<AgentIndicator status={status} />)
 
@@ -51,8 +53,8 @@ describe('AgentIndicator', () => {
     expect(indicator).toHaveTextContent(/Desconectado/)
     expect(indicator).not.toHaveTextContent(/\bConectado\b/)
     expect(indicator).not.toHaveTextContent(status.version)
-    expect(indicator).not.toHaveTextContent(formatUptime(status.uptimeSeconds))
-    // No uptime-like text at all (e.g. "0s", "1m 00s").
+    // No uptime-like text at all (e.g. "0s", "1m 00s", "1h 02m 03s").
+    expect(indicator).not.toHaveTextContent('1h 02m 03s')
     expect(indicator).not.toHaveTextContent(/\b\d+s\b/)
 
     const classes = classesInTree(indicator)

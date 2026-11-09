@@ -37,7 +37,7 @@ Invariantes que **continuam valendo** sem mudança: o agente é o único dono do
 | STO-001 — Migração em banco novo | alterado (schema inclui `app_setting`) | AST-001 |
 
 Inalterados e ainda válidos: BLD-001, PTH-*, DOM-*, STO-002..010, IPC-001..019, AGT-004..006, DSK-002, DSK-006..009,
-UI-001..003.
+UI-001..002 (UI-001 alterado e UI-003 removido em 2026-11-09: o indicador não mostra mais o uptime).
 
 ---
 
