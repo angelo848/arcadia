@@ -49,7 +49,7 @@ var schemaColumns = map[string][]string{
 	"additional_app": {"id", "game_id", "name", "target", "args", "track_time"},
 	"tracking_rule":  {"id", "game_id", "kind", "value", "learned"},
 	"emulator":       {"id", "name", "exe_path", "args_template"},
-	"play_session":   {"id", "game_id", "started_at", "ended_at", "last_seen_at", "active_seconds", "state", "source"},
+	"play_session":   {"id", "game_id", "started_at", "ended_at", "last_seen_at", "active_seconds", "state", "source", "end_reason"},
 	"pause_interval": {"id", "session_id", "paused_at", "resumed_at", "reason"},
 	"playlist":       {"id", "name", "filter_json"},
 }

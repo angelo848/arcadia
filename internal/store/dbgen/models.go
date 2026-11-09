@@ -138,6 +138,7 @@ type PlaySession struct {
 	ActiveSeconds int64
 	State         string
 	Source        string
+	EndReason     sql.NullString
 }
 
 type Playlist struct {

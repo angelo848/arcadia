@@ -131,22 +131,19 @@ func TestAppSettingSchema(t *testing.T) {
 		}
 	})
 
-	t.Run("AST-001/banco novo fica na versão 2", func(t *testing.T) {
+	t.Run("AST-001/banco novo fica em SchemaVersion", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 2 {
-			t.Errorf("store.SchemaVersion = %d, want 2", store.SchemaVersion)
-		}
 		s := openStore(t, dbPath(t), true)
 		v, err := s.CurrentVersion(t.Context())
 		if err != nil {
 			t.Fatalf("CurrentVersion: %v", err)
 		}
-		if v != 2 {
-			t.Errorf("CurrentVersion = %d, want 2", v)
+		if v != store.SchemaVersion {
+			t.Errorf("CurrentVersion = %d, want %d", v, store.SchemaVersion)
 		}
 	})
 
-	t.Run("AST-001/banco na versão 1 migra para 2 mantendo os dados", func(t *testing.T) {
+	t.Run("AST-001/banco na versão 1 migra para SchemaVersion mantendo os dados", func(t *testing.T) {
 		t.Parallel()
 		path, gameID := versionOneFile(t)
 
@@ -157,8 +154,8 @@ func TestAppSettingSchema(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CurrentVersion: %v", err)
 		}
-		if v != 2 {
-			t.Errorf("CurrentVersion = %d, want 2", v)
+		if v != store.SchemaVersion {
+			t.Errorf("CurrentVersion = %d, want %d", v, store.SchemaVersion)
 		}
 		if !slices.Contains(tableNames(t, s.DB()), "app_setting") {
 			t.Errorf("app_setting missing after migrating from version 1")
