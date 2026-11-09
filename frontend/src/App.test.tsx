@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import App from './App'
 import type { GameView, PickedExe, SessionView } from './lib/games'
 
@@ -292,6 +292,36 @@ describe('App: adicionar jogo', () => {
     expect(screen.queryByText('Nenhum jogo ainda')).toBeNull()
   })
 
+  it('UI-007 Adicionar jogo fica desabilitado enquanto Salvar está pendente', async () => {
+    app.ListGames.mockResolvedValue([])
+    app.PickGameExe.mockResolvedValue(picked)
+    const pending = deferred<GameView>()
+    app.AddGame.mockImplementation(() => pending.promise)
+    renderApp()
+    await screen.findByText('Nenhum jogo ainda')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
+    await screen.findByLabelText('Título')
+    expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(app.AddGame).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeDisabled())
+
+    // A click while disabled does not open the dialog again.
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(app.PickGameExe).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      pending.resolve(game({ id: 77, path: picked.path }))
+      await pending.promise
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled())
+  })
+
   it('UI-007 cancelar no diálogo não muda nada', async () => {
     app.ListGames.mockResolvedValue([game({ id: 10, title: 'Celeste', totalPlaySeconds: 60 })])
     app.PickGameExe.mockResolvedValue({ path: '', title: '' })
@@ -454,6 +484,44 @@ describe('App: sessão', () => {
     await waitFor(() => expect(rowOf('Hollow Knight')).toHaveTextContent('10 min'))
   })
 
+  it('UI-006 voltar o foco ou a visibilidade da janela não chama CurrentSession nem ListGames', async () => {
+    app.ListGames.mockResolvedValue([game()])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10 }))
+    renderApp()
+    await waitConnected()
+    await screen.findByRole('status', { name: panelName })
+    // Let the reconnect reload (if any) finish before counting.
+    await waitFor(() => expect(screen.queryByText('Conectando ao agente…')).toBeNull())
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    const listCalls = app.ListGames.mock.calls.length
+    const sessionCalls = app.CurrentSession.mock.calls.length
+
+    try {
+      await act(async () => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        focusManager.setFocused(undefined)
+        window.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20))
+      })
+    } finally {
+      focusManager.setFocused(undefined)
+    }
+
+    expect(app.ListGames).toHaveBeenCalledTimes(listCalls)
+    expect(app.CurrentSession).toHaveBeenCalledTimes(sessionCalls)
+    expect(queryPanel()).not.toBeNull()
+  })
+
   it('UI-012 sem sessão o painel não existe', async () => {
     app.ListGames.mockResolvedValue([game()])
     app.CurrentSession.mockResolvedValue(null)
@@ -558,6 +626,51 @@ describe('App: desconexão e reconexão', () => {
     const panel = await screen.findByRole('status', { name: panelName })
     expect(panel).toHaveTextContent('0:03:0')
     expect(panel).not.toHaveTextContent('0:01:0')
+  })
+
+  it('UI-016 o painel antigo não aparece nem na renderização da reconexão', async () => {
+    app.ListGames.mockResolvedValue([game()])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, activeMs: 60000 }))
+    renderApp()
+    await waitConnected()
+    expect(await screen.findByRole('status', { name: panelName })).toHaveTextContent('0:01:0')
+
+    await disconnect()
+    await waitFor(() => expect(queryPanel()).toBeNull())
+
+    // The reload stays pending, so any panel seen while connected is the old one.
+    const reload = deferred<SessionView | null>()
+    app.CurrentSession.mockImplementation(() => reload.promise)
+
+    // Record every DOM commit in which the indicator says connected and a panel exists.
+    const frames: string[] = []
+    const observer = new MutationObserver(() => {
+      const panel = queryPanel()
+      if (indicatorState() === 'connected' && panel) {
+        frames.push(panel.textContent ?? '')
+      }
+    })
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    try {
+      app.AgentStatus.mockResolvedValue(status(true))
+      emit('agent:heartbeat')
+      await waitFor(() => expect(indicatorState()).toBe('connected'))
+      // Right after the reconnect commit, before more timers run.
+      expect(queryPanel()).toBeNull()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(queryPanel()).toBeNull()
+    } finally {
+      observer.disconnect()
+    }
+    expect(frames, 'commits with the old panel while connected').toEqual([])
+
+    await act(async () => {
+      reload.resolve(session({ gameId: 10, activeMs: 180000 }))
+      await reload.promise
+    })
+    expect(await screen.findByRole('status', { name: panelName })).toHaveTextContent('0:03:0')
   })
 
   it('UI-009 reconectar chama ListGames e CurrentSession', async () => {

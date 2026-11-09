@@ -128,7 +128,8 @@ export default function App() {
           <button
             type="button"
             onClick={() => void pick()}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+            disabled={add.isPending}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-500"
           >
             Adicionar jogo
           </button>

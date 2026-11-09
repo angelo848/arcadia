@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import {
   addGame,
   currentSession,
@@ -318,6 +318,42 @@ describe('useCurrentSession', () => {
     expect(sessionEventSeq(b)).toBe(startB)
   })
 
+  it('UI-006 foco ou visibilidade da janela não chamam CurrentSession nem ListGames de novo', async () => {
+    const qc = newClient()
+    app.ListGames.mockResolvedValue([game()])
+    app.CurrentSession.mockResolvedValue(session())
+    const { result } = renderHook(() => ({ games: useGames(), current: useCurrentSession() }), {
+      wrapper: wrapperFor(qc),
+    })
+    await waitFor(() => expect(result.current.games.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.current.isSuccess).toBe(true))
+    const gamesCalls = app.ListGames.mock.calls.length
+    const sessionCalls = app.CurrentSession.mock.calls.length
+
+    try {
+      await act(async () => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        focusManager.setFocused(undefined)
+        window.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+      })
+      // Let any refetch the focus would have started reach the bindings.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20))
+      })
+    } finally {
+      focusManager.setFocused(undefined)
+    }
+
+    expect(app.ListGames).toHaveBeenCalledTimes(gamesCalls)
+    expect(app.CurrentSession).toHaveBeenCalledTimes(sessionCalls)
+  })
+
   it('UI-006 useCurrentSession não faz polling', async () => {
     const qc = newClient()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
@@ -453,6 +489,24 @@ describe('useReloadOnReconnect', () => {
     rerender({ connected: true })
 
     expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+    expect(qc.getQueryData(currentSessionKey)).toBeUndefined()
+  })
+
+  it('UI-016 Conectado para Desconectado já reseta a sessão em cache', () => {
+    const qc = newClient()
+    qc.setQueryData(gamesKey, [game()])
+    qc.setQueryData(currentSessionKey, session({ activeMs: 60000 }))
+
+    const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: true },
+    })
+    // Staying connected keeps the cached session.
+    rerender({ connected: true })
+    expect(qc.getQueryData(currentSessionKey)).toEqual(session({ activeMs: 60000 }))
+
+    rerender({ connected: false })
+    // The reconnect render must find an empty cache (design, "Revisão da T14").
     expect(qc.getQueryData(currentSessionKey)).toBeUndefined()
   })
 

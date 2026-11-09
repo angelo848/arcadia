@@ -463,6 +463,10 @@ func (a *App) CurrentSession() (*SessionView, error)          // timeout 2 s; ni
   [UI-006]. `useReloadOnReconnect(status)`, quando `connected` passa de `false` para `true`, invalida games e
   **reseta** current (`resetQueries`, não só `invalidateQueries`): o cache volta a "sem dados" e o painel não
   reaparece com o valor antigo antes da recarga terminar [UI-009, UI-016]. (Alterado em 2026-11-09, planejamento.)
+  Revisão da T14 (2026-11-09): o reset de current também acontece na transição `true` → `false`, no mesmo efeito,
+  para que a renderização da reconexão já encontre o cache vazio (sem um quadro com o painel antigo). As duas queries
+  usam `refetchOnWindowFocus: false` (sem chamadas ao voltar o foco da janela, UI-006). "Adicionar jogo" fica
+  desabilitado enquanto um "Salvar" está pendente.
 - **Evento vence resposta atrasada** [UI-018]: `useSessionEvents` incrementa um contador `eventSeq` a cada
   `session:changed` aplicado; o `queryFn` de `useCurrentSession` guarda o `eventSeq` antes de chamar
   `CurrentSession` e, se ele mudou quando a resposta chega, devolve o valor já em cache em vez da resposta. Os eventos

@@ -158,6 +158,7 @@ export function useGames(): UseQueryResult<GameView[], Error> {
     queryKey: gamesKey,
     queryFn: listGames,
     retry: false,
+    refetchOnWindowFocus: false,
     refetchInterval: (query) => (query.state.status === 'error' ? 2000 : false),
   })
 }
@@ -178,6 +179,7 @@ export function useCurrentSession(): UseQueryResult<SessionView | null, Error> {
       return s
     },
     retry: false,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -213,7 +215,8 @@ export function useSessionEvents(): void {
 
 // useReloadOnReconnect reloads games and the current session when the agent
 // goes from disconnected to connected. The session is reset (not only
-// invalidated) so the old value is not shown before the reload [UI-009, UI-016].
+// invalidated) so the old value is not shown before the reload [UI-009, UI-016];
+// it is also cleared, without refetching, when the agent disconnects.
 export function useReloadOnReconnect(connected: boolean): void {
   const qc = useQueryClient()
   const prev = useRef(connected)
@@ -221,6 +224,14 @@ export function useReloadOnReconnect(connected: boolean): void {
   useEffect(() => {
     const was = prev.current
     prev.current = connected
+    if (was && !connected) {
+      // Drop the session on disconnect so the reconnect render starts from an
+      // empty cache and never shows the old value [UI-016]. Query.reset()
+      // returns the query to its initial state (data undefined) and cancels an
+      // in-flight fetch, without the refetch that qc.resetQueries would start
+      // while disconnected; the reload happens on reconnect below.
+      qc.getQueryCache().find({ queryKey: currentSessionKey, exact: true })?.reset()
+    }
     if (!was && connected) {
       void qc.invalidateQueries({ queryKey: gamesKey })
       void qc.resetQueries({ queryKey: currentSessionKey })
