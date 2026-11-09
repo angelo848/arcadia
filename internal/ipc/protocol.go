@@ -1,6 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-2-skeleton/contracts/ipc.openrpc.json.
+// docs/specs/single-exe/contracts/ipc.openrpc.json (v0.3.0, which supersedes the
+// phase-2 contract kept in docs/specs/phase-2-skeleton/contracts/ as history).
 package ipc
 
 import (
@@ -25,6 +26,9 @@ const (
 	MethodPing      = "agent.ping"
 	MethodStatus    = "agent.status"
 	MethodHeartbeat = "agent.heartbeat"
+	// MethodShutdown is the server-to-client notification sent by Server.Drain
+	// when the agent is about to exit.
+	MethodShutdown = "agent.shutdown"
 )
 
 // JSON-RPC 2.0 error codes.
@@ -102,4 +106,10 @@ type AgentStatus struct {
 // HeartbeatParams are the params of the agent.heartbeat notification.
 type HeartbeatParams struct {
 	UptimeSeconds int64 `json:"uptimeSeconds"`
+}
+
+// ShutdownParams are the params of the agent.shutdown notification. Reason is
+// one of "quit", "session-end", "signal" or "other".
+type ShutdownParams struct {
+	Reason string `json:"reason"`
 }

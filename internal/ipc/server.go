@@ -65,6 +65,9 @@ type Server struct {
 	closed    bool               // no new connections; set by Close or when Serve ends
 	closeCall bool               // Close was called
 	served    bool               // Serve was called; a Server serves at most once
+	draining  bool               // Drain was called while serving; stays set until Close
+	drainMsg  Request            // notification queued to every connection while draining
+	idle      chan struct{}      // closed (and reset to nil) when len(conns) reaches 0; nil when nobody waits
 
 	// wg tracks the heartbeat loop and the reader/writer goroutines of every connection.
 	wg sync.WaitGroup
@@ -229,9 +232,139 @@ func (s *Server) startConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 	s.conns[c] = struct{}{}
+	if s.draining {
+		// The queue is new and empty, so this never blocks, and it is queued
+		// before the reader starts: the notification is the first message.
+		c.out <- s.drainMsg
+	}
 	s.wg.Add(2)
 	go s.readLoop(ctx, c)
 	go s.writeLoop(c)
+}
+
+// DrainError is returned by Drain when ctx ends with connections still open.
+type DrainError struct {
+	Pending int   // connections still open
+	Err     error // ctx.Err()
+}
+
+// Error implements the error interface.
+func (e *DrainError) Error() string {
+	return fmt.Sprintf("ipc: drain: %d connection(s) still open: %v", e.Pending, e.Err)
+}
+
+// Unwrap returns the ctx error that ended the drain.
+func (e *DrainError) Unwrap() error { return e.Err }
+
+// Drain sends the notification method/params to every open connection (and to
+// any connection accepted while draining, as its first message), then waits
+// until all of them were closed by the peer or ctx is done. It does not stop
+// accepting and does not close connections; call Close afterwards. It returns
+// nil when no connection is left, or a *DrainError wrapping ctx.Err() with the
+// number of connections still open.
+//
+// Drain returns nil immediately, sending nothing and without entering drain
+// mode, when Serve has not been called yet or has already returned (or Close
+// was called): there is nobody to notify. Once Drain was called while serving,
+// the server stays in drain mode until Close, even after Drain returned (with or
+// without error): every connection accepted later still gets the notification
+// as its first message. A second Drain, or several concurrent ones, keeps the
+// first notification, sends nothing new and only waits, with the same return
+// rules. If Close is called while Drain waits, Drain returns nil: the remaining
+// connections were closed by the server, not left open by the peer.
+//
+// The notification is queued in two passes: first without blocking on every
+// connection, then waiting (until ctx is done) only on those whose queue was
+// full, so one stuck connection does not keep the others from being notified.
+// Drain starts no goroutine.
+func (s *Server) Drain(ctx context.Context, method string, params any) error {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("ipc: encode %s params: %w", method, err)
+	}
+	msg := Request{JSONRPC: Version, Method: method, Params: raw}
+
+	s.mu.Lock()
+	if s.serveDone == nil || s.closed || isDone(s.serveDone) {
+		s.mu.Unlock()
+		return nil
+	}
+	var targets []*serverConn
+	if !s.draining {
+		s.draining = true
+		s.drainMsg = msg
+		targets = make([]*serverConn, 0, len(s.conns))
+		for c := range s.conns {
+			targets = append(targets, c)
+		}
+	}
+	s.mu.Unlock()
+
+	// Connections registered after the unlock get the message from startConn.
+	// First pass: never block, so a stuck connection does not delay the healthy
+	// ones (and an already expired ctx does not drop the notification on a
+	// connection with room in its queue).
+	var pending []*serverConn
+	for _, c := range targets {
+		if isDone(c.done) {
+			continue
+		}
+		select {
+		case c.out <- msg:
+		default:
+			pending = append(pending, c)
+		}
+	}
+	// Second pass: wait only on the connections whose queue was full.
+	for _, c := range pending {
+		select {
+		case c.out <- msg:
+		case <-c.done:
+		case <-ctx.Done():
+			return s.drainError(ctx)
+		}
+	}
+
+	for {
+		s.mu.Lock()
+		if len(s.conns) == 0 {
+			s.mu.Unlock()
+			return nil
+		}
+		if s.idle == nil {
+			s.idle = make(chan struct{})
+		}
+		idle, serveDone := s.idle, s.serveDone
+		s.mu.Unlock()
+
+		select {
+		case <-idle:
+		case <-serveDone:
+		case <-ctx.Done():
+			return s.drainError(ctx)
+		}
+	}
+}
+
+func (s *Server) drainError(ctx context.Context) error {
+	s.mu.Lock()
+	pending, closed := len(s.conns), s.closed
+	s.mu.Unlock()
+	if pending == 0 || closed {
+		// The last connection closed as ctx ended, or the server is closing
+		// the remaining ones itself (Close, or Serve ended).
+		return nil
+	}
+	return &DrainError{Pending: pending, Err: ctx.Err()}
+}
+
+func isDone(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close stops accepting, closes the listener and every connection, and returns
@@ -320,6 +453,10 @@ func (s *Server) readLoop(ctx context.Context, c *serverConn) {
 		c.close()
 		s.mu.Lock()
 		delete(s.conns, c)
+		if len(s.conns) == 0 && s.idle != nil {
+			close(s.idle)
+			s.idle = nil
+		}
 		s.mu.Unlock()
 	}()
 

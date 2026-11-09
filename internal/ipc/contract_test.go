@@ -16,10 +16,12 @@ import (
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
 	Info struct {
-		Limits struct {
-			MaxMessageBytes          int `json:"maxMessageBytes"`
-			HeartbeatIntervalSeconds int `json:"heartbeatIntervalSeconds"`
-			ClientNotificationBuffer int `json:"clientNotificationBuffer"`
+		Version string `json:"version"`
+		Limits  struct {
+			MaxMessageBytes          int  `json:"maxMessageBytes"`
+			HeartbeatIntervalSeconds int  `json:"heartbeatIntervalSeconds"`
+			ClientNotificationBuffer int  `json:"clientNotificationBuffer"`
+			ShutdownDrainMs          *int `json:"shutdownDrainMs"`
 		} `json:"x-limits"`
 	} `json:"info"`
 	Methods []struct {
@@ -28,6 +30,10 @@ type openRPC struct {
 		Params       []struct {
 			Name     string `json:"name"`
 			Required bool   `json:"required"`
+			Schema   struct {
+				Type string   `json:"type"`
+				Enum []string `json:"enum"`
+			} `json:"schema"`
 		} `json:"params"`
 		Result struct {
 			Schema jsonSchema `json:"schema"`
@@ -51,7 +57,8 @@ type jsonSchema struct {
 
 func loadContract(t *testing.T) openRPC {
 	t.Helper()
-	path := filepath.Join("..", "..", "docs", "specs", "phase-2-skeleton", "contracts", "ipc.openrpc.json")
+	// The single-exe contract (v0.3.0) supersedes the phase-2 one (v0.2.0).
+	path := filepath.Join("..", "..", "docs", "specs", "single-exe", "contracts", "ipc.openrpc.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read contract: %v", err)
@@ -59,6 +66,9 @@ func loadContract(t *testing.T) openRPC {
 	var c openRPC
 	if err := json.Unmarshal(raw, &c); err != nil {
 		t.Fatalf("parse contract: %v", err)
+	}
+	if c.Info.Version != "0.3.0" {
+		t.Fatalf("contract info.version = %q, want \"0.3.0\"", c.Info.Version)
 	}
 	return c
 }
@@ -165,7 +175,7 @@ func TestContract(t *testing.T) {
 			names = append(names, m.Name)
 		}
 		slices.Sort(names)
-		want := []string{ipc.MethodPing, ipc.MethodStatus, ipc.MethodHeartbeat}
+		want := []string{ipc.MethodPing, ipc.MethodStatus, ipc.MethodHeartbeat, ipc.MethodShutdown}
 		slices.Sort(want)
 		if !slices.Equal(names, want) {
 			t.Errorf("contract methods = %v, Go constants = %v", names, want)
@@ -266,6 +276,66 @@ func TestContract(t *testing.T) {
 		t.Parallel()
 		if got := c.Info.Limits.ClientNotificationBuffer; got != ipc.NotificationBuffer {
 			t.Errorf("x-limits.clientNotificationBuffer = %d, ipc.NotificationBuffer = %d", got, ipc.NotificationBuffer)
+		}
+	})
+
+	t.Run("EXE-013/agent.shutdown é notificação com reason enum quit|session-end|signal|other", func(t *testing.T) {
+		t.Parallel()
+		if ipc.MethodShutdown != "agent.shutdown" {
+			t.Fatalf("ipc.MethodShutdown = %q, want \"agent.shutdown\"", ipc.MethodShutdown)
+		}
+		found := false
+		for _, m := range c.Methods {
+			if m.Name != ipc.MethodShutdown {
+				continue
+			}
+			found = true
+			if !m.Notification {
+				t.Errorf("contract %s: x-notification = false, want true", m.Name)
+			}
+			if len(m.Params) != 1 {
+				t.Fatalf("contract %s params = %+v, want exactly [reason]", m.Name, m.Params)
+			}
+			p := m.Params[0]
+			if p.Name != "reason" || !p.Required {
+				t.Errorf("contract %s param = %q required=%v, want \"reason\" required", m.Name, p.Name, p.Required)
+			}
+			if p.Schema.Type != "string" {
+				t.Errorf("contract reason type = %q, want \"string\"", p.Schema.Type)
+			}
+			wantEnum := []string{"quit", "session-end", "signal", "other"}
+			if !slices.Equal(p.Schema.Enum, wantEnum) {
+				t.Errorf("contract reason enum = %v, want %v", p.Schema.Enum, wantEnum)
+			}
+		}
+		if !found {
+			t.Fatalf("method %q not in contract", ipc.MethodShutdown)
+		}
+		if got := jsonFieldNames(t, ipc.ShutdownParams{}); !slices.Equal(got, []string{"reason"}) {
+			t.Errorf("ipc.ShutdownParams JSON fields = %v, want exactly [reason]", got)
+		}
+		raw, err := json.Marshal(ipc.ShutdownParams{Reason: "session-end"})
+		if err != nil {
+			t.Fatalf("marshal ShutdownParams: %v", err)
+		}
+		if string(raw) != `{"reason":"session-end"}` {
+			t.Errorf("ShutdownParams JSON = %s, want {\"reason\":\"session-end\"}", raw)
+		}
+		// agent.shutdown is server-to-client only: no handler for it.
+		if _, has := testHandlers()[ipc.MethodShutdown]; has {
+			t.Error("AgentHandlers has a handler for the server notification agent.shutdown")
+		}
+	})
+
+	t.Run("EXE-014/x-limits.shutdownDrainMs = 500", func(t *testing.T) {
+		t.Parallel()
+		// The agent-side constant (shutdownDrainTimeout) is checked against
+		// this value in internal/agent (T06); here the contract is pinned.
+		if c.Info.Limits.ShutdownDrainMs == nil {
+			t.Fatal("contract x-limits has no shutdownDrainMs")
+		}
+		if got := *c.Info.Limits.ShutdownDrainMs; got != 500 {
+			t.Errorf("x-limits.shutdownDrainMs = %d, want 500", got)
 		}
 	})
 

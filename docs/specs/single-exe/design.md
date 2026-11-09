@@ -197,6 +197,18 @@ func (s *Server) Drain(ctx context.Context, method string, params any) error
 - O heartbeat continua durante o drain (inofensivo). Testes: `net.Pipe`/TCP local + `FakeClock` não é necessário para o
   limite (é `ctx`), mas o teste de EXE-014 usa `context.WithTimeout` curto ou um `ctx` cancelado manualmente.
 - Dispatcher/servidor não precisam de mudança para notificações do cliente; `agent.shutdown` é só servidor → cliente.
+- Ajustes da revisão do T02 · alterado em 2026-11-08:
+  - O enfileiramento é feito em **duas passadas**. Primeiro, sem bloquear, em todas as conexões. Depois, só nas
+    que estavam com a fila cheia, esperando até o `ctx`. Assim, uma conexão travada não impede as saudáveis de
+    receber a notificação (EXE-013).
+  - Uma vez em drain, o servidor **continua em drain até o `Close`**, mesmo depois de `Drain` retornar (com ou sem
+    erro): toda conexão aceita depois recebe a notificação como primeira mensagem. Um segundo `Drain` (ou vários
+    concorrentes) não reenvia nada; ele só espera, com a mesma regra de retorno. `Drain` antes do `Serve`
+    devolve `nil` e não entra em drain.
+  - `Close` durante um `Drain` faz o `Drain` devolver `nil`, porque as conexões são fechadas pelo servidor.
+  - Limitação: se o `Close` vier logo depois de uma notificação enfileirada (ex.: conexão aceita no fim do
+    prazo), o writer pode sair pelo `done` antes de escrevê-la. O cliente então vê uma queda sem aviso (EXE-020),
+    o mesmo efeito do descarte de dados não lidos do pipe já citado acima.
 
 ### `ipc.Client`: estado da conexão [EXE-019]
 ```go

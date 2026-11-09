@@ -866,6 +866,42 @@ func TestShutdown(t *testing.T) {
 		goleak.VerifyNone(t, ignoreExisting)
 	})
 
+	t.Run("IPC-006/Drain não deixa goroutines", func(t *testing.T) {
+		ln := newMemListener()
+		r := startServer(t, ln, domain.NewFakeClock(testStart), testHandlers(), nil)
+		conns := []*rawConn{dialRaw(t, ln), dialRaw(t, ln)}
+		for _, c := range conns {
+			c.ping(t, 1)
+		}
+
+		// Drain that ends because every client closed.
+		errc := drainAsync(guardCtx(t), r.srv, "quit")
+		for _, line := range readEach(t, conns) {
+			assertShutdown(t, line, "quit")
+		}
+		for _, c := range conns {
+			c.conn.Close()
+		}
+		if err := recv(t, errc, "Drain to return after the clients closed"); err != nil {
+			t.Fatalf("Drain = %v, want nil", err)
+		}
+
+		// Drain that ends by ctx, with a connection left for Close.
+		left := dialRaw(t, ln)
+		assertShutdown(t, left.readLine(t), "quit") // still in drain after Drain returned (EXE-015)
+		left.ping(t, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		errc = drainAsync(ctx, r.srv, "quit")
+		cancel()
+		if err := recv(t, errc, "Drain to return after ctx cancel"); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Drain with a connection open and ctx cancelled = %v, want errors.Is Canceled", err)
+		}
+
+		r.stop(t)
+		left.conn.Close()
+		goleak.VerifyNone(t, ignoreExisting)
+	})
+
 	t.Run("IPC-006/Close idempotente", func(t *testing.T) {
 		ln := newMemListener()
 		r := startServer(t, ln, domain.NewFakeClock(testStart), testHandlers(), nil)
