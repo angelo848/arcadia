@@ -929,6 +929,35 @@ func TestShutdown(t *testing.T) {
 		goleak.VerifyNone(t, ignoreExisting)
 	})
 
+	t.Run("IPC-006/Notify não cria goroutines", func(t *testing.T) {
+		ln := newMemListener()
+		r := startServer(t, ln, domain.NewFakeClock(testStart), testHandlers(), nil)
+		conns := []*rawConn{dialRaw(t, ln), dialRaw(t, ln)}
+		for _, c := range conns {
+			c.ping(t, 1)
+		}
+		// Server, heartbeat loop and per-connection reader/writer are running.
+		serving := goleak.IgnoreCurrent()
+
+		for i := range 3 {
+			r.srv.Notify("test.event", map[string]int{"seq": i})
+		}
+		for _, c := range conns {
+			for range 3 {
+				c.readLine(t) // read sequentially: no helper goroutines
+			}
+		}
+		// Notify queues on the existing writers: nothing new is running.
+		goleak.VerifyNone(t, serving)
+
+		r.stop(t)
+		for _, c := range conns {
+			c.conn.Close()
+		}
+		within(t, "Notify after Close", func() { r.srv.Notify("test.event", map[string]int{"seq": 9}) })
+		goleak.VerifyNone(t, ignoreExisting)
+	})
+
 	t.Run("IPC-006/Close idempotente", func(t *testing.T) {
 		ln := newMemListener()
 		r := startServer(t, ln, domain.NewFakeClock(testStart), testHandlers(), nil)

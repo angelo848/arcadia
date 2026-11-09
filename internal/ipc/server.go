@@ -427,9 +427,31 @@ func (s *Server) broadcastHeartbeat(now time.Time) {
 		s.log.Error("ipc: encode heartbeat", "error", err.Error())
 		return
 	}
-	msg := Request{JSONRPC: Version, Method: MethodHeartbeat, Params: params}
+	s.broadcast(Request{JSONRPC: Version, Method: MethodHeartbeat, Params: params}, slog.LevelDebug)
+}
 
+// Notify encodes params once and queues the notification on every open connection without
+// blocking. A full queue drops it for that connection only, logging Warn
+// "notificação descartada: fila da conexão cheia" (method, remote). No-op before Serve and after
+// Close; safe from any goroutine. An encoding error is logged (Error) and nothing is sent.
+func (s *Server) Notify(method string, params any) {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		s.log.Error("ipc: encode notification params", "method", method, "error", err.Error())
+		return
+	}
+	s.broadcast(Request{JSONRPC: Version, Method: method, Params: raw}, slog.LevelWarn)
+}
+
+// broadcast queues msg on every open connection without blocking. A connection
+// whose queue is full loses msg, logged at dropLevel. It does nothing before
+// Serve and once the server is closed, and starts no goroutine.
+func (s *Server) broadcast(msg Request, dropLevel slog.Level) {
 	s.mu.Lock()
+	if s.serveDone == nil || s.closed {
+		s.mu.Unlock()
+		return
+	}
 	conns := make([]*serverConn, 0, len(s.conns))
 	for c := range s.conns {
 		conns = append(conns, c)
@@ -437,10 +459,14 @@ func (s *Server) broadcastHeartbeat(now time.Time) {
 	s.mu.Unlock()
 
 	for _, c := range conns {
+		if isDone(c.done) {
+			continue
+		}
 		select {
 		case c.out <- msg:
 		default:
-			s.log.Debug("ipc: heartbeat dropped, connection queue full", "remote", c.conn.RemoteAddr().String())
+			s.log.Log(context.Background(), dropLevel, "notificação descartada: fila da conexão cheia",
+				"method", msg.Method, "remote", c.conn.RemoteAddr().String())
 		}
 	}
 }
