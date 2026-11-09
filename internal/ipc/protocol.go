@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/single-exe/contracts/ipc.openrpc.json (v0.3.0, which supersedes the
-// phase-2 contract kept in docs/specs/phase-2-skeleton/contracts/ as history).
+// docs/specs/phase-3-tracker/contracts/ipc.openrpc.json (v0.4.0, which supersedes
+// the single-exe v0.3.0 and phase-2 v0.2.0 contracts kept in their specs as history).
 package ipc
 
 import (
@@ -29,6 +29,14 @@ const (
 	// MethodShutdown is the server-to-client notification sent by Server.Drain
 	// when the agent is about to exit.
 	MethodShutdown = "agent.shutdown"
+
+	MethodGameAdd        = "game.add"
+	MethodGameList       = "game.list"
+	MethodGameLaunch     = "game.launch"
+	MethodSessionCurrent = "session.current"
+	// MethodSessionChanged is the server-to-client notification of a session
+	// state change.
+	MethodSessionChanged = "session.changed"
 )
 
 // JSON-RPC 2.0 error codes.
@@ -39,6 +47,35 @@ const (
 	CodeInvalidParams  = -32602
 	CodeInternalError  = -32603
 )
+
+// Application error codes.
+const (
+	CodeGameNotFound      = -32001
+	CodeSessionActive     = -32002
+	CodeLaunchFailed      = -32003
+	CodeInvalidExecutable = -32004
+)
+
+// Application error messages, exactly as in the contract's components.errors.
+const (
+	MsgGameNotFound      = "Game not found"
+	MsgSessionActive     = "Session already active"
+	MsgLaunchFailed      = "Launch failed"
+	MsgInvalidExecutable = "Invalid executable"
+	// MsgInvalidParams is the exported alias of msgInvalidParams.
+	MsgInvalidParams = msgInvalidParams
+)
+
+// Reasons carried by InvalidExecutableData.
+const (
+	ReasonNotAbsolute = "not-absolute"
+	ReasonNotFound    = "not-found"
+	ReasonNotAFile    = "not-a-file"
+	ReasonNotExe      = "not-exe"
+)
+
+// MaxGameTitleRunes is the maximum length of a game title (x-limits.maxGameTitleRunes).
+const MaxGameTitleRunes = 200
 
 // Standard error messages, exactly as in the contract's components.errors.
 const (
@@ -83,6 +120,18 @@ func NewError(code int, message string) *Error {
 	return &Error{Code: code, Message: message}
 }
 
+// NewErrorData returns an *Error with the given code and message whose data
+// member is the JSON encoding of data. data must be JSON-serializable: if it
+// cannot be encoded, the data member is silently omitted and the error is
+// returned without data.
+func NewErrorData(code int, message string, data any) *Error {
+	e := NewError(code, message)
+	if raw, err := json.Marshal(data); err == nil {
+		e.Data = raw
+	}
+	return e
+}
+
 // Notification is a server-to-client JSON-RPC notification as seen by the client.
 type Notification struct {
 	Method string          `json:"method"`
@@ -112,4 +161,81 @@ type HeartbeatParams struct {
 // one of "quit", "session-end", "signal" or "other".
 type ShutdownParams struct {
 	Reason string `json:"reason"`
+}
+
+// Game is a library entry with its play totals. FirstPlayedAt and LastPlayedAt
+// are null until the first counted session.
+type Game struct {
+	ID               int64      `json:"id"`
+	Title            string     `json:"title"`
+	Path             string     `json:"path"`
+	TotalPlaySeconds int64      `json:"totalPlaySeconds"`
+	PlayCount        int64      `json:"playCount"`
+	FirstPlayedAt    *time.Time `json:"firstPlayedAt"`
+	LastPlayedAt     *time.Time `json:"lastPlayedAt"`
+}
+
+// Session is the wire view of a play session (see SessionFromSnapshot).
+type Session struct {
+	SessionID     int64      `json:"sessionId"`
+	GameID        int64      `json:"gameId"`
+	Title         string     `json:"title"`
+	State         string     `json:"state"`
+	StartedAt     time.Time  `json:"startedAt"`
+	EndedAt       *time.Time `json:"endedAt"`
+	ActiveSeconds int64      `json:"activeSeconds"`
+	ActiveMs      int64      `json:"activeMs"`
+	AsOf          MilliTime  `json:"asOf"`
+}
+
+// GameAddParams are the params of game.add (client-side encoding).
+type GameAddParams struct {
+	Path  string `json:"path"`
+	Title string `json:"title,omitempty"`
+}
+
+// GameLaunchParams are the params of game.launch (client-side encoding).
+type GameLaunchParams struct {
+	GameID int64 `json:"gameId"`
+}
+
+// GameListResult is the result of game.list. Games is never nil.
+type GameListResult struct {
+	Games []Game `json:"games"`
+}
+
+// SessionCurrentResult is the result of session.current; Session is null when
+// no session is active.
+type SessionCurrentResult struct {
+	Session *Session `json:"session"`
+}
+
+// SessionChangedParams are the params of the session.changed notification.
+type SessionChangedParams struct {
+	Session Session `json:"session"`
+}
+
+// SessionRef identifies a session (data of SessionActive).
+type SessionRef struct {
+	SessionID int64  `json:"sessionId"`
+	GameID    int64  `json:"gameId"`
+	Title     string `json:"title"`
+}
+
+// LaunchFailedData is the data of LaunchFailed. WinError is the Win32 error
+// code, when there is one.
+type LaunchFailedData struct {
+	Error    string  `json:"error"`
+	WinError *uint32 `json:"winError,omitempty"`
+}
+
+// InvalidExecutableData is the data of InvalidExecutable; Reason is one of the
+// Reason* constants.
+type InvalidExecutableData struct {
+	Reason string `json:"reason"`
+}
+
+// GameNotFoundData is the data of GameNotFound.
+type GameNotFoundData struct {
+	GameID int64 `json:"gameId"`
 }

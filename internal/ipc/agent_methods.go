@@ -2,7 +2,6 @@ package ipc
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -20,10 +19,10 @@ type AgentInfo struct {
 // computed from clock on every call relative to info.StartedAt.
 func AgentHandlers(info AgentInfo, clock domain.Clock) map[string]Handler {
 	return map[string]Handler{
-		MethodPing: noParams(func(context.Context) (any, error) {
+		MethodPing: NoParams(func(context.Context) (any, error) {
 			return PingResult{Pong: true}, nil
 		}),
-		MethodStatus: noParams(func(context.Context) (any, error) {
+		MethodStatus: NoParams(func(context.Context) (any, error) {
 			return AgentStatus{
 				Version:       info.Version,
 				PID:           info.PID,
@@ -32,17 +31,6 @@ func AgentHandlers(info AgentInfo, clock domain.Clock) map[string]Handler {
 				UptimeSeconds: uptimeSeconds(info.StartedAt, clock.Now()),
 			}, nil
 		}),
-	}
-}
-
-// noParams wraps a handler for a method without params: any non-empty params
-// (the dispatcher already normalized empty ones to nil) yield -32602.
-func noParams(fn func(ctx context.Context) (any, error)) Handler {
-	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		if len(params) != 0 {
-			return nil, NewError(CodeInvalidParams, msgInvalidParams)
-		}
-		return fn(ctx)
 	}
 }
 

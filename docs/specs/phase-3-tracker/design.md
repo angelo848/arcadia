@@ -343,14 +343,16 @@ Log `Warn` "sessões abertas recuperadas" (`count`) quando `count > 0`.
   `GameListResult` (`Games []Game` sempre não nulo), `SessionCurrentResult` (`Session *Session`),
   `SessionChangedParams`, `SessionRef`, `LaunchFailedData`, `InvalidExecutableData`, `GameNotFoundData`. Helper
   `NewErrorData(code, message string, data any) *Error`.
-- `type MilliTime time.Time` (alterado em 2026-11-09, planejamento): `MarshalJSON` sempre em UTC com o layout
+- `type MilliTime struct{ time.Time }` (alterado em 2026-11-09, planejamento): `MarshalJSON` sempre em UTC com o layout
   `2006-01-02T15:04:05.000Z07:00` (três dígitos de fração, mesmo `.000`); `UnmarshalJSON` aceita RFC 3339. Motivo: o
   `time.Time` padrão serializa em RFC3339Nano e corta os zeros finais (`.3Z` ou sem fração), o que fere "com
   milissegundos" de IPC-031. Só o `asOf` usa `MilliTime`; os demais instantes continuam `time.Time` [IPC-031].
 - Conversão `domain.SessionSnapshot` → `ipc.Session` num único helper: `ActiveMs = Active.Milliseconds()`,
-  `ActiveSeconds = ActiveMs / 1000`, `AsOf = MilliTime(snapshot.AsOf.UTC())` [IPC-031].
-- Decodificação de params com membros: `json.Decoder` com `DisallowUnknownFields`, rejeita array e exige os
-  obrigatórios (helper `decodeParams(raw, &v) *Error` → `-32602`). `gameId` é decodificado como `json.RawMessage` e
+  `ActiveSeconds = ActiveMs / 1000`, `AsOf = MilliTime{Time: snapshot.AsOf.UTC()}` [IPC-031].
+- Decodificação de params com membros: `json.Decoder` com `DisallowUnknownFields`, rejeita array, recusa
+  nome de membro com caixa diferente da tag e membro duplicado (helper `DecodeParams(raw, &v) *Error` → `-32602`).
+  Os obrigatórios são conferidos pelo handler, porque params vazios (`{}`, `[]`, `null`) chegam como nil (alterado em
+  2026-11-09, revisão da T04). `gameId` é decodificado como `json.RawMessage` e
   só aceito se o literal JSON for um inteiro ≥ 1 sem fração nem expoente (nem texto entre aspas: `"5"` → `-32602`).
   `json.Number` sozinho não serve, porque aceita `"5"` [IPC-028]. (Alterado em 2026-11-09, planejamento.)
 - `Server.Notify(method string, params any)`: serializa uma vez e enfileira sem bloquear em cada conexão aberta
