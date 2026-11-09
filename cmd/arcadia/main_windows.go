@@ -1,10 +1,12 @@
 //go:build windows
 
-// Command arcadia is the Arcadia desktop UI (Wails). It starts the agent when it
+// Command arcadia is the single Arcadia executable (EXE-001). With --agent it
+// runs the tray agent (internal/agent); otherwise it runs the desktop UI
+// (Wails), which starts the agent (this same executable with --agent) when it
 // is not running, talks to it over the per-user named pipe and reads the
 // library without migrating it (ADR 0010). Closing the UI never stops the agent.
 //
-// Build with the Wails CLI (from cmd/desktop): wails build.
+// Build with the Wails CLI: cd cmd/arcadia && wails build -ldflags "-X main.version=<v>"
 package main
 
 import (
@@ -24,17 +26,28 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/arcadia-launcher/arcadia/frontend"
+	"github.com/arcadia-launcher/arcadia/internal/agent"
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/winapi"
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:]))
 }
 
-// run starts the Wails app and returns the process exit code.
-func run() int {
+// run selects the mode before anything else (no mutex, log, paths or Wails
+// before the choice, EXE-004) and returns the process exit code.
+func run(args []string) int {
+	if isAgentMode(args) {
+		return agent.Run(agent.Options{Args: args, Version: version})
+	}
+	return runUI(args)
+}
+
+// runUI starts the Wails app and returns the process exit code. It never
+// acquires the agent mutex nor listens on the pipe (EXE-004).
+func runUI(args []string) int {
 	// Bootstrap logger for failures before desktop.log exists.
 	boot := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
@@ -44,7 +57,7 @@ func run() int {
 	fset := flag.NewFlagSet("arcadia", flag.ContinueOnError)
 	fset.SetOutput(io.Discard)
 	fset.StringVar(&cfg.DataDir, "data-dir", "", "data directory (default: $ARCADIA_DATA_DIR or <exe dir>\\data)")
-	if err := fset.Parse(os.Args[1:]); err != nil {
+	if err := fset.Parse(args); err != nil {
 		boot.Warn("argumentos ignorados", "error", err.Error())
 	}
 
@@ -53,6 +66,7 @@ func run() int {
 		boot.Error("falha ao localizar o executável", "error", err.Error())
 		return 1
 	}
+	cfg.Exe = exe
 	cfg.ExeDir = filepath.Dir(exe)
 
 	assets, err := fs.Sub(frontend.Assets, "dist")
@@ -99,8 +113,8 @@ func defaultPlatform() platform {
 			}
 			return ipc.NewClient(ipc.PipeDialer(ipc.PipeName(sid)), domain.SystemClock{}, log), nil
 		},
-		startAgent: func(exeDir, root string, log *slog.Logger) error {
-			return startAgentProcess(winapi.CreateDetached, exeDir, root, log)
+		startAgent: func(exe, root string, log *slog.Logger) error {
+			return startAgentProcess(winapi.CreateDetached, exe, root, log)
 		},
 		emit: func(ctx context.Context, event string, data any) {
 			wailsruntime.EventsEmit(ctx, event, data)

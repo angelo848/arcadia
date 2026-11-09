@@ -67,8 +67,8 @@ type platform struct {
 	newProbe func() (pinger, error)
 	// newClient connects to the agent's pipe (reconnecting on its own).
 	newClient func(log *slog.Logger) (ipcClient, error)
-	// startAgent launches the agent decoupled from the UI.
-	startAgent func(exeDir, root string, log *slog.Logger) error
+	// startAgent launches the agent (exe --agent) decoupled from the UI (EXE-007).
+	startAgent func(exe, root string, log *slog.Logger) error
 	// emit sends a Wails event to the frontend.
 	emit func(ctx context.Context, event string, data any)
 }
@@ -168,7 +168,7 @@ func (a *App) startup(wailsCtx context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	gate := a.gate
-	start := func() error { return a.platform.startAgent(a.cfg.ExeDir, p.Root, log) }
+	start := func() error { return a.platform.startAgent(a.cfg.Exe, p.Root, log) }
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()

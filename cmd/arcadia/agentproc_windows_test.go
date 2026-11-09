@@ -1,11 +1,10 @@
 package main
 
-// Tests for the agent start command and the breakaway fallback (DSK-004, DSK-005).
+// Tests for the agent start command (EXE-007) and the breakaway fallback (DSK-005).
 
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -20,36 +19,45 @@ const (
 	createBreakawayFromJob uint32 = 0x01000000 // CREATE_BREAKAWAY_FROM_JOB
 )
 
-const testExeDir = `C:\Program Files\Arcadia`
+const testExe = `C:\Program Files\Arcadia\arcadia.exe`
 const testRoot = `D:\ArcadiaData`
 
 func TestAgentCommand(t *testing.T) {
 	t.Parallel()
-	exe, args, flags := agentCommand(testExeDir, testRoot)
+	exe, args, flags := agentCommand(testExe, testRoot)
 
-	t.Run(`DSK-004/exe é P\arcadia-agent.exe`, func(t *testing.T) {
+	t.Run("EXE-007/exe é o caminho recebido, com qualquer nome de arquivo", func(t *testing.T) {
 		t.Parallel()
-		if want := filepath.Join(testExeDir, "arcadia-agent.exe"); exe != want {
-			t.Errorf("exe = %q, want %q", exe, want)
+		if exe != testExe {
+			t.Errorf("exe = %q, want %q", exe, testExe)
+		}
+		for _, e := range []string{
+			`D:\Tools\meu launcher (v2).exe`,
+			`C:\Users\x\Downloads\Arcadia-1.2.3-portable.EXE`,
+			`E:\renamed.exe`,
+		} {
+			if got, _, _ := agentCommand(e, testRoot); got != e {
+				t.Errorf("agentCommand(%q, ...) exe = %q, want %q (no rename, no sibling binary)", e, got, e)
+			}
 		}
 	})
-	t.Run("DSK-004/args são --data-dir R", func(t *testing.T) {
+	t.Run("EXE-007/args são --agent --data-dir R", func(t *testing.T) {
 		t.Parallel()
-		if want := []string{"--data-dir", testRoot}; !slices.Equal(args, want) {
+		if want := []string{"--agent", "--data-dir", testRoot}; !slices.Equal(args, want) {
 			t.Errorf("args = %q, want %q", args, want)
 		}
 	})
-	t.Run("DSK-004/flags DETACHED|NEW_PROCESS_GROUP|BREAKAWAY", func(t *testing.T) {
+	t.Run("EXE-007/flags DETACHED|NEW_PROCESS_GROUP|BREAKAWAY", func(t *testing.T) {
 		t.Parallel()
 		if want := detachedProcess | createNewProcessGroup | createBreakawayFromJob; flags != want {
 			t.Errorf("flags = %#x, want %#x", flags, want)
 		}
 	})
-	t.Run("DSK-004/root com espaços vira um único argumento", func(t *testing.T) {
+	t.Run("EXE-007/root com espaços é um único argumento", func(t *testing.T) {
 		t.Parallel()
 		root := `D:\My Games\Arcadia Data`
-		_, args, _ := agentCommand(testExeDir, root)
-		if want := []string{"--data-dir", root}; !slices.Equal(args, want) {
+		_, args, _ := agentCommand(testExe, root)
+		if want := []string{"--agent", "--data-dir", root}; !slices.Equal(args, want) {
 			t.Errorf("args = %q, want %q", args, want)
 		}
 	})
@@ -82,7 +90,7 @@ func (s *scriptedSpawn) spawn(exe string, args []string, flags uint32) error {
 
 func TestStartAgentProcess(t *testing.T) {
 	t.Parallel()
-	wantExe, wantArgs, wantFlags := agentCommand(testExeDir, testRoot)
+	wantExe, wantArgs, wantFlags := agentCommand(testExe, testRoot)
 	errOther := windows.ERROR_FILE_NOT_FOUND
 
 	retry := []struct {
@@ -99,7 +107,7 @@ func TestStartAgentProcess(t *testing.T) {
 			sp := &scriptedSpawn{errs: []error{tc.denied}}
 			log, buf := captureLog()
 
-			err := startAgentProcess(sp.spawn, testExeDir, testRoot, log)
+			err := startAgentProcess(sp.spawn, testExe, testRoot, log)
 
 			if err != nil {
 				t.Errorf("startAgentProcess err = %v, want nil (second attempt succeeded)", err)
@@ -125,12 +133,37 @@ func TestStartAgentProcess(t *testing.T) {
 		})
 	}
 
+	t.Run("EXE-007/fallback sem BREAKAWAY usa o mesmo exe e args", func(t *testing.T) {
+		t.Parallel()
+		exe := `D:\Portable Apps\arcadia-renomeado.exe`
+		root := `E:\Dados do Arcadia`
+		sp := &scriptedSpawn{errs: []error{windows.ERROR_ACCESS_DENIED}}
+		log, _ := captureLog()
+
+		if err := startAgentProcess(sp.spawn, exe, root, log); err != nil {
+			t.Errorf("startAgentProcess err = %v, want nil (second attempt succeeded)", err)
+		}
+		if len(sp.calls) != 2 {
+			t.Fatalf("spawn called %d times, want 2", len(sp.calls))
+		}
+		wantArgs := []string{"--agent", "--data-dir", root}
+		wantFlags := []uint32{
+			detachedProcess | createNewProcessGroup | createBreakawayFromJob,
+			detachedProcess | createNewProcessGroup,
+		}
+		for i, c := range sp.calls {
+			if c.exe != exe || !slices.Equal(c.args, wantArgs) || c.flags != wantFlags[i] {
+				t.Errorf("call %d = %q %q %#x, want %q %q %#x", i+1, c.exe, c.args, c.flags, exe, wantArgs, wantFlags[i])
+			}
+		}
+	})
+
 	t.Run("DSK-005/ACCESS_DENIED e segunda tentativa falha retorna erro", func(t *testing.T) {
 		t.Parallel()
 		sp := &scriptedSpawn{errs: []error{windows.ERROR_ACCESS_DENIED, errOther}}
 		log, _ := captureLog()
 
-		err := startAgentProcess(sp.spawn, testExeDir, testRoot, log)
+		err := startAgentProcess(sp.spawn, testExe, testRoot, log)
 
 		if !errors.Is(err, errOther) {
 			t.Errorf("startAgentProcess err = %v, want errors.Is(err, second spawn error)", err)
@@ -145,7 +178,7 @@ func TestStartAgentProcess(t *testing.T) {
 		sp := &scriptedSpawn{errs: []error{fmt.Errorf("create: %w", errOther)}}
 		log, buf := captureLog()
 
-		err := startAgentProcess(sp.spawn, testExeDir, testRoot, log)
+		err := startAgentProcess(sp.spawn, testExe, testRoot, log)
 
 		if !errors.Is(err, errOther) {
 			t.Errorf("startAgentProcess err = %v, want errors.Is(err, spawn error)", err)
@@ -163,7 +196,7 @@ func TestStartAgentProcess(t *testing.T) {
 		sp := &scriptedSpawn{}
 		log, buf := captureLog()
 
-		err := startAgentProcess(sp.spawn, testExeDir, testRoot, log)
+		err := startAgentProcess(sp.spawn, testExe, testRoot, log)
 
 		if err != nil {
 			t.Errorf("startAgentProcess err = %v, want nil", err)

@@ -19,7 +19,8 @@ const desktopLogFile = "desktop.log"
 // is resolved with paths.Resolve, like the agent does.
 type desktopConfig struct {
 	DataDir string // --data-dir
-	ExeDir  string // directory of arcadia.exe
+	Exe     string // this executable (os.Executable); the agent is started from it (EXE-007)
+	ExeDir  string // directory of Exe
 }
 
 // setupLogging opens the UI log at p.Logs/desktop.log with the shared rotation

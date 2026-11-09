@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-// AgentStatusView mirrors cmd/desktop StatusView (JSON field names).
+// AgentStatusView mirrors cmd/arcadia StatusView (JSON field names).
 export type AgentStatusView = {
   connected: boolean
   version: string
@@ -11,7 +11,7 @@ export type AgentStatusView = {
   uptimeSeconds: number
 }
 
-// LibrarySummaryView mirrors cmd/desktop LibrarySummaryView.
+// LibrarySummaryView mirrors cmd/arcadia LibrarySummaryView.
 export type LibrarySummaryView = { games: number; platforms: number }
 
 // The generated Wails bindings (frontend/wailsjs) only exist after T12, so the

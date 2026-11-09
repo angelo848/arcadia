@@ -20,7 +20,8 @@ func main() {
 	os.Exit(1)
 }
 
-// defaultPlatform returns hooks that fail: there is no agent pipe here.
+// defaultPlatform returns hooks that fail: there is no agent pipe here
+// (startAgent receives the executable path and the data root, like on Windows).
 func defaultPlatform() platform {
 	return platform{
 		newProbe:   func() (pinger, error) { return nil, errUnsupported },
