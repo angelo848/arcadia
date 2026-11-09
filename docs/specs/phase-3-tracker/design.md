@@ -266,9 +266,14 @@ func (t *Tracker) Close(ctx context.Context) error                     // Stop, 
   até o fim na goroutine dona (o processo pode já ter sido criado) e a resposta é descartada; a UI vê o resultado por
   `session.changed`.
 - Lançamento em andamento é feito **dentro** da goroutine dona (`Prepare` → `StartSession` → `Resume`), então um
-  segundo `Launch` só é lido depois e encontra a sessão ativa [SES-002]. Os pedidos que chegam enquanto ela está
-  ocupada ficam no canal (sem buffer: o chamador espera); por isso `SessionActive` em "Launching" na prática vira
-  "Running" quando lido — o contrato aceita os dois.
+  segundo `Launch` só é lido depois e encontra a sessão ativa [SES-002]. Alterado em 2026-11-09 (revisão da T08):
+  antes de enviar o pedido, `Launch` consulta o snapshot (`Pending()`/estado) sob o `mu` e, se já houver um lançamento
+  ou uma sessão ativa, recusa na hora com `SessionActiveError` (`sessionId = 0` em Launching), sem esperar o lançamento
+  em curso — mesmo que ele depois falhe, o segundo pedido não cria processo. A checagem na goroutine dona continua,
+  para a corrida entre a consulta e o envio.
+- Instante dos eventos de verificação e heartbeat: `max(instante do disparo, último instante aplicado)`, para que
+  `last_seen_at` e `graceSince` nunca andem para trás quando a goroutine dona estava ocupada (ex.: numa escrita lenta).
+  A carência continua usando o instante do vencimento [IPC-031]. (Alterado em 2026-11-09, revisão da T08.)
 - `Current` lê um snapshot protegido por `sync.Mutex`, atualizado pela goroutine dona a cada transição; com uma única
   leitura `now := clock.Now()`, `AsOf = now` e `Active` é recalculado com esse `now` quando o estado é Running (em
   Grace, `Active` é o acumulado) [IPC-026, IPC-031].
