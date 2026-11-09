@@ -319,6 +319,10 @@ Dado um `gameId` inexistente, quando chamo `game.launch`, então recebo `-32001`
 jogo é conferida antes da sessão ativa); dada uma sessão ativa, então recebo `-32002` "Session already active" com
 `data.sessionId`, `data.gameId` e `data.title`; dada uma falha de lançamento (SES-012, AGT-011), então recebo `-32003`
 "Launch failed" com `data.error` (texto) e `data.winError` (inteiro, só quando houver código do Windows).
+Dado que o prazo do handler (10 s) se esgota antes de o lançamento terminar, então recebo `-32603` "Internal error";
+o lançamento pode ainda concluir na goroutine dona do tracker e o resultado real chega só por `session.changed`.
+· alterado em 2026-11-09 (planejamento): explicita o `-32603` por prazo do handler, já previsto no contrato; sem
+mudança de comportamento.
 
 ### IPC-026 — `session.current`
 Dada uma sessão em Running ou Grace, quando chamo `session.current`, então recebo `{"session": Session}` com o estado
@@ -371,6 +375,11 @@ iniciar outro."; `-32003` → "Não foi possível iniciar o jogo: «error»"; `-
 .exe."; `-32602` → "Dados inválidos."; sem conexão, conexão perdida, cliente fechado ou prazo esgotado → "O agente
 não está respondendo. Tente de novo."; qualquer outro → "Erro
 inesperado. Veja o log.". Erros que não são de `-32002`..`-32004` nem de conexão são registrados em `Error`.
+Isso inclui o `-32603` de `game.launch` por prazo do handler (IPC-025) e o de `game.add` quando o `stat` do
+executável falha com erro diferente de "não existe" (ex.: acesso negado): ambos mostram "Erro inesperado. Veja o
+log."; no caso do lançamento, o estado real chega depois por `session:changed`.
+· alterado em 2026-11-09 (planejamento): explicita dois casos de `-32603` já cobertos por "qualquer outro"; sem
+mudança de comportamento.
 
 ### DSK-012 — Seletor de executável
 Quando chamo `PickGameExe`, então abre o diálogo de arquivo com título "Escolha o executável do jogo" e filtro

@@ -71,6 +71,8 @@ Dado um arquivo inexistente, quando abro o store **com migração**, então o sc
 existe, com FTS5.
 · alterado em 2026-11-08: migração passa a ser opção de `Open` (ADR 0010).
 · alterado em 2026-11-08: o schema passa a incluir `app_setting` (versão 2) — ver AST-001 (docs/specs/single-exe).
+· alterado em 2026-11-09: o schema passa à versão 3, com `play_session.end_reason` e o índice de sessões abertas — ver
+STO-011 (docs/specs/phase-3-tracker).
 
 ### STO-002 — Reabrir é no-op
 Dado um banco já migrado, quando abro de novo com migração, então nenhuma migração é reaplicada e os dados permanecem.
@@ -228,6 +230,8 @@ Exceção: a goroutine de limpeza do lumberjack (`millRun`), uma por processo, q
 · alterado em 2026-11-08: exceção do `millRun` do lumberjack (revisão da T05, aprovado pelo usuário).
 · alterado em 2026-11-08: o shutdown passa a notificar os clientes com `agent.shutdown` e a fechar a UI; prazo < 2 s
 mantido — ver EXE-013, EXE-014, EXE-018 (docs/specs/single-exe).
+· alterado em 2026-11-09: o shutdown encerra a sessão de jogo ativa antes de fechar o store; prazo < 2 s mantido — ver
+AGT-010, SES-011 (docs/specs/phase-3-tracker).
 
 ### AGT-004 — Versão do agente
 Dado um binário compilado com `-ldflags "-X main.version=1.2.3"`, quando chamo `agent.status`, então `version` é
@@ -241,6 +245,8 @@ o banco.
 ### AGT-006 — Encerramento com a sessão do Windows
 Dado o agente rodando, quando o usuário faz logoff ou desliga o Windows (`WM_ENDSESSION`, recebido por uma janela
 top-level oculta), então o agente executa o mesmo shutdown ordenado de AGT-003. · verificação: manual
+· alterado em 2026-11-09: o shutdown é o de AGT-010, que encerra a sessão de jogo ativa — ver AGT-010
+(docs/specs/phase-3-tracker).
 
 ### AGT-007 — Menu "Abrir Arcadia"
 Dado `arcadia.exe` na mesma pasta do agente, quando escolho "Abrir Arcadia" na bandeja, então `arcadia.exe` é
@@ -308,6 +314,8 @@ Dada uma biblioteca com 0 jogos e M plataformas, então a tela mostra "Nenhum jo
 A contagem é sempre no plural, com o texto literal "N jogos · M plataformas" (ex.: M = 1 → "0 jogos · 1 plataformas").
 · alterado em 2026-11-08: textos exatos.
 · alterado em 2026-11-08: plural fixo confirmado pelo usuário (sem forma singular).
+· alterado em 2026-11-09: substituído por UI-010 (docs/specs/phase-3-tracker). O estado vazio vem de `game.list`, sem
+contadores; o componente e seu teste ficam no repositório, sem uso na tela, até a fase 5.
 
 ### UI-003 — Formato do uptime
 Dado `uptimeSeconds`, então o texto é: `0` → `0s`; `59` → `59s`; `60` → `1m 00s`; `3599` → `59m 59s`;

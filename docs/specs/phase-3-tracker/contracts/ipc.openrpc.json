@@ -81,7 +81,7 @@
     },
     {
       "name": "game.add",
-      "summary": "Adds an exe game to the library; the agent writes the row. Adding the same path again creates another, distinct game (no duplicate check) [IPC-020, IPC-021, GAM-001..GAM-003]",
+      "summary": "Adds an exe game to the library; the agent writes the row. Adding the same path again creates another, distinct game (no duplicate check). A stat failure other than not-exist (e.g. access denied) is -32603, logged [IPC-020, IPC-021, GAM-001..GAM-003]",
       "paramStructure": "by-name",
       "params": [
         {
@@ -127,7 +127,7 @@
     },
     {
       "name": "game.launch",
-      "summary": "Launches the game inside a new Job Object and opens a tracked session; returns once the process was resumed. The existence of the game is checked before the active session [IPC-024, IPC-025, SES-001, SES-002, SES-012]",
+      "summary": "Launches the game inside a new Job Object and opens a tracked session; returns once the process was resumed. The existence of the game is checked before the active session. If the handler deadline (10 s) expires first, the result is -32603; the launch may still complete and is then reported only by session.changed [IPC-024, IPC-025, SES-001, SES-002, SES-012]",
       "paramStructure": "by-name",
       "params": [
         {
@@ -221,7 +221,7 @@
           "endedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ], "description": "null while running/grace; for ended/discarded, the instant the job became empty" },
           "activeSeconds": { "type": "integer", "minimum": 0, "description": "floor(activeMs / 1000)" },
           "activeMs": { "type": "integer", "minimum": 0, "description": "Time spent in running up to asOf, in milliseconds, truncated (grace excluded) [IPC-031]" },
-          "asOf": { "type": "string", "format": "date-time", "description": "Agent clock instant at which activeMs was measured, RFC 3339 UTC with milliseconds (e.g. 2026-11-09T14:03:12.345Z) [IPC-031]" }
+          "asOf": { "type": "string", "format": "date-time", "description": "Agent clock instant at which activeMs was measured, RFC 3339 UTC with milliseconds, always three fraction digits (Go layout 2006-01-02T15:04:05.000Z07:00, e.g. 2026-11-09T14:03:12.345Z, 2026-11-09T14:03:12.000Z) [IPC-031]" }
         },
         "additionalProperties": false
       },

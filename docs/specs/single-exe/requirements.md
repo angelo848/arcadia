@@ -204,6 +204,8 @@ Dado um banco novo ou na versão 1, quando o agente abre o store com migração,
 `app_setting(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`, a versão do goose é 2
 (`store.SchemaVersion = 2`) e os dados existentes permanecem. Dada uma chave inexistente, quando a leio, então recebo
 `errors.Is(err, store.ErrSettingNotFound)`; quando gravo uma chave duas vezes, então a leitura devolve o último valor.
+· alterado em 2026-11-09: `store.SchemaVersion` passa de 2 para 3 (a tabela `app_setting` e o resto se mantêm) — ver
+STO-011 (docs/specs/phase-3-tracker).
 
 ### AST-002 — Comando gravado na entrada Run
 Dado o executável `E` na pasta `D` e `Root` `R`, quando monto o valor da entrada Run, então ele é `E` sempre entre

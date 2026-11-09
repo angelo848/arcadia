@@ -62,7 +62,7 @@ cmd/fake-game/        # só o tracker-specialist [FKG-*]
 frontend/src/
   components/GameList.tsx  AddGameForm.tsx  ErrorBanner.tsx  SessionPanel.tsx
   lib/games.ts        # hooks e formatPlayTime [UI-004..010, UI-018]
-  lib/sessionClock.ts # formatElapsed, useElapsedMs [UI-012..017]
+  lib/sessionClock.ts # formatElapsed, useElapsedSeconds(anchor, now) [UI-012..017]
 ```
 
 Regra do CLAUDE.md respeitada: `domain`, `store`, `machine.go`, `tracker.go`, `recover.go` e `launcher.go` não
@@ -162,6 +162,9 @@ func (s *Store) OpenSessions(ctx context.Context) ([]OpenSession, error)        
   DO NOTHING` → `SELECT id FROM platform WHERE name = 'PC'` → `INSERT INTO game (...)`. `sort_title` fica `''`,
   `status` `'not_played'` (default). Não há checagem de executável repetido: o mesmo `launch_target` pode aparecer em
   várias linhas, cada uma um jogo distinto (decisão P2) [GAM-001].
+- Fora de escopo nesta fase: `AddGame` **não** escreve em `game_fts` (a migração 1 deixa a sincronia para a camada
+  de aplicação e nada nesta fase faz busca). A fase 5 (busca) reconstrói o índice a partir de `game` antes de usá-lo.
+  (Nota de 2026-11-09, planejamento.)
 - `Games`: `ORDER BY title COLLATE NOCASE, id` [GAM-005].
 - `EndSession` numa transação: lê `started_at`/`game_id` da sessão; `state = domain.Outcome(active)`; `UPDATE
   play_session SET ended_at, last_seen_at = ended_at, active_seconds = floor(active/1s), state, end_reason WHERE id
@@ -227,12 +230,14 @@ func (m *Machine) LaunchFailed() []Effect
 func (m *Machine) ProcessAdded(now time.Time) []Effect
 func (m *Machine) TrackedEmpty(now time.Time) []Effect
 func (m *Machine) Heartbeat(now time.Time, gen uint64) []Effect
-func (m *Machine) GraceTimeout(gen uint64) []Effect
+func (m *Machine) GraceTimeout(now time.Time, gen uint64) []Effect // now: asOf of the final snapshot [IPC-031]
 func (m *Machine) Stop(now time.Time) []Effect
 func (m *Machine) Snapshot(now time.Time) (domain.SessionSnapshot, bool) // Active and AsOf from the same now [IPC-031]
 ```
 Efeitos: `StartSession`, `UpdateSession`, `EndSession`, `DeleteSession`, `ArmHeartbeat`, `ArmGrace`, `Notify`,
 `CloseJob`, `TerminateJob`. Testes table-driven só com `time.Time` fixos, sem goroutines.
+`GraceTimeout` recebe o instante em que a carência venceu porque ele é o `asOf` do snapshot final
+(`ended`/`discarded`) notificado [IPC-031]. (Alterado em 2026-11-09, planejamento.)
 
 ### Coordenador (`tracker.go`) [SES-001..015, AGT-011, TRK-008]
 ```go
@@ -334,19 +339,26 @@ Log `Warn` "sessões abertas recuperadas" (`count`) quando `count > 0`.
   `MethodSessionChanged = "session.changed"`; códigos `CodeGameNotFound = -32001`, `CodeSessionActive = -32002`,
   `CodeLaunchFailed = -32003`, `CodeInvalidExecutable = -32004` (mensagens exatamente as do contrato); tipos `Game`,
   `Session` (`EndedAt *time.Time`, `FirstPlayedAt`/`LastPlayedAt *time.Time` → `null`; `ActiveSeconds`, `ActiveMs
-  int64`, `AsOf time.Time` serializado em RFC 3339 UTC com milissegundos), `GameAddParams`, `GameLaunchParams`,
+  int64`, `AsOf ipc.MilliTime`), `GameAddParams`, `GameLaunchParams`,
   `GameListResult` (`Games []Game` sempre não nulo), `SessionCurrentResult` (`Session *Session`),
   `SessionChangedParams`, `SessionRef`, `LaunchFailedData`, `InvalidExecutableData`, `GameNotFoundData`. Helper
   `NewErrorData(code, message string, data any) *Error`.
+- `type MilliTime time.Time` (alterado em 2026-11-09, planejamento): `MarshalJSON` sempre em UTC com o layout
+  `2006-01-02T15:04:05.000Z07:00` (três dígitos de fração, mesmo `.000`); `UnmarshalJSON` aceita RFC 3339. Motivo: o
+  `time.Time` padrão serializa em RFC3339Nano e corta os zeros finais (`.3Z` ou sem fração), o que fere "com
+  milissegundos" de IPC-031. Só o `asOf` usa `MilliTime`; os demais instantes continuam `time.Time` [IPC-031].
 - Conversão `domain.SessionSnapshot` → `ipc.Session` num único helper: `ActiveMs = Active.Milliseconds()`,
-  `ActiveSeconds = ActiveMs / 1000`, `AsOf = snapshot.AsOf.UTC()` [IPC-031].
+  `ActiveSeconds = ActiveMs / 1000`, `AsOf = MilliTime(snapshot.AsOf.UTC())` [IPC-031].
 - Decodificação de params com membros: `json.Decoder` com `DisallowUnknownFields`, rejeita array e exige os
-  obrigatórios (helper `decodeParams(raw, &v) *Error` → `-32602`). `gameId` como `json.Number` para recusar
-  fracionário [IPC-028].
+  obrigatórios (helper `decodeParams(raw, &v) *Error` → `-32602`). `gameId` é decodificado como `json.RawMessage` e
+  só aceito se o literal JSON for um inteiro ≥ 1 sem fração nem expoente (nem texto entre aspas: `"5"` → `-32602`).
+  `json.Number` sozinho não serve, porque aceita `"5"` [IPC-028]. (Alterado em 2026-11-09, planejamento.)
 - `Server.Notify(method string, params any)`: serializa uma vez e enfileira sem bloquear em cada conexão aberta
-  (`c.out`), como `broadcastHeartbeat` (que passa a usá-lo); fila cheia → `Warn` "notificação descartada: fila da
-  conexão cheia" (`method`, `remote`) [IPC-029]. Seguro de chamar de qualquer goroutine, antes do `Serve` (sem
-  conexões, no-op) e depois do `Close` (no-op).
+  (`c.out`); fila cheia → `Warn` "notificação descartada: fila da conexão cheia" (`method`, `remote`) [IPC-029].
+  Seguro de chamar de qualquer goroutine, antes do `Serve` (sem conexões, no-op) e depois do `Close` (no-op).
+- `Notify` e `broadcastHeartbeat` compartilham um helper interno de difusão que recebe o nível de log do descarte
+  como parâmetro: `Notify` usa `Warn` (IPC-029); o heartbeat mantém o descarte em `Debug`, como na fase 2 (um
+  heartbeat perdido é rotineiro e não merece `Warn`). (Alterado em 2026-11-09, planejamento.)
 - Comentário do pacote passa a apontar para `docs/specs/phase-3-tracker/contracts/ipc.openrpc.json`;
   `contract_test.go` passa a ler esse arquivo e cobre também os campos de `Game`/`Session` e os códigos novos
   [IPC-030]. O arquivo da single-exe fica como histórico.
@@ -370,12 +382,17 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock, stat func
 - `game.add`: `validateExe(path, stat)` → motivo de GAM-002 (`filepath.IsAbs`; `stat` → `os.ErrNotExist` =
   `not-found`; `!Mode().IsRegular()` = `not-a-file`; `strings.EqualFold(filepath.Ext(p), ".exe")`), título de GAM-003
   (`strings.TrimSpace`, `utf8.RuneCountInString > 200` → `-32602`, vazio → `domain.DefaultGameTitle`) →
-  `store.AddGame{At: clock.Now()}` → `ipc.Game` [IPC-020, IPC-021].
+  `store.AddGame{At: clock.Now()}` → `ipc.Game` [IPC-020, IPC-021]. Ordem da validação: `IsAbs` → `stat`
+  (`not-found`) → `IsRegular` (`not-a-file`) → extensão (`not-exe`). Um `stat` que falha com erro diferente de
+  `os.ErrNotExist` (ex.: acesso negado) → `-32603`, com log `Error` [DSK-011]. (Alterado em 2026-11-09, planejamento.)
 - `game.list` → `ipc.GameListResult` [IPC-023].
 - `game.launch`: `store.Game(id)` (`ErrGameNotFound` → `-32001`) → `tracker.Launch` com `LaunchSpec` montado do jogo;
   `ErrSessionActive` → `-32002` com `SessionRef`; `LaunchError`/`ErrShuttingDown` → `-32003` (`error`, `winError`
   quando houver; `ErrShuttingDown` → `"agente encerrando"`). `launch_type ≠ 'exe'` → `-32003` "tipo de lançamento não
-  suportado" [IPC-024, IPC-025, AGT-011]. Timeout do handler: 10 s (`context.WithTimeout`).
+  suportado" [IPC-024, IPC-025, AGT-011]. Timeout do handler: 10 s (`context.WithTimeout`). Se esse `ctx` se esgota
+  antes da resposta do tracker → `-32603` (já no contrato); o lançamento segue na goroutine dona e o resultado real
+  chega por `session.changed`. A UI mostra "Erro inesperado. Veja o log." (DSK-011) e se acerta pelo evento
+  [IPC-025, DSK-011]. (Alterado em 2026-11-09, planejamento.)
 - `session.current` → `tracker.Current()` [IPC-026].
 - Os handlers são registrados ao lado de `ipc.AgentHandlers` no `NewServer`.
 
@@ -431,8 +448,9 @@ func (a *App) CurrentSession() (*SessionView, error)          // timeout 2 s; ni
   `useGames()` (`ListGames`; `retry: false`; `refetchInterval` 2 s só em erro) e `useCurrentSession()`
   (`CurrentSession`, sem polling); `useSessionEvents()` assina `session:changed`: `running`/`grace` →
   `setQueryData(current, s)`; `ended`/`discarded` → `setQueryData(current, null)` + `invalidateQueries(games)`
-  [UI-006]. `useReloadOnReconnect(status)` invalida games e current quando `connected` passa de `false` para `true`
-  [UI-009].
+  [UI-006]. `useReloadOnReconnect(status)`, quando `connected` passa de `false` para `true`, invalida games e
+  **reseta** current (`resetQueries`, não só `invalidateQueries`): o cache volta a "sem dados" e o painel não
+  reaparece com o valor antigo antes da recarga terminar [UI-009, UI-016]. (Alterado em 2026-11-09, planejamento.)
 - **Evento vence resposta atrasada** [UI-018]: `useSessionEvents` incrementa um contador `eventSeq` a cada
   `session:changed` aplicado; o `queryFn` de `useCurrentSession` guarda o `eventSeq` antes de chamar
   `CurrentSession` e, se ele mudou quando a resposta chega, devolve o valor já em cache em vez da resposta. Os eventos
@@ -473,10 +491,13 @@ func (a *App) CurrentSession() (*SessionView, error)          // timeout 2 s; ni
   sessão devolvida por `LaunchGame` só é aplicada ao cache se nenhum `session:changed` chegou desde o pedido (mesma
   regra de UI-018).
 - `AddGameForm`: caminho (texto somente leitura), input "Título" (`maxLength={200}`), "Salvar" desabilitado com
-  `title.trim() === ''` ou envio pendente, "Cancelar" [UI-007].
+  `title.trim() === ''` ou envio pendente, "Cancelar" [UI-007]. Nota: `maxLength` do HTML conta unidades UTF-16,
+  enquanto o agente conta runas (GAM-003). Uma runa fora do BMP ocupa 2 unidades, então o limite da UI é igual ou
+  mais restritivo que o do agente: inofensivo (o agente continua sendo quem valida). (Nota de 2026-11-09,
+  planejamento.)
 - Estado vazio: `games.length === 0` → "Nenhum jogo ainda"; sem dados (carregando/erro) → "Conectando ao agente…"
-  [UI-010]. O `LibraryEmpty` e o `useLibrarySummary` saem da tela (o componente e seu teste podem ser removidos ou
-  ficar sem uso — decisão do planner; UI-002 está substituído).
+  [UI-010]. O `LibraryEmpty` e o `useLibrarySummary` saem da tela; o componente, o hook e o teste ficam no
+  repositório sem uso até a fase 5 (decisão do planner, 2026-11-09; UI-002 está substituído).
 - Testes Vitest + Testing Library com `window.go.main.App` e `window.runtime.EventsOn` falsos (como hoje).
 
 ## `cmd/fake-game` [FKG-001..008]
