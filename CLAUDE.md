@@ -5,7 +5,7 @@ watcher de processos, pausa por teclado/controle, "iniciar sem contar tempo").
 
 - Arquitetura completa: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Decisões registradas: [docs/adr/](docs/adr/README.md)
-- Spec da fase atual: [docs/specs/phase-2-skeleton/](docs/specs/phase-2-skeleton/requirements.md) — **fase 2 (esqueleto)**
+- Spec atual: [docs/specs/single-exe/](docs/specs/single-exe/requirements.md) — **executável único** (sobre a fase 2, [docs/specs/phase-2-skeleton/](docs/specs/phase-2-skeleton/requirements.md))
 - Processo: **Spec-Driven Development** ([ADR 0008](docs/adr/0008-spec-driven-development.md)) — a spec é a fonte da verdade.
 
 ## Stack
@@ -13,14 +13,15 @@ watcher de processos, pausa por teclado/controle, "iniciar sem contar tempo").
 Go 1.27 (`golang.org/x/sys/windows`) · Wails v2 + React/TS/Vite · SQLite via `modernc.org/sqlite` (sem CGO),
 migrações `goose`, queries `sqlc` · named pipe (`go-winio`) + JSON-RPC 2.0 entre agente e UI · `log/slog`.
 
-Dois executáveis: `arcadia-agent.exe` (bandeja; lança jogos, rastreia tempo, atalhos, dono das tabelas de sessão)
-e `arcadia.exe` (UI Wails; biblioteca e metadata). **A UI nunca influencia o tempo de jogo.**
+Um executável, dois processos ([ADR 0014](docs/adr/0014-executavel-unico-dois-processos.md)): `arcadia.exe --agent` (bandeja; lança jogos, rastreia tempo,
+atalhos, dono das tabelas de sessão e das migrações; inicia com o Windows) e `arcadia.exe` (UI Wails, instância única;
+biblioteca e metadata; sobe/relança o agente). "Sair" na bandeja fecha os dois. **A UI nunca influencia o tempo de jogo.**
 
 ## Layout
 
 ```
-cmd/agent  cmd/desktop  cmd/fake-game
-internal/{domain,store,tracker,input,ipc,scrapers,importers,winapi,paths,logging}
+cmd/arcadia  cmd/fake-game
+internal/{agent,domain,store,tracker,input,ipc,scrapers,importers,winapi,paths,logging}
 frontend/  scripts/  docs/{adr,specs}
 docs/specs/<feature>/{requirements.md,design.md,tasks.md,contracts/}
 ```
@@ -31,11 +32,11 @@ docs/specs/<feature>/{requirements.md,design.md,tasks.md,contracts/}
 go build ./...
 go test ./...
 go vet ./...
-go run ./cmd/agent --data-dir ./.devdata
-cd cmd/desktop && wails dev        # UI em modo dev
-cd cmd/desktop && wails build      # gera build/bin/arcadia.exe
+go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente (build "dev" não mexe no registro)
+cd cmd/arcadia && wails dev        # UI em modo dev
+cd cmd/arcadia && wails build -ldflags "-X main.version=<v>"   # gera build/bin/arcadia.exe
 sqlc generate                      # depois de alterar internal/store/queries/*.sql
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/phase-2-skeleton
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/single-exe
 ```
 
 `spec-trace.ps1` confere requisito ↔ tarefa ↔ teste (`-SkipTests` antes da etapa de testes).

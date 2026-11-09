@@ -2,7 +2,9 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/<feature>
 # Checks, for one spec folder:
 #   1. every requirement in requirements.md is covered by a task in tasks.md (once tasks exist);
-#   2. every non-manual requirement is cited by at least one test (*_test.go, *.test.ts, *.test.tsx);
+#   2. every non-manual, non-superseded requirement is cited by at least one test (*_test.go, *.test.ts, *.test.tsx);
+#      a requirement is superseded when its section (from its '### ID' heading to the next heading) contains
+#      "substituido por" (accented in the docs); it is listed as 'substituido' and never counted as a problem;
 #   3. no test or task cites an ID that does not exist in any requirements.md.
 # Exit 0 = traceable, 1 = gaps found, 2 = usage error.
 param(
@@ -25,11 +27,13 @@ function Read-Requirements([string]$file) {
         if ($line -match '^###\s+([A-Z]{2,4}-\d{3})\b') {
             $current = $Matches[1]
             if ($reqs.Contains($current)) { Write-Output "ID duplicado em ${file}: $current"; exit 2 }
-            $reqs[$current] = @{ Manual = $false }
-        } elseif ($line -match '^#{1,2}\s') {
-            $current = $null
-        } elseif ($current -and $line -match 'verifica.{1,2}.{1,2}o:\s*manual') {  # ASCII-only: PS 5.1 reads BOM-less .ps1 as ANSI
-            $reqs[$current].Manual = $true
+            $reqs[$current] = @{ Manual = $false; Superseded = $false }
+        } elseif ($line -match '^#{1,6}\s') {
+            $current = $null   # any other heading ends the requirement's section
+        } elseif ($current) {
+            # ASCII-only patterns: PS 5.1 reads BOM-less .ps1 as ANSI
+            if ($line -match 'verifica.{1,2}.{1,2}o:\s*manual') { $reqs[$current].Manual = $true }
+            if ($line -match 'substitu.{1,2}do\s+por') { $reqs[$current].Superseded = $true }
         }
     }
     return $reqs
@@ -81,16 +85,18 @@ if (-not $SkipTests) {
         }
     }
     foreach ($id in $reqs.Keys) {
-        if (-not $reqs[$id].Manual -and -not $cited[$id]) { $problems.Add("sem teste:    $id") }
+        if (-not $reqs[$id].Manual -and -not $reqs[$id].Superseded -and -not $cited[$id]) { $problems.Add("sem teste:    $id") }
     }
 }
 
 # Report
 Write-Output "Spec: $($specDir.Substring($root.Length + 1) -replace '\\','/')"
 foreach ($id in $reqs.Keys) {
-    $status = if ($reqs[$id].Manual) { 'manual' } elseif ($SkipTests) { '-' } elseif ($cited[$id]) { ($cited[$id] -join ', ') } else { 'SEM TESTE' }
+    $status = if ($reqs[$id].Superseded) { 'substituido' } elseif ($reqs[$id].Manual) { 'manual' } elseif ($SkipTests) { '-' } elseif ($cited[$id]) { ($cited[$id] -join ', ') } else { 'SEM TESTE' }
     Write-Output ("  {0,-8} {1}" -f $id, $status)
 }
+$superseded = @($reqs.Keys | Where-Object { $reqs[$_].Superseded })
+if ($superseded.Count -gt 0) { Write-Output "Substituidos (teste nao exigido): $($superseded -join ', ')" }
 if ($problems.Count -eq 0) { Write-Output "OK: $($reqs.Count) requisitos rastreados."; exit 0 }
 Write-Output "`n$($problems.Count) problema(s):"
 $problems | Sort-Object -Unique | ForEach-Object { Write-Output "  $_" }

@@ -34,7 +34,7 @@
 
 ```
 ┌──────────────────────────┐        Named Pipe (JSON-RPC)        ┌───────────────────────────┐
-│  arcadia.exe  (Wails UI) │ ◄─────────────────────────────────► │  arcadia-agent.exe        │
+│  arcadia.exe  (Wails UI) │ ◄─────────────────────────────────► │  arcadia.exe --agent      │
 │  - biblioteca / filtros  │    eventos: sessão iniciou, pausou, │  (residente, bandeja)     │
 │  - edição de metadata    │    tempo atual, jogo encerrou...    │  - lança jogos            │
 │  - scraping de mídia     │                                     │  - rastreia processos     │
@@ -46,9 +46,9 @@
                                    media/  (arquivos de imagens e vídeos)
 ```
 
-**Por que dois processos?** O rastreamento de tempo nunca depende da janela principal.
+**Por que dois processos?** O rastreamento de tempo nunca depende da janela principal. Um único executável roda nos dois papéis ([ADR 0014](adr/0014-executavel-unico-dois-processos.md)): sem flag abre a UI (instância única) e garante o agente vivo; com `--agent` é o agente.
 Abrir, fechar, atualizar ou até travar a UI **não afeta o tempo de jogo**. O agente é minúsculo,
-inicia com o Windows (opcional) e fica na bandeja. Se a UI for aberta durante um jogo, ela apenas
+inicia com o Windows (ligado por padrão, desligável na bandeja) e fica na bandeja. "Sair" na bandeja encerra o agente e fecha a UI; se o agente cair, a UI o relança. Se a UI for aberta durante um jogo, ela apenas
 se conecta ao pipe e mostra o cronômetro ao vivo.
 
 **Divisão de escrita no banco:** o agente é dono das tabelas de sessão (`play_session`, `pause_interval`);
@@ -62,10 +62,10 @@ a UI é dona da biblioteca. Ambos usam `busy_timeout` e transações curtas.
 arcadia/
 ├─ go.mod
 ├─ cmd/
-│  ├─ agent/         # main do arcadia-agent.exe (bandeja, -ldflags "-H windowsgui")
-│  ├─ desktop/       # main do app Wails (arcadia.exe) + wails.json
+│  ├─ arcadia/       # main único (arcadia.exe): UI Wails + wails.json; `--agent` delega a internal/agent
 │  └─ fake-game/     # executável de teste que simula launchers (spawn filho e sai, relança, etc.)
 ├─ internal/
+│  ├─ agent/         # modo agente: bandeja, IPC, store, início com o Windows (Run(Options) int)
 │  ├─ domain/        # entidades, FilterSpec, cálculo de tempo (sem Win32, 100% testável)
 │  ├─ store/         # SQLite: migrações (goose), queries (sqlc), FTS
 │  ├─ tracker/       # Job Objects, watcher de processos, heurísticas, máquina de estados da sessão
@@ -270,4 +270,4 @@ type MetadataProvider interface {
 2. ~~Nome do projeto~~ → `arcadia` ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 3. ~~Local da biblioteca~~ → portátil, `data/` ao lado do exe, com override ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 4. Atalhos padrão de pausa (teclado e combo de controle).
-5. Agente iniciando com o Windows: ligado por padrão ou opcional?
+5. ~~Agente iniciando com o Windows~~ → ligado por padrão, com opção na bandeja ([ADR 0014](adr/0014-executavel-unico-dois-processos.md)).
