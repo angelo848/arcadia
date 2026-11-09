@@ -1,7 +1,16 @@
 package main
 
 // Tests for T12 (docs/specs/phase-2-skeleton/tasks.md): desktop bindings and the
-// shared helpers used by the other cmd/desktop test files.
+// shared helpers used by the other cmd/arcadia test files. TestAppShutdown and
+// TestSecondInstance are from T09 (docs/specs/single-exe/tasks.md).
+//
+// T09 assumptions (the implementer must follow them):
+//   - platform gains `quit func(ctx context.Context)` and
+//     `showWindow func(ctx context.Context)`; both receive the Wails ctx given
+//     to startup (like emit) and are never called with a nil ctx.
+//   - App.startup starts the supervisor on a goroutine owned by App.wg and
+//     returns without waiting for Ensure; its Ensure is ensureAgent over
+//     platform.newProbe / platform.startAgent with App.clock.
 //
 // Signature assumptions beyond tasks.md (the implementer must follow them):
 //   - App has an unexported field `client pinger` (not *ipc.Client) so tests can
@@ -17,8 +26,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -475,20 +487,25 @@ func TestAgentStatusZeroStartedAt(t *testing.T) {
 	})
 }
 
-// fakeIPCClient is the long-lived client handed out by platform.newClient. The
-// test feeds notifications through notes and closes it to end forwarding.
-type fakeIPCClient struct {
-	statusPinger
-	notes chan ipc.Notification
-}
+// ---------------------------------------------------------------------------
+// T09: App wiring of the supervisor (fakes from supervisor_test.go).
 
-func (c *fakeIPCClient) Notifications() <-chan ipc.Notification { return c.notes }
-func (c *fakeIPCClient) Close() error                           { return nil }
+type ctxKey struct{}
 
-func (c *fakeIPCClient) calls() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]string(nil), c.methods...)
+// appHarness is an App with fake platform hooks and a FakeClock; its data
+// directory is a fresh t.TempDir.
+type appHarness struct {
+	app      *App
+	clock    *domain.FakeClock
+	client   *fakeClient
+	dir      string
+	wailsCtx context.Context
+
+	clients chan struct{}        // one value per newClient call
+	starts  chan struct{}        // one value per startAgent call
+	startN  atomic.Int32         // startAgent calls
+	shows   chan context.Context // showWindow calls
+	emits   chan emitted         // emit calls
 }
 
 type emitted struct {
@@ -497,236 +514,394 @@ type emitted struct {
 	data  any
 }
 
-// forwardHarness wires an App with fake platform pieces around connectAndForward.
-type forwardHarness struct {
-	app       *App
-	client    *fakeIPCClient
-	gate      *libraryGate
-	logBuf    *syncBuffer
-	emits     chan emitted
-	clientNew chan struct{} // closed when newClient was called
-	done      chan struct{} // connectAndForward returned
-}
-
-func gateConnected(g *libraryGate) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.connected
-}
-
-func startForward(t *testing.T, wailsCtx context.Context, probe pinger, start func() error,
-	clientStatus ipc.AgentStatus, root string) *forwardHarness {
+// newAppHarness wires probe as the agent.status probe and start as the body of
+// platform.startAgent. Cleanup runs OnShutdown (idempotent).
+func newAppHarness(t *testing.T, probe pinger, start func() error) *appHarness {
 	t.Helper()
-	log, buf := captureLog()
-	h := &forwardHarness{
-		client:    &fakeIPCClient{statusPinger: statusPinger{status: clientStatus}, notes: make(chan ipc.Notification)},
-		gate:      newLibraryGate((&fakeOpener{}).open),
-		logBuf:    buf,
-		emits:     make(chan emitted, 16),
-		clientNew: make(chan struct{}),
-		done:      make(chan struct{}),
+	dir := filepath.Join(t.TempDir(), "data")
+	h := &appHarness{
+		clock:    domain.NewFakeClock(supT0),
+		client:   newFakeClient(sampleStatus(), 1),
+		dir:      dir,
+		wailsCtx: context.WithValue(context.Background(), ctxKey{}, "wails"),
+		clients:  make(chan struct{}, 8),
+		starts:   make(chan struct{}, 64),
+		shows:    make(chan context.Context, 8),
+		emits:    make(chan emitted, 64),
 	}
-	var once sync.Once
 	h.app = &App{
-		log:   log,
-		clock: domain.NewFakeClock(time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)),
+		cfg:   desktopConfig{DataDir: dir, Exe: `C:\Arcadia\arcadia.exe`, ExeDir: `C:\Arcadia`},
+		clock: h.clock,
 		platform: platform{
 			newProbe: func() (pinger, error) { return probe, nil },
 			newClient: func(*slog.Logger) (ipcClient, error) {
-				once.Do(func() { close(h.clientNew) })
+				h.clients <- struct{}{}
 				return h.client, nil
 			},
-			startAgent: func(string, string, *slog.Logger) error { return start() },
-			emit: func(ctx context.Context, event string, data any) {
-				h.emits <- emitted{ctx, event, data}
+			startAgent: func(string, string, *slog.Logger) error {
+				h.startN.Add(1)
+				h.starts <- struct{}{}
+				return start()
 			},
+			emit: func(ctx context.Context, event string, data any) {
+				select {
+				case h.emits <- emitted{ctx, event, data}:
+				default:
+				}
+			},
+			quit:       func(context.Context) {},
+			showWindow: func(ctx context.Context) { h.shows <- ctx },
 		},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		defer close(h.done)
-		h.app.connectAndForward(ctx, wailsCtx, h.gate, start, root, log)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-h.done:
-		case <-time.After(testTimeout):
-			t.Errorf("connectAndForward did not return within %v", testTimeout)
-		}
-		_ = h.gate.Close()
-	})
+	t.Cleanup(func() { h.app.shutdown(context.Background()) })
 	return h
 }
 
-func (h *forwardHarness) waitClient(t *testing.T) {
+func (h *appHarness) waitStart(t *testing.T) {
 	t.Helper()
 	select {
-	case <-h.clientNew:
+	case <-h.starts:
 	case <-time.After(testTimeout):
-		t.Fatalf("newClient was not called within %v", testTimeout)
+		t.Fatalf("startAgent not called within %v (calls so far %d)", testTimeout, h.startN.Load())
 	}
 }
 
-func (h *forwardHarness) send(t *testing.T, n ipc.Notification) {
+// shutdownWithin runs OnShutdown and fails if it does not return in testTimeout.
+func (h *appHarness) shutdownWithin(t *testing.T) {
 	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.app.shutdown(context.Background())
+	}()
 	select {
-	case h.client.notes <- n:
+	case <-done:
 	case <-time.After(testTimeout):
-		t.Fatalf("notification %q not consumed within %v", n.Method, testTimeout)
+		t.Fatalf("OnShutdown did not return within %v", testTimeout)
 	}
 }
 
-func (h *forwardHarness) nextEmit(t *testing.T) emitted {
+// readDesktopLog returns the JSON records of R/logs/desktop.log.
+func readDesktopLog(t *testing.T, root string) []map[string]any {
 	t.Helper()
-	select {
-	case e := <-h.emits:
-		return e
-	case <-time.After(testTimeout):
-		t.Fatalf("no event emitted within %v", testTimeout)
-		return emitted{}
-	}
-}
-
-// finish closes the notification channel and waits for connectAndForward.
-func (h *forwardHarness) finish(t *testing.T) {
-	t.Helper()
-	close(h.client.notes)
-	select {
-	case <-h.done:
-	case <-time.After(testTimeout):
-		t.Fatalf("connectAndForward did not return after the notification channel closed")
-	}
-}
-
-func heartbeatNote(t *testing.T, uptime int64) ipc.Notification {
-	t.Helper()
-	raw, err := json.Marshal(ipc.HeartbeatParams{UptimeSeconds: uptime})
+	file := filepath.Join(root, "logs", desktopLogFile)
+	data, err := os.ReadFile(file)
 	if err != nil {
-		t.Fatalf("marshal heartbeat: %v", err)
+		t.Fatalf("read %s: %v", file, err)
 	}
-	return ipc.Notification{Method: ipc.MethodHeartbeat, Params: raw}
-}
-
-func logHasMsg(t *testing.T, buf *syncBuffer, level, msg string) bool {
-	t.Helper()
-	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	var out []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		if line == "" {
 			continue
 		}
 		var rec map[string]any
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
-			t.Fatalf("log line is not JSON: %q: %v", line, err)
+			t.Fatalf("desktop.log line is not JSON: %q: %v", line, err)
 		}
-		if fmt.Sprint(rec["level"]) == level && fmt.Sprint(rec["msg"]) == msg {
-			return true
-		}
+		out = append(out, rec)
 	}
-	return false
+	return out
 }
 
-type ctxKey struct{}
+// blockingPinger blocks every Call until ctx is done (an agent that never
+// answers) and signals the first call.
+type blockingPinger struct {
+	entered chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	methods []string
+}
 
-func TestConnectAndForward(t *testing.T) {
+func newBlockingPinger() *blockingPinger { return &blockingPinger{entered: make(chan struct{})} }
+
+func (p *blockingPinger) Call(ctx context.Context, method string, _, _ any) error {
+	p.mu.Lock()
+	p.methods = append(p.methods, method)
+	p.mu.Unlock()
+	p.once.Do(func() { close(p.entered) })
+	<-ctx.Done()
+	return fmt.Errorf("probe %s: %w", method, ctx.Err())
+}
+
+func TestAppShutdown(t *testing.T) {
 	t.Parallel()
 
-	t.Run("DSK-007/heartbeat após falha do ensureAgent marca conectado e checa dataDir", func(t *testing.T) {
+	t.Run("EXE-025/OnShutdown só retorna depois de o supervisor terminar", func(t *testing.T) {
 		t.Parallel()
-		// The probe fails at once and start fails, so ensureAgent gives up
-		// without waiting on the clock.
-		probe := &statusPinger{err: errors.New("pipe not found")}
-		start := func() error { return errors.New("spawn failed") }
-		agentStatus := sampleStatus() // DataDir differs from root below
-		root := `D:\Outra\Pasta`
-		wailsCtx := context.WithValue(context.Background(), ctxKey{}, "wails")
-		h := startForward(t, wailsCtx, probe, start, agentStatus, root)
-
-		h.waitClient(t)
-		if gateConnected(h.gate) {
-			t.Fatalf("gate connected before any heartbeat, want not connected after ensureAgent failed")
-		}
-		if !logHasMsg(t, h.logBuf, "ERROR", "agente não respondeu") {
-			t.Errorf("missing Error log for ensureAgent failure; log:\n%s", h.logBuf.String())
-		}
-
-		h.send(t, heartbeatNote(t, 10))
-		e := h.nextEmit(t)
-		if !gateConnected(h.gate) {
-			t.Errorf("gate not connected after the first heartbeat")
-		}
-		if e.event != heartbeatEvent {
-			t.Errorf("emitted event %q, want %q", e.event, heartbeatEvent)
-		}
-		if got, want := h.client.calls(), []string{ipc.MethodStatus}; fmt.Sprint(got) != fmt.Sprint(want) {
-			t.Errorf("client calls after first heartbeat = %q, want %q", got, want)
-		}
-		h.client.mu.Lock()
-		if len(h.client.hadDeadline) != 1 || !h.client.hadDeadline[0] ||
-			h.client.remaining[0] <= 0 || h.client.remaining[0] > statusTimeout {
-			t.Errorf("agent.status deadline = %v / %v, want one call within (0, %v]",
-				h.client.hadDeadline, h.client.remaining, statusTimeout)
-		}
-		h.client.mu.Unlock()
-		if !logHasMsg(t, h.logBuf, "WARN", "agente usa outra pasta de dados") {
-			t.Errorf("missing DSK-006 data dir warning; log:\n%s", h.logBuf.String())
-		}
-		if !logHasMsg(t, h.logBuf, "INFO", "agente conectado") {
-			t.Errorf("missing Info \"agente conectado\"; log:\n%s", h.logBuf.String())
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var enterOnce, releaseOnce sync.Once
+		defer releaseOnce.Do(func() { close(release) })
+		// The probe fails at once; start blocks (it does not take a ctx), so
+		// the supervisor goroutine is busy until the test releases it.
+		h := newAppHarness(t, &statusPinger{err: errors.New("pipe not found")}, func() error {
+			enterOnce.Do(func() { close(entered) })
+			<-release
+			return errors.New("spawn failed")
+		})
+		h.app.startup(h.wailsCtx)
+		select {
+		case <-entered:
+		case <-time.After(testTimeout):
+			t.Fatalf("startAgent not called within %v", testTimeout)
 		}
 
-		// A second heartbeat is forwarded but does not query agent.status again.
-		h.send(t, heartbeatNote(t, 11))
-		_ = h.nextEmit(t)
-		h.finish(t)
-		if n := len(h.client.calls()); n != 1 {
-			t.Errorf("client calls after two heartbeats = %d, want 1", n)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			h.app.shutdown(context.Background())
+		}()
+		select {
+		case <-done:
+			t.Fatalf("OnShutdown returned while the supervisor goroutine was still running")
+		case <-time.After(quietWindow):
 		}
-		if n := countLevel(t, h.logBuf, "WARN"); n != 1 {
-			t.Errorf("Warn records = %d, want 1 (data dir checked once); log:\n%s", n, h.logBuf.String())
+		releaseOnce.Do(func() { close(release) })
+		select {
+		case <-done:
+		case <-time.After(testTimeout):
+			t.Fatalf("OnShutdown did not return within %v after the supervisor could finish", testTimeout)
+		}
+		if n := h.startN.Load(); n != 1 {
+			t.Errorf("startAgent calls = %d, want 1", n)
 		}
 	})
 
-	t.Run("DSK-003/heartbeat com params inválidos não é repassado", func(t *testing.T) {
+	t.Run("EXE-025/nenhum start depois do início do OnShutdown", func(t *testing.T) {
 		t.Parallel()
-		st := sampleStatus()
-		probe := &statusPinger{status: st} // agent answers at once
-		start := func() error { return errors.New("start must not be called") }
-		root := st.DataDir // same dir: no DSK-006 warning
-		wailsCtx := context.WithValue(context.Background(), ctxKey{}, "wails")
-		h := startForward(t, wailsCtx, probe, start, st, root)
-
-		h.waitClient(t)
-		if !gateConnected(h.gate) {
-			t.Errorf("gate not connected after ensureAgent succeeded")
-		}
-		h.send(t, ipc.Notification{Method: ipc.MethodHeartbeat}) // no params
-		h.send(t, ipc.Notification{Method: ipc.MethodHeartbeat, Params: json.RawMessage(`"x"`)})
-		h.send(t, ipc.Notification{Method: "agent.other", Params: json.RawMessage(`{}`)})
-		h.send(t, heartbeatNote(t, 7))
-
-		e := h.nextEmit(t)
-		h.finish(t)
-
-		if e.event != heartbeatEvent {
-			t.Errorf("emitted event %q, want %q", e.event, heartbeatEvent)
-		}
-		if e.ctx != wailsCtx {
-			t.Errorf("emit got a different context, want the Wails context")
-		}
-		hb, ok := e.data.(ipc.HeartbeatParams)
-		if !ok || hb.UptimeSeconds != 7 {
-			t.Errorf("emitted data = %#v, want ipc.HeartbeatParams{UptimeSeconds: 7}", e.data)
-		}
+		probe := newBlockingPinger() // ensureAgent is in its first probe
+		h := newAppHarness(t, probe, func() error { return nil })
+		h.app.startup(h.wailsCtx)
 		select {
-		case extra := <-h.emits:
-			t.Errorf("unexpected extra event emitted: %#v", extra)
+		case <-probe.entered:
+		case <-time.After(testTimeout):
+			t.Fatalf("agent probe not called within %v", testTimeout)
+		}
+
+		h.shutdownWithin(t)
+		h.clock.Advance(time.Hour)
+		if n := h.startN.Load(); n != 0 {
+			t.Errorf("startAgent called %d times after OnShutdown began, want 0", n)
+		}
+	})
+
+	t.Run("DSK-002/OnShutdown não encerra o agente", func(t *testing.T) {
+		t.Parallel()
+		probe := &statusPinger{status: sampleStatus()} // the agent answers at once
+		h := newAppHarness(t, probe, func() error { return errors.New("start must not be called") })
+		h.app.startup(h.wailsCtx)
+		select {
+		case <-h.clients:
+		case <-time.After(testTimeout):
+			t.Fatalf("newClient not called within %v", testTimeout)
+		}
+
+		h.shutdownWithin(t)
+		if !h.client.isClosed() {
+			t.Errorf("IPC client not closed by OnShutdown")
+		}
+		probe.mu.Lock()
+		probeCalls := append([]string(nil), probe.methods...)
+		probe.mu.Unlock()
+		for _, m := range append(probeCalls, h.client.methodCalls()...) {
+			if m != ipc.MethodStatus {
+				t.Errorf("call %q sent to the agent; the UI only reads agent.status and never stops the agent", m)
+			}
+		}
+		if n := h.startN.Load(); n != 0 {
+			t.Errorf("startAgent calls = %d, want 0", n)
+		}
+	})
+
+	t.Run("EXE-025/start recusado depois do OnShutdown marcar stopped", func(t *testing.T) {
+		t.Parallel()
+		// OnShutdown has no hook between marking stopped and cancelling ctx, so
+		// the test performs that first step itself (under a.mu, like shutdown)
+		// while ensureAgent is in its first probe, then lets the probe fail
+		// with ctx still alive: ensureAgent calls start, which must refuse.
+		probe := newGatedPinger(errors.New("pipe not found"))
+		h := newAppHarness(t, probe, func() error { return nil })
+		h.app.startup(h.wailsCtx)
+		select {
+		case <-probe.entered:
+		case <-time.After(testTimeout):
+			t.Fatalf("agent probe not called within %v", testTimeout)
+		}
+
+		h.app.mu.Lock()
+		h.app.stopped = true
+		cancel, gate, logCloser := h.app.cancel, h.app.gate, h.app.logCloser
+		h.app.mu.Unlock()
+		close(probe.release)
+
+		// Ensure returned (refused start) and the supervisor went on to create
+		// the client; Publish refuses it, so run returns on its own.
+		select {
+		case <-h.clients:
+		case <-time.After(testTimeout):
+			t.Fatalf("newClient not called within %v", testTimeout)
+		}
+		waitDone := make(chan struct{})
+		go func() {
+			defer close(waitDone)
+			h.app.wg.Wait()
+		}()
+		select {
+		case <-waitDone:
+		case <-time.After(testTimeout):
+			t.Fatalf("supervisor goroutine did not return within %v", testTimeout)
+		}
+
+		if n := h.startN.Load(); n != 0 {
+			t.Errorf("startAgent called %d times after stopped was set, want 0", n)
+		}
+		if !h.client.isClosed() {
+			t.Errorf("IPC client not closed after Publish was refused")
+		}
+
+		// The rest of OnShutdown (it returns early since stopped is set).
+		cancel()
+		if err := gate.Close(); err != nil {
+			t.Errorf("gate close: %v", err)
+		}
+		if err := logCloser.Close(); err != nil {
+			t.Errorf("log close: %v", err)
+		}
+		var refused bool
+		for _, rec := range readDesktopLog(t, h.dir) {
+			if rec["msg"] == msgRelaunchFail && strings.Contains(fmt.Sprint(rec["error"]), "UI encerrando") {
+				refused = true
+			}
+		}
+		if !refused {
+			t.Errorf("desktop.log has no %q record with the refused start", msgRelaunchFail)
+		}
+	})
+}
+
+// gatedPinger blocks every Call until release is closed (then fails with err)
+// or ctx is done, and signals the first call.
+type gatedPinger struct {
+	err     error
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newGatedPinger(err error) *gatedPinger {
+	return &gatedPinger{err: err, entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (p *gatedPinger) Call(ctx context.Context, method string, _, _ any) error {
+	p.once.Do(func() { close(p.entered) })
+	select {
+	case <-p.release:
+		return fmt.Errorf("probe %s: %w", method, p.err)
+	case <-ctx.Done():
+		return fmt.Errorf("probe %s: %w", method, ctx.Err())
+	}
+}
+
+func TestSecondInstance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EXE-012/secondInstance chama showWindow, loga Info e Kick", func(t *testing.T) {
+		t.Parallel()
+		// The probe and start fail at once: startup + 2 attempts = 3 failures,
+		// then the supervisor gives up (EXE-022).
+		h := newAppHarness(t, &statusPinger{err: errors.New("pipe not found")}, func() error {
+			return errors.New("spawn failed")
+		})
+		h.app.startup(h.wailsCtx)
+		stopDriver := driveClock(h.clock, 100*time.Millisecond, 0, nil)
+		for range relaunchMaxFailures {
+			h.waitStart(t)
+		}
+		stopDriver() // the clock no longer moves: only Kick can cause a new start
+
+		h.app.secondInstance()
+		select {
+		case ctx := <-h.shows:
+			if ctx != h.wailsCtx {
+				t.Errorf("showWindow got a different context, want the Wails context")
+			}
+		case <-time.After(testTimeout):
+			t.Fatalf("showWindow not called within %v", testTimeout)
+		}
+		h.waitStart(t) // Kick in GaveUp: immediate attempt (EXE-012)
+
+		h.shutdownWithin(t)
+		var found bool
+		for _, rec := range readDesktopLog(t, h.dir) {
+			if rec["msg"] == msgSecondInstance {
+				found = true
+				if rec["level"] != "INFO" {
+					t.Errorf("%q level = %v, want INFO", msgSecondInstance, rec["level"])
+				}
+			}
+		}
+		if !found {
+			t.Errorf("desktop.log has no %q record", msgSecondInstance)
+		}
+	})
+
+	t.Run("EXE-012/secondInstance antes do startup não falha", func(t *testing.T) {
+		t.Parallel()
+		h := newAppHarness(t, &statusPinger{status: sampleStatus()}, func() error { return nil })
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("secondInstance before startup panicked: %v", r)
+				}
+			}()
+			h.app.secondInstance()
+		}()
+		select {
+		case ctx := <-h.shows:
+			if ctx == nil {
+				t.Errorf("showWindow called with a nil context before startup")
+			}
 		default:
 		}
-		if n := countLevel(t, h.logBuf, "WARN"); n != 2 {
-			t.Errorf("Warn records = %d, want 2 (one per invalid heartbeat); log:\n%s", n, h.logBuf.String())
+		if n := h.startN.Load(); n != 0 {
+			t.Errorf("startAgent calls = %d, want 0", n)
 		}
-		if n := len(h.client.calls()); n != 0 {
-			t.Errorf("client calls = %d, want 0 (already connected through ensureAgent)", n)
+	})
+
+	t.Run("EXE-012/secondInstance depois do OnShutdown não mostra janela, não loga e não faz Kick", func(t *testing.T) {
+		t.Parallel()
+		h := newAppHarness(t, &statusPinger{status: sampleStatus()}, func() error { return nil })
+		h.app.startup(h.wailsCtx)
+		select {
+		case <-h.clients:
+		case <-time.After(testTimeout):
+			t.Fatalf("newClient not called within %v", testTimeout)
+		}
+		h.shutdownWithin(t)
+
+		h.app.secondInstance()
+		select {
+		case <-h.shows:
+			t.Errorf("showWindow called after OnShutdown")
+		default:
+		}
+		h.app.mu.Lock()
+		sup := h.app.sup
+		h.app.mu.Unlock()
+		if sup == nil {
+			t.Fatalf("supervisor not created by startup")
+		}
+		if n := len(sup.kick); n != 0 {
+			t.Errorf("Kick queued after OnShutdown (kick channel len %d, want 0)", n)
+		}
+		for _, rec := range readDesktopLog(t, h.dir) {
+			if rec["msg"] == msgSecondInstance {
+				t.Errorf("%q logged after OnShutdown", msgSecondInstance)
+			}
+		}
+		if n := h.startN.Load(); n != 0 {
+			t.Errorf("startAgent calls = %d, want 0", n)
 		}
 	})
 }

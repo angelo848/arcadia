@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -57,6 +56,8 @@ type pinger interface {
 type ipcClient interface {
 	pinger
 	Notifications() <-chan ipc.Notification
+	StateChanged() <-chan struct{}
+	Connected() bool
 	Close() error
 }
 
@@ -71,6 +72,10 @@ type platform struct {
 	startAgent func(exe, root string, log *slog.Logger) error
 	// emit sends a Wails event to the frontend.
 	emit func(ctx context.Context, event string, data any)
+	// quit asks Wails to close the UI (asynchronous; runs OnShutdown, EXE-017).
+	quit func(ctx context.Context)
+	// showWindow restores the window and brings it to the front (EXE-011).
+	showWindow func(ctx context.Context)
 }
 
 // App is the Wails-bound application. Its exported methods are the frontend
@@ -88,8 +93,10 @@ type App struct {
 	logCloser io.Closer
 	cancel    context.CancelFunc
 	stopped   bool
+	wailsCtx  context.Context // set by startup; never nil once set
+	sup       *supervisor     // nil until startup
 
-	wg sync.WaitGroup // connect-and-forward goroutine
+	wg sync.WaitGroup // supervisor goroutine
 }
 
 // NewApp returns the App for cfg, wired to this OS.
@@ -142,9 +149,9 @@ func (a *App) LibrarySummary() (LibrarySummaryView, error) {
 }
 
 // startup is the Wails OnStartup hook (Wails runs it on its own goroutine).
-// Order: paths.Resolve -> setupLogging -> (owned goroutine) ensureAgent with a
-// pipe probe -> gate.MarkConnected -> warnIfDataDirDiffers -> IPC client ->
-// forward heartbeats.
+// Order: paths.Resolve -> setupLogging -> supervisor on a goroutine owned by
+// wg (ensureAgent with a pipe probe, IPC client, relaunch, heartbeats). It
+// returns without waiting for the agent.
 func (a *App) startup(wailsCtx context.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -164,109 +171,86 @@ func (a *App) startup(wailsCtx context.Context) {
 	}
 	a.log, a.logCloser = log, closer
 	a.gate = newLibraryGate(storeOpener(p.DB))
+	a.wailsCtx = wailsCtx
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
-	gate := a.gate
-	start := func() error { return a.platform.startAgent(a.cfg.Exe, p.Root, log) }
+	// start holds a.mu so no agent is created once shutdown marked stopped
+	// (EXE-025). Lock order is safe: shutdown releases a.mu before wg.Wait, and
+	// startup (which holds a.mu) only starts the goroutine without waiting.
+	start := func() error {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.stopped {
+			return fmt.Errorf("desktop: start agent: UI encerrando: %w", context.Canceled)
+		}
+		return a.platform.startAgent(a.cfg.Exe, p.Root, log)
+	}
+	a.sup = newSupervisor(supervisorConfig{
+		Clock: a.clock,
+		Ensure: func(ctx context.Context) (ipc.AgentStatus, error) {
+			probe, err := a.platform.newProbe()
+			if err != nil {
+				return ipc.AgentStatus{}, fmt.Errorf("desktop: agent probe: %w", err)
+			}
+			return ensureAgent(ctx, probe, start, a.clock, agentStartTimeout)
+		},
+		NewClient: func() (ipcClient, error) { return a.platform.newClient(log) },
+		Publish:   a.publishClient,
+		Gate:      a.gate,
+		Root:      p.Root,
+		Emit:      func(event string, data any) { a.platform.emit(wailsCtx, event, data) },
+		Quit:      func() { a.platform.quit(wailsCtx) },
+		Log:       log,
+	})
+	sup := a.sup
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		a.connectAndForward(ctx, wailsCtx, gate, start, p.Root, log)
+		sup.run(ctx)
 	}()
 	log.Info("UI iniciada", "data_dir", p.Root)
 }
 
-// connectAndForward makes sure the agent runs (probing the pipe directly, so
-// the ipc.Client backoff does not delay DSK-001), then creates the long-lived
-// IPC client and forwards agent.heartbeat notifications as Wails events until
-// the client's notification channel is closed (by Client.Close on shutdown).
-func (a *App) connectAndForward(ctx, wailsCtx context.Context, gate *libraryGate,
-	start func() error, root string, log *slog.Logger) {
-	connected := a.waitAgent(ctx, gate, start, root, log)
-	if ctx.Err() != nil {
-		return
-	}
-
-	c, err := a.platform.newClient(log)
-	if err != nil {
-		log.Error("falha ao criar o cliente IPC", "error", err.Error())
-		return
-	}
+// publishClient makes c the App's client unless shutdown already began, in
+// which case it returns false and the supervisor closes c.
+func (a *App) publishClient(c ipcClient) bool {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.stopped {
-		a.mu.Unlock()
-		if err := c.Close(); err != nil {
-			log.Warn("falha ao fechar o cliente IPC", "error", err.Error())
-		}
-		return
+		return false
 	}
 	a.client, a.owned = c, c
-	a.mu.Unlock()
-
-	for n := range c.Notifications() {
-		if n.Method != ipc.MethodHeartbeat {
-			continue
-		}
-		if !connected {
-			// The first heartbeat is the first successful connection (DSK-007)
-			// of an agent that missed the ensureAgent window.
-			connected = true
-			a.lateConnect(c, gate, root, log)
-		}
-		var hb ipc.HeartbeatParams
-		if len(n.Params) == 0 {
-			log.Warn("heartbeat com parâmetros inválidos", "error", "params ausentes")
-			continue
-		}
-		if err := json.Unmarshal(n.Params, &hb); err != nil {
-			log.Warn("heartbeat com parâmetros inválidos", "error", err.Error())
-			continue
-		}
-		a.platform.emit(wailsCtx, heartbeatEvent, hb)
-	}
-}
-
-// waitAgent runs ensureAgent with a per-call pipe probe and, on success, opens
-// the library gate and checks the data dir (DSK-001, DSK-006, DSK-007). It
-// reports whether the agent answered.
-func (a *App) waitAgent(ctx context.Context, gate *libraryGate, start func() error, root string,
-	log *slog.Logger) bool {
-	probe, err := a.platform.newProbe()
-	if err != nil {
-		log.Error("falha ao criar a sondagem do agente", "error", err.Error())
-		return false
-	}
-	st, err := ensureAgent(ctx, probe, start, a.clock, agentStartTimeout)
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Error("agente não respondeu", "timeout", agentStartTimeout.String(), "error", err.Error())
-		}
-		return false
-	}
-	gate.MarkConnected()
-	warnIfDataDirDiffers(log, root, st.DataDir)
 	return true
 }
 
-// lateConnect handles the first heartbeat of an agent that ensureAgent did not
-// reach: it opens the library gate, checks the data dir once (500 ms) and logs
-// the connection.
-func (a *App) lateConnect(c pinger, gate *libraryGate, root string, log *slog.Logger) {
-	gate.MarkConnected()
-	ctx, cancel := context.WithTimeout(context.Background(), statusTimeout)
-	defer cancel()
-	var st ipc.AgentStatus
-	if err := c.Call(ctx, ipc.MethodStatus, nil, &st); err != nil {
-		log.Warn("falha ao consultar agent.status", "error", err.Error())
-	} else {
-		warnIfDataDirDiffers(log, root, st.DataDir)
+// secondInstance handles the notice of a second UI process (EXE-011,
+// EXE-012): it brings the window to the front, logs and kicks the supervisor.
+// It is safe before startup (no window context, logger or supervisor yet; the
+// Info then goes to slog.Default). Once shutdown began it does nothing, since
+// nothing may log after the log is closed (ADR 0013).
+func (a *App) secondInstance() {
+	a.mu.Lock()
+	stopped, wailsCtx, log, sup := a.stopped, a.wailsCtx, a.log, a.sup
+	a.mu.Unlock()
+	if stopped {
+		return
 	}
-	log.Info("agente conectado")
+	if wailsCtx != nil && a.platform.showWindow != nil {
+		a.platform.showWindow(wailsCtx)
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	log.Info("segunda instância da UI; trazendo a janela à frente")
+	if sup != nil {
+		sup.Kick()
+	}
 }
 
-// shutdown is the Wails OnShutdown hook: cancel ensureAgent -> Client.Close ->
-// wg.Wait -> libraryGate.Close -> log Close. The agent is never touched (DSK-002).
+// shutdown is the Wails OnShutdown hook: cancel (supervisor and any Ensure in
+// progress) -> Client.Close -> wg.Wait (supervisor) -> libraryGate.Close -> log
+// "UI encerrada" -> log Close (ADR 0013). The agent is never touched (DSK-002).
 func (a *App) shutdown(context.Context) {
 	a.mu.Lock()
 	if a.stopped {

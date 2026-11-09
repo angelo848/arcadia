@@ -75,6 +75,12 @@ func runUI(args []string) int {
 		return 1
 	}
 
+	// Best effort: lets the instance that already runs come to the front when
+	// this process turns out to be a second instance (EXE-011).
+	if err := winapi.AllowSetForegroundWindow(winapi.ASFWAny); err != nil {
+		boot.Debug("falha ao liberar a troca de foco", "error", err.Error())
+	}
+
 	app := NewApp(cfg)
 	err = wails.Run(&options.App{
 		Title:       "Arcadia",
@@ -84,6 +90,12 @@ func runUI(args []string) int {
 		OnStartup:   app.startup,
 		OnShutdown:  app.shutdown,
 		Bind:        []any{app},
+		// A second UI process exits inside wails.Run, before OnStartup, and the
+		// first one is notified (EXE-011, EXE-012).
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               singleInstanceID,
+			OnSecondInstanceLaunch: app.onSecondInstance,
+		},
 	})
 	if err != nil {
 		boot.Error("falha ao executar a UI", "error", err.Error())
@@ -119,5 +131,19 @@ func defaultPlatform() platform {
 		emit: func(ctx context.Context, event string, data any) {
 			wailsruntime.EventsEmit(ctx, event, data)
 		},
+		quit: wailsruntime.Quit,
+		showWindow: func(ctx context.Context) {
+			wailsruntime.WindowUnminimise(ctx)
+			wailsruntime.WindowShow(ctx)
+		},
 	}
+}
+
+// singleInstanceID is the fixed Wails single-instance id of the UI (EXE-011).
+const singleInstanceID = "arcadia-ui-5b0f7c1e"
+
+// onSecondInstance is the Wails OnSecondInstanceLaunch hook. The second
+// instance's arguments are ignored (design.md, "Instância única da UI").
+func (a *App) onSecondInstance(options.SecondInstanceData) {
+	a.secondInstance()
 }

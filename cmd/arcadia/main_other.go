@@ -28,5 +28,7 @@ func defaultPlatform() platform {
 		newClient:  func(*slog.Logger) (ipcClient, error) { return nil, errUnsupported },
 		startAgent: func(string, string, *slog.Logger) error { return errUnsupported },
 		emit:       func(context.Context, string, any) {},
+		quit:       func(context.Context) {},
+		showWindow: func(context.Context) {},
 	}
 }
