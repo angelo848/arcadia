@@ -36,7 +36,7 @@ func TestStartAgentPipeExists(t *testing.T) {
 				if a != nil {
 					sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
 					defer scancel()
-					_ = a.Shutdown(sctx)
+					_ = a.Shutdown(sctx, ReasonOther)
 					_ = a.CloseLog()
 				}
 				t.Fatal("startAgent with failing listen: want error, got nil")

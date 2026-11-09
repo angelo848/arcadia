@@ -96,7 +96,7 @@ func startTestAgent(t *testing.T, cfg config, ln *tcpListen) *instance {
 	t.Cleanup(func() {
 		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
 		defer scancel()
-		if err := a.Shutdown(sctx); err != nil {
+		if err := a.Shutdown(sctx, ReasonOther); err != nil {
 			t.Errorf("cleanup Shutdown: %v", err)
 		}
 		if err := a.CloseLog(); err != nil {
@@ -111,7 +111,7 @@ func shutdown(t *testing.T, a *instance) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
-	if err := a.Shutdown(ctx); err != nil {
+	if err := a.Shutdown(ctx, ReasonQuit); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestLogLevel(t *testing.T) {
 			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
 			defer scancel()
 			if a != nil {
-				_ = a.Shutdown(sctx)
+				_ = a.Shutdown(sctx, ReasonOther)
 				_ = a.CloseLog()
 			}
 			t.Fatal("startAgent with --log-level verbose: want error, got nil")
@@ -387,7 +387,7 @@ func TestShutdown(t *testing.T) {
 			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
 			defer scancel()
 			if a != nil {
-				_ = a.Shutdown(sctx)
+				_ = a.Shutdown(sctx, ReasonOther)
 				_ = a.CloseLog()
 			}
 			t.Fatal("startAgent with library.db as a directory: want error, got nil")

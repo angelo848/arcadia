@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
@@ -50,6 +51,22 @@ func parseFlags(args []string) (config, error) {
 	return cfg, nil
 }
 
+// ShutdownReason says what triggered the agent shutdown; it is sent to the
+// clients as agent.shutdown params.reason (EXE-016).
+type ShutdownReason string
+
+// Shutdown reasons (strings of the IPC contract).
+const (
+	ReasonQuit       ShutdownReason = "quit"
+	ReasonSessionEnd ShutdownReason = "session-end"
+	ReasonSignal     ShutdownReason = "signal"
+	ReasonOther      ShutdownReason = "other"
+)
+
+// shutdownDrainTimeout bounds the wait for the clients to close after
+// agent.shutdown (EXE-014); it is the default of instance.drainTimeout.
+const shutdownDrainTimeout = 500 * time.Millisecond
+
 // spawnFunc starts a process without waiting for it (real: winapi.CreateDetached).
 type spawnFunc func(exe string, args []string, flags uint32) error
 
@@ -62,6 +79,12 @@ type instance struct {
 	server *ipc.Server
 
 	logCloser io.Closer
+
+	drainTimeout time.Duration // limit of the drain in Shutdown (tests override it)
+
+	// ipcFailed is closed (at most once) by the Serve goroutine when Serve
+	// ended with an error not caused by Close or by ctx (EXE-026).
+	ipcFailed chan struct{}
 
 	wg sync.WaitGroup // the server.Serve goroutine
 
@@ -119,24 +142,44 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		DataDir:   p.Root,
 	}
 	a := &instance{
-		paths:     p,
-		log:       log,
-		info:      info,
-		store:     st,
-		server:    ipc.NewServer(clock, ipc.AgentHandlers(info, clock), log, ipc.WithStartedAt(startedAt)),
-		logCloser: logCloser,
+		paths:        p,
+		log:          log,
+		info:         info,
+		store:        st,
+		server:       ipc.NewServer(clock, ipc.AgentHandlers(info, clock), log, ipc.WithStartedAt(startedAt)),
+		logCloser:    logCloser,
+		drainTimeout: shutdownDrainTimeout,
+		ipcFailed:    make(chan struct{}),
 	}
 
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		if err := a.server.Serve(ctx, ln); err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("ipc: serve ended", "error", err.Error())
+		// This goroutine is the only one closing ipcFailed, and Serve returns once.
+		if err := a.server.Serve(ctx, ln); serveFailed(err) {
+			log.Error("IPC indisponível; encerrando o agente", "error", err.Error())
+			close(a.ipcFailed)
 		}
 	}()
 
 	log.Info("agente iniciado", "version", info.Version, "pid", info.PID, "data_dir", p.Root)
 	return a, nil
+}
+
+// serveFailed reports whether the error returned by Server.Serve means the IPC
+// is unavailable (EXE-026): nil (Close) and context.Canceled (end of ctx) are
+// a requested stop; anything else is a failure.
+func serveFailed(err error) bool {
+	return err != nil && !errors.Is(err, context.Canceled)
+}
+
+// exitCode is the process exit code after the shutdown: 1 if the shutdown
+// failed or the agent ended because the IPC failed (EXE-026), else 0.
+func exitCode(shutdownErr error, ipcFailed bool) int {
+	if shutdownErr != nil || ipcFailed {
+		return 1
+	}
+	return 0
 }
 
 // closeWrap closes c and wraps its error with what.
@@ -153,12 +196,33 @@ func (a *instance) Info() ipc.AgentInfo { return a.info }
 // Logger returns the agent logger (valid until CloseLog).
 func (a *instance) Logger() *slog.Logger { return a.log }
 
-// Shutdown closes the IPC server (and waits for its goroutines) and then the
-// store. It is idempotent and does not close the log (see CloseLog). If ctx
-// ends first, Shutdown still finishes closing but reports ctx's error.
-func (a *instance) Shutdown(ctx context.Context) error {
+// IPCFailed returns a channel closed when Serve ended with an error not caused
+// by Close or by ctx (EXE-026). It is the same channel for the whole life of
+// the instance and a normal Shutdown never closes it.
+func (a *instance) IPCFailed() <-chan struct{} { return a.ipcFailed }
+
+// Shutdown notifies the clients with agent.shutdown{reason} and waits up to
+// drainTimeout for them to close the connection (EXE-013, EXE-014), then
+// closes the IPC server (and waits for its goroutines) and the store. A drain
+// that times out only logs a Warn. It is idempotent (later calls, whatever the
+// reason, return the first result) and does not close the log (see CloseLog).
+// If ctx ends first, Shutdown still finishes closing but reports ctx's error.
+func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 	a.shutdownOnce.Do(func() {
 		var errs []error
+
+		dctx, cancel := context.WithTimeout(ctx, a.drainTimeout)
+		err := a.server.Drain(dctx, ipc.MethodShutdown, ipc.ShutdownParams{Reason: string(reason)})
+		cancel()
+		if err != nil {
+			attrs := []any{"error", err.Error()}
+			var de *ipc.DrainError
+			if errors.As(err, &de) {
+				attrs = append(attrs, "pending", de.Pending)
+			}
+			a.log.Warn("clientes não fecharam a conexão a tempo", attrs...)
+		}
+
 		if err := a.server.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close ipc server: %w", err))
 		}

@@ -164,6 +164,14 @@ Tabela de transições (estado × evento → estado + efeito):
   supervisor segue a linha "Connected × queda (sem shutdown)" da tabela [EXE-020..EXE-023]. A primeira tentativa pode
   esbarrar no mutex do agente que ainda está encerrando (o novo sai com 0 por AGT-002, a tentativa falha em 5 s e conta
   para EXE-022); a seguinte sobe normalmente.
+- Ajustes da revisão do T06 · alterado em 2026-11-08:
+  - **O `Serve` não usa o `ctx` de sinal.** O `Run` passa ao `startAgent` um `ctx` próprio, cancelado só depois do
+    `Shutdown`; o `ctx` de `signal.NotifyContext` vai só para o `runTray`. Assim, com Ctrl+C/SIGTERM o `Serve`
+    continua ativo até o `Server.Close` do `Shutdown`, e o `Drain` envia `agent.shutdown{reason:"signal"}` antes.
+    Antes da correção, o sinal fechava as conexões sem aviso e a UI relançava o agente.
+  - **A consulta a `ipcFailed` é feita depois do `Shutdown`**, e não logo após o `trayLoop`. O `Shutdown` faz
+    `wg.Wait`, então o estado do canal já é final, e um `Serve` que falhou antes do `Close` sempre resulta em código 1.
+  - O prazo de 2 s medido no `Run` começa quando o `trayLoop` termina; a saída do loop do systray fica fora dele.
 - Testes: `trayLoop` com `ipcFailed` fechado antes e depois do `ready` → `ReasonOther` e a função de quit certa;
   `Drain` depois de `Serve` ter retornado com erro de `Accept` (listener falso) → `nil` sem esperar um `ctx` sem prazo;
   a classificação do erro do `Serve` é uma função pura testável (`serveFailed(err error) bool`).

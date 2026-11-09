@@ -78,12 +78,20 @@ func Run(opts Options) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Serve must not see the signal context: on Ctrl+C/SIGTERM it stays up
+	// until Server.Close in Shutdown, so Drain can still send agent.shutdown
+	// (design.md, "Ajustes da revisão do T06"). serveCtx is canceled only after
+	// Shutdown; the signal context goes to runTray alone.
+	serveCtx, serveCancel := context.WithCancel(context.Background())
+	defer serveCancel()
+
 	clock := domain.SystemClock{}
-	a, err := startAgent(ctx, cfg, clock, os.Getenv, func() (net.Listener, error) {
+	a, err := startAgent(serveCtx, cfg, clock, os.Getenv, func() (net.Listener, error) {
 		return ipc.ListenPipe(cfg.PipeName)
 	})
 	if err != nil {
 		boot.Error("falha ao iniciar o agente", "error", err.Error())
+		serveCancel()
 		_ = mutex.Close()
 		return 1
 	}
@@ -98,26 +106,42 @@ func Run(opts Options) int {
 		sessionEnd = nil
 	}
 
-	runTray(ctx, clock, log, sessionEnd, func() {
+	// runTray returns after systray.Quit ended the message loop (step 1 of the
+	// shutdown order); the reason goes to the clients in agent.shutdown.
+	reason := runTray(ctx, clock, log, sessionEnd, a.IPCFailed(), func() {
 		openUI(cfg.Exe, a.paths.Root, winapi.CreateDetached, log)
 	})
 
 	// AGT-003: the 2 s budget is measured and reported; closing is never
-	// abandoned halfway (the store must end closed).
-	code := 0
+	// abandoned halfway (the store must end closed). Shutdown drains (≤ 500 ms),
+	// closes the IPC server and then the store.
+	// The budget starts here, after trayLoop ended; the systray message loop
+	// exit is outside of it.
 	shutdownStart := clock.Now()
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	if err := a.Shutdown(sctx); err != nil {
-		elapsed := clock.Now().Sub(shutdownStart)
-		if errors.Is(err, context.DeadlineExceeded) {
-			log.Warn("shutdown excedeu o prazo", "timeout", shutdownTimeout.String(),
-				"elapsed", elapsed.String(), "error", err.Error())
-		} else {
-			log.Error("shutdown com erro", "elapsed", elapsed.String(), "error", err.Error())
-		}
-		code = 1
-	}
+	shutdownErr := a.Shutdown(sctx, reason)
 	cancel()
+	serveCancel()
+
+	// EXE-026: non-blocking check, after Shutdown: it waited for Serve (wg.Wait),
+	// so the channel state is final and a Serve that failed before Close always
+	// makes the exit code 1.
+	ipcFailed := false
+	select {
+	case <-a.IPCFailed():
+		ipcFailed = true
+	default:
+	}
+	if shutdownErr != nil {
+		elapsed := clock.Now().Sub(shutdownStart)
+		if errors.Is(shutdownErr, context.DeadlineExceeded) {
+			log.Warn("shutdown excedeu o prazo", "timeout", shutdownTimeout.String(),
+				"elapsed", elapsed.String(), "error", shutdownErr.Error())
+		} else {
+			log.Error("shutdown com erro", "elapsed", elapsed.String(), "error", shutdownErr.Error())
+		}
+	}
+	code := exitCode(shutdownErr, ipcFailed)
 	log.Info("shutdown concluído")
 
 	watcher.ShutdownDone()

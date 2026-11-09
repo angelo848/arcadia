@@ -5,6 +5,9 @@ package agent
 // 2026-11-08): the portable tray loop must end on Ctrl+C / end of session even
 // when the systray onReady never runs, and log an Error if the tray does not
 // initialize within 30 s.
+//
+// T06 of docs/specs/single-exe/tasks.md: trayLoop takes trayLoopDeps and
+// returns the ShutdownReason (EXE-016) and also ends on IPCFailed (EXE-026).
 
 import (
 	"context"
@@ -87,14 +90,20 @@ type trayHarness struct {
 	open       chan struct{}
 	quitItem   chan struct{}
 
+	ipcFailed chan struct{} // closed by the test to signal EXE-026
+
 	quitCalls, quitBeforeReadyCalls, openCalls atomic.Int32
 	openedCh                                   chan struct{}
 
-	done chan struct{}
+	// reason is written by the loop goroutine before done is closed; read it
+	// only after waitDone.
+	reason ShutdownReason
+	done   chan struct{}
 }
 
 type trayOpts struct {
 	nilSessionEnd bool
+	nilIPCFailed  bool
 	cancelFirst   bool // cancel ctx before trayLoop starts
 }
 
@@ -109,6 +118,7 @@ func startTray(t *testing.T, o trayOpts) *trayHarness {
 		stop:       make(chan struct{}),
 		open:       make(chan struct{}),
 		quitItem:   make(chan struct{}),
+		ipcFailed:  make(chan struct{}),
 		openedCh:   make(chan struct{}, 8),
 		done:       make(chan struct{}),
 	}
@@ -121,17 +131,30 @@ func startTray(t *testing.T, o trayOpts) *trayHarness {
 	if o.nilSessionEnd {
 		sessionEnd = nil
 	}
+	var ipcFailed <-chan struct{} = h.ipcFailed
+	if o.nilIPCFailed {
+		ipcFailed = nil
+	}
 	log := slog.New(h.logs)
+
+	deps := trayLoopDeps{
+		Ready:           h.ready,
+		SessionEnd:      sessionEnd,
+		IPCFailed:       ipcFailed,
+		Stop:            h.stop,
+		Quit:            func() { h.quitCalls.Add(1) },
+		QuitBeforeReady: func() { h.quitBeforeReadyCalls.Add(1) },
+		OnOpen: func() {
+			h.openCalls.Add(1)
+			h.openedCh <- struct{}{}
+		},
+		OnToggle:   func() bool { return false }, // T07
+		SetChecked: func(bool) {},                // T07
+	}
 
 	go func() {
 		defer close(h.done)
-		trayLoop(ctx, clock, log, h.ready, sessionEnd, h.stop,
-			func() { h.quitCalls.Add(1) },
-			func() { h.quitBeforeReadyCalls.Add(1) },
-			func() {
-				h.openCalls.Add(1)
-				h.openedCh <- struct{}{}
-			})
+		h.reason = trayLoop(ctx, clock, log, deps)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -349,5 +372,137 @@ func TestTrayLoop(t *testing.T) {
 		close(h.stop)
 		h.waitDone(t)
 		h.assertCalls(t, 0, 0, 1)
+	})
+}
+
+func (h *trayHarness) assertReason(t *testing.T, want ShutdownReason) {
+	t.Helper()
+	if h.reason != want {
+		t.Errorf("trayLoop returned reason %q, want %q", h.reason, want)
+	}
+}
+
+func TestTrayLoopReason(t *testing.T) {
+	t.Run("EXE-016/Sair devolve quit", func(t *testing.T) {
+		t.Parallel()
+		h := startTray(t, trayOpts{})
+		h.deliverReady(t)
+		send(t, h.quitItem, "Sair")
+		h.waitDone(t)
+		h.assertCalls(t, 1, 0, 0)
+		h.assertReason(t, ReasonQuit)
+	})
+
+	t.Run("EXE-016/fim de sessão antes e depois da bandeja devolve session-end", func(t *testing.T) {
+		t.Parallel()
+		t.Run("antes da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			h.sessionEnd <- struct{}{}
+			h.waitDone(t)
+			h.assertCalls(t, 0, 1, 0)
+			h.assertReason(t, ReasonSessionEnd)
+		})
+		t.Run("depois da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			h.deliverReady(t)
+			h.sessionEnd <- struct{}{}
+			h.waitDone(t)
+			h.assertCalls(t, 1, 0, 0)
+			h.assertReason(t, ReasonSessionEnd)
+		})
+	})
+
+	t.Run("EXE-016/Ctrl+C antes e depois da bandeja devolve signal", func(t *testing.T) {
+		t.Parallel()
+		t.Run("antes de o loop começar", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{cancelFirst: true})
+			h.waitDone(t)
+			h.assertCalls(t, 0, 1, 0)
+			h.assertReason(t, ReasonSignal)
+		})
+		t.Run("antes da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			h.cancel()
+			h.waitDone(t)
+			h.assertCalls(t, 0, 1, 0)
+			h.assertReason(t, ReasonSignal)
+		})
+		t.Run("depois da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			h.deliverReady(t)
+			h.cancel()
+			h.waitDone(t)
+			h.assertCalls(t, 1, 0, 0)
+			h.assertReason(t, ReasonSignal)
+		})
+	})
+
+	t.Run("EXE-016/stop devolve other sem chamar nada", func(t *testing.T) {
+		t.Parallel()
+		t.Run("antes da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			close(h.stop)
+			h.waitDone(t)
+			h.assertCalls(t, 0, 0, 0)
+			h.assertReason(t, ReasonOther)
+		})
+		t.Run("depois da bandeja pronta", func(t *testing.T) {
+			t.Parallel()
+			h := startTray(t, trayOpts{})
+			h.deliverReady(t)
+			close(h.stop)
+			h.waitDone(t)
+			h.assertCalls(t, 0, 0, 0)
+			h.assertReason(t, ReasonOther)
+		})
+	})
+
+	t.Run("EXE-026/ipcFailed depois do ready chama Quit e devolve other", func(t *testing.T) {
+		t.Parallel()
+		h := startTray(t, trayOpts{})
+		h.deliverReady(t)
+		close(h.ipcFailed)
+		h.waitDone(t)
+		h.assertCalls(t, 1, 0, 0)
+		h.assertReason(t, ReasonOther)
+	})
+
+	t.Run("EXE-026/ipcFailed antes do ready chama QuitBeforeReady e devolve other", func(t *testing.T) {
+		t.Parallel()
+		h := startTray(t, trayOpts{})
+		close(h.ipcFailed)
+		h.waitDone(t)
+		h.assertCalls(t, 0, 1, 0)
+		h.assertReason(t, ReasonOther)
+	})
+
+	t.Run("EXE-026/IPCFailed nil nunca dispara", func(t *testing.T) {
+		t.Parallel()
+		h := startTray(t, trayOpts{nilIPCFailed: true})
+
+		// Before ready: the 30 s timeout fires and is logged; the nil channel
+		// is not treated as an IPC failure.
+		h.clock.Advance(trayReadyTimeout)
+		h.logs.waitLevel(t, slog.LevelError)
+		h.assertRunning(t)
+		h.assertCalls(t, 0, 0, 0)
+
+		// After ready: the loop keeps serving the menu.
+		h.deliverReady(t)
+		send(t, h.open, "Abrir Arcadia")
+		h.waitOpened(t)
+		h.assertRunning(t)
+		h.assertCalls(t, 0, 0, 1)
+
+		send(t, h.quitItem, "Sair")
+		h.waitDone(t)
+		h.assertCalls(t, 1, 0, 1)
+		h.assertReason(t, ReasonQuit)
 	})
 }

@@ -45,11 +45,13 @@ type winMsg struct {
 }
 
 // runTray shows the tray icon with "Abrir Arcadia" and "Sair" and blocks until
-// the systray message loop ends. The event loop (trayLoop) runs on its own
-// goroutine, which is stopped and waited for before runTray returns. If the
-// systray onReady never runs, ctx done or sessionEnd end the message loop by
-// posting WM_QUIT to the systray thread (systray.Quit needs the tray window).
-func runTray(ctx context.Context, clock domain.Clock, log *slog.Logger, sessionEnd <-chan struct{}, onOpen func()) {
+// the systray message loop ends, returning the shutdown reason chosen by
+// trayLoop (EXE-016). The event loop runs on its own goroutine, which is
+// stopped and waited for before runTray returns. If the systray onReady never
+// runs, ctx done, sessionEnd or ipcFailed end the message loop by posting
+// WM_QUIT to the systray thread (systray.Quit needs the tray window).
+func runTray(ctx context.Context, clock domain.Clock, log *slog.Logger,
+	sessionEnd, ipcFailed <-chan struct{}, onOpen func()) ShutdownReason {
 	// systray's init already locked the main goroutine to its OS thread; the
 	// nested lock makes the thread id below valid for systray.Run regardless.
 	runtime.LockOSThread()
@@ -65,11 +67,22 @@ func runTray(ctx context.Context, clock domain.Clock, log *slog.Logger, sessionE
 
 	items := make(chan trayItems, 1)
 	stop := make(chan struct{})
+	deps := trayLoopDeps{
+		Ready:           items,
+		SessionEnd:      sessionEnd,
+		IPCFailed:       ipcFailed,
+		Stop:            stop,
+		Quit:            systray.Quit,
+		QuitBeforeReady: quitBeforeReady,
+		OnOpen:          onOpen,
+	}
+	// reason is written by the loop goroutine and read only after wg.Wait.
+	reason := ReasonOther
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		trayLoop(ctx, clock, log, items, sessionEnd, stop, systray.Quit, quitBeforeReady, onOpen)
+		reason = trayLoop(ctx, clock, log, deps)
 	}()
 
 	systray.Run(func() {
@@ -83,6 +96,7 @@ func runTray(ctx context.Context, clock domain.Clock, log *slog.Logger, sessionE
 
 	close(stop)
 	wg.Wait()
+	return reason
 }
 
 // ensureMessageQueue forces the creation of the calling thread's message queue,

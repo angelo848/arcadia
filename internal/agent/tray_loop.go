@@ -18,24 +18,37 @@ type trayItems struct {
 	quit <-chan struct{}
 }
 
-// trayLoop is the portable tray event loop. Before the menu exists (ready has
-// not delivered yet) ctx being done or a signal on sessionEnd calls
-// quitBeforeReady (which must end the systray message loop without a tray
-// window) and returns; if ready does not deliver within trayReadyTimeout it logs
-// an Error once and keeps waiting. After ready delivers, "Abrir Arcadia" calls
-// onOpen synchronously, and "Sair", ctx done or sessionEnd call quit and
-// return. A close of stop (the systray loop ended on its own) returns without
-// calling anything. A nil sessionEnd never fires.
-func trayLoop(ctx context.Context, clock domain.Clock, log *slog.Logger,
-	ready <-chan trayItems, sessionEnd <-chan struct{}, stop <-chan struct{},
-	quit, quitBeforeReady, onOpen func()) {
+// trayLoopDeps are the channels and callbacks of trayLoop.
+type trayLoopDeps struct {
+	Ready                 <-chan trayItems
+	SessionEnd, IPCFailed <-chan struct{} // nil never fires
+	Stop                  <-chan struct{}
+	Quit, QuitBeforeReady func()
+	OnOpen                func()
+	OnToggle              func() bool // T07
+	SetChecked            func(bool)  // T07
+}
+
+// trayLoop is the portable tray event loop; it returns why the agent is
+// shutting down (EXE-016). Before the menu exists (Ready has not delivered
+// yet) ctx being done, a signal on SessionEnd or a close of IPCFailed calls
+// QuitBeforeReady (which must end the systray message loop without a tray
+// window) and returns; if Ready does not deliver within trayReadyTimeout it
+// logs an Error once and keeps waiting. After Ready delivers, "Abrir Arcadia"
+// calls OnOpen synchronously, and "Sair", ctx done, SessionEnd or IPCFailed
+// call Quit and return. A close of Stop (the systray loop ended on its own)
+// returns ReasonOther without calling anything.
+//
+// Reasons: "Sair" -> quit; SessionEnd -> session-end; ctx (Ctrl+C/SIGTERM) ->
+// signal; Stop and IPCFailed (EXE-026) -> other.
+func trayLoop(ctx context.Context, clock domain.Clock, log *slog.Logger, d trayLoopDeps) ShutdownReason {
 	var it trayItems
 	timeout := clock.After(trayReadyTimeout)
 	timedOut := false
 waitReady:
 	for {
 		select {
-		case it = <-ready:
+		case it = <-d.Ready:
 			if timedOut {
 				log.Info("bandeja inicializada após o prazo")
 			}
@@ -45,45 +58,51 @@ waitReady:
 			timedOut = true
 			log.Error("bandeja não inicializou", "timeout", trayReadyTimeout.String())
 		case <-ctx.Done():
-			trayQuitEarly(log, ready, "sinal de encerramento", quit, quitBeforeReady)
-			return
-		case <-sessionEnd:
-			trayQuitEarly(log, ready, "fim de sessão", quit, quitBeforeReady)
-			return
-		case <-stop:
-			return
+			trayQuitEarly(log, d, "sinal de encerramento")
+			return ReasonSignal
+		case <-d.SessionEnd:
+			trayQuitEarly(log, d, "fim de sessão")
+			return ReasonSessionEnd
+		case <-d.IPCFailed:
+			trayQuitEarly(log, d, "IPC indisponível")
+			return ReasonOther
+		case <-d.Stop:
+			return ReasonOther
 		}
 	}
 
 	for {
 		select {
 		case <-it.open:
-			onOpen()
+			d.OnOpen()
 		case <-it.quit:
-			quit()
-			return
+			d.Quit()
+			return ReasonQuit
 		case <-ctx.Done():
-			quit()
-			return
-		case <-sessionEnd:
-			quit()
-			return
-		case <-stop:
-			return
+			d.Quit()
+			return ReasonSignal
+		case <-d.SessionEnd:
+			d.Quit()
+			return ReasonSessionEnd
+		case <-d.IPCFailed:
+			d.Quit()
+			return ReasonOther
+		case <-d.Stop:
+			return ReasonOther
 		}
 	}
 }
 
 // trayQuitEarly ends the tray when a quit condition arrives while waiting for
-// ready. If the menu became ready at the same moment, the regular quit is used
-// so the library removes its icon; otherwise quitBeforeReady is called.
-func trayQuitEarly(log *slog.Logger, ready <-chan trayItems, reason string, quit, quitBeforeReady func()) {
+// Ready. If the menu became ready at the same moment, the regular Quit is used
+// so the library removes its icon; otherwise QuitBeforeReady is called.
+func trayQuitEarly(log *slog.Logger, d trayLoopDeps, reason string) {
 	select {
-	case <-ready:
-		quit()
+	case <-d.Ready:
+		d.Quit()
 		return
 	default:
 	}
 	log.Info("encerrando antes de a bandeja inicializar", "reason", reason)
-	quitBeforeReady()
+	d.QuitBeforeReady()
 }
