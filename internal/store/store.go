@@ -18,7 +18,7 @@ import (
 )
 
 // SchemaVersion is the last migration embedded in the binary.
-const SchemaVersion int64 = 3
+const SchemaVersion int64 = 4
 
 // ErrSchemaMismatch is returned when the database schema version differs from
 // SchemaVersion (or the database does not exist) and migration is disabled.

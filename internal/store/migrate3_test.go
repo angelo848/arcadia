@@ -119,7 +119,7 @@ func TestMigration3(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
 		requireEndReasonColumn(t, s.DB())
-		requireGooseVersion(t, s, 3)
+		requireGooseVersion(t, s, store.SchemaVersion)
 	})
 
 	t.Run("STO-011/banco v2 com jogo, sessão e app_setting migra para 3 mantendo os dados, com end_reason nulo", func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestMigration3(t *testing.T) {
 		db := s.DB()
 		ctx := t.Context()
 
-		requireGooseVersion(t, s, 3)
+		requireGooseVersion(t, s, store.SchemaVersion)
 		requireEndReasonColumn(t, db)
 
 		var title string
@@ -196,10 +196,16 @@ func TestMigration3(t *testing.T) {
 		}
 	})
 
-	t.Run("STO-011/SchemaVersion é 3", func(t *testing.T) {
+	t.Run("STO-011/a migração 3 continua embutida", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 3 {
-			t.Errorf("store.SchemaVersion = %d, want 3", store.SchemaVersion)
+		db := openRaw(t, dbPath(t))
+		defer db.Close()
+		provider, err := goose.NewProvider(goose.DialectSQLite3, db, os.DirFS("migrations"))
+		if err != nil {
+			t.Fatalf("goose.NewProvider: %v", err)
+		}
+		if !slices.ContainsFunc(provider.ListSources(), func(s *goose.Source) bool { return s.Version == 3 }) {
+			t.Errorf("migration version 3 not found in provider sources")
 		}
 	})
 }
