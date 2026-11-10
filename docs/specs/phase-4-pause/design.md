@@ -174,8 +174,13 @@ type SessionStore interface {        // real: *store.Store
     ResumePause(ctx context.Context, p store.PauseEnd) error                       // [STO-020]
 }
 type FeedbackKind int
-const ( FeedbackPaused FeedbackKind = iota + 1; FeedbackResumed )
+const ( FeedbackPaused FeedbackKind = iota + 1; FeedbackResumed ) // 1, 2: feedback.Event mirrors them by value
+
+// In package tracker (consumed by the agent, which maps to ipc.SessionNotPausableData):
+type NotPausableError struct{ Reason string }
+const ( ReasonNoSession = "no-session"; ReasonGrace = "grace" )
 ```
+(`NotPausableError`, `ReasonNoSession` e `ReasonGrace` ficam no pacote `tracker`; alterado em 2026-11-10, planejamento.)
 
 ### Máquina pura (`machine.go`) [SES-016..SES-031, FBK-001]
 Implementa exatamente a tabela de [session-state-machine.md](contracts/session-state-machine.md). Acréscimos (o
@@ -187,6 +192,7 @@ func (m *Machine) Pause(now time.Time) []Effect                                 
 func (m *Machine) Resume(now time.Time) []Effect                                    // Paused→Running; Running no-op
 func (m *Machine) Suspend(now time.Time) []Effect                                   // Running → Paused(sleep); resto ignorado
 func (m *Machine) Wake(now time.Time, userPresent bool) []Effect                    // Paused(sleep) + userPresent → Running
+func (m *Machine) NotPausable() (reason string, ok bool)                            // ok in Idle/Launching (ReasonNoSession) and Grace (ReasonGrace); the coordinator builds *NotPausableError from it
 // novos EffectKind: EffPauseSession, EffResumePause, EffFeedback (State/At/Active/Reason como nos demais)
 ```
 - `Poll` passa a tratar `StatePaused` como `StateRunning` para o caso `ativos == 0` (→ `TrackedEmpty`) e a rearmar
@@ -197,6 +203,9 @@ func (m *Machine) Wake(now time.Time, userPresent bool) []Effect                
   [IPC-036].
 - `EffFeedback` é emitido pela própria máquina conforme a tabela de FBK-001 (pausa `UserInitiated`; toda retomada), de
   modo que a regra é testável sem goroutines.
+- `Wake`/`Suspend` em `Launching` são tratados como em `Idle` (ignorados): o lançamento é síncrono na goroutine dona,
+  então o estado é impossível de observar de fora. Um gatilho de pausa ignorado (zero efeitos) é logado em `Debug` pelo
+  coordenador, com o estado, porque a máquina é pura (alterado em 2026-11-10, planejamento).
 - Testes table-driven só com `time.Time` fixos, uma linha da tabela por caso, IDs SES-*.
 
 ### Coordenador (`tracker.go`) [SES-016..SES-034, FBK-003, PWR-005]
@@ -219,10 +228,12 @@ func (t *Tracker) Suspend(ctx context.Context, at time.Time) error
 func (t *Tracker) Wake(ctx context.Context, at time.Time, userPresent bool) error
 func (t *Tracker) LaunchUntracked(ctx context.Context, spec LaunchSpec) (pid uint32, err error)
 ```
-- **Canal de controle.** Um segundo canal `ctrlCh chan ctrlReq` (sem buffer, resposta em canal de 1), lido pelo
-  `select` da goroutine dona ao lado de `launchCh`. `TogglePause`, `Suspend`, `Wake` e `LaunchUntracked` enviam o
-  pedido e esperam a resposta ou o `ctx` (como `Launch`); quando o `ctx` do chamador acaba, a goroutine dona ainda
-  aplica o evento com o instante `at` original [PWR-005]. Depois de `BeginShutdown`/`Close` devolvem `ErrShuttingDown`.
+- **Canal de controle.** Um segundo canal `ctrlCh chan ctrlReq` (**buffer 16**, resposta em canal de 1), lido pelo
+  `select` da goroutine dona ao lado de `launchCh`. `Pause`, `Resume`, `TogglePause`, `Suspend`, `Wake` e `LaunchUntracked` enviam o
+  pedido; o chamador só abandona o **envio** se o tracker fechar (`done`), **nunca pelo fim do `ctx`**; depois de enviado,
+  espera a resposta ou o `ctx`. Assim, quando o `ctx` do chamador acaba, a goroutine dona ainda aplica o evento com o
+  instante `at` original, mesmo que estivesse ocupada [PWR-005]. Depois de `BeginShutdown`/`Close` devolvem
+  `ErrShuttingDown`. (Alterado em 2026-11-10, planejamento.)
 - **Instante.** O instante aplicado é `monotonic(at)` (máximo com o último aplicado), para `last_seen_at` e `pausedAt`
   nunca andarem para trás se a goroutine estava ocupada [SES-016..SES-028]. `TogglePause` com motivo diferente de
   `hotkey`/`gamepad` devolve `ErrInvalidPauseReason` (o motivo `sleep` só nasce de `Suspend`).
@@ -259,10 +270,15 @@ type Trigger struct {
 }
 // Source is started with the shared output queue and is closed exactly once by its owner.
 type Source interface {
+    Name() string                   // "hotkey" | "gamepad"; lets the agent log which source failed [PAU-006]
     Start(out chan<- Trigger) error // error = unavailable; nothing is left running
     Close() error                   // idempotent; waits for the goroutine
 }
 ```
+(`Name()` acrescentado em 2026-11-10, planejamento.) A própria fonte registra o log detalhado da falha de `Start`
+(`Hotkey.Start`: `Error` "atalho de pausa indisponível" com `hotkey` e `winError`; a fábrica de plataforma de
+`run_windows.go`: `Warn` "controle indisponível (XInput)"); o agente registra apenas um `Warn` genérico "fonte de gatilho
+de pausa indisponível" (`source`, `error`) [HOT-003, PAD-007, PAU-006].
 
 ### Atalho de teclado [HOT-001..HOT-004]
 - `Hotkey{Modifiers, VK}`; `DefaultHotkey = Hotkey{ModControl|ModAlt, 'P'}` (`input.go`, portável). `NewHotkey(h, clock,
@@ -276,7 +292,8 @@ type Source interface {
 - **Parada:** `Close` faz `PostThreadMessageW(tid, WM_QUIT, 0, 0)` e espera `wg`; antes de sair, a própria goroutine
   chama `UnregisterHotKey(0, id)` (a mesma thread que registrou) [HOT-004]. Se o `Post` falhar, devolve o erro sem
   esperar (como o `SessionEndWatcher.stopLoop`). Idempotente por `sync.Once`.
-- Teste de integração: opções com combinação de teste (p. ex. `Ctrl+Alt+Shift+F24`) para não colidir com o agente real
+- Teste de integração (em `internal/input`, inclusive o de HOT-003): opções com a combinação de teste
+  `Ctrl+Alt+Shift+F24` (`VK_F24 = 0x87`; nunca `Ctrl+Alt+P` em testes) para não colidir com o agente real
   do desenvolvedor; o `WM_HOTKEY` é injetado com `PostThreadMessageW(tid, WM_HOTKEY, id, lParam)`; um segundo listener
   com a mesma combinação cobre `ERROR_HOTKEY_ALREADY_REGISTERED` [HOT-003].
 - Por que não `SetWindowsHookEx`/`GetAsyncKeyState`: hook de teclado global é intrusivo (antivírus, anti-cheat) e
@@ -319,9 +336,10 @@ func (w *PowerWatcher) Close() error   // idempotent; waits for the loop
 - Mesmo padrão do `SessionEndWatcher`: janela oculta de topo (estilo 0, sem `WS_VISIBLE`, **não** `HWND_MESSAGE`), laço
   `GetMessage` em goroutine com `LockOSThread`, classe e janela criadas e destruídas na própria thread, parada por
   mensagem privada (`WM_APP+1`), `exited`/`postMu` para nunca postar em `hwnd` reciclado. O `wndProc` compartilhado
-  da `winapi` é generalizado para um mapa `hwnd → func(msg, wParam, lParam uintptr) (uintptr, bool)`, de modo que o
-  `SessionEndWatcher` e o `PowerWatcher` usem a mesma função de janela sem um conhecer o outro (refatoração mínima; os
-  testes do `SessionEndWatcher` continuam passando).
+  da `winapi` é generalizado para `map[HWND]windowHandler`, com `type windowHandler func(hwnd, msg, wParam, lParam
+  uintptr) (ret uintptr, handled bool)`, de modo que o `SessionEndWatcher`, o `PowerWatcher` e o aviso usem a mesma
+  função de janela sem um conhecer o outro (refatoração mínima; os testes do `SessionEndWatcher` continuam passando). O
+  `hwnd` é repassado porque o aviso precisa dele no `WM_PAINT`. (Alterado em 2026-11-10, planejamento.)
 - `WM_POWERBROADCAST (0x0218)`: `wParam` ∈ {`PBT_APMSUSPEND 0x0004` → `OnSuspend(clock.Now())`;
   `PBT_APMRESUMESUSPEND 0x0007` → `OnWake(now, true)`; `PBT_APMRESUMEAUTOMATIC 0x0012` → `OnWake(now, false)`; qualquer
   outro → nada}; o procedimento sempre devolve `TRUE` (1). `at` é lido **dentro** do procedimento, antes de qualquer
@@ -391,7 +409,8 @@ const ( CuePaused Cue = iota + 1; CueResumed )
 type Overlay interface { Show(Notice); Hide(); Close() error }
 type Sound   interface { Play(Cue); Close() error }
 
-type Event int // mirrors tracker.FeedbackKind without importing tracker
+type Event int // mirrors tracker.FeedbackKind by value, without importing tracker
+const ( EventPaused Event = iota + 1; EventResumed ) // == tracker.FeedbackPaused (1) / FeedbackResumed (2); an agent test pins the equality
 type Coordinator struct{ ... }
 func New(o Overlay, s Sound, clock domain.Clock, log *slog.Logger) *Coordinator // nil o/s => no-op
 func (c *Coordinator) Start()
@@ -423,6 +442,8 @@ func newPauseRouter(tr pauseTracker, in <-chan input.Trigger, log *slog.Logger) 
 func (r *pauseRouter) Start()
 func (r *pauseRouter) Close()  // stops the goroutine and waits [PAU-005]
 type powerBridge struct{ tr pauseTracker; timeout time.Duration; log *slog.Logger } // timeout 1.5s; tests shorten it
+// powerStarter is agent-local because winapi.PowerCallbacks exists only on Windows; run_windows.go adapts.
+type powerStarter func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error)
 func (b *powerBridge) OnSuspend(at time.Time)
 func (b *powerBridge) OnWake(at time.Time, userPresent bool)
 ```
@@ -457,12 +478,19 @@ func (b *powerBridge) OnWake(at time.Time, userPresent bool)
 
 ### Subida e shutdown [AGT-012, AGT-013]
 ```go
-// config gains optional injections for tests (nil => real components on Windows, none elsewhere).
-Sources  []input.Source           // default: input.NewHotkey(DefaultHotkey), input.NewPad(xinput, ...)
-Power    func(winapi.PowerCallbacks) (io.Closer, error) // default: winapi.NewPowerWatcher(...).Start
-Overlay  feedback.Overlay          // default: winapi.NewOverlay
-Sound    feedback.Sound            // default: winapi.NewBeeper
+// config gains a platform factory (alterado em 2026-11-10, planejamento). The components need the logger, which only
+// exists inside startAgent, so they arrive by factory, not by value. nil => no platform components.
+Platform func(domain.Clock, *slog.Logger) platformParts // filled only by Run in run_windows.go
+
+type platformParts struct {
+    Sources    []input.Source                       // real: input.NewHotkey(DefaultHotkey), input.NewPad(xinput, ...)
+    Power      powerStarter                         // nil => no power watcher; real: winapi.NewPowerWatcher(...).Start adapted
+    NewOverlay func() (feedback.Overlay, error)     // nil => NopOverlay; error => Warn OVL-006 + NopOverlay
+    NewSound   func() (feedback.Sound, error)       // nil => NopSound; error => Warn + NopSound
+}
 ```
+Consequência: `go test ./internal/agent` nunca registra o atalho do desenvolvedor, nem abre janela, nem toca som; os testes
+injetam `Platform` com falsos.
 - `startAgent`: `store.Open(Migrate)` → recuperação → `feedback.New(overlay, sound, clock, log)` + `Start()` →
   `tracker.New(Config{..., Feedback: coord.Send})` + `Start()` → `ipc.NewServer` + `Serve` → `pauseRouter.Start()` →
   `Source.Start(triggers)` para cada fonte e `PowerWatcher.Start()`. Cada falha de componente é `Error`/`Warn` do
@@ -551,6 +579,10 @@ func (a *App) ResumeSession() (SessionView, error)   // session.resume, timeout 
 - **Agent**: `pause_test.go` (roteador, antirrepique, PAU-008 com pedido da UI no meio, shutdown), handlers
   `session.pause`/`session.resume` via `ipc.Dispatch` (IPC-038..IPC-040), `app_test.go`/`shutdown_test.go` com fontes e feedback
   falsos (AGT-012, AGT-013, PAU-006), `games_test.go` via `ipc.Dispatch` para `game.launchUntracked`.
+- **Desktop interativo e atalho de teste** (alterado em 2026-11-10, planejamento): todo teste que precisa de área de
+  trabalho interativa chama `requireInteractiveDesktop(t)`, que dá `t.Skip` quando `OpenInputDesktop(0, false,
+  DESKTOP_SWITCHDESKTOP)` falha; os testes de janela e de atalho que funcionam sem desktop rodam sempre. A combinação
+  de teste do atalho é `Ctrl+Alt+Shift+F24`; `Ctrl+Alt+P` nunca é registrada em testes.
 - **Integração Windows** (`integration_windows_test.go`): `fake-game` real com `Launcher` real e `FakeClock`;
   TRK-009 (pausa/retoma, `F` durante a pausa → Grace), TRK-010 e TRK-011 (lançamento sem rastrear, handles).
 - **UI Go**: `LaunchGameUntracked` com `pinger` falso e `userError`; supervisor com `state = paused`.

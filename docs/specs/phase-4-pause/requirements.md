@@ -104,6 +104,7 @@ Detalhes que não são produto puro; ficam como estão se ninguém objetar.
 | ID | Situação | Por |
 |---|---|---|
 | STO-001 — Migração em banco novo (fase 2) | alterado (schema na versão 4) | STO-018 |
+| STO-011 — Migração 3: motivo de fim da sessão (fase 3) | alterado (`store.SchemaVersion` passa de 3 para 4) | STO-018 |
 | AST-001 — Tabela de preferências (single-exe) | alterado (`store.SchemaVersion` passa de 3 para 4; resto mantido) | STO-018 |
 | DOM-007 — Valores de estado validados (fase 3) | alterado (`paused` também é aceito) | DOM-010 |
 | STO-013 — Atualizar sessão aberta (fase 3) | alterado (o estado gravado pode ser `paused`) | SES-020 |
@@ -367,8 +368,9 @@ gatilho. Dada a fila de saída cheia, então o gatilho novo é descartado com `W
 
 ### HOT-003 — Falha no registro
 Dado que a combinação já está registrada por outro processo (`ERROR_HOTKEY_ALREADY_REGISTERED`), quando o listener
-inicia, então `Start` devolve um erro que embrulha o código do Windows, nenhuma goroutine fica viva e o agente registra
-`Error` "atalho de pausa indisponível" com `hotkey` e `winError`, e segue (PAU-006).
+inicia, então `Start` devolve um erro que embrulha o código do Windows, nenhuma goroutine fica viva e o próprio
+`Start` do atalho registra `Error` "atalho de pausa indisponível" com `hotkey` e `winError`; o agente segue (PAU-006).
+(Alterado em 2026-11-10, planejamento: quem registra o log é a fonte, não o agente; o teste fica em `internal/input`.)
 
 ### HOT-004 — Encerramento do atalho
 Dado o listener ativo, quando chamo `Close`, então `UnregisterHotKey` roda na thread dona, a goroutine termina e `Close`
@@ -418,8 +420,9 @@ no 63º avanço (`1008 ms`) cada slot desconectado é sondado de novo (2 leitura
 sondados a cada 1 s (sondar slot vazio a 60 Hz é caro no XInput). Um controle ligado é percebido em até 1 s.
 
 ### PAD-007 — XInput indisponível
-Dado que `xinput1_4.dll` não carrega, então criar o `PadAPI` real devolve erro; o agente registra `Warn` "controle
-indisponível (XInput)" e segue (PAU-006), sem tocar no atalho de teclado.
+Dado que `xinput1_4.dll` não carrega, então criar o `PadAPI` real devolve erro; a fábrica de plataforma do Windows
+registra `Warn` "controle indisponível (XInput)" e o agente segue (PAU-006), sem tocar no atalho de teclado.
+(Alterado em 2026-11-10, planejamento: quem registra o log é a fábrica de plataforma, não o agente.)
 
 ### PAD-008 — Encerramento do poller
 Dado o poller ativo, quando chamo `Close`, então a goroutine termina (sem goroutines do poller, `goleak`), `Close` só
@@ -460,6 +463,8 @@ Dado um tracker que demora a responder, quando chega `PBT_APMSUSPEND`, então o 
 1,5 s (`PowerHandlerTimeout`), registra `Warn` "tracker não respondeu à suspensão a tempo" e devolve; a pausa continua
 valendo com o instante `at` do evento (a goroutine dona do tracker a aplica quando puder, sem tomar o instante da
 retomada).
+(Alterado em 2026-11-10, planejamento: o canal de controle do tracker tem buffer e o chamador só abandona o envio se o
+tracker fechar, nunca pelo fim do `ctx`; assim o `Suspend` é mesmo aplicado depois, com o instante original.)
 
 ### PWR-006 — Ciclo de vida do watcher de energia
 Dado o watcher, quando chamo `Close`, então o loop termina, a janela e a classe são destruídas na própria thread, `Close`
@@ -598,7 +603,8 @@ goroutine terminar (sem goroutines do roteador, `goleak`).
 
 ### PAU-006 — Falha de um componente não derruba o agente
 Dado que o atalho, o controle, o watcher de energia, o aviso ou o som falha ao iniciar (erro injetado), então o agente
-registra o erro do componente, sobe normalmente, os outros componentes funcionam e o rastreamento de tempo não muda.
+registra o erro do componente (as fontes de gatilho registram o próprio erro detalhado, HOT-003/PAD-007; o agente
+registra `Warn` genérico "fonte de gatilho de pausa indisponível" com `source` e `error`), sobe normalmente, os outros componentes funcionam e o rastreamento de tempo não muda.
 
 ### PAU-007 — Pausa de ponta a ponta com jogo real
 Dado um jogo real aberto por "Jogar", quando pauso pelo atalho e retomo, pauso pelo controle e retomo, e por fim fecho o

@@ -74,7 +74,7 @@ como antes), AGT-004..005, DSK-*, UI-001, EXE-*, AST-002..011. DSK-007/DSK-008 c
 
 ## Domínio (DOM)
 
-### DOM-007 — Valores de estado e de motivo de fim validados
+### DOM-007 — Valores de estado e de motivo de fim validados · alterado em 2026-11-10: `paused` também é aceito (docs/specs/phase-4-pause, DOM-010)
 Dado o texto de uma coluna, quando chamo `domain.ParseSessionState`, então `running`, `grace`, `ended` e `discarded`
 são aceitos e qualquer outro valor (inclusive `""` e `Running`) retorna erro; quando chamo
 `domain.ParseSessionEndReason`, então `exited`, `agent-shutdown` e `recovered` são aceitos e qualquer outro valor
@@ -119,7 +119,7 @@ diferenciar maiúsculas e, em empate, por id: `A`(2), `a`(3), `b`(1), `C`(4).
 
 ## Store (STO)
 
-### STO-011 — Migração 3: motivo de fim da sessão
+### STO-011 — Migração 3: motivo de fim da sessão · alterado em 2026-11-10: SchemaVersion 3 → 4 (docs/specs/phase-4-pause, STO-018)
 Dado um banco novo ou na versão 2 com dados, quando o agente abre o store com migração, então `play_session` tem a
 coluna `end_reason TEXT` (nula), `store.SchemaVersion = 3`, a versão do goose é 3 e os dados existentes permanecem
 (sessões antigas ficam com `end_reason` nulo).
@@ -129,18 +129,18 @@ Dado um jogo `G`, quando abro uma sessão em `T`, então existe uma linha em `pl
 `started_at = last_seen_at = T`, `active_seconds = 0`, `state = 'running'`, `source = 'tracked'`, `ended_at` e
 `end_reason` nulos, e o id devolvido é o dela.
 
-### STO-013 — Atualizar sessão aberta
+### STO-013 — Atualizar sessão aberta · alterado em 2026-11-10: o estado gravado também pode ser `paused` (docs/specs/phase-4-pause, SES-020)
 Dada uma sessão aberta, quando gravo estado `s`, `last_seen_at = L` e tempo ativo `a`, então a linha passa a ter
 esses valores, com `active_seconds = floor(a / 1 s)`, e `ended_at` continua nulo.
 
-### STO-014 — Encerrar sessão contada atualiza o jogo na mesma transação
+### STO-014 — Encerrar sessão contada atualiza o jogo na mesma transação · alterado em 2026-11-10: a mesma transação fecha a pausa aberta (docs/specs/phase-4-pause, STO-021)
 Dada uma sessão aberta do jogo `G` com `started_at = S`, quando a encerro com `ended_at = E`, tempo ativo `a ≥ 30 s`,
 motivo `r` e instante de escrita `W`, então numa única transação: a sessão fica com `state = 'ended'`, `ended_at = E`,
 `last_seen_at = E`, `active_seconds = floor(a / 1 s)` e `end_reason = r`; e `G` fica com `total_play_seconds`
 somado de `floor(a / 1 s)`, `play_count + 1`, `last_played_at = E`, `first_played_at` mantido se já existia ou `S`
 se era nulo, e `updated_at = W`. Dado que a atualização do jogo falha, então a sessão também não muda.
 
-### STO-015 — Encerrar sessão descartada não altera o jogo
+### STO-015 — Encerrar sessão descartada não altera o jogo · alterado em 2026-11-10: a mesma transação fecha a pausa aberta (docs/specs/phase-4-pause, STO-021)
 Dada uma sessão aberta, quando a encerro com tempo ativo `a < 30 s`, então ela fica com `state = 'discarded'`,
 `ended_at`, `last_seen_at`, `active_seconds` e `end_reason` gravados como em STO-014, e a linha do jogo não muda
 (nem `updated_at`).
@@ -164,7 +164,7 @@ Dado o tracker sem sessão e o jogo `G`, quando peço para lançá-lo em `T` e o
 então a sessão é gravada como em STO-012 **antes** de o processo ser retomado, o processo é retomado, o estado é
 Running e o lançamento devolve a sessão (`state = running`, `startedAt = T`, `activeSeconds = 0`).
 
-### SES-002 — Uma sessão por vez
+### SES-002 — Uma sessão por vez · alterado em 2026-11-10: sessão ativa = Running, Grace ou Paused (docs/specs/phase-4-pause, SES-031)
 Dada uma sessão em Running ou Grace (do mesmo jogo ou de outro), ou um lançamento ainda em andamento, quando peço
 para lançar um jogo, então nenhum processo é criado, nada é gravado, a sessão existente não muda e o pedido é
 recusado com o erro "sessão ativa", que identifica a sessão existente (`sessionId`, `gameId`, `title`).
@@ -196,18 +196,18 @@ Dada uma sessão lançada em `T`, quando o job fica vazio em `T+29s` e a carênc
 Dado um jogo com total 0, quando uma sessão dele termina com 120 s ativos, então `game.list` devolve o jogo com
 `totalPlaySeconds = 120`, `playCount = 1` e `lastPlayedAt` igual ao `ended_at` da sessão.
 
-### SES-009 — Heartbeat a cada 30 s em Running
+### SES-009 — Heartbeat a cada 30 s em Running · alterado em 2026-11-10: também em Paused; em Grace segue parado (docs/specs/phase-4-pause, SES-020)
 Dada uma sessão em Running desde `T`, quando o relógio avança 30 s e depois mais 30 s, então a sessão é gravada com
 `last_seen_at = T+30s`/`active_seconds = 30` e depois `T+60s`/`60`; avançar `30 s − 1 ns` não grava. Dada uma sessão
 em Grace, então nenhum heartbeat é gravado até ela voltar a Running ou terminar.
 
-### SES-010 — Sessões abertas são fechadas na subida
+### SES-010 — Sessões abertas são fechadas na subida · alterado em 2026-11-10: fecha também a pausa aberta (docs/specs/phase-4-pause, SES-025)
 Dadas, no banco, sessões abertas (deixadas por queda do agente ou falta de energia), quando o agente sobe, então,
 antes de aceitar conexões IPC, cada uma é encerrada com `ended_at = last_seen_at`, o `active_seconds` gravado,
 motivo `recovered` e a regra de DOM-008 (STO-014/STO-015), e é registrado `Warn` "sessões abertas recuperadas" com
 `count`. Exemplo: `active_seconds = 590` → `ended`, total do jogo +590; `active_seconds = 20` → `discarded`.
 
-### SES-011 — Agente encerrando com sessão ativa
+### SES-011 — Agente encerrando com sessão ativa · alterado em 2026-11-10: caso Paused (docs/specs/phase-4-pause, SES-024)
 Dada uma sessão em Running, quando o agente faz o shutdown ordenado em `T`, então a sessão é encerrada com
 `ended_at = T`, o tempo ativo até `T` e motivo `agent-shutdown`; dada uma sessão em Grace desde `E`, então ela é
 encerrada com `ended_at = E` e motivo `exited`. Em ambos os casos os processos do jogo não são encerrados.
@@ -220,7 +220,7 @@ e o pedido é recusado com o erro "falha no lançamento" contendo o texto do err
 Dado que só a retomada do processo falha, então o processo é terminado e a sessão gravada é apagada, com o mesmo
 resultado.
 
-### SES-013 — Verificação periódica do job
+### SES-013 — Verificação periódica do job · alterado em 2026-11-10: também em Paused (docs/specs/phase-4-pause, SES-022)
 Dada uma sessão em Running cujo job ficou vazio sem a mensagem `ACTIVE_PROCESS_ZERO` chegar, quando a verificação
 periódica (a cada 5 s) lê 0 processos ativos em `t`, então a sessão vai para Grace em `t` (como em SES-003). Dada uma
 sessão em Grace, quando a verificação lê processos ativos > 0 em `t`, então ela volta a Running em `t` (como em
@@ -281,11 +281,11 @@ chamada a `Close` retorna sem efeito.
 
 ## Agente (AGT)
 
-### AGT-009 — Ordem de subida
+### AGT-009 — Ordem de subida · alterado em 2026-11-10: fontes de pausa sobem depois do tracker (docs/specs/phase-4-pause, AGT-012)
 Dado o agente subindo, quando o store abre e migra, então a recuperação de SES-010 roda e o tracker é iniciado antes
 de o servidor IPC aceitar conexões; dada a recuperação falhando, então é registrado `Error` e a subida continua.
 
-### AGT-010 — Ordem de shutdown com sessão
+### AGT-010 — Ordem de shutdown com sessão · alterado em 2026-11-10: fontes de pausa fecham antes do drain e o feedback depois do tracker (docs/specs/phase-4-pause, AGT-013)
 Dado o agente com uma sessão ativa, quando o shutdown ordenado começa (por qualquer motivo de EXE-016), então a ordem
 é: drain (`agent.shutdown`) → `Server.Close` → `Tracker.Close` (encerra a sessão por SES-011) → `Store.Close`, e o
 agente termina em < 2 s (AGT-003).
@@ -324,12 +324,12 @@ o lançamento pode ainda concluir na goroutine dona do tracker e o resultado rea
 · alterado em 2026-11-09 (planejamento): explicita o `-32603` por prazo do handler, já previsto no contrato; sem
 mudança de comportamento.
 
-### IPC-026 — `session.current`
+### IPC-026 — `session.current` · alterado em 2026-11-10: Running, Grace ou Paused (docs/specs/phase-4-pause, IPC-036)
 Dada uma sessão em Running ou Grace, quando chamo `session.current`, então recebo `{"session": Session}` com o estado
 atual e o tempo ativo medido no instante da chamada (`asOf`, IPC-031); dada nenhuma sessão, então recebo
 `{"session": null}`.
 
-### IPC-027 — Notificação `session.changed`
+### IPC-027 — Notificação `session.changed` · alterado em 2026-11-10: também nas transições de pausa e retomada (docs/specs/phase-4-pause, IPC-037)
 Dados dois clientes conectados, quando a sessão muda de estado (abre em Running, entra em Grace, volta a Running,
 termina como `ended` ou `discarded`), então cada cliente recebe uma notificação `session.changed` (sem `id`) com
 `params.session` no estado novo, uma por transição, na ordem das transições. Não há notificação para lançamento que
@@ -345,7 +345,7 @@ Dado um `ipc.Server` com clientes conectados, quando chamo `Notify(method, param
 notificação; dada uma conexão com a fila de saída cheia, então só ela perde a notificação, com log `Warn`, e as
 outras recebem.
 
-### IPC-030 — Contrato v0.4.0 é a fonte da verdade
+### IPC-030 — Contrato v0.4.0 é a fonte da verdade · alterado em 2026-11-10: substituído por IPC-032 (docs/specs/phase-4-pause)
 Dado `docs/specs/phase-3-tracker/contracts/ipc.openrpc.json`, quando o teste de contrato roda, então a versão é
 `0.4.0`, todos os métodos e notificações dele existem no servidor/`internal/ipc` com os mesmos nomes, os campos
 obrigatórios dos resultados batem com os tipos Go e os códigos de erro batem com as constantes; o comentário do
@@ -361,13 +361,13 @@ com `FakeClock`: sessão em Running desde `T`, `session.current` em `T+252,4s` �
 
 ## Desktop (DSK)
 
-### DSK-010 — Repasse de `session.changed`
+### DSK-010 — Repasse de `session.changed` · alterado em 2026-11-10: `state = paused` repassado (docs/specs/phase-4-pause, DSK-014)
 Dada a UI conectada, quando recebe `session.changed`, então emite o evento Wails `session:changed` com a sessão
 convertida (`sessionId`, `gameId`, `title`, `state`, `startedAt`, `endedAt` ou `""`, `activeSeconds`, `activeMs`,
 `asOf`); params inválidos são registrados em `Warn` e não são repassados. `CurrentSession` e `LaunchGame` devolvem a
 sessão no mesmo formato.
 
-### DSK-011 — Mensagens de erro em português
+### DSK-011 — Mensagens de erro em português · alterado em 2026-11-10: código novo `-32005` (docs/specs/phase-4-pause, DSK-015)
 Dado um erro de binding, quando o converto para o texto mostrado ao usuário, então:
 `-32001` → "Jogo não encontrado. Atualize a lista."; `-32002` → "Já há um jogo em andamento: «title». Feche-o antes de
 iniciar outro."; `-32003` → "Não foi possível iniciar o jogo: «error»"; `-32004` com `not-absolute`/`not-found` →
@@ -395,7 +395,7 @@ diálogo falha, então o erro é registrado em `Error` e o binding devolve "Erro
 
 ## Frontend (UI)
 
-### UI-004 — Lista de jogos
+### UI-004 — Lista de jogos · alterado em 2026-11-10: segundo botão "Sem contar tempo" (docs/specs/phase-4-pause, UI-019)
 Dada a lista de `game.list` não vazia, então a tela mostra uma linha por jogo, na ordem recebida, com o título, o
 tempo total (UI-005) e o botão "Jogar".
 
@@ -403,7 +403,7 @@ tempo total (UI-005) e o botão "Jogar".
 Dado `totalPlaySeconds`, então o texto é: `0` → "Nunca jogado"; `1` e `59` → "< 1 min"; `60` → "1 min"; `3599` →
 "59 min"; `3600` → "1 h 00 min"; `3900` → "1 h 05 min"; `451800` → "125 h 30 min".
 
-### UI-006 — Jogo em execução
+### UI-006 — Jogo em execução · alterado em 2026-11-10: `paused` mostra "Pausado", não "Em execução" (docs/specs/phase-4-pause, UI-024)
 Dada uma sessão em `running` ou `grace` (lida de `CurrentSession` ao carregar e atualizada pelos eventos
 `session:changed`, sem polling), então a linha do jogo dela mostra "Em execução"; quando chega `session:changed` com
 `ended` ou `discarded`, então a marcação some e a lista é recarregada (total atualizado).
@@ -414,7 +414,7 @@ Quando clico "Adicionar jogo" e escolho um `.exe`, então aparece o formulário 
 "Salvar" fica desabilitado com título vazio (após cortar espaços) ou durante o envio; quando salvo com sucesso, então
 o formulário fecha e o jogo aparece na lista; quando cancelo no diálogo ou no formulário, então nada muda.
 
-### UI-008 — Erros visíveis
+### UI-008 — Erros visíveis · alterado em 2026-11-10: a pendência vale para os dois botões do jogo (docs/specs/phase-4-pause, UI-021)
 Dado que "Jogar" ou "Salvar" falha, então a mensagem de DSK-011 aparece num aviso no topo da lista, com o botão
 "Fechar"; um erro novo substitui o anterior e a próxima ação bem-sucedida o remove. Durante um "Jogar" pendente, o
 botão daquele jogo mostra "Iniciando…" e fica desabilitado.
@@ -434,7 +434,7 @@ avançando, ~15 s depois do fechamento a marcação e o painel somem e o tempo t
 reabrir a UI durante o jogo não altera o tempo gravado e o cronômetro reaparece no valor certo (±1 s).
 · verificação: manual
 
-### UI-012 — Painel da sessão em andamento
+### UI-012 — Painel da sessão em andamento · alterado em 2026-11-10: existe também em `paused` e ganha o botão "Pausar"/"Retomar" (docs/specs/phase-4-pause, UI-022, UI-027)
 Dada uma sessão em `running` ou `grace` (UI-006), então acima da lista aparece um painel (`role="status"`, nome
 acessível "Sessão em andamento") com o título do jogo da sessão e o cronômetro (UI-013); dada nenhuma sessão, ou
 quando chega `session:changed` com `ended` ou `discarded`, então o painel não existe na tela.

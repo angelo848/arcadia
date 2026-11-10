@@ -66,7 +66,7 @@ Dado um `FakeClock` em `T`:
 
 ## Store (STO)
 
-### STO-001 — Migração em banco novo
+### STO-001 — Migração em banco novo · alterado em 2026-11-10: schema na versão 4 (docs/specs/phase-4-pause, STO-018)
 Dado um arquivo inexistente, quando abro o store **com migração**, então o schema completo da arquitetura (§5)
 existe, com FTS5.
 · alterado em 2026-11-08: migração passa a ser opção de `Open` (ADR 0010).
@@ -222,7 +222,7 @@ Quando rodo `arcadia-agent --data-dir X`, então `X/library.db` migrado, `X/logs
 Dado um agente rodando, quando inicio outro, então o segundo sai com código 0. · verificação: manual
 · alterado em 2026-11-08: o agente passa a ser `arcadia.exe --agent`; critério mantido — ver EXE-002 (docs/specs/single-exe).
 
-### AGT-003 — Saída ordenada
+### AGT-003 — Saída ordenada · alterado em 2026-11-10: fontes de pausa fecham antes do drain e o feedback depois do tracker; < 2 s mantido (docs/specs/phase-4-pause, AGT-013)
 Quando escolho "Sair" na bandeja, então o agente encerra em < 2 s, sem goroutines nem handles vazando.
 Exceção: a goroutine de limpeza do lumberjack (`millRun`), uma por processo, que o `Close` da biblioteca não encerra
 (ADR 0013).
@@ -242,7 +242,7 @@ Quando inicio o agente com `--log-level` igual a `debug`, `info`, `warn` ou `err
 correspondente do `slog`; sem a flag, o nível é `info`; com outro valor, o agente sai com código ≠ 0 antes de abrir
 o banco.
 
-### AGT-006 — Encerramento com a sessão do Windows
+### AGT-006 — Encerramento com a sessão do Windows · alterado em 2026-11-10: mesma saída ordenada de AGT-013 (docs/specs/phase-4-pause)
 Dado o agente rodando, quando o usuário faz logoff ou desliga o Windows (`WM_ENDSESSION`, recebido por uma janela
 top-level oculta), então o agente executa o mesmo shutdown ordenado de AGT-003. · verificação: manual
 · alterado em 2026-11-09: o shutdown é o de AGT-010, que encerra a sessão de jogo ativa — ver AGT-010
