@@ -451,19 +451,20 @@ func TestLaunchDetachedHandles(t *testing.T) {
 			// The process is short-lived; wait for it so they do not pile up.
 			sc.waitCounts(t, launched, launched)
 		}
-		// One warm-up launch first, so lazily created runtime/DLL handles are
-		// part of h0.
-		launch(0)
-		h0 := processHandleCount(t)
+		// Warm-up launches first (see TestHandleCount): lazily created
+		// runtime/DLL handles must be part of h0.
+		for i := -9; i <= 0; i++ {
+			launch(i)
+		}
+		h0 := settledHandleCount(t)
+		threads0 := osThreadsCreated()
 		for i := 1; i <= 20; i++ {
 			launch(i)
 		}
 		if err := w.tr.Close(realCtx(t)); err != nil {
 			t.Fatalf("Tracker.Close: %v", err)
 		}
-		if h := processHandleCount(t); h > h0+2 {
-			t.Errorf("handle count = %d after 20 launches and Close, want <= h0 + 2 = %d", h, h0+2)
-		}
+		waitHandleCountAtMost(t, h0, 2, threads0, "after 20 launches and Close")
 	})
 }
 
@@ -483,18 +484,20 @@ func TestHandleCount(t *testing.T) {
 				t.Fatalf("launch %d: end notification = %q, want discarded", i, n.State)
 			}
 		}
-		// One warm-up launch first, so lazily created runtime/DLL handles
-		// (threads, loaded procs) are part of h0.
-		cycle(0)
-		h0 := processHandleCount(t)
+		// Warm-up launches first: the Go runtime grows its OS thread pool (a
+		// few handles per thread) in bounded steps during the first cycles, so
+		// lazily created runtime/DLL handles must be part of h0.
+		for i := -9; i <= 0; i++ {
+			cycle(i)
+		}
+		h0 := settledHandleCount(t)
+		threads0 := osThreadsCreated()
 		for i := 1; i <= 20; i++ {
 			cycle(i)
 		}
 		if err := w.tr.Close(realCtx(t)); err != nil {
 			t.Fatalf("Tracker.Close: %v", err)
 		}
-		if h := processHandleCount(t); h > h0+2 {
-			t.Errorf("handle count = %d after 20 launches and Close, want <= h0 + 2 = %d", h, h0+2)
-		}
+		waitHandleCountAtMost(t, h0, 2, threads0, "after 20 launches and Close")
 	})
 }

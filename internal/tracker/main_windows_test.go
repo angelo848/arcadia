@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,6 +94,62 @@ func processHandleCount(t *testing.T) uint32 {
 		t.Fatalf("GetProcessHandleCount: %v", err)
 	}
 	return n
+}
+
+// settledHandleCount runs the GC and polls (bounded, real time) until the
+// process handle count is stable across consecutive polls. Used for baselines.
+func settledHandleCount(t *testing.T) uint32 {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	runtime.GC()
+	last := processHandleCount(t)
+	stable := 0
+	for stable < 5 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		runtime.GC()
+		cur := processHandleCount(t)
+		if cur == last {
+			stable++
+		} else {
+			stable = 0
+			last = cur
+		}
+	}
+	return last
+}
+
+// handlesPerThread is what the Go runtime costs in process handles for each
+// OS thread it creates (thread handle plus per-M runtime handles, measured:
+// 6). Thread creation is lazy and bounded, not a per-launch leak.
+const handlesPerThread = 6
+
+// osThreadsCreated is the number of OS threads the Go runtime created so far.
+func osThreadsCreated() int { return pprof.Lookup("threadcreate").Count() }
+
+// waitHandleCountAtMost runs the GC and polls (bounded, real time) until the
+// process handle count is <= h0 + slack + handlesPerThread * (OS threads the
+// runtime created since threads0); it fails with the last observed values only
+// if that never happens within 5 s.
+func waitHandleCountAtMost(t *testing.T, h0 uint32, slack uint32, threads0 int, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var lo, last uint32
+	for {
+		runtime.GC()
+		limit := h0 + slack + handlesPerThread*uint32(osThreadsCreated()-threads0)
+		last = processHandleCount(t)
+		if lo == 0 || last < lo {
+			lo = last
+		}
+		if last <= limit {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("handle count = %d (min observed %d) %s, want <= %d (h0 %d + %d + %d per new OS thread, %d new)", last, lo, what, limit, h0, slack, handlesPerThread, osThreadsCreated()-threads0)
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 // testerInJob reports whether the test process itself runs inside a job
