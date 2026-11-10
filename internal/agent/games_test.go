@@ -91,6 +91,78 @@ type fakeTracker struct {
 	current    domain.SessionSnapshot
 	hasCurrent bool
 	curCalls   int
+
+	// T18: LaunchUntracked, Pause and Resume.
+	untrackedFn        func(ctx context.Context, spec tracker.LaunchSpec) (uint32, error)
+	untrackedSpecs     []tracker.LaunchSpec
+	untrackedDeadlines []time.Time
+	pauseFn            func(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
+	resumeFn           func(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
+	pauseAts           []time.Time
+	resumeAts          []time.Time
+	pauseDeadlines     []time.Time
+	resumeDeadlines    []time.Time
+}
+
+func (f *fakeTracker) LaunchUntracked(ctx context.Context, spec tracker.LaunchSpec) (uint32, error) {
+	f.mu.Lock()
+	f.untrackedSpecs = append(f.untrackedSpecs, spec)
+	dl, _ := ctx.Deadline()
+	f.untrackedDeadlines = append(f.untrackedDeadlines, dl)
+	fn := f.untrackedFn
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, spec)
+	}
+	return 4242, nil
+}
+
+func (f *fakeTracker) Pause(ctx context.Context, at time.Time) (domain.SessionSnapshot, error) {
+	f.mu.Lock()
+	f.pauseAts = append(f.pauseAts, at)
+	dl, _ := ctx.Deadline()
+	f.pauseDeadlines = append(f.pauseDeadlines, dl)
+	fn := f.pauseFn
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, at)
+	}
+	return pausedAt(at), nil
+}
+
+func (f *fakeTracker) Resume(ctx context.Context, at time.Time) (domain.SessionSnapshot, error) {
+	f.mu.Lock()
+	f.resumeAts = append(f.resumeAts, at)
+	dl, _ := ctx.Deadline()
+	f.resumeDeadlines = append(f.resumeDeadlines, dl)
+	fn := f.resumeFn
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, at)
+	}
+	return runningAt(at), nil
+}
+
+func (f *fakeTracker) untrackedLaunches() []tracker.LaunchSpec {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]tracker.LaunchSpec(nil), f.untrackedSpecs...)
+}
+
+// pausedAt is a session started at gamesT0 and paused at "at" (100 s active
+// when at = gamesT0+100s).
+func pausedAt(at time.Time) domain.SessionSnapshot {
+	return domain.SessionSnapshot{
+		ID: 3, GameID: 1, Title: "G", State: domain.SessionPaused,
+		StartedAt: gamesT0, Active: at.Sub(gamesT0), AsOf: at,
+	}
+}
+
+func runningAt(at time.Time) domain.SessionSnapshot {
+	return domain.SessionSnapshot{
+		ID: 3, GameID: 1, Title: "G", State: domain.SessionRunning,
+		StartedAt: gamesT0, Active: 100 * time.Second, AsOf: at,
+	}
 }
 
 func (f *fakeTracker) Launch(ctx context.Context, spec tracker.LaunchSpec) (domain.SessionSnapshot, error) {
@@ -1127,4 +1199,566 @@ func TestNewMethodParams(t *testing.T) {
 			t.Errorf("game.launch: error %d %q", resp.Error.Code, resp.Error.Message)
 		}
 	})
+}
+
+// --- T18: game.launchUntracked, session.pause and session.resume ---
+
+// need fails the test when the handlers do not register method yet.
+func (h *gamesHarness) need(t *testing.T, method string) {
+	t.Helper()
+	if h.handlers[method] == nil {
+		t.Fatalf("gameHandlers has no handler for %q", method)
+	}
+}
+
+// callCtx dispatches method with ctx and waits for the response; the handler
+// is expected to return once ctx ends.
+func (h *gamesHarness) callCtx(t *testing.T, ctx context.Context, method, params string) ipc.Response {
+	t.Helper()
+	done := make(chan ipc.Response, 1)
+	go func() { done <- callHandlers(t, ctx, h.handlers, method, params) }()
+	select {
+	case resp := <-done:
+		return resp
+	case <-time.After(testTimeout):
+		t.Fatalf("%s did not return", method)
+		return ipc.Response{}
+	}
+}
+
+func TestHandleGameLaunchUntracked(t *testing.T) {
+	t.Parallel()
+	untracked := func(id int64) string { return fmt.Sprintf(`{"gameId":%d}`, id) }
+
+	t.Run("IPC-033/jogo existente e sem sessão devolve {pid: N >= 1} e session.current continua {session: null}", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		g := h.addGame(t, h.file(t, "game.exe"), "Game")
+		resp := h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID))
+		if resp.Error != nil {
+			t.Fatalf("error %d %q %s", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+		}
+		obj := objectOf(t, resp.Result)
+		wantKeys(t, obj, "pid")
+		var lp ipc.LaunchedProcess
+		resultInto(t, resp, &lp)
+		if lp.PID < 1 {
+			t.Errorf("pid = %d, want >= 1", lp.PID)
+		}
+		wantRaw(t, obj, "pid", "4242")
+		specs := h.tr.untrackedLaunches()
+		if len(specs) != 1 || specs[0].GameID != g.ID || specs[0].Title != "Game" || specs[0].Exe != g.Path {
+			t.Errorf("LaunchUntracked specs = %+v, want one for game %d", specs, g.ID)
+		}
+		cur := h.call(t, ipc.MethodSessionCurrent, "")
+		wantRaw(t, objectOf(t, cur.Result), "session", "null")
+	})
+
+	t.Run("IPC-033/nenhuma notificação session.changed é enviada", func(t *testing.T) {
+		t.Parallel()
+		// The handler has no notifier: it must not touch the session machine
+		// (Launch, Pause, Resume), which is what produces session.changed.
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		g := h.addGame(t, h.file(t, "game.exe"), "Game")
+		resultInto(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), &ipc.LaunchedProcess{})
+		h.tr.mu.Lock()
+		defer h.tr.mu.Unlock()
+		if len(h.tr.specs) != 0 || len(h.tr.pauseAts) != 0 || len(h.tr.resumeAts) != 0 {
+			t.Errorf("tracked Launch/Pause/Resume called: %d/%d/%d, want 0", len(h.tr.specs), len(h.tr.pauseAts), len(h.tr.resumeAts))
+		}
+	})
+
+	t.Run("IPC-033/LaunchSpec montado de launch_target, launch_args e working_dir", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		h.gs.gameFn = func(id int64) (store.Game, error) {
+			return store.Game{ID: id, Title: "HK", LaunchType: "exe", LaunchTarget: `C:\hk.exe`, LaunchArgs: `-w "x y"`, WorkingDir: `D:\w`}, nil
+		}
+		resultInto(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(42)), &ipc.LaunchedProcess{})
+		want := tracker.LaunchSpec{GameID: 42, Title: "HK", Exe: `C:\hk.exe`, Args: `-w "x y"`, WorkDir: `D:\w`}
+		specs := h.tr.untrackedLaunches()
+		if len(specs) != 1 || specs[0] != want {
+			t.Errorf("LaunchSpec = %+v, want %+v", specs, want)
+		}
+	})
+
+	t.Run("IPC-034/gameId inexistente devolve -32001 antes de consultar a sessão", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		h.tr.untrackedFn = func(context.Context, tracker.LaunchSpec) (uint32, error) {
+			return 0, &tracker.SessionActiveError{Session: domain.SessionSnapshot{ID: 1, GameID: 1, Title: "x"}}
+		}
+		data := wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, `{"gameId":99}`), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+		wantKeys(t, data, "gameId")
+		wantRaw(t, data, "gameId", "99")
+		if n := len(h.tr.untrackedLaunches()); n != 0 {
+			t.Errorf("LaunchUntracked calls = %d, want 0", n)
+		}
+	})
+
+	for _, st := range []struct {
+		name string
+		snap domain.SessionSnapshot
+		sid  string
+	}{
+		{"Running", domain.SessionSnapshot{ID: 7, GameID: 3, Title: "Other", State: domain.SessionRunning}, "7"},
+		{"Grace", domain.SessionSnapshot{ID: 7, GameID: 3, Title: "Other", State: domain.SessionGrace}, "7"},
+		{"Paused", domain.SessionSnapshot{ID: 7, GameID: 3, Title: "Other", State: domain.SessionPaused}, "7"},
+		{"lançamento em andamento", domain.SessionSnapshot{GameID: 3, Title: "Other"}, "0"},
+	} {
+		t.Run("IPC-034/sessão Running, Grace, Paused ou lançamento em andamento devolve -32002 com sessionId, gameId e title/"+st.name, func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.need(t, ipc.MethodGameLaunchUntracked)
+			g := h.addGame(t, h.file(t, "game.exe"), "Game")
+			h.tr.untrackedFn = func(context.Context, tracker.LaunchSpec) (uint32, error) {
+				return 0, fmt.Errorf("launch untracked: %w", &tracker.SessionActiveError{Session: st.snap})
+			}
+			data := wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), ipc.CodeSessionActive, ipc.MsgSessionActive)
+			wantKeys(t, data, "sessionId", "gameId", "title")
+			wantRaw(t, data, "sessionId", st.sid)
+			wantRaw(t, data, "gameId", "3")
+			wantRaw(t, data, "title", `"Other"`)
+		})
+	}
+
+	t.Run("IPC-034/falha do lançamento devolve -32003 com data.error e winError", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		g := h.addGame(t, h.file(t, "game.exe"), "Game")
+		h.tr.untrackedFn = func(context.Context, tracker.LaunchSpec) (uint32, error) {
+			return 0, &tracker.LaunchError{Err: errors.New("arquivo não encontrado"), WinError: 2}
+		}
+		data := wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), ipc.CodeLaunchFailed, ipc.MsgLaunchFailed)
+		wantKeys(t, data, "error", "winError")
+		wantRaw(t, data, "error", `"arquivo não encontrado"`)
+		wantRaw(t, data, "winError", "2")
+	})
+
+	t.Run("IPC-034/agente em shutdown devolve -32003 com error agente encerrando", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		g := h.addGame(t, h.file(t, "game.exe"), "Game")
+		h.tr.untrackedFn = func(context.Context, tracker.LaunchSpec) (uint32, error) {
+			return 0, fmt.Errorf("launch untracked: %w", tracker.ErrShuttingDown)
+		}
+		data := wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), ipc.CodeLaunchFailed, ipc.MsgLaunchFailed)
+		wantKeys(t, data, "error")
+		wantRaw(t, data, "error", `"agente encerrando"`)
+	})
+
+	t.Run("IPC-034/launch_type diferente de exe devolve -32003 tipo de lançamento não suportado", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		h.gs.gameFn = func(id int64) (store.Game, error) {
+			return store.Game{ID: id, Title: "Steam", LaunchType: "url", LaunchTarget: "steam://run/1"}, nil
+		}
+		data := wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(5)), ipc.CodeLaunchFailed, ipc.MsgLaunchFailed)
+		wantRaw(t, data, "error", `"tipo de lançamento não suportado"`)
+		if n := len(h.tr.untrackedLaunches()); n != 0 {
+			t.Errorf("LaunchUntracked calls = %d, want 0", n)
+		}
+	})
+
+	t.Run("IPC-034/prazo de 10 s esgotado devolve -32603", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodGameLaunchUntracked)
+		g := h.addGame(t, h.file(t, "game.exe"), "Game")
+
+		// The ctx of the call carries the 10 s deadline.
+		resultInto(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), &ipc.LaunchedProcess{})
+		h.tr.mu.Lock()
+		dl := h.tr.untrackedDeadlines[0]
+		h.tr.mu.Unlock()
+		if dl.IsZero() {
+			t.Fatalf("LaunchUntracked ctx has no deadline, want %v", launchHandlerTimeout)
+		}
+		if left := time.Until(dl); left > launchHandlerTimeout || left < launchHandlerTimeout-5*time.Second {
+			t.Errorf("deadline in %v, want about %v", left, launchHandlerTimeout)
+		}
+
+		// A deadline error from the tracker becomes -32603.
+		h.tr.untrackedFn = func(context.Context, tracker.LaunchSpec) (uint32, error) {
+			return 0, fmt.Errorf("tracker: launch: %w", context.DeadlineExceeded)
+		}
+		wantError(t, h.call(t, ipc.MethodGameLaunchUntracked, untracked(g.ID)), ipc.CodeInternalError, "Internal error")
+
+		// The end of the dispatch ctx while the tracker waits too.
+		h.tr.untrackedFn = func(ctx context.Context, _ tracker.LaunchSpec) (uint32, error) {
+			<-ctx.Done()
+			return 0, ctx.Err()
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		time.AfterFunc(10*time.Millisecond, cancel)
+		defer cancel()
+		wantError(t, h.callCtx(t, ctx, ipc.MethodGameLaunchUntracked, untracked(g.ID)), ipc.CodeInternalError, "Internal error")
+	})
+
+	rejected := []struct {
+		name   string
+		params []string
+	}{
+		{"IPC-035/gameId texto, fracionário, < 1, array posicional, ausente ou membro desconhecido devolve -32602/texto",
+			[]string{`{"gameId":"1"}`, `{"gameId":true}`}},
+		{"IPC-035/gameId texto, fracionário, < 1, array posicional, ausente ou membro desconhecido devolve -32602/fracionário",
+			[]string{`{"gameId":1.5}`, `{"gameId":1.0}`, `{"gameId":1e0}`}},
+		{"IPC-035/gameId texto, fracionário, < 1, array posicional, ausente ou membro desconhecido devolve -32602/< 1",
+			[]string{`{"gameId":0}`, `{"gameId":-3}`}},
+		{"IPC-035/gameId texto, fracionário, < 1, array posicional, ausente ou membro desconhecido devolve -32602/array posicional",
+			[]string{`[1]`}},
+		{"IPC-035/gameId texto, fracionário, < 1, array posicional, ausente ou membro desconhecido devolve -32602/membro desconhecido",
+			[]string{`{"gameId":1,"force":true}`, `{"gameID":1}`}},
+		{"IPC-035/params vazios ({}, [], null, ausente) devolvem -32602",
+			[]string{`{}`, `[]`, `null`, ``, `{"gameId":null}`}},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.need(t, ipc.MethodGameLaunchUntracked)
+			for _, p := range tc.params {
+				resp := h.call(t, ipc.MethodGameLaunchUntracked, p)
+				if resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+					t.Errorf("params %q: response %+v (result %s), want -32602", p, resp.Error, resp.Result)
+				}
+			}
+			if n := h.gs.gameCalls(); n != 0 {
+				t.Errorf("store Game calls = %d, want 0", n)
+			}
+			if n := len(h.tr.untrackedLaunches()); n != 0 {
+				t.Errorf("LaunchUntracked calls = %d, want 0", n)
+			}
+		})
+	}
+}
+
+func TestHandleSessionCurrentPaused(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-036/sessão pausada devolve state paused, activeMs 100000, activeSeconds 100 e asOf do momento da chamada; sem sessão continua {session: null}", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		// The tracker snapshot of a session paused at T+100s, read at T+130s:
+		// active time frozen, asOf = the call instant.
+		h.tr.current, h.tr.hasCurrent = domain.SessionSnapshot{
+			ID: 3, GameID: 1, Title: "G", State: domain.SessionPaused, StartedAt: gamesT0,
+			Active: 100 * time.Second, AsOf: gamesT0.Add(130 * time.Second),
+		}, true
+		resp := h.call(t, ipc.MethodSessionCurrent, "")
+		sess := objectOf(t, objectOf(t, resp.Result)["session"])
+		wantKeys(t, sess, sessionKeys...)
+		wantRaw(t, sess, "state", `"paused"`)
+		wantRaw(t, sess, "activeMs", "100000")
+		wantRaw(t, sess, "activeSeconds", "100")
+		wantRaw(t, sess, "asOf", `"2026-11-09T14:02:10.000Z"`)
+		wantRaw(t, sess, "endedAt", "null")
+
+		h.tr.mu.Lock()
+		h.tr.hasCurrent = false
+		h.tr.mu.Unlock()
+		wantRaw(t, objectOf(t, h.call(t, ipc.MethodSessionCurrent, "").Result), "session", "null")
+	})
+}
+
+// explicitMethods are the two explicit-request methods with their fake hooks.
+var explicitMethods = []struct {
+	method string
+	ats    func(f *fakeTracker) []time.Time
+	set    func(f *fakeTracker, fn func(context.Context, time.Time) (domain.SessionSnapshot, error))
+}{
+	{ipc.MethodSessionPause,
+		func(f *fakeTracker) []time.Time { return f.pauseAts },
+		func(f *fakeTracker, fn func(context.Context, time.Time) (domain.SessionSnapshot, error)) {
+			f.pauseFn = fn
+		}},
+	{ipc.MethodSessionResume,
+		func(f *fakeTracker) []time.Time { return f.resumeAts },
+		func(f *fakeTracker, fn func(context.Context, time.Time) (domain.SessionSnapshot, error)) {
+			f.resumeFn = fn
+		}},
+}
+
+// explicitParamsRules checks the empty/non-empty params rule of IPC-038/039.
+func explicitParamsRules(t *testing.T, method string) {
+	t.Helper()
+	h := newGamesHarness(t, nil)
+	h.need(t, method)
+	for _, p := range []string{``, `null`, `{}`, `[]`} {
+		resp := h.call(t, method, p)
+		if resp.Error != nil {
+			t.Errorf("%s params %q: error %d %q, want a result", method, p, resp.Error.Code, resp.Error.Message)
+		}
+	}
+	h.tr.mu.Lock()
+	before := len(h.tr.pauseAts) + len(h.tr.resumeAts)
+	h.tr.mu.Unlock()
+	for _, p := range []string{`{"a":1}`, `[1]`, `["x"]`, `{"gameId":1}`} {
+		resp := h.call(t, method, p)
+		if resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+			t.Errorf("%s params %s: response %+v (result %s), want -32602", method, p, resp.Error, resp.Result)
+		}
+	}
+	h.tr.mu.Lock()
+	after := len(h.tr.pauseAts) + len(h.tr.resumeAts)
+	h.tr.mu.Unlock()
+	if after != before {
+		t.Errorf("%s: tracker called %d times with invalid params, want 0", method, after-before)
+	}
+}
+
+func TestHandleSessionPause(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-038/session.pause em Running devolve {session} paused com activeMs congelado e asOf do pedido", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionPause)
+		h.clock.Advance(100 * time.Second)
+		resp := h.call(t, ipc.MethodSessionPause, "")
+		if resp.Error != nil {
+			t.Fatalf("error %d %q %s", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+		}
+		obj := objectOf(t, resp.Result)
+		wantKeys(t, obj, "session")
+		sess := objectOf(t, obj["session"])
+		wantKeys(t, sess, sessionKeys...)
+		wantRaw(t, sess, "state", `"paused"`)
+		wantRaw(t, sess, "activeMs", "100000")
+		wantRaw(t, sess, "activeSeconds", "100")
+		wantRaw(t, sess, "asOf", `"2026-11-09T14:01:40.000Z"`)
+		wantRaw(t, sess, "endedAt", "null")
+	})
+
+	t.Run("IPC-038/em Paused devolve o estado atual como sucesso", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionPause)
+		h.tr.pauseFn = func(_ context.Context, at time.Time) (domain.SessionSnapshot, error) {
+			// Already paused (e.g. by sleep): the tracker reports the current
+			// state as of the request.
+			return domain.SessionSnapshot{
+				ID: 3, GameID: 1, Title: "G", State: domain.SessionPaused, StartedAt: gamesT0,
+				Active: 100 * time.Second, AsOf: at,
+			}, nil
+		}
+		h.clock.Advance(130 * time.Second)
+		sess := objectOf(t, objectOf(t, h.call(t, ipc.MethodSessionPause, "").Result)["session"])
+		wantRaw(t, sess, "state", `"paused"`)
+		wantRaw(t, sess, "activeMs", "100000")
+		wantRaw(t, sess, "asOf", `"2026-11-09T14:02:10.000Z"`)
+	})
+
+	t.Run("IPC-038/params não vazios devolvem -32602 e params vazios ({}, [], null, ausente) são aceitos", func(t *testing.T) {
+		t.Parallel()
+		explicitParamsRules(t, ipc.MethodSessionPause)
+	})
+
+	t.Run("SES-035/o handler usa clock.Now() lido ao receber como at", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionPause)
+		h.clock.Advance(100 * time.Second)
+		resultInto(t, h.call(t, ipc.MethodSessionPause, ""), &ipc.SessionResult{})
+		h.clock.Advance(7 * time.Second)
+		resultInto(t, h.call(t, ipc.MethodSessionPause, ""), &ipc.SessionResult{})
+		h.tr.mu.Lock()
+		defer h.tr.mu.Unlock()
+		want := []time.Time{gamesT0.Add(100 * time.Second), gamesT0.Add(107 * time.Second)}
+		if len(h.tr.pauseAts) != 2 || !h.tr.pauseAts[0].Equal(want[0]) || !h.tr.pauseAts[1].Equal(want[1]) {
+			t.Errorf("Pause at = %v, want %v", h.tr.pauseAts, want)
+		}
+		if len(h.tr.resumeAts) != 0 {
+			t.Errorf("Resume calls = %d, want 0", len(h.tr.resumeAts))
+		}
+	})
+
+	t.Run("IPC-038/ctx do Pause tem prazo de 5 s", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionPause)
+		resultInto(t, h.call(t, ipc.MethodSessionPause, ""), &ipc.SessionResult{})
+		h.tr.mu.Lock()
+		dl := h.tr.pauseDeadlines[0]
+		h.tr.mu.Unlock()
+		if pauseHandlerTimeout != 5*time.Second {
+			t.Errorf("pauseHandlerTimeout = %v, want 5s", pauseHandlerTimeout)
+		}
+		if dl.IsZero() {
+			t.Fatalf("Pause ctx has no deadline, want %v", pauseHandlerTimeout)
+		}
+		if left := time.Until(dl); left > pauseHandlerTimeout || left < pauseHandlerTimeout-3*time.Second {
+			t.Errorf("deadline in %v, want about %v", left, pauseHandlerTimeout)
+		}
+	})
+}
+
+func TestHandleSessionResume(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-039/session.resume em Paused devolve {session} running", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionResume)
+		h.clock.Advance(160 * time.Second)
+		resp := h.call(t, ipc.MethodSessionResume, "")
+		if resp.Error != nil {
+			t.Fatalf("error %d %q %s", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+		}
+		obj := objectOf(t, resp.Result)
+		wantKeys(t, obj, "session")
+		sess := objectOf(t, obj["session"])
+		wantKeys(t, sess, sessionKeys...)
+		wantRaw(t, sess, "state", `"running"`)
+		wantRaw(t, sess, "endedAt", "null")
+		wantRaw(t, sess, "asOf", `"2026-11-09T14:02:40.000Z"`)
+	})
+
+	t.Run("IPC-039/em Running devolve o estado atual como sucesso", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionResume)
+		h.tr.resumeFn = func(_ context.Context, at time.Time) (domain.SessionSnapshot, error) {
+			return domain.SessionSnapshot{
+				ID: 3, GameID: 1, Title: "G", State: domain.SessionRunning, StartedAt: gamesT0,
+				Active: 42 * time.Second, AsOf: at,
+			}, nil
+		}
+		h.clock.Advance(50 * time.Second)
+		sess := objectOf(t, objectOf(t, h.call(t, ipc.MethodSessionResume, "").Result)["session"])
+		wantRaw(t, sess, "state", `"running"`)
+		wantRaw(t, sess, "activeMs", "42000")
+		wantRaw(t, sess, "asOf", `"2026-11-09T14:00:50.000Z"`)
+	})
+
+	t.Run("IPC-039/mesma regra de params de IPC-038", func(t *testing.T) {
+		t.Parallel()
+		explicitParamsRules(t, ipc.MethodSessionResume)
+	})
+
+	t.Run("SES-036/o handler usa clock.Now() lido ao receber como at", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionResume)
+		h.clock.Advance(160 * time.Second)
+		resultInto(t, h.call(t, ipc.MethodSessionResume, ""), &ipc.SessionResult{})
+		h.clock.Advance(3 * time.Second)
+		resultInto(t, h.call(t, ipc.MethodSessionResume, ""), &ipc.SessionResult{})
+		h.tr.mu.Lock()
+		defer h.tr.mu.Unlock()
+		want := []time.Time{gamesT0.Add(160 * time.Second), gamesT0.Add(163 * time.Second)}
+		if len(h.tr.resumeAts) != 2 || !h.tr.resumeAts[0].Equal(want[0]) || !h.tr.resumeAts[1].Equal(want[1]) {
+			t.Errorf("Resume at = %v, want %v", h.tr.resumeAts, want)
+		}
+		if len(h.tr.pauseAts) != 0 {
+			t.Errorf("Pause calls = %d, want 0", len(h.tr.pauseAts))
+		}
+	})
+
+	t.Run("IPC-039/ctx do Resume tem prazo de 5 s", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodSessionResume)
+		resultInto(t, h.call(t, ipc.MethodSessionResume, ""), &ipc.SessionResult{})
+		h.tr.mu.Lock()
+		dl := h.tr.resumeDeadlines[0]
+		h.tr.mu.Unlock()
+		if dl.IsZero() {
+			t.Fatalf("Resume ctx has no deadline, want %v", pauseHandlerTimeout)
+		}
+		if left := time.Until(dl); left > pauseHandlerTimeout || left < pauseHandlerTimeout-3*time.Second {
+			t.Errorf("deadline in %v, want about %v", left, pauseHandlerTimeout)
+		}
+	})
+}
+
+func TestHandleSessionNotPausable(t *testing.T) {
+	t.Parallel()
+
+	for _, em := range explicitMethods {
+		for _, reason := range []string{ipc.ReasonNoSession, ipc.ReasonGrace} {
+			name := "IPC-040/sem sessão devolve -32005 com data.reason no-session (pause e resume)"
+			if reason == ipc.ReasonGrace {
+				name = "IPC-040/em Grace devolve -32005 com data.reason grace"
+			}
+			t.Run(name+"/"+em.method, func(t *testing.T) {
+				t.Parallel()
+				h := newGamesHarness(t, nil)
+				h.need(t, em.method)
+				em.set(h.tr, func(context.Context, time.Time) (domain.SessionSnapshot, error) {
+					return domain.SessionSnapshot{}, fmt.Errorf("tracker: %w", &tracker.NotPausableError{Reason: reason})
+				})
+				data := wantError(t, h.call(t, em.method, ""), ipc.CodeSessionNotPausable, ipc.MsgSessionNotPausable)
+				wantKeys(t, data, "reason")
+				wantRaw(t, data, "reason", mustJSON(t, reason))
+				if h.logs.count(slog.LevelError) != 0 {
+					t.Errorf("Error records logged for a refused request, want none")
+				}
+			})
+		}
+
+		t.Run("SES-037/o erro não grava nem notifica/"+em.method, func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.need(t, em.method)
+			em.set(h.tr, func(context.Context, time.Time) (domain.SessionSnapshot, error) {
+				return domain.SessionSnapshot{}, &tracker.NotPausableError{Reason: tracker.ReasonGrace}
+			})
+			wantError(t, h.call(t, em.method, ""), ipc.CodeSessionNotPausable, "")
+			// The handler only asks the tracker (which owns write and notify):
+			// one call, no launch, no store write.
+			h.tr.mu.Lock()
+			calls := len(em.ats(h.tr))
+			launches := len(h.tr.specs) + len(h.tr.untrackedSpecs)
+			h.tr.mu.Unlock()
+			if calls != 1 || launches != 0 {
+				t.Errorf("tracker calls = %d (launches %d), want 1 and 0", calls, launches)
+			}
+			if n := len(h.gs.addedGames()); n != 0 {
+				t.Errorf("AddGame calls = %d, want 0", n)
+			}
+		})
+
+		t.Run("IPC-040/ErrShuttingDown devolve -32603 e prazo de 5 s esgotado devolve -32603/"+em.method, func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.need(t, em.method)
+
+			em.set(h.tr, func(context.Context, time.Time) (domain.SessionSnapshot, error) {
+				return domain.SessionSnapshot{}, fmt.Errorf("tracker: %w", tracker.ErrShuttingDown)
+			})
+			wantError(t, h.call(t, em.method, ""), ipc.CodeInternalError, "Internal error")
+			if h.logs.count(slog.LevelDebug) == 0 {
+				t.Errorf("no Debug record logged for ErrShuttingDown")
+			}
+			if n := h.logs.count(slog.LevelError); n != 0 {
+				t.Errorf("Error records for ErrShuttingDown = %d, want 0", n)
+			}
+
+			em.set(h.tr, func(context.Context, time.Time) (domain.SessionSnapshot, error) {
+				return domain.SessionSnapshot{}, fmt.Errorf("tracker: %w", context.DeadlineExceeded)
+			})
+			wantError(t, h.call(t, em.method, ""), ipc.CodeInternalError, "Internal error")
+			if h.logs.count(slog.LevelError) == 0 {
+				t.Errorf("no Error record logged for the ctx expiry")
+			}
+
+			// The end of the dispatch ctx while the tracker waits.
+			em.set(h.tr, func(ctx context.Context, _ time.Time) (domain.SessionSnapshot, error) {
+				<-ctx.Done()
+				return domain.SessionSnapshot{}, ctx.Err()
+			})
+			ctx, cancel := context.WithCancel(t.Context())
+			time.AfterFunc(10*time.Millisecond, cancel)
+			defer cancel()
+			wantError(t, h.callCtx(t, ctx, em.method, ""), ipc.CodeInternalError, "Internal error")
+		})
+	}
 }

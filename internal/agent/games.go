@@ -24,6 +24,10 @@ import (
 // outcome reaches the UI through session.changed.
 const launchHandlerTimeout = 10 * time.Second
 
+// pauseHandlerTimeout bounds the wait of session.pause and session.resume for
+// the tracker's answer.
+const pauseHandlerTimeout = 5 * time.Second
+
 // launchTypeExe is the only launch_type supported in this phase.
 const launchTypeExe = "exe"
 
@@ -44,6 +48,9 @@ type gameStore interface {
 type sessionTracker interface {
 	Launch(ctx context.Context, spec tracker.LaunchSpec) (domain.SessionSnapshot, error)
 	Current() (domain.SessionSnapshot, bool)
+	LaunchUntracked(ctx context.Context, spec tracker.LaunchSpec) (uint32, error)
+	Pause(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
+	Resume(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
 }
 
 // gameAddParams are the server-side params of game.add; pointers tell an
@@ -82,6 +89,15 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 		}),
 		ipc.MethodGameLaunch: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameLaunch(ctx, st, tr, log, params)
+		},
+		ipc.MethodGameLaunchUntracked: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleGameLaunchUntracked(ctx, st, tr, log, params)
+		},
+		ipc.MethodSessionPause: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleSessionPause(ctx, params, clock, log, "session.pause", tr.Pause)
+		},
+		ipc.MethodSessionResume: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleSessionPause(ctx, params, clock, log, "session.resume", tr.Resume)
 		},
 		ipc.MethodSessionCurrent: ipc.NoParams(func(context.Context) (any, error) {
 			snap, ok := tr.Current()
@@ -140,44 +156,99 @@ func handleGameAdd(ctx context.Context, st gameStore, clock domain.Clock,
 // [IPC-024, IPC-025, AGT-011].
 func handleGameLaunch(ctx context.Context, st gameStore, tr sessionTracker, log *slog.Logger,
 	params json.RawMessage) (any, error) {
+	g, spec, err := prepareLaunch(ctx, st, params, log)
+	if err != nil {
+		return nil, err
+	}
+	lctx, cancel := context.WithTimeout(ctx, launchHandlerTimeout)
+	defer cancel()
+	snap, err := tr.Launch(lctx, spec)
+	if err != nil {
+		return nil, launchError(err, g.ID, log)
+	}
+	return ipc.SessionFromSnapshot(snap), nil
+}
+
+// handleGameLaunchUntracked launches the game without a session.
+func handleGameLaunchUntracked(ctx context.Context, st gameStore, tr sessionTracker, log *slog.Logger,
+	params json.RawMessage) (any, error) {
+	g, spec, err := prepareLaunch(ctx, st, params, log)
+	if err != nil {
+		return nil, err
+	}
+	lctx, cancel := context.WithTimeout(ctx, launchHandlerTimeout)
+	defer cancel()
+	pid, err := tr.LaunchUntracked(lctx, spec)
+	if err != nil {
+		return nil, launchError(err, g.ID, log)
+	}
+	return ipc.LaunchedProcess{PID: pid}, nil
+}
+
+// prepareLaunch validates the params and the game shared by game.launch and
+// game.launchUntracked and builds the launch spec.
+func prepareLaunch(ctx context.Context, st gameStore, params json.RawMessage,
+	log *slog.Logger) (store.Game, tracker.LaunchSpec, error) {
+	var none tracker.LaunchSpec
 	if params == nil {
-		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		return store.Game{}, none, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 	var p gameLaunchParams
 	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
-		return nil, rpcErr
+		return store.Game{}, none, rpcErr
 	}
 	id, ok := parseGameID(p.GameID)
 	if !ok {
-		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		return store.Game{}, none, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 
 	g, err := st.Game(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrGameNotFound) {
-			return nil, ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound, ipc.GameNotFoundData{GameID: id})
+			return store.Game{}, none,
+				ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound, ipc.GameNotFoundData{GameID: id})
 		}
 		log.Error("falha ao ler o jogo", "game_id", id, "error", err.Error())
-		return nil, fmt.Errorf("game.launch: %w", err)
+		return store.Game{}, none, fmt.Errorf("game.launch: %w", err)
 	}
 	if g.LaunchType != launchTypeExe {
-		return nil, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
+		return store.Game{}, none, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
 			ipc.LaunchFailedData{Error: launchErrUnsupported})
 	}
-
-	lctx, cancel := context.WithTimeout(ctx, launchHandlerTimeout)
-	defer cancel()
-	snap, err := tr.Launch(lctx, tracker.LaunchSpec{
+	return g, tracker.LaunchSpec{
 		GameID:  g.ID,
 		Title:   g.Title,
 		Exe:     g.LaunchTarget,
 		Args:    g.LaunchArgs,
 		WorkDir: g.WorkingDir,
-	})
-	if err != nil {
-		return nil, launchError(err, id, log)
-	}
-	return ipc.SessionFromSnapshot(snap), nil
+	}, nil
+}
+
+// handleSessionPause serves session.pause and session.resume; op is the
+// tracker method and at is read when the request arrives. These calls do not
+// go through the pause router [PAU-008].
+func handleSessionPause(ctx context.Context, params json.RawMessage, clock domain.Clock, log *slog.Logger,
+	method string, op func(context.Context, time.Time) (domain.SessionSnapshot, error)) (any, error) {
+	at := clock.Now()
+	return ipc.NoParams(func(ctx context.Context) (any, error) {
+		pctx, cancel := context.WithTimeout(ctx, pauseHandlerTimeout)
+		defer cancel()
+		snap, err := op(pctx, at)
+		if err != nil {
+			var np *tracker.NotPausableError
+			if errors.As(err, &np) {
+				return nil, ipc.NewErrorData(ipc.CodeSessionNotPausable, ipc.MsgSessionNotPausable,
+					ipc.SessionNotPausableData{Reason: np.Reason})
+			}
+			if errors.Is(err, tracker.ErrShuttingDown) {
+				log.Debug("agente encerrando", "method", method)
+			} else {
+				log.Error("falha na pausa da sessão", "method", method, "error", err.Error())
+			}
+			return nil, fmt.Errorf("%s: %w", method, err)
+		}
+		return ipc.SessionResult{Session: ipc.SessionFromSnapshot(snap)}, nil
+	})(ctx, params)
 }
 
 // launchError maps a tracker.Launch error to its JSON-RPC error [IPC-025,
