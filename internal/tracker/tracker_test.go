@@ -1299,6 +1299,674 @@ func TestTrackerClose(t *testing.T) {
 	})
 }
 
+// --- pause (phase 4, T07) ---------------------------------------------------
+
+// Pending timers in Paused: heartbeat + periodic check (contract, "Waiters
+// esperados").
+const waitPaused = 2
+
+// veryQuiet keeps the heartbeat and the check out of the way even when the
+// test jumps the clock by hours.
+var veryQuiet = envConfig{heartbeat: 100 * time.Hour, poll: 100 * time.Hour}
+
+func wantPauseCall(t *testing.T, c call, id int64, when time.Time, reason domain.PauseReason, active time.Duration) {
+	t.Helper()
+	p := c.pause
+	if p.SessionID != id || !p.At.Equal(when) || p.Reason != reason || p.Active != active {
+		t.Errorf("PauseSession(id=%d, at=%v, reason=%q, active=%v), want (id=%d, %v, %q, %v)",
+			p.SessionID, p.At, p.Reason, p.Active, id, when, reason, active)
+	}
+}
+
+func wantResumePauseCall(t *testing.T, c call, id int64, when time.Time, st domain.SessionState, active time.Duration) {
+	t.Helper()
+	p := c.unpause
+	if p.SessionID != id || !p.At.Equal(when) || p.State != st || p.Active != active {
+		t.Errorf("ResumePause(id=%d, at=%v, state=%q, active=%v), want (id=%d, %v, %q, %v)",
+			p.SessionID, p.At, p.State, p.Active, id, when, st, active)
+	}
+}
+
+func (e *env) feedbackKinds() []tracker.FeedbackKind {
+	var out []tracker.FeedbackKind
+	for _, c := range e.rec.of(opFeedback) {
+		out = append(out, c.fb)
+	}
+	return out
+}
+
+// wantFeedback waits for len(want) Feedback calls and requires exactly them.
+func wantFeedbackCalls(t *testing.T, e *env, want ...tracker.FeedbackKind) {
+	t.Helper()
+	if len(want) > 0 {
+		e.rec.waitN(t, opFeedback, len(want))
+	}
+	if got := e.feedbackKinds(); !slices.Equal(got, want) {
+		t.Errorf("Feedback calls = %v, want %v", got, want)
+	}
+}
+
+// pauseVia pauses the running session at when using the entry point that
+// produces reason, and consumes the paused notification.
+func pauseVia(t *testing.T, e *env, reason domain.PauseReason, when time.Time) {
+	t.Helper()
+	ctx := timeoutCtx(t)
+	var err error
+	switch reason {
+	case domain.PauseHotkey, domain.PauseGamepad:
+		var res tracker.PauseResult
+		res, err = e.tr.TogglePause(ctx, reason, when)
+		if err == nil && res != tracker.PausePaused {
+			t.Fatalf("TogglePause(%s) = %v, want PausePaused", reason, res)
+		}
+	case domain.PauseUI:
+		_, err = e.tr.Pause(ctx, when)
+	case domain.PauseSleep:
+		err = e.tr.Suspend(ctx, when)
+	}
+	if err != nil {
+		t.Fatalf("pause via %s: %v", reason, err)
+	}
+	if n := e.nextNotify(t); n.State != domain.SessionPaused {
+		t.Fatalf("notification after pause: state %q, want paused", n.State)
+	}
+}
+
+// pausedAt launches, runs the clock to d and pauses by hotkey at d.
+func pausedAt(t *testing.T, e *env, d time.Duration) (domain.SessionSnapshot, *fakeJob) {
+	t.Helper()
+	snap, j := e.launch(t)
+	e.advance(t, waitRunning, d)
+	pauseVia(t, e, domain.PauseHotkey, at(d))
+	return snap, j
+}
+
+// TestTrackerPause is not parallel (its Close case uses goleak, which inspects
+// every goroutine of the process).
+func TestTrackerPause(t *testing.T) {
+	t.Run("SES-016/hotkey em T+100s grava PauseSession(hotkey, 100 s), notifica paused e Current em T+130s mostra paused com activeMs 100000 e asOf T+130s", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, _ := e.launch(t)
+		e.advance(t, waitRunning, 100*time.Second)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(100*time.Second))
+		if err != nil || res != tracker.PausePaused {
+			t.Fatalf("TogglePause = %v, %v, want PausePaused, nil", res, err)
+		}
+		ps := e.rec.waitN(t, opPause, 1)
+		wantPauseCall(t, ps[0], snap.ID, at(100*time.Second), domain.PauseHotkey, 100*time.Second)
+		n := e.nextNotify(t)
+		wantSession(t, "paused notification", n, snap.ID, domain.SessionPaused, 100*time.Second, at(100*time.Second))
+		wantFeedbackCalls(t, e, tracker.FeedbackPaused)
+		wantSeq(t, e, []string{opNotify, opPause, opNotify, opFeedback}, opPause, opNotify, opFeedback)
+
+		e.clock.Advance(30 * time.Second)
+		cur := e.waitCurrentState(t, domain.SessionPaused)
+		wantSession(t, "Current", cur, snap.ID, domain.SessionPaused, 100*time.Second, at(130*time.Second))
+	})
+
+	t.Run("SES-016/nenhum processo é terminado: Job.Terminate e Job.Close não são chamados e só ActiveProcesses é consultado", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		_, j := pausedAt(t, e, 100*time.Second)
+		e.barrier(t, j)
+		wantNoCalls(t, e, opTerminate, opJobClose)
+		if j.isClosed() {
+			t.Error("job closed by the pause")
+		}
+		for _, c := range e.rec.all() {
+			if c.job != nil && c.op != opResume && c.op != opActive {
+				t.Errorf("unexpected job call %s during the pause", c.op)
+			}
+		}
+	})
+
+	t.Run("SES-017/segundo gatilho em T+160s grava ResumePause(running) e notifica running; Current em T+170s dá 110000", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, _ := pausedAt(t, e, 100*time.Second)
+		e.advance(t, waitPaused, 60*time.Second)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseGamepad, at(160*time.Second))
+		if err != nil || res != tracker.PauseResumed {
+			t.Fatalf("TogglePause = %v, %v, want PauseResumed, nil", res, err)
+		}
+		rs := e.rec.waitN(t, opResumeP, 1)
+		wantResumePauseCall(t, rs[0], snap.ID, at(160*time.Second), domain.SessionRunning, 100*time.Second)
+		n := e.nextNotify(t)
+		wantSession(t, "running notification", n, snap.ID, domain.SessionRunning, 100*time.Second, at(160*time.Second))
+		wantFeedbackCalls(t, e, tracker.FeedbackPaused, tracker.FeedbackResumed)
+		wantSeq(t, e, []string{opNotify, opPause, opNotify, opFeedback, opResumeP, opNotify, opFeedback}, opPause, opResumeP, opNotify, opFeedback)
+
+		e.clock.Advance(10 * time.Second)
+		cur := e.waitCurrentState(t, domain.SessionRunning)
+		wantSession(t, "Current", cur, snap.ID, domain.SessionRunning, 110*time.Second, at(170*time.Second))
+	})
+
+	t.Run("SES-018/TogglePause sem sessão devolve PauseIgnored, sem gravação, sem notificação e sem feedback", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(time.Second))
+		if err != nil || res != tracker.PauseIgnored {
+			t.Fatalf("TogglePause = %v, %v, want PauseIgnored, nil", res, err)
+		}
+		wantNoCalls(t, e, opPause, opResumeP, opNotify, opFeedback)
+	})
+
+	t.Run("SES-018/TogglePause em Grace devolve PauseIgnored, sem gravação, sem notificação e sem feedback", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		_, j := e.launch(t)
+		toGraceAfter(t, e, j, waitRunning, 10*time.Second)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(11*time.Second))
+		if err != nil || res != tracker.PauseIgnored {
+			t.Fatalf("TogglePause in Grace = %v, %v, want PauseIgnored, nil", res, err)
+		}
+		e.barrier(t, j)
+		wantNoCalls(t, e, opPause, opResumeP, opFeedback)
+		if got := states(e.notifications()); !slices.Equal(got, []domain.SessionState{domain.SessionRunning, domain.SessionGrace}) {
+			t.Errorf("notifications = %v, want running, grace", got)
+		}
+	})
+
+	// Ambiguity: tasks.md says the applied instant is monotonic(at), and Launch
+	// already recorded startedAt as applied, which would clamp this instant to
+	// startedAt instead of ignoring it. The test follows requirements/contract
+	// (t < startedAt is discarded, SES-018).
+	t.Run("SES-018/instante anterior ao startedAt devolve PauseIgnored", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		_, j := e.launch(t)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(-time.Second))
+		if err != nil || res != tracker.PauseIgnored {
+			t.Fatalf("TogglePause before startedAt = %v, %v, want PauseIgnored, nil", res, err)
+		}
+		e.barrier(t, j)
+		wantNoCalls(t, e, opPause, opFeedback)
+		e.waitCurrentState(t, domain.SessionRunning)
+	})
+
+	t.Run("SES-020/heartbeats em paused gravam last_seen_at T+120s e T+150s com active 100 s; avançar 30 s − 1 ns não grava", func(t *testing.T) {
+		e := newEnv(t, envConfig{poll: time.Hour}) // default 30 s heartbeat
+		snap, j := e.launch(t)
+		for i := 1; i <= 3; i++ {
+			e.advance(t, waitRunning, 30*time.Second)
+			e.rec.waitN(t, opUpdate, i)
+		}
+		e.advance(t, waitRunning, 10*time.Second) // T+100s
+		pauseVia(t, e, domain.PauseHotkey, at(100*time.Second))
+
+		e.advance(t, waitPaused, 20*time.Second) // T+120s
+		ups := e.rec.waitN(t, opUpdate, 4)
+		wantUpdateCall(t, ups[3], snap.ID, domain.SessionPaused, at(120*time.Second), 100*time.Second)
+		e.advance(t, waitPaused, 30*time.Second) // T+150s
+		ups = e.rec.waitN(t, opUpdate, 5)
+		wantUpdateCall(t, ups[4], snap.ID, domain.SessionPaused, at(150*time.Second), 100*time.Second)
+
+		e.advance(t, waitPaused, domain.SessionHeartbeatInterval-time.Nanosecond)
+		e.barrier(t, j)
+		if n := e.rec.count(opUpdate); n != 5 {
+			t.Errorf("UpdateSession calls = %d, want 5 (no write 1 ns before the heartbeat)", n)
+		}
+	})
+
+	t.Run("SES-021/job vazio em Paused: ResumePause(grace), carência armada, notificação grace; carência vence e a sessão termina exited com 100 s", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, j := pausedAt(t, e, 100*time.Second)
+		e.advance(t, waitPaused, 20*time.Second) // T+120s
+		j.empty(t)
+		n := e.nextNotify(t)
+		wantSession(t, "grace notification", n, snap.ID, domain.SessionGrace, 100*time.Second, at(120*time.Second))
+		rs := e.rec.waitN(t, opResumeP, 1)
+		wantResumePauseCall(t, rs[0], snap.ID, at(120*time.Second), domain.SessionGrace, 100*time.Second)
+
+		e.advance(t, waitGrace, domain.SessionGracePeriod)
+		ends := e.rec.waitN(t, opEnd, 1)
+		wantEndCall(t, ends[0], snap.ID, at(120*time.Second), 100*time.Second, domain.EndExited)
+		if n := e.nextNotify(t); n.State != domain.SessionEnded {
+			t.Errorf("end notification state = %q, want ended", n.State)
+		}
+		e.waitNoCurrent(t)
+		wantNoCalls(t, e, opTerminate)
+		wantFeedbackCalls(t, e, tracker.FeedbackPaused) // entering Grace gives no feedback
+		wantSeq(t, e, []string{opPause, opResumeP, opEnd}, opPause, opResumeP, opEnd)
+	})
+
+	t.Run("SES-022/verificação periódica em Paused com 0 processos leva a Grace", func(t *testing.T) {
+		e := newEnv(t, envConfig{heartbeat: time.Hour}) // default 5 s check
+		snap, j := e.launch(t)
+		e.advance(t, waitRunning, time.Second)
+		pauseVia(t, e, domain.PauseHotkey, at(time.Second))
+		j.setActive(0, nil)
+		e.advance(t, waitPaused, 4*time.Second) // T+5s
+		n := e.nextNotify(t)
+		wantSession(t, "grace notification", n, snap.ID, domain.SessionGrace, time.Second, at(5*time.Second))
+		rs := e.rec.waitN(t, opResumeP, 1)
+		wantResumePauseCall(t, rs[0], snap.ID, at(5*time.Second), domain.SessionGrace, time.Second)
+	})
+
+	t.Run("SES-022/verificação periódica em Paused com erro registra Warn e continua Paused", func(t *testing.T) {
+		e := newEnv(t, envConfig{heartbeat: time.Hour})
+		_, j := e.launch(t)
+		e.advance(t, waitRunning, time.Second)
+		pauseVia(t, e, domain.PauseHotkey, at(time.Second))
+		j.setActive(0, errRead)
+		e.advance(t, waitPaused, 4*time.Second)
+		e.logs.wait(t, slog.LevelWarn, "", nil)
+		e.waiters(t, waitPaused) // the check is re-armed
+		e.barrier(t, j)
+		e.waitCurrentState(t, domain.SessionPaused)
+		wantNoCalls(t, e, opResumeP, opEnd)
+		if n := len(e.notifications()); n != 2 {
+			t.Errorf("notifications = %v, want running, paused", states(e.notifications()))
+		}
+	})
+
+	t.Run("SES-024/Close em Paused encerra com agent-shutdown em T+500s, 100 s, sem notificação, sem Job.Terminate; Close é idempotente e espera a goroutine dona", func(t *testing.T) {
+		ignore := goleak.IgnoreCurrent()
+		e := newEnv(t, quiet)
+		snap, j := pausedAt(t, e, 100*time.Second)
+		e.clock.Advance(400 * time.Second)
+		if err := e.close(t); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		ends := e.rec.of(opEnd)
+		if len(ends) != 1 {
+			t.Fatalf("EndSession calls = %d, want 1", len(ends))
+		}
+		wantEndCall(t, ends[0], snap.ID, at(500*time.Second), 100*time.Second, domain.EndAgentShutdown)
+		if !j.isClosed() {
+			t.Error("job not closed by Close")
+		}
+		wantNoCalls(t, e, opTerminate)
+		if got := states(e.notifications()); !slices.Equal(got, []domain.SessionState{domain.SessionRunning, domain.SessionPaused}) {
+			t.Errorf("notifications = %v, want only running, paused", got)
+		}
+		if err := e.close(t); err != nil {
+			t.Fatalf("second Close: %v", err)
+		}
+		if n := e.rec.count(opEnd); n != 1 {
+			t.Errorf("EndSession calls after the second Close = %d, want 1", n)
+		}
+		goleak.VerifyNone(t, ignore)
+	})
+
+	t.Run("SES-026/Suspend em Running grava sleep, notifica paused e não chama Feedback", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, j := e.launch(t)
+		e.advance(t, waitRunning, 100*time.Second)
+		if err := e.tr.Suspend(timeoutCtx(t), at(100*time.Second)); err != nil {
+			t.Fatalf("Suspend: %v", err)
+		}
+		ps := e.rec.waitN(t, opPause, 1)
+		wantPauseCall(t, ps[0], snap.ID, at(100*time.Second), domain.PauseSleep, 100*time.Second)
+		n := e.nextNotify(t)
+		wantSession(t, "paused notification", n, snap.ID, domain.SessionPaused, 100*time.Second, at(100*time.Second))
+		e.barrier(t, j)
+		wantFeedbackCalls(t, e)
+	})
+
+	t.Run("SES-028/Wake com usuário presente em T+28900s volta a Running, notifica com asOf T+28900s, chama Feedback(resumed); Current em T+28910s dá 110000", func(t *testing.T) {
+		e := newEnv(t, veryQuiet)
+		snap, _ := e.launch(t)
+		e.advance(t, waitRunning, 100*time.Second)
+		pauseVia(t, e, domain.PauseSleep, at(100*time.Second))
+		e.clock.Advance(28800 * time.Second) // T+28900s
+		if err := e.tr.Wake(timeoutCtx(t), at(28900*time.Second), true); err != nil {
+			t.Fatalf("Wake: %v", err)
+		}
+		rs := e.rec.waitN(t, opResumeP, 1)
+		wantResumePauseCall(t, rs[0], snap.ID, at(28900*time.Second), domain.SessionRunning, 100*time.Second)
+		n := e.nextNotify(t)
+		wantSession(t, "running notification", n, snap.ID, domain.SessionRunning, 100*time.Second, at(28900*time.Second))
+		wantFeedbackCalls(t, e, tracker.FeedbackResumed)
+		e.clock.Advance(10 * time.Second)
+		cur := e.waitCurrentState(t, domain.SessionRunning)
+		wantSession(t, "Current", cur, snap.ID, domain.SessionRunning, 110*time.Second, at(28910*time.Second))
+	})
+
+	t.Run("SES-031/Launch em Paused devolve SessionActiveError com sessionId, gameId e title, sem Prepare", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, _ := pausedAt(t, e, 100*time.Second)
+		_, err := e.tryLaunch(t, testSpec)
+		var sa *tracker.SessionActiveError
+		if !errors.As(err, &sa) || !errors.Is(err, tracker.ErrSessionActive) {
+			t.Fatalf("Launch error = %v, want *SessionActiveError", err)
+		}
+		if sa.Session.ID != snap.ID || sa.Session.GameID != testGameID || sa.Session.Title != testTitle {
+			t.Errorf("SessionActiveError session = %+v, want id %d, game %d, title %q", sa.Session, snap.ID, testGameID, testTitle)
+		}
+		if n := e.rec.count(opPrepare); n != 1 {
+			t.Errorf("Prepare calls = %d, want only the first launch", n)
+		}
+	})
+
+	t.Run("SES-035/Pause em Running grava ui e chama Feedback(paused)", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, _ := e.launch(t)
+		e.advance(t, waitRunning, 100*time.Second)
+		got, err := e.tr.Pause(timeoutCtx(t), at(100*time.Second))
+		if err != nil {
+			t.Fatalf("Pause: %v", err)
+		}
+		wantSession(t, "Pause result", got, snap.ID, domain.SessionPaused, 100*time.Second, at(100*time.Second))
+		ps := e.rec.waitN(t, opPause, 1)
+		wantPauseCall(t, ps[0], snap.ID, at(100*time.Second), domain.PauseUI, 100*time.Second)
+		if n := e.nextNotify(t); n.State != domain.SessionPaused {
+			t.Errorf("notification state = %q, want paused", n.State)
+		}
+		wantFeedbackCalls(t, e, tracker.FeedbackPaused)
+	})
+
+	for _, tc := range []struct {
+		reason   domain.PauseReason
+		feedback []tracker.FeedbackKind
+	}{
+		{domain.PauseHotkey, []tracker.FeedbackKind{tracker.FeedbackPaused}},
+		{domain.PauseSleep, nil},
+	} {
+		t.Run("SES-035/Pause em Paused ("+string(tc.reason)+") devolve a sessão atual sem gravar, notificar nem dar feedback", func(t *testing.T) {
+			e := newEnv(t, quiet)
+			snap, j := e.launch(t)
+			e.advance(t, waitRunning, 100*time.Second)
+			pauseVia(t, e, tc.reason, at(100*time.Second))
+			got, err := e.tr.Pause(timeoutCtx(t), at(150*time.Second))
+			if err != nil {
+				t.Fatalf("Pause in Paused: %v", err)
+			}
+			if got.ID != snap.ID || got.State != domain.SessionPaused || got.Active != 100*time.Second {
+				t.Errorf("Pause result = %+v, want the paused session %d with 100s", got, snap.ID)
+			}
+			e.barrier(t, j)
+			if n := e.rec.count(opPause); n != 1 {
+				t.Errorf("PauseSession calls = %d, want 1 (the open interval keeps its reason)", n)
+			}
+			wantNoCalls(t, e, opResumeP)
+			if n := len(e.notifications()); n != 2 {
+				t.Errorf("notifications = %v, want running, paused", states(e.notifications()))
+			}
+			wantFeedbackCalls(t, e, tc.feedback...)
+		})
+	}
+
+	for _, reason := range []domain.PauseReason{domain.PauseHotkey, domain.PauseUI, domain.PauseSleep} {
+		t.Run("SES-036/Resume em Paused ("+string(reason)+") volta a Running com Feedback(resumed)", func(t *testing.T) {
+			e := newEnv(t, quiet)
+			snap, _ := e.launch(t)
+			e.advance(t, waitRunning, 100*time.Second)
+			pauseVia(t, e, reason, at(100*time.Second))
+			e.advance(t, waitPaused, 60*time.Second)
+			got, err := e.tr.Resume(timeoutCtx(t), at(160*time.Second))
+			if err != nil {
+				t.Fatalf("Resume: %v", err)
+			}
+			wantSession(t, "Resume result", got, snap.ID, domain.SessionRunning, 100*time.Second, at(160*time.Second))
+			rs := e.rec.waitN(t, opResumeP, 1)
+			wantResumePauseCall(t, rs[0], snap.ID, at(160*time.Second), domain.SessionRunning, 100*time.Second)
+			if n := e.nextNotify(t); n.State != domain.SessionRunning {
+				t.Errorf("notification state = %q, want running", n.State)
+			}
+			kinds := e.feedbackKinds()
+			if len(kinds) == 0 {
+				e.rec.waitN(t, opFeedback, 1)
+				kinds = e.feedbackKinds()
+			}
+			if last := kinds[len(kinds)-1]; last != tracker.FeedbackResumed {
+				t.Errorf("last Feedback = %v, want FeedbackResumed", last)
+			}
+		})
+	}
+
+	t.Run("SES-036/Resume em Running é idempotente", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		snap, j := e.launch(t)
+		got, err := e.tr.Resume(timeoutCtx(t), at(5*time.Second))
+		if err != nil {
+			t.Fatalf("Resume in Running: %v", err)
+		}
+		if got.ID != snap.ID || got.State != domain.SessionRunning {
+			t.Errorf("Resume result = %+v, want the running session %d", got, snap.ID)
+		}
+		e.barrier(t, j)
+		wantNoCalls(t, e, opPause, opResumeP, opUpdate)
+		wantFeedbackCalls(t, e)
+		if n := len(e.notifications()); n != 1 {
+			t.Errorf("notifications = %v, want only running", states(e.notifications()))
+		}
+	})
+
+	for _, method := range []struct {
+		name string
+		fn   func(*tracker.Tracker, context.Context) error
+	}{
+		{"Pause", func(tr *tracker.Tracker, ctx context.Context) error {
+			_, err := tr.Pause(ctx, at(time.Second))
+			return err
+		}},
+		{"Resume", func(tr *tracker.Tracker, ctx context.Context) error {
+			_, err := tr.Resume(ctx, at(time.Second))
+			return err
+		}},
+	} {
+		t.Run("SES-037/"+method.name+" sem sessão devolve *NotPausableError{no-session}", func(t *testing.T) {
+			e := newEnv(t, quiet)
+			var np *tracker.NotPausableError
+			if err := method.fn(e.tr, timeoutCtx(t)); !errors.As(err, &np) || np.Reason != tracker.ReasonNoSession {
+				t.Fatalf("%s error = %v, want *NotPausableError{no-session}", method.name, err)
+			}
+			wantNoCalls(t, e, opPause, opResumeP, opNotify, opFeedback)
+		})
+
+		t.Run("SES-037/"+method.name+" em Grace devolve *NotPausableError{grace}", func(t *testing.T) {
+			e := newEnv(t, quiet)
+			_, j := e.launch(t)
+			toGraceAfter(t, e, j, waitRunning, 10*time.Second)
+			var np *tracker.NotPausableError
+			if err := method.fn(e.tr, timeoutCtx(t)); !errors.As(err, &np) || np.Reason != tracker.ReasonGrace {
+				t.Fatalf("%s error = %v, want *NotPausableError{grace}", method.name, err)
+			}
+			e.barrier(t, j)
+			wantNoCalls(t, e, opPause, opResumeP, opFeedback)
+			if n := len(e.notifications()); n != 2 {
+				t.Errorf("notifications = %v, want running, grace", states(e.notifications()))
+			}
+		})
+	}
+
+	for _, reason := range []domain.PauseReason{domain.PauseSleep, domain.PauseUI} {
+		t.Run("SES-016/TogglePause com motivo "+string(reason)+" devolve ErrInvalidPauseReason", func(t *testing.T) {
+			e := newEnv(t, quiet)
+			_, j := e.launch(t)
+			res, err := e.tr.TogglePause(timeoutCtx(t), reason, at(time.Second))
+			if !errors.Is(err, tracker.ErrInvalidPauseReason) || res != tracker.PauseIgnored {
+				t.Fatalf("TogglePause(%s) = %v, %v, want PauseIgnored, ErrInvalidPauseReason", reason, res, err)
+			}
+			e.barrier(t, j)
+			wantNoCalls(t, e, opPause, opFeedback)
+			e.waitCurrentState(t, domain.SessionRunning)
+		})
+	}
+
+	t.Run("SES-016/falha em PauseSession loga Error, o estado em memória avança e a notificação sai (SES-014)", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		e.store.failPause(errDisk, 1)
+		e.launch(t)
+		e.advance(t, waitRunning, 100*time.Second)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(100*time.Second))
+		if err != nil || res != tracker.PausePaused {
+			t.Fatalf("TogglePause = %v, %v, want PausePaused, nil", res, err)
+		}
+		e.logs.wait(t, slog.LevelError, msgWriteFailed, nil)
+		if n := e.nextNotify(t); n.State != domain.SessionPaused {
+			t.Errorf("notification state = %q, want paused", n.State)
+		}
+		e.waitCurrentState(t, domain.SessionPaused)
+	})
+
+	t.Run("SES-017/falha em ResumePause loga Error, o estado em memória avança e a notificação sai (SES-014)", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		e.store.failResumePause(errDisk, 1)
+		pausedAt(t, e, 100*time.Second)
+		e.advance(t, waitPaused, 60*time.Second)
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(160*time.Second))
+		if err != nil || res != tracker.PauseResumed {
+			t.Fatalf("TogglePause = %v, %v, want PauseResumed, nil", res, err)
+		}
+		e.logs.wait(t, slog.LevelError, msgWriteFailed, nil)
+		if n := e.nextNotify(t); n.State != domain.SessionRunning {
+			t.Errorf("notification state = %q, want running", n.State)
+		}
+		e.waitCurrentState(t, domain.SessionRunning)
+	})
+
+	methods := []struct {
+		name string
+		fn   func(*tracker.Tracker, context.Context) error
+	}{
+		{"TogglePause", func(tr *tracker.Tracker, ctx context.Context) error {
+			_, err := tr.TogglePause(ctx, domain.PauseHotkey, at(time.Second))
+			return err
+		}},
+		{"Pause", func(tr *tracker.Tracker, ctx context.Context) error {
+			_, err := tr.Pause(ctx, at(time.Second))
+			return err
+		}},
+		{"Resume", func(tr *tracker.Tracker, ctx context.Context) error {
+			_, err := tr.Resume(ctx, at(time.Second))
+			return err
+		}},
+		{"Suspend", func(tr *tracker.Tracker, ctx context.Context) error { return tr.Suspend(ctx, at(time.Second)) }},
+		{"Wake", func(tr *tracker.Tracker, ctx context.Context) error { return tr.Wake(ctx, at(time.Second), true) }},
+	}
+	t.Run("SES-016/depois de BeginShutdown os métodos devolvem ErrShuttingDown", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		e.launch(t)
+		e.tr.BeginShutdown()
+		for _, m := range methods {
+			if err := m.fn(e.tr, timeoutCtx(t)); !errors.Is(err, tracker.ErrShuttingDown) {
+				t.Errorf("%s after BeginShutdown = %v, want ErrShuttingDown", m.name, err)
+			}
+		}
+		wantNoCalls(t, e, opPause, opResumeP, opFeedback)
+	})
+
+	t.Run("SES-016/depois de Close os métodos devolvem ErrShuttingDown", func(t *testing.T) {
+		e := newEnv(t, quiet)
+		if err := e.close(t); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		for _, m := range methods {
+			if err := m.fn(e.tr, timeoutCtx(t)); !errors.Is(err, tracker.ErrShuttingDown) {
+				t.Errorf("%s after Close = %v, want ErrShuttingDown", m.name, err)
+			}
+		}
+	})
+}
+
+// expiredCtx returns a context whose deadline has already passed.
+func expiredCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+	return ctx
+}
+
+// busyOwner launches a session and holds the owner goroutine in a slow
+// heartbeat write; the clock ends at T+20s. The gate is released in t.Cleanup
+// (before Tracker.Close) or by the test.
+func busyOwner(t *testing.T) (*env, domain.SessionSnapshot, *gate) {
+	t.Helper()
+	e := newEnv(t, envConfig{heartbeat: 10 * time.Second, poll: time.Hour})
+	snap, _ := e.launch(t)
+	g := e.store.blockNextUpdate(t)
+	e.advance(t, waitRunning, 10*time.Second) // heartbeat at T+10s
+	g.waitEntered(t, "heartbeat UpdateSession")
+	e.clock.Advance(10 * time.Second) // T+20s while the owner is busy
+	return e, snap, g
+}
+
+func TestTrackerControlOrdering(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PWR-005/Suspend com ctx já expirado e a goroutine dona ocupada em uma gravação lenta ainda é aplicado com o instante original", func(t *testing.T) {
+		t.Parallel()
+		e, snap, g := busyOwner(t)
+		if err := e.tr.Suspend(expiredCtx(t), at(20*time.Second)); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Suspend error = %v, want nil or DeadlineExceeded", err)
+		}
+		e.clock.Advance(10 * time.Second) // T+30s: Now differs from the event instant
+		g.release()
+		ps := e.rec.waitN(t, opPause, 1)
+		wantPauseCall(t, ps[0], snap.ID, at(20*time.Second), domain.PauseSleep, 20*time.Second)
+		n := e.nextNotify(t)
+		wantSession(t, "paused notification", n, snap.ID, domain.SessionPaused, 20*time.Second, at(20*time.Second))
+		wantFeedbackCalls(t, e)
+	})
+
+	t.Run("PWR-005/a retomada que chega depois não toma o instante da suspensão", func(t *testing.T) {
+		t.Parallel()
+		e, snap, g := busyOwner(t)
+		if err := e.tr.Suspend(expiredCtx(t), at(20*time.Second)); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Suspend error = %v, want nil or DeadlineExceeded", err)
+		}
+		e.clock.Advance(5 * time.Second) // T+25s
+		if err := e.tr.Wake(expiredCtx(t), at(25*time.Second), true); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Wake error = %v, want nil or DeadlineExceeded", err)
+		}
+		g.release()
+		ps := e.rec.waitN(t, opPause, 1)
+		wantPauseCall(t, ps[0], snap.ID, at(20*time.Second), domain.PauseSleep, 20*time.Second)
+		rs := e.rec.waitN(t, opResumeP, 1)
+		wantResumePauseCall(t, rs[0], snap.ID, at(25*time.Second), domain.SessionRunning, 20*time.Second)
+		wantSeq(t, e, []string{opPause, opResumeP}, opPause, opResumeP)
+		n1, n2 := e.nextNotify(t), e.nextNotify(t)
+		wantSession(t, "paused notification", n1, snap.ID, domain.SessionPaused, 20*time.Second, at(20*time.Second))
+		wantSession(t, "running notification", n2, snap.ID, domain.SessionRunning, 20*time.Second, at(25*time.Second))
+		wantFeedbackCalls(t, e, tracker.FeedbackResumed)
+	})
+}
+
+func TestTrackerFeedbackNonBlocking(t *testing.T) {
+	t.Parallel()
+
+	// Config.Feedback is non-blocking by contract (the real one only enqueues)
+	// and is called on the owner goroutine, so by the time the control call
+	// returns, the callback has already run.
+	t.Run("FBK-003/Config.Feedback é chamado na goroutine dona depois da gravação e da notificação, e a ordem write → Notify → Feedback se mantém", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		e.launch(t)
+		e.advance(t, waitRunning, 10*time.Second)
+
+		res, err := e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(10*time.Second))
+		if err != nil || res != tracker.PausePaused {
+			t.Fatalf("TogglePause = %v, %v, want PausePaused, nil", res, err)
+		}
+		// No waiting: the owner goroutine ran the callback before replying.
+		if got := e.feedbackKinds(); !slices.Equal(got, []tracker.FeedbackKind{tracker.FeedbackPaused}) {
+			t.Fatalf("Feedback calls when TogglePause returned = %v, want [paused]", got)
+		}
+		wantSeq(t, e, []string{opNotify, opPause, opNotify, opFeedback}, opPause, opNotify, opFeedback)
+
+		e.clock.Advance(10 * time.Second)
+		res, err = e.tr.TogglePause(timeoutCtx(t), domain.PauseHotkey, at(20*time.Second))
+		if err != nil || res != tracker.PauseResumed {
+			t.Fatalf("second TogglePause = %v, %v, want PauseResumed, nil", res, err)
+		}
+		if got := e.feedbackKinds(); !slices.Equal(got, []tracker.FeedbackKind{tracker.FeedbackPaused, tracker.FeedbackResumed}) {
+			t.Fatalf("Feedback calls when the second TogglePause returned = %v, want [paused resumed]", got)
+		}
+		wantSeq(t, e, []string{opNotify, opPause, opNotify, opFeedback, opResumeP, opNotify, opFeedback},
+			opPause, opResumeP, opNotify, opFeedback)
+	})
+}
+
+// Compile-time checks against the T07 signatures.
+var (
+	_ tracker.SessionStore                                                                                = (*fakeStore)(nil)
+	_ error                                                                                               = (*tracker.NotPausableError)(nil)
+	_                                                                                                     = tracker.ReasonNoSession
+	_                                                                                                     = tracker.ReasonGrace
+	_ func(*tracker.Tracker, context.Context, domain.PauseReason, time.Time) (tracker.PauseResult, error) = (*tracker.Tracker).TogglePause
+	_ func(*tracker.Tracker, context.Context, time.Time) (domain.SessionSnapshot, error)                  = (*tracker.Tracker).Pause
+	_ func(*tracker.Tracker, context.Context, time.Time) (domain.SessionSnapshot, error)                  = (*tracker.Tracker).Resume
+	_ func(*tracker.Tracker, context.Context, time.Time) error                                            = (*tracker.Tracker).Suspend
+	_ func(*tracker.Tracker, context.Context, time.Time, bool) error                                      = (*tracker.Tracker).Wake
+)
+
 // Compile-time checks against the T08 signatures.
 var (
 	_ tracker.SessionStore    = (*store.Store)(nil)

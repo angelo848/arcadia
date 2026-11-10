@@ -353,7 +353,7 @@ Cada tarefa passa por test-writer → implementer/tracker-specialist → reviewe
   - `TestTrackerControlOrdering`:
     - "PWR-005/Suspend com ctx já expirado e a goroutine dona ocupada em uma gravação lenta ainda é aplicado com o instante original"
     - "PWR-005/a retomada que chega depois não toma o instante da suspensão"
-  - `TestTrackerFeedbackNonBlocking`: "FBK-003/Feedback bloqueante não atrasa as notificações nem as gravações" (o callback bloqueia num canal liberado no `t.Cleanup`)
+  - `TestTrackerFeedbackNonBlocking`: "FBK-003/Config.Feedback é chamado na goroutine dona depois da gravação e da notificação, e a ordem write → Notify → Feedback se mantém" (alterado em 2026-11-10: o callback não bloqueia por contrato, `feedback.Coordinator.Send`; o atraso de um `Overlay.Show` lento é testado em T14)
 - Depende de: T03, T06
 
 ## T08 — tracker: lançamento sem rastrear e integração Windows (tracker-specialist)

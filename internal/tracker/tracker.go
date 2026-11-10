@@ -21,7 +21,57 @@ var (
 	ErrSessionActive = errors.New("tracker: session already active")
 	// ErrShuttingDown is returned by Launch after BeginShutdown or Close [AGT-011].
 	ErrShuttingDown = errors.New("tracker: shutting down")
+	// ErrInvalidPauseReason is returned by TogglePause for reasons other than
+	// hotkey and gamepad [SES-016].
+	ErrInvalidPauseReason = errors.New("tracker: invalid pause reason")
 )
+
+// Reasons carried by *NotPausableError [SES-037].
+const (
+	ReasonNoSession = "no-session"
+	ReasonGrace     = "grace"
+)
+
+// NotPausableError is returned by Pause and Resume when there is nothing to
+// pause: no session or the session is in Grace [SES-037].
+type NotPausableError struct{ Reason string }
+
+// Error implements error.
+func (e *NotPausableError) Error() string { return "tracker: session not pausable: " + e.Reason }
+
+// PauseResult is the outcome of TogglePause.
+type PauseResult int
+
+// TogglePause outcomes.
+const (
+	PauseIgnored PauseResult = iota
+	PausePaused
+	PauseResumed
+)
+
+type ctrlKind int
+
+const (
+	ctrlToggle ctrlKind = iota
+	ctrlPause
+	ctrlResume
+	ctrlSuspend
+	ctrlWake
+)
+
+type ctrlResult struct {
+	res  PauseResult
+	snap domain.SessionSnapshot
+	err  error
+}
+
+type ctrlReq struct {
+	kind        ctrlKind
+	reason      domain.PauseReason
+	at          time.Time
+	userPresent bool
+	reply       chan ctrlResult // buffered 1: the owner never blocks on it
+}
 
 // SessionActiveError is returned by Launch while a session is open [SES-002].
 type SessionActiveError struct{ Session domain.SessionSnapshot }
@@ -40,6 +90,7 @@ type Config struct {
 	Store    SessionStore
 	Launcher Launcher
 	Notify   func(domain.SessionSnapshot) // must not block; nil = no-op
+	Feedback func(FeedbackKind)           // must not block; nil = no-op
 	Log      *slog.Logger
 	// Zero => domain defaults; tests may shorten them.
 	Grace, Heartbeat, Poll time.Duration
@@ -71,9 +122,11 @@ type Tracker struct {
 	store    SessionStore
 	launcher Launcher
 	notify   func(domain.SessionSnapshot)
+	feedback func(FeedbackKind)
 	log      *slog.Logger
 
 	launchCh chan launchReq
+	ctrlCh   chan ctrlReq
 	stop     chan struct{} // closed by Close
 	done     chan struct{} // closed when the owner goroutine exits (or by Close without Start)
 	wg       sync.WaitGroup
@@ -116,6 +169,10 @@ func New(cfg Config) *Tracker {
 	if notify == nil {
 		notify = func(domain.SessionSnapshot) {}
 	}
+	feedback := cfg.Feedback
+	if feedback == nil {
+		feedback = func(FeedbackKind) {}
+	}
 	log := cfg.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -129,8 +186,10 @@ func New(cfg Config) *Tracker {
 		store:      cfg.Store,
 		launcher:   cfg.Launcher,
 		notify:     notify,
+		feedback:   feedback,
 		log:        log,
 		launchCh:   make(chan launchReq),
+		ctrlCh:     make(chan ctrlReq, 16),
 		stop:       make(chan struct{}),
 		done:       make(chan struct{}),
 		m:          m,
@@ -181,6 +240,71 @@ func (t *Tracker) Launch(ctx context.Context, spec LaunchSpec) (domain.SessionSn
 		return r.snap, r.err
 	case <-ctx.Done():
 		return domain.SessionSnapshot{}, ctx.Err()
+	}
+}
+
+// TogglePause flips Running <-> Paused for a hotkey or gamepad trigger at the
+// event instant at [SES-016, SES-017]. Triggers without a pausable session are
+// PauseIgnored [SES-018]; any other reason is ErrInvalidPauseReason.
+func (t *Tracker) TogglePause(ctx context.Context, reason domain.PauseReason, at time.Time) (PauseResult, error) {
+	if reason != domain.PauseHotkey && reason != domain.PauseGamepad {
+		return PauseIgnored, ErrInvalidPauseReason
+	}
+	r, err := t.control(ctx, ctrlReq{kind: ctrlToggle, reason: reason, at: at})
+	return r.res, err
+}
+
+// Pause pauses the session with reason ui; idempotent in Paused [SES-035].
+func (t *Tracker) Pause(ctx context.Context, at time.Time) (domain.SessionSnapshot, error) {
+	r, err := t.control(ctx, ctrlReq{kind: ctrlPause, at: at})
+	return r.snap, err
+}
+
+// Resume resumes a paused session whatever the reason; idempotent in Running
+// [SES-036].
+func (t *Tracker) Resume(ctx context.Context, at time.Time) (domain.SessionSnapshot, error) {
+	r, err := t.control(ctx, ctrlReq{kind: ctrlResume, at: at})
+	return r.snap, err
+}
+
+// Suspend pauses a running session because the machine is going to sleep
+// [SES-026].
+func (t *Tracker) Suspend(ctx context.Context, at time.Time) error {
+	_, err := t.control(ctx, ctrlReq{kind: ctrlSuspend, at: at})
+	return err
+}
+
+// Wake resumes a sleep pause when the user is present [SES-028].
+func (t *Tracker) Wake(ctx context.Context, at time.Time, userPresent bool) error {
+	_, err := t.control(ctx, ctrlReq{kind: ctrlWake, at: at, userPresent: userPresent})
+	return err
+}
+
+// control sends req to the owner goroutine. The send is abandoned only when
+// the owner is gone (never on ctx expiry, so a late-ctx event is still applied
+// with its original instant [PWR-005]); the reply is awaited until ctx ends.
+func (t *Tracker) control(ctx context.Context, req ctrlReq) (ctrlResult, error) {
+	if t.isShuttingDown() {
+		return ctrlResult{}, ErrShuttingDown
+	}
+	req.reply = make(chan ctrlResult, 1)
+	select {
+	case t.ctrlCh <- req:
+	case <-t.done:
+		return ctrlResult{}, ErrShuttingDown
+	}
+	select {
+	case r := <-req.reply:
+		return r, r.err
+	case <-t.done:
+		select {
+		case r := <-req.reply:
+			return r, r.err
+		default:
+			return ctrlResult{}, ErrShuttingDown
+		}
+	case <-ctx.Done():
+		return ctrlResult{}, ctx.Err()
 	}
 }
 
@@ -256,6 +380,8 @@ func (t *Tracker) run() {
 			return
 		case req := <-t.launchCh:
 			req.reply <- t.handleLaunch(req.spec)
+		case req := <-t.ctrlCh:
+			req.reply <- t.handleControl(req)
 		case ev, ok := <-t.events:
 			if !ok {
 				t.events = nil
@@ -435,6 +561,62 @@ func (t *Tracker) handleJobEvent(ev JobEvent) {
 	}
 }
 
+// handleControl applies a pause/suspend request at the event instant [SES-016
+// .. SES-037, PWR-005].
+func (t *Tracker) handleControl(req ctrlReq) ctrlResult {
+	if t.isShuttingDown() {
+		return ctrlResult{err: ErrShuttingDown}
+	}
+	before := t.m.State()
+	if req.kind == ctrlPause || req.kind == ctrlResume {
+		if reason, refused := t.m.NotPausable(); refused {
+			t.log.Debug("pausa ignorada", slog.Int("state", int(before)), slog.String("reason", reason))
+			return ctrlResult{err: &NotPausableError{Reason: reason}}
+		}
+	}
+	// The raw instant is compared with startedAt before the monotonic clamp,
+	// otherwise a trigger from before the start would be applied [SES-018].
+	if (before == StateRunning || before == StatePaused) && req.at.Before(t.m.startedAt) {
+		t.log.Debug("pausa ignorada", slog.Int("state", int(before)), slog.Time("at", req.at))
+		now := req.at
+		if now.Before(t.lastAt) {
+			now = t.lastAt
+		}
+		snap, _ := t.m.Snapshot(now)
+		return ctrlResult{snap: snap}
+	}
+	now := t.monotonic(req.at)
+	var effs []Effect
+	switch req.kind {
+	case ctrlToggle:
+		effs = t.m.TogglePause(now, req.reason)
+	case ctrlPause:
+		effs = t.m.Pause(now)
+	case ctrlResume:
+		effs = t.m.Resume(now)
+	case ctrlSuspend:
+		effs = t.m.Suspend(now)
+	case ctrlWake:
+		effs = t.m.Wake(now, req.userPresent)
+	}
+	res := PauseIgnored
+	if len(effs) == 0 {
+		t.log.Debug("pausa ignorada", slog.Int("state", int(before)))
+	} else {
+		switch t.m.State() {
+		case StatePaused:
+			res = PausePaused
+		case StateRunning:
+			res = PauseResumed
+		}
+		_, sid, _, _ := t.m.Pending()
+		t.exec(t.work, effs, sid)
+		t.publish()
+	}
+	snap, _ := t.m.Snapshot(now)
+	return ctrlResult{res: res, snap: snap}
+}
+
 // handlePoll runs the periodic job check [SES-013].
 func (t *Tracker) handlePoll(now time.Time, gen uint64) {
 	var (
@@ -494,8 +676,24 @@ func (t *Tracker) exec(ctx context.Context, effs []Effect, sid int64) {
 			t.grace = timer{ch: t.clock.After(e.Delay), gen: e.Gen}
 		case EffArmPoll:
 			t.poll = timer{ch: t.clock.After(e.Delay), gen: e.Gen}
+		case EffPauseSession:
+			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+			err := t.store.PauseSession(wctx, store.PauseStart{
+				SessionID: sid, At: e.At, Reason: e.Pause, Active: e.Active,
+			})
+			cancel()
+			t.writeFailed(sid, err)
+		case EffResumePause:
+			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+			err := t.store.ResumePause(wctx, store.PauseEnd{
+				SessionID: sid, At: e.At, State: e.State, Active: e.Active,
+			})
+			cancel()
+			t.writeFailed(sid, err)
 		case EffNotify:
 			t.notify(e.Session)
+		case EffFeedback:
+			t.feedback(e.Feedback)
 		default:
 			// EffStartSession and EffResumeJob are run inline by handleLaunch.
 			t.log.Debug("efeito ignorado", slog.Int("kind", int(e.Kind)))

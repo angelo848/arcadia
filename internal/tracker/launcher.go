@@ -83,4 +83,8 @@ type SessionStore interface {
 	UpdateSession(ctx context.Context, id int64, st domain.SessionState, lastSeen time.Time, active time.Duration) error
 	EndSession(ctx context.Context, e store.SessionEnd) (domain.SessionState, error)
 	DeleteSession(ctx context.Context, id int64) error
+	// PauseSession opens a pause interval and marks the session paused [SES-016].
+	PauseSession(ctx context.Context, p store.PauseStart) error
+	// ResumePause closes the open pause interval [SES-017].
+	ResumePause(ctx context.Context, p store.PauseEnd) error
 }

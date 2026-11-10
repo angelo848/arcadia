@@ -60,6 +60,9 @@ const (
 	opUpdate    = "store.UpdateSession"
 	opEnd       = "store.EndSession"
 	opDelete    = "store.DeleteSession"
+	opPause     = "store.PauseSession"
+	opResumeP   = "store.ResumePause"
+	opFeedback  = "feedback"
 	opResume    = "job.Resume"
 	opTerminate = "job.Terminate"
 	opJobClose  = "job.Close"
@@ -68,17 +71,20 @@ const (
 )
 
 type call struct {
-	op     string
-	spec   tracker.LaunchSpec // Prepare
-	gameID int64              // Start
-	id     int64              // Start (returned), Update, Delete
-	state  domain.SessionState
-	at     time.Time // Start: started_at; Update: last_seen
-	active time.Duration
-	end    store.SessionEnd       // End
-	snap   domain.SessionSnapshot // Notify
-	job    *fakeJob               // job.*
-	err    error                  // error returned by the fake
+	op      string
+	spec    tracker.LaunchSpec // Prepare
+	gameID  int64              // Start
+	id      int64              // Start (returned), Update, Delete
+	state   domain.SessionState
+	at      time.Time // Start: started_at; Update: last_seen
+	active  time.Duration
+	end     store.SessionEnd       // End
+	pause   store.PauseStart       // PauseSession
+	unpause store.PauseEnd         // ResumePause
+	fb      tracker.FeedbackKind   // Feedback
+	snap    domain.SessionSnapshot // Notify
+	job     *fakeJob               // job.*
+	err     error                  // error returned by the fake
 }
 
 // recorder is a concurrency-safe ordered log of calls that wakes waiters on
@@ -363,6 +369,8 @@ type fakeStore struct {
 	updateErr  errPlan
 	endErr     errPlan
 	deleteErr  errPlan
+	pauseErr   errPlan
+	unpauseErr errPlan
 	updateGate *gate // holds the next UpdateSession call only
 	endGate    *gate // holds the next EndSession call only
 	endCtxHold *ctxHold
@@ -426,6 +434,39 @@ func (s *fakeStore) failEnd(err error, times int) {
 	s.mu.Lock()
 	s.endErr = errPlan{err, times}
 	s.mu.Unlock()
+}
+
+func (s *fakeStore) failPause(err error, times int) {
+	s.mu.Lock()
+	s.pauseErr = errPlan{err, times}
+	s.mu.Unlock()
+}
+func (s *fakeStore) failResumePause(err error, times int) {
+	s.mu.Lock()
+	s.unpauseErr = errPlan{err, times}
+	s.mu.Unlock()
+}
+
+func (s *fakeStore) PauseSession(ctx context.Context, p store.PauseStart) error {
+	s.mu.Lock()
+	err := s.pauseErr.next()
+	s.mu.Unlock()
+	if err == nil && s.real != nil {
+		err = s.real.PauseSession(ctx, p)
+	}
+	s.rec.add(call{op: opPause, id: p.SessionID, pause: p, err: err})
+	return err
+}
+
+func (s *fakeStore) ResumePause(ctx context.Context, p store.PauseEnd) error {
+	s.mu.Lock()
+	err := s.unpauseErr.next()
+	s.mu.Unlock()
+	if err == nil && s.real != nil {
+		err = s.real.ResumePause(ctx, p)
+	}
+	s.rec.add(call{op: opResumeP, id: p.SessionID, unpause: p, err: err})
+	return err
 }
 
 func (s *fakeStore) StartSession(ctx context.Context, gameID int64, at time.Time) (int64, error) {
@@ -706,6 +747,9 @@ type envConfig struct {
 	grace, heartbeat, poll time.Duration // zero => domain defaults
 	real                   tracker.SessionStore
 	noStart                bool
+	// feedback runs inside the Config.Feedback callback, after the call is
+	// recorded (it may block).
+	feedback func(tracker.FeedbackKind)
 }
 
 // quiet keeps the heartbeat and the periodic check out of the way of tests
@@ -735,10 +779,16 @@ func newEnv(t *testing.T, cfg envConfig) *env {
 		logs:     newLogStore(),
 	}
 	e.tr = tracker.New(tracker.Config{
-		Clock:     e.clock,
-		Store:     e.store,
-		Launcher:  e.launcher,
-		Notify:    func(s domain.SessionSnapshot) { rec.add(call{op: opNotify, snap: s}) },
+		Clock:    e.clock,
+		Store:    e.store,
+		Launcher: e.launcher,
+		Notify:   func(s domain.SessionSnapshot) { rec.add(call{op: opNotify, snap: s}) },
+		Feedback: func(k tracker.FeedbackKind) {
+			rec.add(call{op: opFeedback, fb: k})
+			if cfg.feedback != nil {
+				cfg.feedback(k)
+			}
+		},
 		Log:       e.logs.logger(),
 		Grace:     cfg.grace,
 		Heartbeat: cfg.heartbeat,
