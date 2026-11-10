@@ -80,6 +80,17 @@ func (s *Store) EndSession(ctx context.Context, e SessionEnd) (domain.SessionSta
 			}
 			return fmt.Errorf("store: end session %d: read: %w", e.ID, err)
 		}
+		// Close the open pause at the end instant; one that would start at or
+		// after it is dropped (STO-023).
+		if _, err := q.ClosePauseAt(ctx, dbgen.ClosePauseAtParams{
+			EndedAt:   sql.NullInt64{Int64: endedAt, Valid: true},
+			SessionID: e.ID,
+		}); err != nil {
+			return fmt.Errorf("store: end session %d: close pause: %w", e.ID, err)
+		}
+		if err := q.DeleteOpenPause(ctx, e.ID); err != nil {
+			return fmt.Errorf("store: end session %d: drop open pause: %w", e.ID, err)
+		}
 		n, err := q.CloseSession(ctx, dbgen.CloseSessionParams{
 			EndedAt:       sql.NullInt64{Int64: endedAt, Valid: true},
 			ActiveSeconds: secs,

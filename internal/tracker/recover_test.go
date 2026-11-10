@@ -86,6 +86,102 @@ func openRows() []store.OpenSession {
 	}
 }
 
+// pausedSession starts a session at baseT and leaves it paused (open) since p,
+// with 100 s of persisted active time, last_seen_at = l.
+func pausedSession(t *testing.T, s *store.Store, p, l time.Time) int64 {
+	t.Helper()
+	ctx := t.Context()
+	g := addTestGame(t, s)
+	id, err := s.StartSession(ctx, g.ID, baseT)
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	if err := s.PauseSession(ctx, store.PauseStart{SessionID: id, At: p, Reason: domain.PauseHotkey, Active: 100 * time.Second}); err != nil {
+		t.Fatalf("PauseSession: %v", err)
+	}
+	if !l.Equal(p) {
+		if err := s.UpdateSession(ctx, id, domain.SessionPaused, l, 100*time.Second); err != nil {
+			t.Fatalf("UpdateSession: %v", err)
+		}
+	}
+	return id
+}
+
+func TestRecoverPaused(t *testing.T) {
+	t.Parallel()
+	now := at(48 * time.Hour)
+
+	t.Run("SES-025/pausa aberta em P=T+100s e last_seen L=T+120s vira [P, L], 100 s e motivo recovered", func(t *testing.T) {
+		t.Parallel()
+		s := openTestStore(t)
+		p, l := at(100*time.Second), at(120*time.Second)
+		id := pausedSession(t, s, p, l)
+
+		logs := newLogStore()
+		n, err := tracker.RecoverOpenSessions(t.Context(), s, domain.NewFakeClock(now), logs.logger())
+		if err != nil || n != 1 {
+			t.Fatalf("RecoverOpenSessions = %d, %v; want 1, nil", n, err)
+		}
+		pauses, err := s.Pauses(t.Context(), id)
+		if err != nil {
+			t.Fatalf("Pauses: %v", err)
+		}
+		if len(pauses) != 1 || !pauses[0].PausedAt.Equal(p) || !pauses[0].ResumedAt.Equal(l) {
+			t.Fatalf("Pauses = %+v, want one interval [%v, %v]", pauses, p, l)
+		}
+		var state, reason string
+		var endedAt, active int64
+		if err := s.DB().QueryRowContext(t.Context(),
+			`SELECT state, end_reason, ended_at, active_seconds FROM play_session WHERE id = ?`, id).
+			Scan(&state, &reason, &endedAt, &active); err != nil {
+			t.Fatalf("read session: %v", err)
+		}
+		if state != "ended" || reason != "recovered" || endedAt != store.TimeToMillis(l) || active != 100 {
+			t.Errorf("session = %s/%s/%d/%d, want ended/recovered/%d/100", state, reason, endedAt, active, store.TimeToMillis(l))
+		}
+		open, err := s.OpenSessions(t.Context())
+		if err != nil || len(open) != 0 {
+			t.Errorf("OpenSessions = %+v, %v; want none", open, err)
+		}
+	})
+
+	t.Run("SES-025/P igual a L: nenhum intervalo", func(t *testing.T) {
+		t.Parallel()
+		s := openTestStore(t)
+		p := at(100 * time.Second)
+		id := pausedSession(t, s, p, p)
+
+		n, err := tracker.RecoverOpenSessions(t.Context(), s, domain.NewFakeClock(now), newLogStore().logger())
+		if err != nil || n != 1 {
+			t.Fatalf("RecoverOpenSessions = %d, %v; want 1, nil", n, err)
+		}
+		pauses, err := s.Pauses(t.Context(), id)
+		if err != nil {
+			t.Fatalf("Pauses: %v", err)
+		}
+		if len(pauses) != 0 {
+			t.Errorf("Pauses = %+v, want none", pauses)
+		}
+	})
+
+	t.Run("SES-025/sem notificação nem feedback", func(t *testing.T) {
+		t.Parallel()
+		s := openTestStore(t)
+		pausedSession(t, s, at(100*time.Second), at(120*time.Second))
+
+		// RecoverOpenSessions takes no notifier or feedback sink; the only
+		// observable output is the single start-up Warn summary.
+		logs := newLogStore()
+		if _, err := tracker.RecoverOpenSessions(t.Context(), s, domain.NewFakeClock(now), logs.logger()); err != nil {
+			t.Fatalf("RecoverOpenSessions: %v", err)
+		}
+		recs := logs.atLeast(slog.LevelWarn)
+		if len(recs) != 1 || recs[0].msg != msgRecovered {
+			t.Errorf("Warn/Error records = %v, want only %q", recs, msgRecovered)
+		}
+	})
+}
+
 func TestRecoverOpenSessions(t *testing.T) {
 	t.Parallel()
 	now := at(48 * time.Hour) // agent start-up
