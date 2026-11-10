@@ -2,6 +2,7 @@
 package input
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -53,6 +54,10 @@ func (h Hotkey) String() string {
 	if h.Modifiers&ModShift != 0 {
 		parts = append(parts, "Shift")
 	}
-	parts = append(parts, string(rune(h.VK)))
+	if h.VK >= 0x70 && h.VK <= 0x87 {
+		parts = append(parts, fmt.Sprintf("F%d", h.VK-0x70+1))
+	} else {
+		parts = append(parts, string(rune(h.VK)))
+	}
 	return strings.Join(parts, "+")
 }
