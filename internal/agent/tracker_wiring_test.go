@@ -45,6 +45,20 @@ type fakeLauncher struct {
 	jobs       []*fakeJob
 	prepareErr error
 	onJobClose func() // run on the first Close of every job, outside any lock
+
+	detached    []tracker.LaunchSpec
+	detachedErr error
+}
+
+// LaunchDetached records the spec and returns a fixed pid (or detachedErr).
+func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (uint32, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.detached = append(l.detached, spec)
+	if l.detachedErr != nil {
+		return 0, l.detachedErr
+	}
+	return 4242, nil
 }
 
 func (l *fakeLauncher) Prepare(spec tracker.LaunchSpec) (tracker.Job, error) {

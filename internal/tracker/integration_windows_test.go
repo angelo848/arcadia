@@ -3,12 +3,15 @@
 package tracker_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -212,6 +215,254 @@ func TestTrackerCloseKeepsGame(t *testing.T) {
 			if code := exitCodeOf(t, h); code != stillLive {
 				t.Errorf("process %d exit code = %d after Close, want STILL_ACTIVE", i, code)
 			}
+		}
+	})
+}
+
+// TestIntegrationPause covers TRK-009: pausing never touches the game.
+func TestIntegrationPause(t *testing.T) {
+	t.Parallel()
+
+	pauseFlags := []string{"--depth", "1", "--parent-run", "forever", "--run", "forever"}
+
+	// start launches the two-process game and returns a handle to each.
+	start := func(t *testing.T, w *winEnv, sc *scenario) []windows.Handle {
+		t.Helper()
+		w.launch(t, sc, pauseFlags...)
+		lines := sc.waitCounts(t, 2, 0)
+		var procs []windows.Handle
+		for _, l := range linesOf(lines, "start", -1) {
+			procs = append(procs, openProcess(t, l.PID))
+		}
+		if len(procs) != 2 {
+			t.Fatalf("processes = %d, want 2", len(procs))
+		}
+		return procs
+	}
+	wantAliveInJob := func(t *testing.T, when string, procs []windows.Handle) {
+		t.Helper()
+		for i, h := range procs {
+			if !isRunning(t, h) || exitCodeOf(t, h) != stillLive {
+				t.Errorf("%s: process %d is not alive", when, i)
+			}
+			// Inside a terminal/IDE job every child is "in a job"; the check
+			// is only meaningful when the test process is not in one.
+			if !testerInJob(t) && !inAnyJob(t, h) {
+				t.Errorf("%s: process %d is outside the job", when, i)
+			}
+		}
+	}
+
+	t.Run("TRK-009/pausa e retomada mantêm os dois processos vivos e dentro do job (IsProcessInJob)", func(t *testing.T) {
+		t.Parallel()
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		procs := start(t, w, sc)
+		wantAliveInJob(t, "before the pause", procs)
+
+		w.clock.Advance(10 * time.Second)
+		if _, err := w.tr.Pause(realCtx(t), w.clock.Now()); err != nil {
+			t.Fatalf("Pause: %v", err)
+		}
+		if n := w.nextNotify(t); n.State != domain.SessionPaused {
+			t.Fatalf("notification after Pause = %q, want paused", n.State)
+		}
+		wantAliveInJob(t, "during the pause", procs)
+
+		w.clock.Advance(10 * time.Second)
+		if _, err := w.tr.Resume(realCtx(t), w.clock.Now()); err != nil {
+			t.Fatalf("Resume: %v", err)
+		}
+		if n := w.nextNotify(t); n.State != domain.SessionRunning {
+			t.Fatalf("notification after Resume = %q, want running", n.State)
+		}
+		wantAliveInJob(t, "after the pause", procs)
+		w.wantCurrent(t, domain.SessionRunning)
+	})
+
+	t.Run("TRK-009/F criado durante a pausa e processos saindo: a sessão vai a Grace e termina sem perder evento do job", func(t *testing.T) {
+		t.Parallel()
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		procs := start(t, w, sc)
+
+		w.clock.Advance(10 * time.Second)
+		if _, err := w.tr.Pause(realCtx(t), w.clock.Now()); err != nil {
+			t.Fatalf("Pause: %v", err)
+		}
+		if n := w.nextNotify(t); n.State != domain.SessionPaused {
+			t.Fatalf("notification after Pause = %q, want paused", n.State)
+		}
+		sc.createUntil(t)
+		for i, h := range procs {
+			waitProcessExit(t, h, fmt.Sprintf("process %d", i))
+		}
+		if n := w.nextNotify(t); n.State != domain.SessionGrace {
+			t.Fatalf("notification after the job emptied while paused = %q, want grace", n.State)
+		}
+		end := w.expireGrace(t)
+		if end.State != domain.SessionEnded && end.State != domain.SessionDiscarded {
+			t.Errorf("final notification = %q, want ended or discarded", end.State)
+		}
+		if _, ok := w.tr.Current(); ok {
+			t.Error("Current reports a session after the grace period")
+		}
+	})
+}
+
+// processesInOwnJob returns the PIDs of the job the test process runs in
+// (QueryInformationJobObject with a NULL job handle); ok is false when it
+// cannot be read.
+func processesInOwnJob() (pids map[uint32]bool, ok bool) {
+	const jobObjectBasicProcessIdList = 3
+	buf := make([]uint64, 2+1024) // 2 DWORDs + ULONG_PTR list; 8-byte aligned
+	var ret uint32
+	err := windows.QueryInformationJobObject(0, jobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&buf[0])), uint32(len(buf)*8), &ret)
+	if err != nil && !errors.Is(err, windows.ERROR_MORE_DATA) {
+		return nil, false
+	}
+	n := *(*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(&buf[0])) + 4)) // NumberOfProcessIdsInList
+	pids = map[uint32]bool{}
+	for i := uint32(0); i < n && int(1+i) < len(buf); i++ {
+		pids[uint32(buf[1+i])] = true
+	}
+	return pids, true
+}
+
+// TestIntegrationLaunchUntracked covers TRK-010: a game launched without
+// tracking is a plain process, in no job of ours and with no session.
+func TestIntegrationLaunchUntracked(t *testing.T) {
+	t.Parallel()
+
+	// untracked launches fake-game detached and makes sure that, before the
+	// scenario cleanup (which runs after this one) removes the TempDir, the
+	// process is released by F and gone: it is in no job, so nothing else
+	// would wait for it.
+	untracked := func(t *testing.T, w *winEnv, sc *scenario, argv []string, workDir string) (uint32, windows.Handle) {
+		t.Helper()
+		pid, err := w.tr.LaunchUntracked(realCtx(t), w.spec(argv, workDir))
+		if err != nil {
+			t.Fatalf("LaunchUntracked: %v", err)
+		}
+		sc.expect(argv)
+		h := openProcess(t, int(pid))
+		t.Cleanup(func() {
+			sc.createUntil(t)
+			if ev, _ := windows.WaitForSingleObject(h, uint32(realWait/time.Millisecond)); ev != windows.WAIT_OBJECT_0 {
+				t.Errorf("cleanup: launched pid %d still running", pid)
+			}
+		})
+		return pid, h
+	}
+
+	t.Run("TRK-010/processo roda com cwd = pasta de trabalho e os argumentos intactos", func(t *testing.T) {
+		t.Parallel()
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		workDir := filepath.Join(t.TempDir(), "work dir")
+		if err := os.Mkdir(workDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		argv := sc.argv("--run", "forever", "--", "a", "b c", `C:\x y\z.rom`)
+		pid, _ := untracked(t, w, sc, argv, workDir)
+		lines := sc.waitCounts(t, 1, 0)
+		st := linesOf(lines, "start", 0)
+		if len(st) != 1 {
+			t.Fatalf("start lines = %+v, want 1", lines)
+		}
+		if uint32(st[0].PID) != pid {
+			t.Errorf("reported pid = %d, LaunchUntracked returned %d", st[0].PID, pid)
+		}
+		if !strings.EqualFold(filepath.Clean(st[0].Cwd), filepath.Clean(workDir)) {
+			t.Errorf("cwd = %q, want %q", st[0].Cwd, workDir)
+		}
+		if !slices.Equal(st[0].Args, argv) {
+			t.Errorf("args = %q, want %q", st[0].Args, argv)
+		}
+	})
+
+	t.Run("TRK-010/nenhum job é criado: IsProcessInJob(filho) é igual ao do processo de teste, e se o teste já estiver num job, o filho não está num job diferente do pai", func(t *testing.T) {
+		t.Parallel()
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		pid, h := untracked(t, w, sc, sc.argv("--run", "forever"), sc.dir)
+		sc.waitCounts(t, 1, 0)
+
+		parentInJob := testerInJob(t)
+		if childInJob := inAnyJob(t, h); childInJob != parentInJob {
+			t.Errorf("IsProcessInJob(child) = %v, test process = %v, want equal", childInJob, parentInJob)
+		}
+		if parentInJob {
+			// The child must belong to the parent's own job (inherited).
+			// Nested jobs would not be told apart by this check.
+			if pids, ok := processesInOwnJob(); ok && !pids[pid] {
+				t.Errorf("child %d is not in the job of the test process", pid)
+			}
+		}
+	})
+
+	t.Run("TRK-010/nenhuma linha de play_session e o processo continua vivo depois de Tracker.Close; termina quando F existe", func(t *testing.T) {
+		t.Parallel()
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		_, h := untracked(t, w, sc, sc.argv("--run", "forever"), sc.dir)
+		sc.waitCounts(t, 1, 0)
+
+		var rows int
+		if err := w.st.DB().QueryRow(`SELECT COUNT(*) FROM play_session`).Scan(&rows); err != nil || rows != 0 {
+			t.Errorf("play_session rows = %d (err %v), want 0", rows, err)
+		}
+		if ns := w.notifications(); len(ns) != 0 {
+			t.Errorf("notifications = %+v, want none", ns)
+		}
+		if err := w.tr.Close(realCtx(t)); err != nil {
+			t.Fatalf("Tracker.Close: %v", err)
+		}
+		if ev, _ := windows.WaitForSingleObject(h, 300); ev != uint32(windows.WAIT_TIMEOUT) {
+			t.Errorf("process was signalled after Close (wait = %#x)", ev)
+		}
+		if code := exitCodeOf(t, h); code != stillLive {
+			t.Errorf("exit code after Close = %d, want STILL_ACTIVE", code)
+		}
+		sc.createUntil(t)
+		waitProcessExit(t, h, "launched process")
+		if err := w.st.DB().QueryRow(`SELECT COUNT(*) FROM play_session`).Scan(&rows); err != nil || rows != 0 {
+			t.Errorf("play_session rows at the end = %d (err %v), want 0", rows, err)
+		}
+	})
+}
+
+// TestLaunchDetachedHandles is not parallel: it measures the handles of the
+// whole process.
+func TestLaunchDetachedHandles(t *testing.T) {
+	t.Run("TRK-011/20 lançamentos de fake-game --run 0 e um Close deixam GetProcessHandleCount <= h0 + 2", func(t *testing.T) {
+		sc := newScenario(t)
+		w := newWinEnv(t)
+		argv := sc.argv("--run", "0")
+		launched := 0
+		launch := func(i int) {
+			t.Helper()
+			if _, err := w.tr.LaunchUntracked(realCtx(t), w.spec(argv, sc.dir)); err != nil {
+				t.Fatalf("launch %d: LaunchUntracked: %v", i, err)
+			}
+			sc.expect(argv)
+			launched++
+			// The process is short-lived; wait for it so they do not pile up.
+			sc.waitCounts(t, launched, launched)
+		}
+		// One warm-up launch first, so lazily created runtime/DLL handles are
+		// part of h0.
+		launch(0)
+		h0 := processHandleCount(t)
+		for i := 1; i <= 20; i++ {
+			launch(i)
+		}
+		if err := w.tr.Close(realCtx(t)); err != nil {
+			t.Fatalf("Tracker.Close: %v", err)
+		}
+		if h := processHandleCount(t); h > h0+2 {
+			t.Errorf("handle count = %d after 20 launches and Close, want <= h0 + 2 = %d", h, h0+2)
 		}
 	})
 }

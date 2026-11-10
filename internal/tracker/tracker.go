@@ -57,16 +57,19 @@ const (
 	ctrlResume
 	ctrlSuspend
 	ctrlWake
+	ctrlLaunchDetached
 )
 
 type ctrlResult struct {
 	res  PauseResult
 	snap domain.SessionSnapshot
+	pid  uint32
 	err  error
 }
 
 type ctrlReq struct {
 	kind        ctrlKind
+	spec        LaunchSpec // ctrlLaunchDetached only
 	reason      domain.PauseReason
 	at          time.Time
 	userPresent bool
@@ -241,6 +244,27 @@ func (t *Tracker) Launch(ctx context.Context, spec LaunchSpec) (domain.SessionSn
 	case <-ctx.Done():
 		return domain.SessionSnapshot{}, ctx.Err()
 	}
+}
+
+// LaunchUntracked starts spec without a Job Object and without a session
+// [SES-031..034]. It is refused with *SessionActiveError while a session is
+// open or a launch is in progress, and with ErrShuttingDown after
+// BeginShutdown or Close. pid is 0 on failure.
+func (t *Tracker) LaunchUntracked(ctx context.Context, spec LaunchSpec) (uint32, error) {
+	if t.isShuttingDown() {
+		return 0, ErrShuttingDown
+	}
+	t.mu.Lock()
+	v := t.view
+	t.mu.Unlock()
+	if v.State() != StateIdle {
+		return 0, &SessionActiveError{Session: activeSession(&v, t.clock.Now())}
+	}
+	r, err := t.control(ctx, ctrlReq{kind: ctrlLaunchDetached, spec: spec})
+	if err != nil {
+		return 0, err
+	}
+	return r.pid, nil
 }
 
 // TogglePause flips Running <-> Paused for a hotkey or gamepad trigger at the
@@ -568,6 +592,17 @@ func (t *Tracker) handleControl(req ctrlReq) ctrlResult {
 		return ctrlResult{err: ErrShuttingDown}
 	}
 	before := t.m.State()
+	if req.kind == ctrlLaunchDetached {
+		if before != StateIdle {
+			return ctrlResult{err: &SessionActiveError{Session: activeSession(t.m, t.clock.Now())}}
+		}
+		pid, err := t.launcher.LaunchDetached(req.spec)
+		if err != nil {
+			return ctrlResult{err: t.launchFailed(req.spec, err).err}
+		}
+		t.log.Info("jogo iniciado sem rastrear", slog.Int64("game_id", req.spec.GameID), slog.Uint64("pid", uint64(pid)))
+		return ctrlResult{pid: pid}
+	}
 	if req.kind == ctrlPause || req.kind == ctrlResume {
 		if reason, refused := t.m.NotPausable(); refused {
 			t.log.Debug("pausa ignorada", slog.Int("state", int(before)), slog.String("reason", reason))

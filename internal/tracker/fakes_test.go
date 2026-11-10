@@ -56,6 +56,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 // Operation names recorded by the fakes, in one shared, ordered log.
 const (
 	opPrepare   = "launcher.Prepare"
+	opDetached  = "launcher.LaunchDetached"
 	opStart     = "store.StartSession"
 	opUpdate    = "store.UpdateSession"
 	opEnd       = "store.EndSession"
@@ -667,12 +668,16 @@ type fakeLauncher struct {
 	mu         sync.Mutex
 	jobs       []*fakeJob
 	prepareErr errPlan
+	detachErr  errPlan
 	resumeErr  error // given to the next job
 	gate       chan struct{}
 	entered    chan struct{}
 }
 
-const firstPID uint32 = 4242
+const (
+	firstPID    uint32 = 4242
+	detachedPID uint32 = 7777 // PID returned by fakeLauncher.LaunchDetached
+)
 
 func (l *fakeLauncher) Prepare(spec tracker.LaunchSpec) (tracker.Job, error) {
 	l.mu.Lock()
@@ -702,6 +707,24 @@ func (l *fakeLauncher) Prepare(spec tracker.LaunchSpec) (tracker.Job, error) {
 	l.resumeErr = nil
 	l.jobs = append(l.jobs, j)
 	return j, nil
+}
+
+// LaunchDetached records the call and returns detachedPID (no job, no goroutine).
+func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (uint32, error) {
+	l.mu.Lock()
+	err := l.detachErr.next()
+	l.mu.Unlock()
+	l.rec.add(call{op: opDetached, spec: spec, err: err})
+	if err != nil {
+		return 0, err
+	}
+	return detachedPID, nil
+}
+
+func (l *fakeLauncher) failDetached(err error, times int) {
+	l.mu.Lock()
+	l.detachErr = errPlan{err, times}
+	l.mu.Unlock()
 }
 
 func (l *fakeLauncher) failPrepare(err error, times int) {

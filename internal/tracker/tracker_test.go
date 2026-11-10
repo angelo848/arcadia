@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -1969,8 +1970,202 @@ var (
 
 // Compile-time checks against the T08 signatures.
 var (
-	_ tracker.SessionStore    = (*store.Store)(nil)
-	_ tracker.RecoveryStore   = (*store.Store)(nil)
-	_ error                   = (*tracker.SessionActiveError)(nil)
-	_ func() tracker.Launcher = tracker.NewLauncher
+	_ tracker.SessionStore                                                        = (*store.Store)(nil)
+	_ tracker.RecoveryStore                                                       = (*store.Store)(nil)
+	_ error                                                                       = (*tracker.SessionActiveError)(nil)
+	_ func() tracker.Launcher                                                     = tracker.NewLauncher
+	_ func(*tracker.Tracker, context.Context, tracker.LaunchSpec) (uint32, error) = (*tracker.Tracker).LaunchUntracked
 )
+
+// --- launch without tracking (phase 4, T08) ---------------------------------
+
+func TestTrackerLaunchUntracked(t *testing.T) {
+	t.Parallel()
+
+	untracked := func(t *testing.T, e *env, spec tracker.LaunchSpec) (uint32, error) {
+		t.Helper()
+		return e.tr.LaunchUntracked(timeoutCtx(t), spec)
+	}
+	untrackedErr := func(t *testing.T, e *env, spec tracker.LaunchSpec) error {
+		t.Helper()
+		_, err := untracked(t, e, spec)
+		return err
+	}
+	wantActive := func(t *testing.T, err error) *tracker.SessionActiveError {
+		t.Helper()
+		if !errors.Is(err, tracker.ErrSessionActive) {
+			t.Fatalf("LaunchUntracked error = %v, want ErrSessionActive", err)
+		}
+		var sa *tracker.SessionActiveError
+		if !errors.As(err, &sa) {
+			t.Fatalf("LaunchUntracked error = %T %v, want *SessionActiveError", err, err)
+		}
+		return sa
+	}
+
+	t.Run("SES-032/cria o processo com o mesmo LaunchSpec, devolve o PID, sem StartSession, sem Notify e sem job", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		spec := tracker.LaunchSpec{
+			GameID:  testGameID,
+			Title:   testTitle,
+			Exe:     `C:\Games\Hollow Knight\hollow_knight.exe`,
+			Args:    `--windowed "a b"`,
+			WorkDir: `C:\Games\Hollow Knight`,
+		}
+		pid, err := untracked(t, e, spec)
+		if err != nil {
+			t.Fatalf("LaunchUntracked: %v", err)
+		}
+		if pid != detachedPID {
+			t.Errorf("pid = %d, want %d", pid, detachedPID)
+		}
+		calls := e.rec.of(opDetached)
+		if len(calls) != 1 || calls[0].spec != spec {
+			t.Fatalf("LaunchDetached calls = %+v, want one with spec %+v", calls, spec)
+		}
+		wantNoCalls(t, e, opPrepare, opStart, opUpdate, opEnd, opDelete, opNotify, opResume, opTerminate, opJobClose, opFeedback)
+		if n := len(e.launcher.jobsSnapshot()); n != 0 {
+			t.Errorf("jobs created = %d, want 0", n)
+		}
+	})
+
+	t.Run("SES-032/Current continua sem sessão e um Launch rastreado logo depois é aceito; total do jogo não muda", func(t *testing.T) {
+		t.Parallel()
+		st := openTestStore(t)
+		game := addTestGame(t, st)
+		e := newEnv(t, envConfig{heartbeat: time.Hour, poll: time.Hour, real: st})
+		spec := tracker.LaunchSpec{GameID: game.ID, Title: game.Title, Exe: testSpec.Exe}
+
+		before, err := st.Game(t.Context(), game.ID)
+		if err != nil {
+			t.Fatalf("Game: %v", err)
+		}
+		if _, err := untracked(t, e, spec); err != nil {
+			t.Fatalf("LaunchUntracked: %v", err)
+		}
+		if _, ok := e.tr.Current(); ok {
+			t.Error("Current reports a session after LaunchUntracked")
+		}
+		after, err := st.Game(t.Context(), game.ID)
+		if err != nil {
+			t.Fatalf("Game: %v", err)
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Errorf("game row changed: before %+v, after %+v", before, after)
+		}
+		if _, err := e.tryLaunch(t, spec); err != nil {
+			t.Fatalf("tracked Launch after LaunchUntracked: %v", err)
+		}
+		if n := e.nextNotify(t); n.State != domain.SessionRunning {
+			t.Errorf("notification = %q, want running", n.State)
+		}
+	})
+
+	t.Run("SES-033/com Running, Grace, Paused ou lançamento em andamento devolve SessionActiveError e não cria processo", func(t *testing.T) {
+		t.Parallel()
+		t.Run("Running", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			snap, _ := e.launch(t)
+			sa := wantActive(t, untrackedErr(t, e, testSpec))
+			if sa.Session.ID != snap.ID || sa.Session.GameID != testGameID || sa.Session.Title != testTitle {
+				t.Errorf("SessionActiveError session = %+v, want id %d, game %d, %q", sa.Session, snap.ID, testGameID, testTitle)
+			}
+			wantNoCalls(t, e, opDetached)
+		})
+		t.Run("Grace", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			_, j := e.launch(t)
+			toGraceAfter(t, e, j, waitRunning, 100*time.Second)
+			e.waitCurrentState(t, domain.SessionGrace)
+			wantActive(t, untrackedErr(t, e, testSpec))
+			wantNoCalls(t, e, opDetached)
+		})
+		t.Run("Paused", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			pausedAt(t, e, 100*time.Second)
+			wantActive(t, untrackedErr(t, e, testSpec))
+			wantNoCalls(t, e, opDetached)
+		})
+		t.Run("lançamento em andamento", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			entered, release := e.launcher.block(t)
+			first := make(chan error, 1)
+			ctx := timeoutCtx(t)
+			go func() {
+				_, err := e.tr.Launch(ctx, testSpec)
+				first <- err
+			}()
+			select {
+			case <-entered:
+			case <-time.After(waitTimeout):
+				t.Fatal("Prepare never started")
+			}
+			err := untrackedErr(t, e, testSpec)
+			release()
+			wantActive(t, err)
+			wantNoCalls(t, e, opDetached)
+			select {
+			case err := <-first:
+				if err != nil {
+					t.Errorf("tracked Launch: %v", err)
+				}
+			case <-time.After(waitTimeout):
+				t.Fatal("tracked Launch did not return")
+			}
+		})
+	})
+
+	t.Run("SES-033/depois de BeginShutdown devolve ErrShuttingDown sem criar processo", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		e.tr.BeginShutdown()
+		err := untrackedErr(t, e, testSpec)
+		if !errors.Is(err, tracker.ErrShuttingDown) {
+			t.Fatalf("LaunchUntracked error = %v, want ErrShuttingDown", err)
+		}
+		wantNoCalls(t, e, opDetached, opPrepare, opStart, opNotify)
+	})
+
+	t.Run("SES-034/falha do CreateProcess loga Error com game_id, path e error, devolve *LaunchError com WinError e não cria sessão nem notificação", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		e.launcher.failDetached(&tracker.LaunchError{Err: errAccess, WinError: 5}, 1)
+		pid, err := untracked(t, e, testSpec)
+		var le *tracker.LaunchError
+		if !errors.As(err, &le) {
+			t.Fatalf("LaunchUntracked error = %T %v, want *LaunchError", err, err)
+		}
+		if le.WinError != 5 || !errors.Is(err, errAccess) {
+			t.Errorf("LaunchError = %+v, want WinError 5 wrapping %v", le, errAccess)
+		}
+		if pid != 0 {
+			t.Errorf("pid = %d on failure, want 0", pid)
+		}
+		rec := e.logs.wait(t, slog.LevelError, msgLaunchFailed, nil)
+		wantAttrs(t, rec, map[string]string{"game_id": fmt.Sprint(testGameID), "path": testSpec.Exe})
+		wantAttrContains(t, rec, "error", errAccess.Error())
+		wantNoCalls(t, e, opStart, opUpdate, opEnd, opNotify, opPrepare)
+		if _, ok := e.tr.Current(); ok {
+			t.Error("Current reports a session after a failed LaunchUntracked")
+		}
+	})
+
+	t.Run("SES-031/LaunchUntracked em Paused devolve SessionActiveError", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		snap, _ := pausedAt(t, e, 100*time.Second)
+		before := len(e.rec.all())
+		sa := wantActive(t, untrackedErr(t, e, testSpec))
+		if sa.Session.ID != snap.ID {
+			t.Errorf("SessionActiveError session id = %d, want %d", sa.Session.ID, snap.ID)
+		}
+		if got := e.rec.all()[before:]; len(got) != 0 {
+			t.Errorf("calls after the refused LaunchUntracked = %v, want none", opNames(got))
+		}
+	})
+}

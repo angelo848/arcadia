@@ -73,26 +73,67 @@ func (winLauncher) Prepare(spec LaunchSpec) (Job, error) {
 	return j, nil
 }
 
-func prepareJob(spec LaunchSpec) (_ *winJob, err error) {
-	appName, err := windows.UTF16PtrFromString(spec.Exe)
+// LaunchDetached starts the game with the same command line, working directory
+// and error mode as Prepare, but outside any job and not suspended. Both
+// handles of PROCESS_INFORMATION are closed before returning.
+func (winLauncher) LaunchDetached(spec LaunchSpec) (uint32, error) {
+	pid, err := launchDetached(spec)
 	if err != nil {
-		return nil, fmt.Errorf("exe path %q: %w", spec.Exe, err)
+		le := &LaunchError{Err: err}
+		var errno windows.Errno
+		if errors.As(err, &errno) {
+			le.WinError = uint32(errno)
+		}
+		return 0, le
+	}
+	return pid, nil
+}
+
+func launchDetached(spec LaunchSpec) (uint32, error) {
+	appName, cmdLine, cwd, err := launchStrings(spec)
+	if err != nil {
+		return 0, err
+	}
+	si := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
+	var pi windows.ProcessInformation
+	if err := windows.CreateProcess(appName, &cmdLine[0], nil, nil, false, windows.CREATE_DEFAULT_ERROR_MODE, nil, cwd, &si, &pi); err != nil {
+		return 0, fmt.Errorf("create process %q: %w", spec.Exe, err)
+	}
+	defer windows.CloseHandle(pi.Process)
+	defer windows.CloseHandle(pi.Thread)
+	return pi.ProcessId, nil
+}
+
+// launchStrings builds the application name, command line and working
+// directory shared by Prepare and LaunchDetached [TRK-005].
+func launchStrings(spec LaunchSpec) (appName *uint16, cmdLine []uint16, cwd *uint16, err error) {
+	appName, err = windows.UTF16PtrFromString(spec.Exe)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("exe path %q: %w", spec.Exe, err)
 	}
 	line := quoteExe(spec.Exe)
 	if spec.Args != "" {
 		line += " " + spec.Args
 	}
-	cmdLine, err := windows.UTF16FromString(line)
+	cmdLine, err = windows.UTF16FromString(line)
 	if err != nil {
-		return nil, fmt.Errorf("command line: %w", err)
+		return nil, nil, nil, fmt.Errorf("command line: %w", err)
 	}
 	workDir := spec.WorkDir
 	if workDir == "" {
 		workDir = filepath.Dir(spec.Exe)
 	}
-	cwd, err := windows.UTF16PtrFromString(workDir)
+	cwd, err = windows.UTF16PtrFromString(workDir)
 	if err != nil {
-		return nil, fmt.Errorf("working dir %q: %w", workDir, err)
+		return nil, nil, nil, fmt.Errorf("working dir %q: %w", workDir, err)
+	}
+	return appName, cmdLine, cwd, nil
+}
+
+func prepareJob(spec LaunchSpec) (_ *winJob, err error) {
+	appName, cmdLine, cwd, err := launchStrings(spec)
+	if err != nil {
+		return nil, err
 	}
 
 	job, err := windows.CreateJobObject(nil, nil)

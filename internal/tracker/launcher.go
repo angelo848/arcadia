@@ -23,6 +23,10 @@ type LaunchSpec struct {
 // to a job, so that no child can escape tracking.
 type Launcher interface {
 	Prepare(spec LaunchSpec) (Job, error)
+	// LaunchDetached creates the process without a Job Object and without
+	// CREATE_SUSPENDED; it closes hProcess and hThread before returning. The
+	// error is a *LaunchError.
+	LaunchDetached(spec LaunchSpec) (pid uint32, err error)
 }
 
 // JobEventKind classifies a job notification.

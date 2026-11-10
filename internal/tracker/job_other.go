@@ -13,6 +13,10 @@ func NewLauncher() Launcher { return unsupportedLauncher{} }
 
 type unsupportedLauncher struct{}
 
+func (unsupportedLauncher) LaunchDetached(LaunchSpec) (uint32, error) {
+	return 0, &LaunchError{Err: fmt.Errorf("tracker: create process: %w", errors.ErrUnsupported)}
+}
+
 func (unsupportedLauncher) Prepare(LaunchSpec) (Job, error) {
 	return nil, &LaunchError{Err: fmt.Errorf("tracker: job objects: %w", errors.ErrUnsupported)}
 }
