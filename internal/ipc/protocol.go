@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-3-tracker/contracts/ipc.openrpc.json (v0.4.0, which supersedes
-// the single-exe v0.3.0 and phase-2 v0.2.0 contracts kept in their specs as history).
+// docs/specs/phase-4-pause/contracts/ipc.openrpc.json (v0.5.0, which supersedes
+// the phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0 contracts kept in their specs as history).
 package ipc
 
 import (
@@ -34,6 +34,10 @@ const (
 	MethodGameList       = "game.list"
 	MethodGameLaunch     = "game.launch"
 	MethodSessionCurrent = "session.current"
+
+	MethodGameLaunchUntracked = "game.launchUntracked"
+	MethodSessionPause        = "session.pause"
+	MethodSessionResume       = "session.resume"
 	// MethodSessionChanged is the server-to-client notification of a session
 	// state change.
 	MethodSessionChanged = "session.changed"
@@ -50,18 +54,20 @@ const (
 
 // Application error codes.
 const (
-	CodeGameNotFound      = -32001
-	CodeSessionActive     = -32002
-	CodeLaunchFailed      = -32003
-	CodeInvalidExecutable = -32004
+	CodeGameNotFound       = -32001
+	CodeSessionActive      = -32002
+	CodeLaunchFailed       = -32003
+	CodeInvalidExecutable  = -32004
+	CodeSessionNotPausable = -32005
 )
 
 // Application error messages, exactly as in the contract's components.errors.
 const (
-	MsgGameNotFound      = "Game not found"
-	MsgSessionActive     = "Session already active"
-	MsgLaunchFailed      = "Launch failed"
-	MsgInvalidExecutable = "Invalid executable"
+	MsgGameNotFound       = "Game not found"
+	MsgSessionActive      = "Session already active"
+	MsgLaunchFailed       = "Launch failed"
+	MsgInvalidExecutable  = "Invalid executable"
+	MsgSessionNotPausable = "Session not pausable"
 	// MsgInvalidParams is the exported alias of msgInvalidParams.
 	MsgInvalidParams = msgInvalidParams
 )
@@ -72,6 +78,12 @@ const (
 	ReasonNotFound    = "not-found"
 	ReasonNotAFile    = "not-a-file"
 	ReasonNotExe      = "not-exe"
+)
+
+// Reasons carried by SessionNotPausableData.
+const (
+	ReasonNoSession = "no-session"
+	ReasonGrace     = "grace"
 )
 
 // MaxGameTitleRunes is the maximum length of a game title (x-limits.maxGameTitleRunes).
@@ -197,6 +209,27 @@ type GameAddParams struct {
 // GameLaunchParams are the params of game.launch (client-side encoding).
 type GameLaunchParams struct {
 	GameID int64 `json:"gameId"`
+}
+
+// GameLaunchUntrackedParams are the params of game.launchUntracked (client-side encoding).
+type GameLaunchUntrackedParams struct {
+	GameID int64 `json:"gameId"`
+}
+
+// LaunchedProcess is the result of game.launchUntracked.
+type LaunchedProcess struct {
+	PID uint32 `json:"pid"`
+}
+
+// SessionResult is the result of session.pause and session.resume.
+type SessionResult struct {
+	Session Session `json:"session"`
+}
+
+// SessionNotPausableData is the data of SessionNotPausable; Reason is one of
+// ReasonNoSession and ReasonGrace.
+type SessionNotPausableData struct {
+	Reason string `json:"reason"`
 }
 
 // GameListResult is the result of game.list. Games is never nil.
