@@ -396,4 +396,95 @@ func TestHotkey(t *testing.T) {
 			t.Fatal("segundo Close travou")
 		}
 	})
+
+	t.Run("HOT-004/Close concorrente com Start não trava e não deixa goroutine", func(t *testing.T) {
+		t.Cleanup(func() { goleak.VerifyNone(t) }) // registered before any Start
+		clock := domain.NewFakeClock(hotkeyStart)
+		for i := 0; i < 50; i++ {
+			src := NewHotkey(testHotkey, clock, slog.New(newRecLog()))
+			out := make(chan Trigger, 1)
+			startDone := make(chan error, 1)
+			closeDone := make(chan error, 1)
+			go func() { startDone <- src.Start(out) }()
+			go func() { closeDone <- src.Close() }()
+			for _, ch := range []chan error{startDone, closeDone} {
+				select {
+				case <-ch:
+				case <-time.After(10 * time.Second):
+					t.Fatalf("iteração %d: Start/Close concorrentes travaram", i)
+				}
+			}
+			// Whatever the interleaving, a final Close must settle everything.
+			closeAgain := make(chan error, 1)
+			go func() { closeAgain <- src.Close() }()
+			select {
+			case <-closeAgain:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("iteração %d: Close final travou", i)
+			}
+		}
+		if err := goleak.Find(); err != nil {
+			t.Fatalf("goroutines vazadas após as iterações: %v", err)
+		}
+
+		next := NewHotkey(testHotkey, clock, slog.New(newRecLog()))
+		if err := next.Start(make(chan Trigger, 1)); err != nil {
+			t.Fatalf("Start após as iterações concorrentes: %v", err)
+		}
+		if err := next.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
+
+	t.Run("HOT-004/Start depois de Close devolve erro e não deixa goroutine", func(t *testing.T) {
+		t.Cleanup(func() { goleak.VerifyNone(t) }) // registered before any Start
+		src := NewHotkey(testHotkey, domain.NewFakeClock(hotkeyStart), slog.New(newRecLog()))
+		if err := src.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- src.Start(make(chan Trigger, 1)) }()
+		select {
+		case err := <-done:
+			if err == nil {
+				_ = src.Close()
+				t.Fatal("Start após Close deveria devolver erro")
+			}
+		case <-time.After(hotkeyTimeout):
+			t.Fatal("Start após Close travou")
+		}
+		_ = src.Close()
+		if err := goleak.Find(); err != nil {
+			t.Errorf("goroutine viva após Start pós-Close: %v", err)
+		}
+	})
+
+	t.Run("HOT-003/NewHotkey com log nil não entra em pânico quando o registro falha", func(t *testing.T) {
+		t.Cleanup(func() { goleak.VerifyNone(t) }) // registered before any Start
+		clock := domain.NewFakeClock(hotkeyStart)
+		holder := NewHotkey(testHotkey, clock, slog.New(newRecLog()))
+		if err := holder.Start(make(chan Trigger, 1)); err != nil {
+			t.Fatalf("Start do detentor: %v", err)
+		}
+		defer func() { _ = holder.Close() }()
+
+		loser := NewHotkey(testHotkey, clock, nil)
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("Start com log nil entrou em pânico: %v", r)
+				}
+			}()
+			err = loser.Start(make(chan Trigger, 1))
+		}()
+		if err == nil {
+			_ = loser.Close()
+			t.Fatal("Start deveria falhar")
+		}
+		if !errors.Is(err, errHotkeyTaken) {
+			t.Errorf("erro = %v, quer wrap de 1409", err)
+		}
+		_ = loser.Close()
+	})
 }

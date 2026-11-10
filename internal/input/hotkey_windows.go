@@ -3,6 +3,7 @@
 package input
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -47,13 +48,20 @@ type hotkey struct {
 	clock domain.Clock
 	log   *slog.Logger
 
-	tid       uint32
-	wg        sync.WaitGroup
-	closeOnce sync.Once
+	// mu guards tid, started and closed. Start holds it until the loop goroutine
+	// has completed its handshake, so Close always observes the real tid.
+	mu      sync.Mutex
+	tid     uint32
+	started bool
+	closed  bool
+	wg      sync.WaitGroup
 }
 
 // NewHotkey returns a Source that fires when the global shortcut h is pressed.
 func NewHotkey(h Hotkey, clock domain.Clock, log *slog.Logger) Source {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &hotkey{hk: h, clock: clock, log: log}
 }
 
@@ -62,7 +70,11 @@ func registerModifiers(h Hotkey) uint32 { return h.Modifiers | ModNoRepeat }
 func (s *hotkey) Name() string { return "hotkey" }
 
 // threadID is the id of the thread that owns the registration (0 before Start).
-func (s *hotkey) threadID() uint32 { return s.tid }
+func (s *hotkey) threadID() uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tid
+}
 
 type hotkeyReady struct {
 	tid uint32
@@ -70,6 +82,14 @@ type hotkeyReady struct {
 }
 
 func (s *hotkey) Start(out chan<- Trigger) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return errors.New("input: hotkey closed")
+	}
+	if s.started {
+		return errors.New("input: hotkey already started")
+	}
 	ready := make(chan hotkeyReady, 1)
 	s.wg.Add(1)
 	go s.loop(out, ready)
@@ -80,6 +100,7 @@ func (s *hotkey) Start(out chan<- Trigger) error {
 		return fmt.Errorf("registrar atalho %s: %w", s.hk, r.err)
 	}
 	s.tid = r.tid
+	s.started = true
 	s.log.Info("atalho de pausa registrado", "hotkey", s.hk.String())
 	return nil
 }
@@ -118,12 +139,24 @@ func (s *hotkey) loop(out chan<- Trigger, ready chan<- hotkeyReady) {
 	}
 }
 
+// Close stops the loop and unregisters the shortcut. It is idempotent. If the
+// WM_QUIT cannot be posted, it logs a Warn and returns without waiting: the loop
+// thread would never be woken, and blocking forever is worse than leaving it.
 func (s *hotkey) Close() error {
-	s.closeOnce.Do(func() {
-		if s.tid != 0 {
-			procPostThreadMs.Call(uintptr(s.tid), wmQuitMsg, 0, 0)
-		}
-		s.wg.Wait()
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if s.tid == 0 {
+		return nil
+	}
+	r, _, err := procPostThreadMs.Call(uintptr(s.tid), wmQuitMsg, 0, 0)
+	if r == 0 {
+		s.log.Warn("não foi possível encerrar o loop do atalho", "hotkey", s.hk.String(), "err", err)
+		return nil
+	}
+	s.wg.Wait()
 	return nil
 }

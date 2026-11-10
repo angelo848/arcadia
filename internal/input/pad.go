@@ -42,6 +42,9 @@ type pad struct {
 	stop   chan struct{}
 	wg     sync.WaitGroup
 	closed bool
+	// failing marks slots whose last read failed with a non-disconnect error;
+	// touched only by Start and then the loop goroutine.
+	failing [padSlots]bool
 }
 
 // NewPad returns a gamepad Source polling api through clock.
@@ -110,13 +113,16 @@ func (p *pad) read(slot int, now time.Time, connected *[padSlots]bool, lastProbe
 	lastProbe[slot] = now
 	st, err := p.api.State(slot)
 	if err != nil {
-		if !errors.Is(err, ErrDisconnected) {
+		// Log only the first failure of a sequence, not on every rescan.
+		if !errors.Is(err, ErrDisconnected) && !p.failing[slot] {
 			p.log.Warn("gamepad read failed", "slot", slot, "err", err)
 		}
+		p.failing[slot] = !errors.Is(err, ErrDisconnected)
 		connected[slot] = false
 		p.det.Observe(slot, 0, false, now)
 		return
 	}
+	p.failing[slot] = false
 	connected[slot] = true
 	if p.det.Observe(slot, st.Buttons, true, now) {
 		select {
