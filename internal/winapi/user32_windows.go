@@ -21,3 +21,23 @@ var (
 
 	procAllowSetForegroundWindow = modUser32.NewProc("AllowSetForegroundWindow")
 )
+
+// Declarations used by the power watcher (T13) and the overlay (T16).
+// SendMessageW, IsWindow, IsWindowVisible and GetAncestor are declared in
+// sessionend_windows_test.go (same package), so they are not repeated here.
+var (
+	procGetGuiResources              = modUser32.NewProc("GetGuiResources")
+	procPeekMessageW                 = modUser32.NewProc("PeekMessageW")
+	procGetForegroundWindow          = modUser32.NewProc("GetForegroundWindow")
+	procMonitorFromWindow            = modUser32.NewProc("MonitorFromWindow")
+	procGetMonitorInfoW              = modUser32.NewProc("GetMonitorInfoW")
+	procSetWindowPos                 = modUser32.NewProc("SetWindowPos")
+	procSetLayeredWindowAttributes   = modUser32.NewProc("SetLayeredWindowAttributes")
+	procShowWindow                   = modUser32.NewProc("ShowWindow")
+	procInvalidateRect               = modUser32.NewProc("InvalidateRect")
+	procBeginPaint                   = modUser32.NewProc("BeginPaint")
+	procEndPaint                     = modUser32.NewProc("EndPaint")
+	procGetWindowLongPtrW            = modUser32.NewProc("GetWindowLongPtrW")
+	procSetThreadDpiAwarenessContext = modUser32.NewProc("SetThreadDpiAwarenessContext")
+	procGetDpiForWindow              = modUser32.NewProc("GetDpiForWindow")
+)

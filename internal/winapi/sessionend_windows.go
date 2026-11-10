@@ -59,48 +59,27 @@ type msgW struct {
 	lPrivate uint32
 }
 
-// The window procedure is a single callback for the whole package
-// (windows.NewCallback has a per-process limit); it dispatches to the watcher
-// that owns the hwnd.
-var (
-	wndProcOnce sync.Once
-	wndProcPtr  uintptr
+var classSeq atomic.Uint64
 
-	watchersMu sync.Mutex
-	watchers   = map[windows.HWND]*SessionEndWatcher{}
-
-	classSeq atomic.Uint64
-)
-
-func sharedWndProc() uintptr {
-	wndProcOnce.Do(func() { wndProcPtr = windows.NewCallback(wndProc) })
-	return wndProcPtr
-}
-
-func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
-	watchersMu.Lock()
-	w := watchers[windows.HWND(hwnd)]
-	watchersMu.Unlock()
-	if w != nil {
-		switch msg {
-		case msgQueryEndSession:
-			return 1 // never veto the session end
-		case msgEndSession:
-			w.onEndSession(wParam != 0)
-			return 0
-		case msgStop:
-			// Only stop the loop; the loop goroutine destroys the window.
-			procPostQuitMessage.Call(0)
-			return 0
-		case msgClose:
-			// External WM_CLOSE (e.g. taskkill without /F): ignored, so
-			// DefWindowProc does not destroy the window.
-			w.log.Warn("ignoring external WM_CLOSE on session end watcher window")
-			return 0
-		}
+// handleMessage is the watcher's windowHandler.
+func (w *SessionEndWatcher) handleMessage(_, msg, wParam, _ uintptr) (uintptr, bool) {
+	switch msg {
+	case msgQueryEndSession:
+		return 1, true // never veto the session end
+	case msgEndSession:
+		w.onEndSession(wParam != 0)
+		return 0, true
+	case msgStop:
+		// Only stop the loop; the loop goroutine destroys the window.
+		procPostQuitMessage.Call(0)
+		return 0, true
+	case msgClose:
+		// External WM_CLOSE (e.g. taskkill without /F): ignored, so
+		// DefWindowProc does not destroy the window.
+		w.log.Warn("ignoring external WM_CLOSE on session end watcher window")
+		return 0, true
 	}
-	r, _, _ := procDefWindowProcW.Call(hwnd, msg, wParam, lParam)
-	return r
+	return 0, false
 }
 
 // SessionEndWatcher owns a hidden top-level window (not HWND_MESSAGE, which
@@ -294,9 +273,7 @@ func (w *SessionEndWatcher) loop(ready chan<- error) {
 		return
 	}
 	hwnd := windows.HWND(r)
-	watchersMu.Lock()
-	watchers[hwnd] = w
-	watchersMu.Unlock()
+	registerWindowHandler(hwnd, w.handleMessage)
 	w.hwnd = hwnd
 	w.tid = windows.GetCurrentThreadId()
 	ready <- nil
@@ -321,9 +298,7 @@ func (w *SessionEndWatcher) loop(ready chan<- error) {
 	close(w.exited)
 	w.postMu.Unlock()
 
-	watchersMu.Lock()
-	delete(watchers, hwnd)
-	watchersMu.Unlock()
+	unregisterWindowHandler(hwnd)
 	if r, _, e := procDestroyWindow.Call(uintptr(hwnd)); r == 0 {
 		errs = append(errs, fmt.Errorf("session end watcher: DestroyWindow: %w", e))
 	}
