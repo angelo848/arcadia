@@ -17,15 +17,20 @@ func TestParseSessionState(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "DOM-007/running, grace, ended e discarded são aceitos",
-			inputs: []string{"running", "grace", "ended", "discarded"},
+			name:   "DOM-010/running, paused, grace, ended e discarded são aceitos",
+			inputs: []string{"running", "paused", "grace", "ended", "discarded"},
 			want: []domain.SessionState{
-				domain.SessionRunning, domain.SessionGrace, domain.SessionEnded, domain.SessionDiscarded,
+				domain.SessionRunning, domain.SessionPaused, domain.SessionGrace, domain.SessionEnded, domain.SessionDiscarded,
 			},
 		},
 		{
-			name:    "DOM-007/vazio é erro",
+			name:    "DOM-010/vazio é erro",
 			inputs:  []string{""},
+			wantErr: true,
+		},
+		{
+			name:    "DOM-010/Paused com maiúscula é erro",
+			inputs:  []string{"Paused", "PAUSED"},
 			wantErr: true,
 		},
 		{
@@ -34,8 +39,8 @@ func TestParseSessionState(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "DOM-007/paused é erro",
-			inputs:  []string{"paused", " running", "running ", "exited"},
+			name:    "DOM-007/valor desconhecido continua erro",
+			inputs:  []string{" running", "running ", "paused ", "exited"},
 			wantErr: true,
 		},
 	}

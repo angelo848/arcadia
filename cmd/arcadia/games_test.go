@@ -451,7 +451,7 @@ func TestGameBindings(t *testing.T) {
 	t.Run("DSK-010/LaunchGame com state desconhecido é erro inesperado", func(t *testing.T) {
 		t.Parallel()
 		s := sampleSession()
-		s.State = "paused"
+		s.State = "bogus"
 		p := &gamePinger{results: map[string]any{ipc.MethodGameLaunch: s}}
 		a := &App{client: p, log: discardLog()}
 
@@ -485,7 +485,7 @@ func TestSessionView(t *testing.T) {
 
 	t.Run("DSK-010/state desconhecido é erro", func(t *testing.T) {
 		t.Parallel()
-		for _, st := range []string{"", "Running", "paused"} {
+		for _, st := range []string{"", "Running", "bogus"} {
 			s := sampleSession()
 			s.State = st
 			if _, err := sessionView(s); err == nil {

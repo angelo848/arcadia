@@ -13,6 +13,7 @@ type SessionState string
 // Session states.
 const (
 	SessionRunning   SessionState = "running"
+	SessionPaused    SessionState = "paused"
 	SessionGrace     SessionState = "grace"
 	SessionEnded     SessionState = "ended"
 	SessionDiscarded SessionState = "discarded"
@@ -25,7 +26,7 @@ var errInvalidSessionState = errors.New("invalid session state")
 // is exact (case-sensitive, no trimming).
 func ParseSessionState(s string) (SessionState, error) {
 	switch st := SessionState(s); st {
-	case SessionRunning, SessionGrace, SessionEnded, SessionDiscarded:
+	case SessionRunning, SessionPaused, SessionGrace, SessionEnded, SessionDiscarded:
 		return st, nil
 	default:
 		return "", fmt.Errorf("parse session state %q: %w", s, errInvalidSessionState)

@@ -1542,7 +1542,7 @@ func TestSupervisorSessionChanged(t *testing.T) {
 		h.connectOK(t)
 
 		s := sampleSession()
-		s.State = "paused"
+		s.State = "bogus"
 		h.client.send(t, sessionChangedNote(t, s))
 		h.client.finishNotes()
 		h.waitDone(t)
