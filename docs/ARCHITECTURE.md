@@ -144,14 +144,14 @@ O período de **Grace** cobre jogos que fecham e relançam (atualizadores, troca
 "restart to apply settings").
 
 ### 4.4 Pausa
-- **Teclado:** `RegisterHotKey` global, numa goroutine com `runtime.LockOSThread()` rodando o loop de mensagens (padrão sugerido `Ctrl+Alt+P`, configurável). Funciona com o jogo em foco.
-- **Controle:** thread no agente faz polling XInput a ~60 Hz (custo ~0%); combo configurável, ex. `Guide + Select`
-  segurado por 1 s (evita acionamento acidental). Suporte a até 4 controles.
+- **Teclado:** `RegisterHotKey` global, numa goroutine com `runtime.LockOSThread()` rodando o loop de mensagens (fixo `Ctrl+Alt+P` na fase 4; configurável depois). Funciona com o jogo em foco.
+- **Controle:** thread no agente faz polling XInput a ~60 Hz (custo ~0%); combo fixo `Select (Back) + Y`
+  segurado por 1 s, um disparo por pressão (evita acionamento acidental). Suporte a até 4 controles.
 - **Feedback:** toast/overlay *topmost* ("⏸ Tempo pausado") + som curto. Em jogos em tela cheia exclusiva o overlay
   pode não aparecer — o som garante feedback.
 - **Pausas automáticas opcionais:** suspensão/hibernação do PC (`WM_POWERBROADCAST` — tempo dormindo nunca conta),
   jogo minimizado, inatividade de entrada por X minutos.
-- No banco, pausa vira um `pause_interval`; tempo efetivo = `fim − início − Σ pausas`.
+- No banco, pausa vira um `pause_interval`; tempo efetivo = `fim − início − Σ pausas`. Modelo da fase 4 em [ADR 0017](adr/0017-modelo-de-pausa.md), entrada e feedback nativos em [ADR 0018](adr/0018-entrada-global-e-feedback-nativo.md). Na fase 4 só a suspensão do PC pausa sozinha; jogo minimizado e inatividade ficam para depois.
 
 ### 4.5 Abrir sem contar tempo
 Duas situações cobertas:
@@ -276,5 +276,5 @@ type MetadataProvider interface {
 1. ~~Stack~~ → decidido: **Go + Wails + React + SQLite** ([ADR 0002](adr/0002-go-wails-react.md)).
 2. ~~Nome do projeto~~ → `arcadia` ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 3. ~~Local da biblioteca~~ → portátil, `data/` ao lado do exe, com override ([ADR 0006](adr/0006-biblioteca-portatil.md)).
-4. Atalhos padrão de pausa (teclado e combo de controle).
+4. ~~Atalhos padrão de pausa~~ → `Ctrl+Alt+P` no teclado e `Select + Y` (1 s) no controle, fixos na fase 4 ([ADR 0018](adr/0018-entrada-global-e-feedback-nativo.md)).
 5. ~~Agente iniciando com o Windows~~ → ligado por padrão, com opção na bandeja ([ADR 0014](adr/0014-executavel-unico-dois-processos.md)).

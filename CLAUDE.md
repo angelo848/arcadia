@@ -5,7 +5,7 @@ watcher de processos, pausa por teclado/controle, "iniciar sem contar tempo").
 
 - Arquitetura completa: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Decisões registradas: [docs/adr/](docs/adr/README.md)
-- Spec atual: [docs/specs/phase-3-tracker/](docs/specs/phase-3-tracker/requirements.md) — **Tracker MVP** (sobre
+- Spec atual: [docs/specs/phase-4-pause/](docs/specs/phase-4-pause/requirements.md) — **Pausa e "sem contar tempo"** (sobre [phase-3-tracker](docs/specs/phase-3-tracker/requirements.md),
   [single-exe](docs/specs/single-exe/requirements.md) e a fase 2, [phase-2-skeleton](docs/specs/phase-2-skeleton/requirements.md))
 - Processo: **Spec-Driven Development** ([ADR 0008](docs/adr/0008-spec-driven-development.md)) — a spec é a fonte da verdade.
 
@@ -39,7 +39,7 @@ go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente (build "dev"
 cd cmd/arcadia && wails dev        # UI em modo dev
 cd cmd/arcadia && wails build -ldflags "-X main.version=<v>"   # gera build/bin/arcadia.exe
 sqlc generate                      # depois de alterar internal/store/queries/*.sql
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/phase-3-tracker
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/phase-4-pause
 ```
 
 `spec-trace.ps1` confere requisito ↔ tarefa ↔ teste (`-SkipTests` antes da etapa de testes).

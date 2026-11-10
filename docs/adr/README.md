@@ -30,3 +30,6 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0014](0014-executavel-unico-dois-processos.md) | Executável único com dois processos | aceito |
 | [0015](0015-agente-unico-escritor-do-banco.md) | O agente é o único escritor do banco; a UI escreve via IPC | aceito |
 | [0016](0016-job-do-jogo-permite-breakaway.md) | O Job Object do jogo permite breakaway | aceito |
+| [0017](0017-modelo-de-pausa.md) | Modelo de pausa da sessão | aceito |
+| [0018](0018-entrada-global-e-feedback-nativo.md) | Entrada global e feedback nativos no agente | aceito |
+| [0019](0019-lancamento-sem-rastrear.md) | Lançamento sem rastrear | aceito |
