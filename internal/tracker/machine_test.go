@@ -929,3 +929,771 @@ func TestMachineIgnoredRows(t *testing.T) {
 		wantState(t, r.m, tracker.StateIdle)
 	})
 }
+
+// ---- Phase 4: pause (docs/specs/phase-4-pause, contract session-state-machine.md) ----
+
+var allPauseReasons = []domain.PauseReason{domain.PauseHotkey, domain.PauseGamepad, domain.PauseUI, domain.PauseSleep}
+
+// pausedBy moves a Running machine (started at baseT) to Paused at `when` through the path matching reason.
+func pausedBy(t *testing.T, r running, when time.Time, reason domain.PauseReason) []tracker.Effect {
+	t.Helper()
+	var effs []tracker.Effect
+	switch reason {
+	case domain.PauseUI:
+		effs = r.m.Pause(when)
+	case domain.PauseSleep:
+		effs = r.m.Suspend(when)
+	default:
+		effs = r.m.TogglePause(when, reason)
+	}
+	wantState(t, r.m, tracker.StatePaused)
+	wantReason(t, r.m, reason)
+	return effs
+}
+
+func feedbacks(effs []tracker.Effect) []tracker.FeedbackKind {
+	var out []tracker.FeedbackKind
+	for _, e := range effs {
+		if e.Kind == tracker.EffFeedback {
+			out = append(out, e.Feedback)
+		}
+	}
+	return out
+}
+
+func wantFeedback(t *testing.T, effs []tracker.Effect, want ...tracker.FeedbackKind) {
+	t.Helper()
+	if got := feedbacks(effs); !slices.Equal(got, want) {
+		t.Fatalf("feedback = %v, want %v (effects %v)", got, want, effKinds(effs))
+	}
+}
+
+func wantNoEffects(t *testing.T, effs []tracker.Effect) {
+	t.Helper()
+	if len(effs) != 0 {
+		t.Fatalf("effects = %v, want none", effKinds(effs))
+	}
+}
+
+func wantReason(t *testing.T, m *tracker.Machine, want domain.PauseReason) {
+	t.Helper()
+	if got, ok := m.PausedReason(); !ok || got != want {
+		t.Fatalf("PausedReason() = (%q, %v), want (%q, true)", got, ok, want)
+	}
+}
+
+func wantPauseStart(t *testing.T, e tracker.Effect, reason domain.PauseReason, when time.Time, active time.Duration) {
+	t.Helper()
+	if e.Pause != reason || e.State != domain.SessionPaused || !e.At.Equal(when) || e.Active != active {
+		t.Fatalf("PauseSession = {Pause:%q State:%q At:%v Active:%v}, want {%q paused %v %v}",
+			e.Pause, e.State, e.At, e.Active, reason, when, active)
+	}
+}
+
+func wantPauseEnd(t *testing.T, e tracker.Effect, st domain.SessionState, when time.Time, active time.Duration) {
+	t.Helper()
+	if e.State != st || !e.At.Equal(when) || e.Active != active {
+		t.Fatalf("ResumePause = {State:%q At:%v Active:%v}, want {%q %v %v}", e.State, e.At, e.Active, st, when, active)
+	}
+}
+
+func wantNotify(t *testing.T, e tracker.Effect, st domain.SessionState, active time.Duration, asOf time.Time) {
+	t.Helper()
+	if e.State != st {
+		t.Fatalf("Notify State = %q, want %q", e.State, st)
+	}
+	wantSnap(t, e.Session, snap(st, active, asOf, time.Time{}))
+}
+
+func TestMachinePause(t *testing.T) {
+	t.Parallel()
+	t100 := at(100 * time.Second)
+
+	t.Run("SES-016/Running + hotkey em T+100s: Paused, PauseSession(hotkey, active 100 s), notificação paused com activeMs 100000 e asOf T+100s, sem arme de timer", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		effs := pausedBy(t, r, t100, domain.PauseHotkey)
+		wantKinds(t, effs, tracker.EffPauseSession, tracker.EffNotify, tracker.EffFeedback)
+		wantBefore(t, effs, tracker.EffPauseSession, tracker.EffNotify)
+		wantBefore(t, effs, tracker.EffNotify, tracker.EffFeedback)
+		none(t, effs, tracker.EffArmHeartbeat, tracker.EffArmPoll, tracker.EffArmGrace, tracker.EffTerminateJob, tracker.EffCloseJob)
+		wantPauseStart(t, one(t, effs, tracker.EffPauseSession), domain.PauseHotkey, t100, 100*time.Second)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionPaused, 100*time.Second, t100)
+	})
+
+	t.Run("SES-016/Snapshot em T+130s: paused com activeMs 100000", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		s, ok := r.m.Snapshot(at(130 * time.Second))
+		if !ok {
+			t.Fatal("Snapshot ok = false in Paused")
+		}
+		wantSnap(t, s, snap(domain.SessionPaused, 100*time.Second, at(130*time.Second), time.Time{}))
+	})
+
+	t.Run("SES-017/Paused + gatilho em T+160s: Running, ResumePause(running, active 100 s), notificação running; Snapshot em T+170s dá 110000", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		t160 := at(160 * time.Second)
+		effs := r.m.TogglePause(t160, domain.PauseGamepad)
+		wantKinds(t, effs, tracker.EffResumePause, tracker.EffNotify, tracker.EffFeedback)
+		wantBefore(t, effs, tracker.EffResumePause, tracker.EffNotify)
+		none(t, effs, tracker.EffArmHeartbeat, tracker.EffArmPoll, tracker.EffArmGrace)
+		wantState(t, r.m, tracker.StateRunning)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionRunning, t160, 100*time.Second)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionRunning, 100*time.Second, t160)
+		if _, ok := r.m.PausedReason(); ok {
+			t.Fatal("PausedReason ok = true in Running")
+		}
+		s, ok := r.m.Snapshot(at(170 * time.Second))
+		if !ok || s.Active != 110*time.Second || s.State != domain.SessionRunning {
+			t.Fatalf("Snapshot = %+v ok = %v, want running 110s", s, ok)
+		}
+	})
+
+	t.Run("SES-018/Idle, Launching e Grace ignoram TogglePause, Suspend e Wake sem efeitos", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name  string
+			setup func(t *testing.T) *tracker.Machine
+			want  tracker.State
+		}{
+			{"Idle", func(*testing.T) *tracker.Machine { return newMachine() }, tracker.StateIdle},
+			{"Launching", func(*testing.T) *tracker.Machine {
+				m := newMachine()
+				m.Begin(testGameID, testTitle)
+				return m
+			}, tracker.StateLaunching},
+			{"Launching depois do insert", func(*testing.T) *tracker.Machine {
+				m := newMachine()
+				m.Begin(testGameID, testTitle)
+				m.Prepared(baseT)
+				m.Inserted(testSessionID)
+				return m
+			}, tracker.StateLaunching},
+			{"Grace", func(t *testing.T) *tracker.Machine {
+				r := newRunning(t)
+				toGrace(t, r.m, t100)
+				return r.m
+			}, tracker.StateGrace},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				m := tc.setup(t)
+				now := at(110 * time.Second)
+				wantNoEffects(t, m.TogglePause(now, domain.PauseHotkey))
+				wantNoEffects(t, m.TogglePause(now, domain.PauseGamepad))
+				wantNoEffects(t, m.Suspend(now))
+				wantNoEffects(t, m.Wake(now, true))
+				wantNoEffects(t, m.Wake(now, false))
+				wantState(t, m, tc.want)
+				if _, ok := m.PausedReason(); ok {
+					t.Fatal("PausedReason ok = true outside Paused")
+				}
+			})
+		}
+	})
+
+	t.Run("SES-018/gatilho com instante anterior a startedAt é ignorado", func(t *testing.T) {
+		t.Parallel()
+		before := at(-time.Second)
+		r := newRunning(t)
+		wantNoEffects(t, r.m.TogglePause(before, domain.PauseHotkey))
+		wantNoEffects(t, r.m.Suspend(before))
+		wantState(t, r.m, tracker.StateRunning)
+		s, ok := r.m.Snapshot(at(20 * time.Second))
+		if !ok || s.Active != 20*time.Second || s.State != domain.SessionRunning {
+			t.Fatalf("Snapshot = %+v ok = %v, want running 20s", s, ok)
+		}
+		// startedAt itself is accepted (t >= startedAt).
+		one(t, r.m.TogglePause(baseT, domain.PauseHotkey), tracker.EffPauseSession)
+		wantState(t, r.m, tracker.StatePaused)
+	})
+
+	t.Run("SES-019/cadeia pausa em 100, retoma em 160, pausa em 200, retoma em 210, job vazio em 300, carência vence em 315: End com 230 s, ended_at T+300s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		r.m.TogglePause(at(100*time.Second), domain.PauseHotkey)
+		r.m.TogglePause(at(160*time.Second), domain.PauseHotkey)
+		r.m.TogglePause(at(200*time.Second), domain.PauseHotkey)
+		effs := r.m.TogglePause(at(210*time.Second), domain.PauseHotkey)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionRunning, at(210*time.Second), 140*time.Second)
+		g := toGrace(t, r.m, at(300*time.Second))
+		effs = r.m.GraceTimeout(at(315*time.Second), g)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, at(300*time.Second), 230*time.Second, domain.EndExited)
+		wantSnap(t, one(t, effs, tracker.EffNotify).Session, snap(domain.SessionEnded, 230*time.Second, at(315*time.Second), at(300*time.Second)))
+		wantState(t, r.m, tracker.StateIdle)
+	})
+
+	t.Run("SES-020/Heartbeat em Paused grava paused com active 100 s e rearma; geração obsoleta é ignorada", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		// Pausing does not re-arm: the running heartbeat generation is still the current one.
+		now := at(120 * time.Second)
+		effs := r.m.Heartbeat(now, r.hbGen)
+		wantKinds(t, effs, tracker.EffUpdateSession, tracker.EffArmHeartbeat)
+		wantUpdate(t, one(t, effs, tracker.EffUpdateSession), domain.SessionPaused, now, 100*time.Second)
+		arm := one(t, effs, tracker.EffArmHeartbeat)
+		wantArm(t, arm, domain.SessionHeartbeatInterval)
+		wantState(t, r.m, tracker.StatePaused)
+		// The old generation is now stale.
+		wantNoEffects(t, r.m.Heartbeat(at(125*time.Second), r.hbGen))
+		now = at(150 * time.Second)
+		effs = r.m.Heartbeat(now, arm.Gen)
+		wantUpdate(t, one(t, effs, tracker.EffUpdateSession), domain.SessionPaused, now, 100*time.Second)
+		none(t, effs, tracker.EffPauseSession, tracker.EffResumePause)
+		wantState(t, r.m, tracker.StatePaused)
+	})
+
+	t.Run("SES-021/TrackedEmpty em Paused: ResumePause(grace, active 100 s), carência armada, notificação grace, sem feedback", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		t400 := at(400 * time.Second)
+		effs := r.m.TrackedEmpty(t400)
+		wantKinds(t, effs, tracker.EffResumePause, tracker.EffArmGrace, tracker.EffNotify)
+		wantBefore(t, effs, tracker.EffResumePause, tracker.EffNotify)
+		none(t, effs, tracker.EffFeedback, tracker.EffUpdateSession)
+		wantState(t, r.m, tracker.StateGrace)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionGrace, t400, 100*time.Second)
+		wantArm(t, one(t, effs, tracker.EffArmGrace), domain.SessionGracePeriod)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionGrace, 100*time.Second, t400)
+	})
+
+	t.Run("SES-021/carência vence em T+415s: End exited em ended_at T+400s com 100 s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		g := one(t, r.m.TrackedEmpty(at(400*time.Second)), tracker.EffArmGrace).Gen
+		effs := r.m.GraceTimeout(at(415*time.Second), g)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, at(400*time.Second), 100*time.Second, domain.EndExited)
+		none(t, effs, tracker.EffFeedback)
+		wantState(t, r.m, tracker.StateIdle)
+	})
+
+	t.Run("SES-021/ProcessAdded na carência volta a Running e não reabre a pausa", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		r.m.TrackedEmpty(at(400 * time.Second))
+		back := at(405 * time.Second)
+		effs := r.m.ProcessAdded(back)
+		wantKinds(t, effs, tracker.EffUpdateSession, tracker.EffArmHeartbeat, tracker.EffNotify)
+		none(t, effs, tracker.EffPauseSession, tracker.EffResumePause, tracker.EffFeedback)
+		wantUpdate(t, one(t, effs, tracker.EffUpdateSession), domain.SessionRunning, back, 100*time.Second)
+		wantState(t, r.m, tracker.StateRunning)
+		if _, ok := r.m.PausedReason(); ok {
+			t.Fatal("pause reopened after ProcessAdded in Grace")
+		}
+	})
+
+	t.Run("SES-021/ProcessAdded em Paused é ignorado", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		wantNoEffects(t, r.m.ProcessAdded(at(110*time.Second)))
+		wantState(t, r.m, tracker.StatePaused)
+		wantReason(t, r.m, domain.PauseHotkey)
+	})
+
+	t.Run("SES-022/Poll em Paused com 0 ativos vai a Grace e rearma", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseGamepad)
+		now := at(250 * time.Second)
+		effs := r.m.Poll(now, r.pollGen, 0, nil)
+		wantKinds(t, effs, tracker.EffResumePause, tracker.EffArmGrace, tracker.EffNotify, tracker.EffArmPoll)
+		none(t, effs, tracker.EffFeedback)
+		wantState(t, r.m, tracker.StateGrace)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionGrace, now, 100*time.Second)
+		wantArm(t, one(t, effs, tracker.EffArmPoll), domain.JobPollInterval)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionGrace, 100*time.Second, now)
+	})
+
+	t.Run("SES-022/Poll em Paused com ativos > 0 ou com erro continua Paused e rearma", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name   string
+			active int
+			err    error
+		}{
+			{"ativos > 0", 2, nil},
+			{"erro com 0 ativos", 0, errors.New("query job failed")},
+			{"erro com ativos > 0", 3, errors.New("query job failed")},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, domain.PauseHotkey)
+				effs := r.m.Poll(at(250*time.Second), r.pollGen, tc.active, tc.err)
+				wantOrder(t, effs, tracker.EffArmPoll)
+				wantArm(t, effs[0], domain.JobPollInterval)
+				wantState(t, r.m, tracker.StatePaused)
+				wantReason(t, r.m, domain.PauseHotkey)
+			})
+		}
+	})
+
+	t.Run("SES-023/pausada em T+20s e carência em T+615s: End discarded com 20 s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, at(20*time.Second), domain.PauseHotkey)
+		g := one(t, r.m.TrackedEmpty(at(600*time.Second)), tracker.EffArmGrace).Gen
+		effs := r.m.GraceTimeout(at(615*time.Second), g)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionDiscarded, at(600*time.Second), 20*time.Second, domain.EndExited)
+		if n := one(t, effs, tracker.EffNotify); n.State != domain.SessionDiscarded {
+			t.Fatalf("Notify State = %q, want discarded", n.State)
+		}
+		wantState(t, r.m, tracker.StateIdle)
+	})
+
+	t.Run("SES-023/29,999 s descartada e 30 s encerrada, com pausas no meio", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name   string
+			active time.Duration
+			state  domain.SessionState
+		}{
+			{"29,999 s", 29999 * time.Millisecond, domain.SessionDiscarded},
+			{"30 s", 30 * time.Second, domain.SessionEnded},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := newRunning(t)
+				// 10 s running, paused for 6 min of wall clock, then the rest of the active time.
+				r.m.TogglePause(at(10*time.Second), domain.PauseHotkey)
+				resume := at(370 * time.Second)
+				r.m.TogglePause(resume, domain.PauseHotkey)
+				empty := resume.Add(tc.active - 10*time.Second)
+				g := toGrace(t, r.m, empty)
+				effs := r.m.GraceTimeout(empty.Add(domain.SessionGracePeriod), g)
+				wantEnd(t, one(t, effs, tracker.EffEndSession), tc.state, empty, tc.active, domain.EndExited)
+			})
+		}
+	})
+
+	t.Run("SES-024/Stop em Paused: End agent-shutdown com ended_at = now e 100 s, EffCloseJob e sem notificação", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		stop := at(500 * time.Second)
+		effs := r.m.Stop(stop)
+		wantOrder(t, effs, tracker.EffEndSession, tracker.EffCloseJob)
+		none(t, effs, tracker.EffNotify, tracker.EffTerminateJob, tracker.EffFeedback)
+		wantEnd(t, effs[0], domain.SessionEnded, stop, 100*time.Second, domain.EndAgentShutdown)
+		wantState(t, r.m, tracker.StateIdle)
+		if _, ok := r.m.PausedReason(); ok {
+			t.Fatal("PausedReason ok = true after Stop")
+		}
+	})
+
+	t.Run("SES-026/Suspend em Running: Paused(sleep), PauseSession, notificação paused e nenhum EffFeedback", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		effs := pausedBy(t, r, t100, domain.PauseSleep)
+		wantOrder(t, effs, tracker.EffPauseSession, tracker.EffNotify)
+		none(t, effs, tracker.EffFeedback, tracker.EffTerminateJob, tracker.EffCloseJob)
+		wantPauseStart(t, effs[0], domain.PauseSleep, t100, 100*time.Second)
+		wantNotify(t, effs[1], domain.SessionPaused, 100*time.Second, t100)
+	})
+
+	t.Run("SES-027/Suspend em Paused(hotkey), Paused(sleep) e Grace é ignorado e o motivo é mantido", func(t *testing.T) {
+		t.Parallel()
+		for _, reason := range []domain.PauseReason{domain.PauseHotkey, domain.PauseSleep} {
+			t.Run(string(reason), func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, reason)
+				wantNoEffects(t, r.m.Suspend(at(110*time.Second)))
+				wantState(t, r.m, tracker.StatePaused)
+				wantReason(t, r.m, reason)
+			})
+		}
+		t.Run("Grace", func(t *testing.T) {
+			r := newRunning(t)
+			toGrace(t, r.m, t100)
+			wantNoEffects(t, r.m.Suspend(at(105*time.Second)))
+			wantState(t, r.m, tracker.StateGrace)
+		})
+	})
+
+	t.Run("SES-028/Wake(userPresent) em Paused(sleep): Running, ResumePause, notificação running e EffFeedback(resumed); active continua 100 s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseSleep)
+		wake := at(28900 * time.Second)
+		effs := r.m.Wake(wake, true)
+		wantKinds(t, effs, tracker.EffResumePause, tracker.EffNotify, tracker.EffFeedback)
+		wantBefore(t, effs, tracker.EffResumePause, tracker.EffNotify)
+		wantFeedback(t, effs, tracker.FeedbackResumed)
+		wantState(t, r.m, tracker.StateRunning)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionRunning, wake, 100*time.Second)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionRunning, 100*time.Second, wake)
+		s, ok := r.m.Snapshot(at(28910 * time.Second))
+		if !ok || s.Active != 110*time.Second {
+			t.Fatalf("Snapshot Active = %v ok = %v, want 110s true", s.Active, ok)
+		}
+	})
+
+	t.Run("SES-029/Wake sem usuário presente em Paused(sleep) é ignorado; depois gatilho retoma", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseSleep)
+		wantNoEffects(t, r.m.Wake(at(28900*time.Second), false))
+		wantState(t, r.m, tracker.StatePaused)
+		wantReason(t, r.m, domain.PauseSleep)
+		effs := r.m.TogglePause(at(28950*time.Second), domain.PauseHotkey)
+		wantKinds(t, effs, tracker.EffResumePause, tracker.EffNotify, tracker.EffFeedback)
+		wantState(t, r.m, tracker.StateRunning)
+	})
+
+	t.Run("SES-029/Wake em Running é ignorado", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		wantNoEffects(t, r.m.Wake(t100, true))
+		wantNoEffects(t, r.m.Wake(t100, false))
+		wantState(t, r.m, tracker.StateRunning)
+	})
+
+	t.Run("SES-030/Paused(hotkey) e Paused(gamepad): Suspend e depois Wake(userPresent) mantêm a pausa sem efeitos", func(t *testing.T) {
+		t.Parallel()
+		for _, reason := range []domain.PauseReason{domain.PauseHotkey, domain.PauseGamepad} {
+			t.Run(string(reason), func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, reason)
+				wantNoEffects(t, r.m.Suspend(at(110*time.Second)))
+				wantNoEffects(t, r.m.Wake(at(28900*time.Second), true))
+				wantState(t, r.m, tracker.StatePaused)
+				wantReason(t, r.m, reason)
+				s, _ := r.m.Snapshot(at(29000 * time.Second))
+				if s.State != domain.SessionPaused || s.Active != 100*time.Second {
+					t.Fatalf("Snapshot = %+v, want paused 100s", s)
+				}
+			})
+		}
+	})
+
+	t.Run("SES-035/Pause em Running: Paused(ui), efeitos de SES-016 e EffFeedback(paused)", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		effs := pausedBy(t, r, t100, domain.PauseUI)
+		wantKinds(t, effs, tracker.EffPauseSession, tracker.EffNotify, tracker.EffFeedback)
+		wantFeedback(t, effs, tracker.FeedbackPaused)
+		none(t, effs, tracker.EffArmHeartbeat, tracker.EffArmPoll, tracker.EffArmGrace)
+		wantPauseStart(t, one(t, effs, tracker.EffPauseSession), domain.PauseUI, t100, 100*time.Second)
+		wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionPaused, 100*time.Second, t100)
+	})
+
+	t.Run("SES-035/Pause em Paused (qualquer motivo) não emite efeitos e mantém o motivo", func(t *testing.T) {
+		t.Parallel()
+		for _, reason := range allPauseReasons {
+			t.Run(string(reason), func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, reason)
+				wantNoEffects(t, r.m.Pause(at(120*time.Second)))
+				wantState(t, r.m, tracker.StatePaused)
+				wantReason(t, r.m, reason)
+			})
+		}
+	})
+
+	t.Run("SES-036/Resume em Paused (hotkey, gamepad, ui e sleep) volta a Running com EffFeedback(resumed)", func(t *testing.T) {
+		t.Parallel()
+		for _, reason := range allPauseReasons {
+			t.Run(string(reason), func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, reason)
+				t160 := at(160 * time.Second)
+				effs := r.m.Resume(t160)
+				wantKinds(t, effs, tracker.EffResumePause, tracker.EffNotify, tracker.EffFeedback)
+				wantBefore(t, effs, tracker.EffResumePause, tracker.EffNotify)
+				wantFeedback(t, effs, tracker.FeedbackResumed)
+				wantState(t, r.m, tracker.StateRunning)
+				wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionRunning, t160, 100*time.Second)
+				wantNotify(t, one(t, effs, tracker.EffNotify), domain.SessionRunning, 100*time.Second, t160)
+			})
+		}
+	})
+
+	t.Run("SES-036/Resume em Running é idempotente e não emite efeitos", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		wantNoEffects(t, r.m.Resume(t100))
+		wantState(t, r.m, tracker.StateRunning)
+		s, _ := r.m.Snapshot(at(110 * time.Second))
+		if s.Active != 110*time.Second {
+			t.Fatalf("Active = %v, want 110s (untouched)", s.Active)
+		}
+	})
+
+	t.Run("SES-037/NotPausable devolve no-session em Idle, grace em Grace e ok=false em Running e Paused; Pause e Resume não emitem efeitos", func(t *testing.T) {
+		t.Parallel()
+		// ok = true means "not pausable" and carries the reason.
+		cases := []struct {
+			name    string
+			setup   func(t *testing.T) *tracker.Machine
+			reason  string
+			ok      bool
+			refused bool // Pause/Resume must emit nothing
+		}{
+			{"Idle", func(*testing.T) *tracker.Machine { return newMachine() }, "no-session", true, true},
+			{"Launching", func(*testing.T) *tracker.Machine {
+				m := newMachine()
+				m.Begin(testGameID, testTitle)
+				return m
+			}, "no-session", true, true},
+			{"Grace", func(t *testing.T) *tracker.Machine {
+				r := newRunning(t)
+				toGrace(t, r.m, t100)
+				return r.m
+			}, "grace", true, true},
+			{"Running", func(t *testing.T) *tracker.Machine { return newRunning(t).m }, "", false, false},
+			{"Paused", func(t *testing.T) *tracker.Machine {
+				r := newRunning(t)
+				pausedBy(t, r, t100, domain.PauseHotkey)
+				return r.m
+			}, "", false, false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				m := tc.setup(t)
+				before := m.State()
+				reason, ok := m.NotPausable()
+				if ok != tc.ok || (tc.ok && reason != tc.reason) {
+					t.Fatalf("NotPausable() = (%q, %v), want (%q, %v)", reason, ok, tc.reason, tc.ok)
+				}
+				if tc.refused {
+					wantNoEffects(t, m.Pause(at(120*time.Second)))
+					wantNoEffects(t, m.Resume(at(130*time.Second)))
+					wantState(t, m, before)
+				}
+			})
+		}
+	})
+
+	t.Run("SES-022/Poll com geração obsoleta em Paused não emite efeitos e não muda o estado", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		for _, active := range []int{0, 2} {
+			wantNoEffects(t, r.m.Poll(at(250*time.Second), r.pollGen+100, active, nil))
+			wantNoEffects(t, r.m.Poll(at(250*time.Second), 0, active, nil))
+		}
+		wantState(t, r.m, tracker.StatePaused)
+		wantReason(t, r.m, domain.PauseHotkey)
+		// The current generation is still accepted afterwards.
+		wantOrder(t, r.m.Poll(at(260*time.Second), r.pollGen, 1, nil), tracker.EffArmPoll)
+	})
+
+	t.Run("SES-020/Paused para Grace por TrackedEmpty ou Poll: Heartbeat com a geração antiga é ignorado, também após ProcessAdded", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name string
+			toGr func(r running) // Paused -> Grace
+		}{
+			{"TrackedEmpty", func(r running) { r.m.TrackedEmpty(at(400 * time.Second)) }},
+			{"Poll com 0 ativos", func(r running) { r.m.Poll(at(400*time.Second), r.pollGen, 0, nil) }},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, domain.PauseHotkey)
+				tc.toGr(r)
+				wantState(t, r.m, tracker.StateGrace)
+				wantNoEffects(t, r.m.Heartbeat(at(410*time.Second), r.hbGen))
+
+				back := r.m.ProcessAdded(at(420 * time.Second))
+				wantState(t, r.m, tracker.StateRunning)
+				newGen := one(t, back, tracker.EffArmHeartbeat).Gen
+				if newGen == r.hbGen {
+					t.Fatalf("heartbeat generation %d reused after Paused->Grace->Running", newGen)
+				}
+				wantNoEffects(t, r.m.Heartbeat(at(430*time.Second), r.hbGen))
+				one(t, r.m.Heartbeat(at(430*time.Second), newGen), tracker.EffUpdateSession)
+			})
+		}
+	})
+
+	t.Run("SES-017/SES-028/Resume, Wake e TogglePause a partir de Paused não invalidam as gerações de heartbeat e poll", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name   string
+			reason domain.PauseReason
+			resume func(m *tracker.Machine, now time.Time) []tracker.Effect
+		}{
+			{"Resume", domain.PauseUI, func(m *tracker.Machine, now time.Time) []tracker.Effect { return m.Resume(now) }},
+			{"Wake", domain.PauseSleep, func(m *tracker.Machine, now time.Time) []tracker.Effect { return m.Wake(now, true) }},
+			{"TogglePause", domain.PauseHotkey, func(m *tracker.Machine, now time.Time) []tracker.Effect {
+				return m.TogglePause(now, domain.PauseHotkey)
+			}},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, tc.reason)
+				effs := tc.resume(r.m, at(160*time.Second))
+				none(t, effs, tracker.EffArmHeartbeat, tracker.EffArmPoll)
+				wantState(t, r.m, tracker.StateRunning)
+
+				hb := r.m.Heartbeat(at(170*time.Second), r.hbGen)
+				wantUpdate(t, one(t, hb, tracker.EffUpdateSession), domain.SessionRunning, at(170*time.Second), 110*time.Second)
+				one(t, hb, tracker.EffArmHeartbeat)
+				pl := r.m.Poll(at(171*time.Second), r.pollGen, 1, nil)
+				wantOrder(t, pl, tracker.EffArmPoll)
+			})
+		}
+	})
+
+	t.Run("SES-021/Heartbeat e Poll na Grace vinda de Paused mantêm o tempo ativo congelado em 100 s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, t100, domain.PauseHotkey)
+		r.m.TrackedEmpty(at(400 * time.Second))
+		wantState(t, r.m, tracker.StateGrace)
+
+		wantNoEffects(t, r.m.Heartbeat(at(405*time.Second), r.hbGen))
+		s, ok := r.m.Snapshot(at(406 * time.Second))
+		if !ok || s.State != domain.SessionGrace || s.Active != 100*time.Second {
+			t.Fatalf("Snapshot after Heartbeat = %+v ok = %v, want grace 100s", s, ok)
+		}
+
+		// Poll with 0 active in Grace: only re-arms, active stays frozen.
+		pollGen := one(t, r.m.Poll(at(407*time.Second), r.pollGen, 0, nil), tracker.EffArmPoll).Gen
+		wantState(t, r.m, tracker.StateGrace)
+		s, _ = r.m.Snapshot(at(408 * time.Second))
+		if s.Active != 100*time.Second {
+			t.Fatalf("Active after Poll(0) in Grace = %v, want 100s", s.Active)
+		}
+
+		// Poll with active > 0 leaves Grace with the same 100 s carried over.
+		back := at(410 * time.Second)
+		effs := r.m.Poll(back, pollGen, 2, nil)
+		wantUpdate(t, one(t, effs, tracker.EffUpdateSession), domain.SessionRunning, back, 100*time.Second)
+		wantState(t, r.m, tracker.StateRunning)
+	})
+}
+
+func TestMachineFeedback(t *testing.T) {
+	t.Parallel()
+	t100 := at(100 * time.Second)
+
+	t.Run("FBK-001/pausa por hotkey, gamepad e ui emite FeedbackPaused", func(t *testing.T) {
+		t.Parallel()
+		for _, reason := range []domain.PauseReason{domain.PauseHotkey, domain.PauseGamepad, domain.PauseUI} {
+			t.Run(string(reason), func(t *testing.T) {
+				r := newRunning(t)
+				wantFeedback(t, pausedBy(t, r, t100, reason), tracker.FeedbackPaused)
+			})
+		}
+	})
+
+	t.Run("FBK-001/retomada por gatilho, Resume e Wake com usuário emite FeedbackResumed", func(t *testing.T) {
+		t.Parallel()
+		later := at(160 * time.Second)
+		cases := []struct {
+			name   string
+			pause  domain.PauseReason
+			resume func(m *tracker.Machine) []tracker.Effect
+		}{
+			{"gatilho hotkey", domain.PauseHotkey, func(m *tracker.Machine) []tracker.Effect { return m.TogglePause(later, domain.PauseHotkey) }},
+			{"gatilho gamepad", domain.PauseGamepad, func(m *tracker.Machine) []tracker.Effect { return m.TogglePause(later, domain.PauseGamepad) }},
+			{"gatilho sobre pausa sleep", domain.PauseSleep, func(m *tracker.Machine) []tracker.Effect { return m.TogglePause(later, domain.PauseHotkey) }},
+			{"Resume sobre pausa ui", domain.PauseUI, func(m *tracker.Machine) []tracker.Effect { return m.Resume(later) }},
+			{"Resume sobre pausa sleep", domain.PauseSleep, func(m *tracker.Machine) []tracker.Effect { return m.Resume(later) }},
+			{"Wake com usuário sobre pausa sleep", domain.PauseSleep, func(m *tracker.Machine) []tracker.Effect { return m.Wake(later, true) }},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := newRunning(t)
+				pausedBy(t, r, t100, tc.pause)
+				wantFeedback(t, tc.resume(r.m), tracker.FeedbackResumed)
+			})
+		}
+	})
+
+	t.Run("FBK-001/pausa por sleep não emite feedback", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		wantFeedback(t, pausedBy(t, r, t100, domain.PauseSleep))
+	})
+
+	t.Run("FBK-001/Paused para Grace não emite feedback", func(t *testing.T) {
+		t.Parallel()
+		t.Run("TrackedEmpty", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseHotkey)
+			wantFeedback(t, r.m.TrackedEmpty(at(200*time.Second)))
+		})
+		t.Run("Poll", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseUI)
+			wantFeedback(t, r.m.Poll(at(200*time.Second), r.pollGen, 0, nil))
+		})
+	})
+
+	t.Run("FBK-001/fim de sessão não emite feedback", func(t *testing.T) {
+		t.Parallel()
+		t.Run("Stop em Running", func(t *testing.T) {
+			r := newRunning(t)
+			wantFeedback(t, r.m.Stop(t100))
+		})
+		t.Run("Stop em Paused", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseHotkey)
+			wantFeedback(t, r.m.Stop(at(200*time.Second)))
+		})
+		t.Run("GraceTimeout depois de Paused", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseHotkey)
+			g := one(t, r.m.TrackedEmpty(at(200*time.Second)), tracker.EffArmGrace).Gen
+			wantFeedback(t, r.m.GraceTimeout(at(215*time.Second), g))
+		})
+	})
+
+	t.Run("FBK-001/gatilho, evento ou pedido ignorado ou idempotente não emite feedback", func(t *testing.T) {
+		t.Parallel()
+		t.Run("Idle e Grace", func(t *testing.T) {
+			grace := newRunning(t)
+			toGrace(t, grace.m, t100)
+			for name, m := range map[string]*tracker.Machine{"Idle": newMachine(), "Grace": grace.m} {
+				now := at(110 * time.Second)
+				for _, effs := range [][]tracker.Effect{
+					m.TogglePause(now, domain.PauseHotkey), m.Suspend(now), m.Wake(now, true), m.Pause(now), m.Resume(now),
+				} {
+					if fb := feedbacks(effs); len(fb) != 0 {
+						t.Fatalf("%s: feedback = %v, want none", name, fb)
+					}
+				}
+			}
+		})
+		t.Run("gatilho antes de startedAt", func(t *testing.T) {
+			r := newRunning(t)
+			wantFeedback(t, r.m.TogglePause(at(-time.Second), domain.PauseHotkey))
+		})
+		t.Run("Pause em Paused", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseHotkey)
+			wantFeedback(t, r.m.Pause(at(110*time.Second)))
+		})
+		t.Run("Resume em Running", func(t *testing.T) {
+			r := newRunning(t)
+			wantFeedback(t, r.m.Resume(t100))
+		})
+		t.Run("Suspend e Wake ignorados em Paused", func(t *testing.T) {
+			r := newRunning(t)
+			pausedBy(t, r, t100, domain.PauseHotkey)
+			wantFeedback(t, r.m.Suspend(at(110*time.Second)))
+			wantFeedback(t, r.m.Wake(at(120*time.Second), true))
+			wantFeedback(t, r.m.Wake(at(130*time.Second), false))
+			s := newRunning(t)
+			pausedBy(t, s, t100, domain.PauseSleep)
+			wantFeedback(t, s.m.Wake(at(120*time.Second), false))
+		})
+		t.Run("Wake em Running", func(t *testing.T) {
+			r := newRunning(t)
+			wantFeedback(t, r.m.Wake(t100, true))
+		})
+	})
+}
