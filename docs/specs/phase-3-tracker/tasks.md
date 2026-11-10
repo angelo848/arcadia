@@ -1,6 +1,6 @@
 # Fase 3 — Tracker MVP: tarefas
 
-- **Status:** aprovado pelo usuário (2026-11-09)
+- **Status:** aprovado pelo usuário (2026-11-09); T01–T16 concluídas (2026-11-10)
 - **Spec:** [requirements.md](requirements.md) · [design.md](design.md) · [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.4.0) · [contracts/session-state-machine.md](contracts/session-state-machine.md) · [contracts/fake-game.md](contracts/fake-game.md)
 - **ADRs:** 0005 (só a Camada 1), 0009 (ms UTC), 0010 (só o agente migra), 0011 (Clock), 0012 (enums no `domain`), 0013 (log fecha por último), 0014 (executável único), 0015 (agente é o único escritor), 0016 (breakaway permitido)
 
