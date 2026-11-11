@@ -14,12 +14,25 @@ import (
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
+	"github.com/arcadia-launcher/arcadia/internal/feedback"
+	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/logging"
 	"github.com/arcadia-launcher/arcadia/internal/paths"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
+
+// platformParts contains the platform components created for the agent (T20).
+type platformParts struct {
+	Sources    []input.Source
+	Power      powerStarter
+	NewOverlay func() (feedback.Overlay, error)
+	NewSound   func() (feedback.Sound, error)
+}
+
+// powerStarter registers the power callbacks and returns an io.Closer to stop watching.
+type powerStarter func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error)
 
 // Options are the inputs of Run, provided by main.
 type Options struct {
@@ -41,6 +54,9 @@ type config struct {
 	// Recover closes the sessions left open by a crash [SES-010];
 	// nil => tracker.RecoverOpenSessions.
 	Recover func(context.Context, tracker.RecoveryStore, domain.Clock, *slog.Logger) (int, error)
+
+	// Platform creates platform-specific sources, power watcher and feedback [T20].
+	Platform func(domain.Clock, *slog.Logger) platformParts
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -88,6 +104,11 @@ type instance struct {
 
 	tracker  *tracker.Tracker
 	notifier *sessionNotifier
+
+	coord   *feedback.Coordinator
+	router  *pauseRouter
+	sources []input.Source
+	power   io.Closer
 
 	logCloser io.Closer
 
@@ -150,23 +171,59 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	if launcher == nil {
 		launcher = tracker.NewLauncher()
 	}
+
+	var parts platformParts
+	if cfg.Platform != nil {
+		parts = cfg.Platform(clock, log)
+	}
+
+	var ov feedback.Overlay = feedback.NopOverlay{}
+	if parts.NewOverlay != nil {
+		o, err := parts.NewOverlay()
+		if err != nil {
+			log.Warn("aviso na tela indisponível", "error", err.Error())
+		} else if o != nil {
+			ov = o
+		}
+	}
+
+	var snd feedback.Sound = feedback.NopSound{}
+	if parts.NewSound != nil {
+		s, err := parts.NewSound()
+		if err != nil {
+			log.Warn("som de feedback indisponível", "error", err.Error())
+		} else if s != nil {
+			snd = s
+		}
+	}
+
+	coord := feedback.New(ov, snd, clock, log)
+	coord.Start()
+
 	notifier := &sessionNotifier{}
 	tr := tracker.New(tracker.Config{
 		Clock:    clock,
 		Store:    st,
 		Launcher: launcher,
 		Notify:   notifier.Notify,
-		Log:      log,
+		Feedback: func(k tracker.FeedbackKind) {
+			coord.Send(feedback.Event(k))
+		},
+		Log: log,
 	})
 	tr.Start()
-	// closeTracker stops the tracker on a failed startup (no session is open
+	// closeTracker stops the tracker and feedback on a failed startup (no session is open
 	// yet, so it returns at once); it ignores the cancellation of ctx so the
 	// owner goroutine is always waited for.
 	closeTracker := func() error {
+		var errs []error
 		if err := tr.Close(context.WithoutCancel(ctx)); err != nil {
-			return fmt.Errorf("close tracker: %w", err)
+			errs = append(errs, fmt.Errorf("close tracker: %w", err))
 		}
-		return nil
+		if err := coord.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close feedback: %w", err))
+		}
+		return errors.Join(errs...)
 	}
 
 	ln, err := listen()
@@ -191,6 +248,31 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)
+
+	triggers := make(chan input.Trigger, triggerQueueSize)
+	router := newPauseRouter(tr, triggers, log)
+	router.Start()
+
+	var startedSources []input.Source
+	for _, src := range parts.Sources {
+		if err := src.Start(triggers); err != nil {
+			log.Warn("fonte de gatilho de pausa indisponível", "source", src.Name(), "error", err.Error())
+		} else {
+			startedSources = append(startedSources, src)
+		}
+	}
+
+	var powerCloser io.Closer
+	if parts.Power != nil {
+		bridge := &powerBridge{tr: tr, timeout: PowerHandlerTimeout, log: log}
+		pCloser, err := parts.Power(bridge.OnSuspend, bridge.OnWake)
+		if err != nil {
+			log.Warn("monitor de energia indisponível", "error", err.Error())
+		} else {
+			powerCloser = pCloser
+		}
+	}
+
 	a := &instance{
 		paths:        p,
 		log:          log,
@@ -199,6 +281,10 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		server:       server,
 		tracker:      tr,
 		notifier:     notifier,
+		coord:        coord,
+		router:       router,
+		sources:      startedSources,
+		power:        powerCloser,
 		logCloser:    logCloser,
 		drainTimeout: shutdownDrainTimeout,
 		ipcFailed:    make(chan struct{}),
@@ -267,6 +353,21 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		// No game.launch starts a session from here on [AGT-011].
 		a.tracker.BeginShutdown()
 
+		// Close power and sources before drain [AGT-013].
+		if a.power != nil {
+			if err := a.power.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("shutdown: close power: %w", err))
+			}
+		}
+		for _, src := range a.sources {
+			if err := src.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("shutdown: close source: %w", err))
+			}
+		}
+		if a.router != nil {
+			a.router.Close()
+		}
+
 		dctx, cancel := context.WithTimeout(ctx, a.drainTimeout)
 		err := a.server.Drain(dctx, ipc.MethodShutdown, ipc.ShutdownParams{Reason: string(reason)})
 		cancel()
@@ -288,6 +389,11 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		// store (the tracker writes the end of the session) [AGT-010, SES-011].
 		if err := a.tracker.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: %w", err))
+		}
+		if a.coord != nil {
+			if err := a.coord.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("shutdown: close feedback: %w", err))
+			}
 		}
 		if err := a.store.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close store: %w", err))

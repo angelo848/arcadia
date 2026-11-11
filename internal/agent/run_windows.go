@@ -88,6 +88,8 @@ func Run(opts Options) int {
 	serveCtx, serveCancel := context.WithCancel(context.Background())
 	defer serveCancel()
 
+	cfg.Platform = realPlatform
+
 	clock := domain.SystemClock{}
 	a, err := startAgent(serveCtx, cfg, clock, os.Getenv, func() (net.Listener, error) {
 		return ipc.ListenPipe(cfg.PipeName)

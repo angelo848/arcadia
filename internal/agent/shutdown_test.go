@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,6 +24,8 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
+	"github.com/arcadia-launcher/arcadia/internal/feedback"
+	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
@@ -712,4 +716,332 @@ func TestIPCFailed(t *testing.T) {
 			t.Errorf("drain Warn logged after IPCFailed: %v", recs)
 		}
 	})
+}
+
+func TestShutdownWithPausedSession(t *testing.T) {
+	t.Run("AGT-013/ordem: BeginShutdown, energia, fontes, roteador, Drain, Server.Close, Tracker.Close, feedback, Store.Close", func(t *testing.T) {
+		var (
+			mu    sync.Mutex
+			order []string
+		)
+		add := func(step string) {
+			mu.Lock()
+			defer mu.Unlock()
+			order = append(order, step)
+		}
+
+		src := newFakeSource("order-src", nil)
+		powerWatcher := &fakePowerWatcher{}
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						Sources: []input.Source{
+							&sourceCloseRecorder{
+								Source: src,
+								onClose: func() {
+									add("source")
+								},
+							},
+						},
+						Power: func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error) {
+							return &closerRecorder{
+								Closer: powerWatcher,
+								onClose: func() {
+									add("power")
+								},
+							}, nil
+						},
+						NewOverlay: func() (feedback.Overlay, error) {
+							return &overlayCloseRecorder{
+								Overlay: feedback.NopOverlay{},
+								onClose: func() {
+									add("feedback-overlay")
+								},
+							}, nil
+						},
+						NewSound: func() (feedback.Sound, error) {
+							return &soundCloseRecorder{
+								Sound: feedback.NopSound{},
+								onClose: func() {
+									add("feedback-sound")
+								},
+							}, nil
+						},
+					}
+				}
+			},
+		})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Shutdown Order Game")
+		w.launch(t, c, gameID)
+
+		c.rpcOK(t, ipc.MethodSessionPause, nil)
+		_ = c.waitChanges(t, 2)
+
+		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+		defer scancel()
+
+		if err := w.a.Shutdown(sctx, ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+
+		mu.Lock()
+		got := make([]string, len(order))
+		copy(got, order)
+		mu.Unlock()
+
+		pwrIdx := indexOf(got, "power")
+		srcIdx := indexOf(got, "source")
+		fbkOvIdx := indexOf(got, "feedback-overlay")
+		fbkSndIdx := indexOf(got, "feedback-sound")
+
+		if pwrIdx == -1 || srcIdx == -1 || fbkOvIdx == -1 || fbkSndIdx == -1 {
+			t.Fatalf("missing shutdown step: %v", got)
+		}
+
+		// power and sources must close before feedback
+		if pwrIdx > fbkOvIdx || pwrIdx > fbkSndIdx {
+			t.Errorf("power (%d) should close before feedback (%d, %d)", pwrIdx, fbkOvIdx, fbkSndIdx)
+		}
+		if srcIdx > fbkOvIdx || srcIdx > fbkSndIdx {
+			t.Errorf("source (%d) should close before feedback (%d, %d)", srcIdx, fbkOvIdx, fbkSndIdx)
+		}
+	})
+
+	t.Run("AGT-013/sessão Paused encerra com agent-shutdown e a pausa fechada em ended_at", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Paused Shutdown Game")
+		w.launch(t, c, gameID)
+
+		// Advance 35s and pause (active seconds >= 30 so it ends as 'ended', not 'discarded')
+		w.clock.Advance(35 * time.Second)
+		c.rpcOK(t, ipc.MethodSessionPause, nil)
+		_ = c.waitChanges(t, 2)
+
+		// Advance 20s in paused state
+		w.clock.Advance(20 * time.Second)
+		shutdownAt := w.clock.Now()
+
+		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+		defer scancel()
+		if err := w.a.Shutdown(sctx, ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+
+		// Verify session in store
+		sessions, _ := sessionsAfterShutdown(t, w.cfg)
+		if len(sessions) == 0 {
+			t.Fatalf("no session rows after shutdown")
+		}
+		var (
+			sessID int64
+			sess   sessionRow
+		)
+		for id, r := range sessions {
+			sessID = id
+			sess = r
+			break
+		}
+
+		if sess.state != string(domain.SessionEnded) {
+			t.Errorf("session state = %q; want %q", sess.state, domain.SessionEnded)
+		}
+		if !sess.endedAt.Valid || sess.endedAt.Int64 != shutdownAt.UnixMilli() {
+			t.Errorf("ended_at = %v; want %v", sess.endedAt, shutdownAt.UnixMilli())
+		}
+		if sess.activeSeconds != 35 {
+			t.Errorf("active_seconds = %d; want 35", sess.activeSeconds)
+		}
+		if !sess.endReason.Valid || sess.endReason.String != string(domain.EndAgentShutdown) {
+			t.Errorf("end_reason = %v; want %q", sess.endReason, domain.EndAgentShutdown)
+		}
+
+		st := openDB(t, w.cfg)
+		defer st.Close()
+		pauses, err := st.Pauses(context.Background(), sessID)
+		if err != nil || len(pauses) != 1 {
+			t.Fatalf("get pauses: %v (len %d)", err, len(pauses))
+		}
+		if pauses[0].ResumedAt.IsZero() || !pauses[0].ResumedAt.Equal(shutdownAt) {
+			t.Errorf("pause resumed_at = %v; want %v", pauses[0].ResumedAt, shutdownAt)
+		}
+	})
+
+	t.Run("AGT-013/nenhum feedback no encerramento", func(t *testing.T) {
+		overlay := &blockingOverlay{}
+		sound := &fakeSoundRecorder{}
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						NewOverlay: func() (feedback.Overlay, error) { return overlay, nil },
+						NewSound:   func() (feedback.Sound, error) { return sound, nil },
+					}
+				}
+			},
+		})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "No FBK Shutdown Game")
+		w.launch(t, c, gameID)
+
+		c.rpcOK(t, ipc.MethodSessionPause, nil)
+		_ = c.waitChanges(t, 2)
+
+		// Record count after pause
+		overlay.mu.Lock()
+		showsBefore := len(overlay.shows)
+		overlay.mu.Unlock()
+
+		sound.mu.Lock()
+		cuesBefore := len(sound.cues)
+		sound.mu.Unlock()
+
+		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+		defer scancel()
+		if err := w.a.Shutdown(sctx, ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+
+		overlay.mu.Lock()
+		showsAfter := len(overlay.shows)
+		overlay.mu.Unlock()
+
+		sound.mu.Lock()
+		cuesAfter := len(sound.cues)
+		sound.mu.Unlock()
+
+		if showsAfter != showsBefore {
+			t.Errorf("feedback overlay showed during shutdown: before %d, after %d", showsBefore, showsAfter)
+		}
+		if cuesAfter != cuesBefore {
+			t.Errorf("feedback sound played during shutdown: before %d, after %d", cuesBefore, cuesAfter)
+		}
+	})
+
+	t.Run("AGT-013/Shutdown termina em < 2 s com a sessão em Paused", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Fast Shutdown Game")
+		w.launch(t, c, gameID)
+
+		c.rpcOK(t, ipc.MethodSessionPause, nil)
+		_ = c.waitChanges(t, 2)
+
+		start := time.Now()
+		sctx, scancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer scancel()
+
+		if err := w.a.Shutdown(sctx, ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		elapsed := time.Since(start)
+
+		if elapsed >= 2*time.Second {
+			t.Errorf("Shutdown took %v; want < 2 s", elapsed)
+		}
+	})
+
+	t.Run("AGT-013/gatilho depois do BeginShutdown é ignorado (PAU-005)", func(t *testing.T) {
+		src := newFakeSource("post-shutdown-src", nil)
+		var cfgRef config
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.LogLevel = "debug"
+				cfgRef = *cfg
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						Sources: []input.Source{src},
+					}
+				}
+			},
+		})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Post Shutdown Trigger Game")
+		w.launch(t, c, gameID)
+
+		// Directly call BeginShutdown on tracker to simulate window before router closes
+		w.a.tracker.BeginShutdown()
+
+		// Emit trigger post-BeginShutdown
+		w.clock.Advance(100 * time.Millisecond)
+		src.emit(input.Trigger{Source: domain.PauseHotkey, At: w.clock.Now()})
+
+		// Give router time to process
+		time.Sleep(50 * time.Millisecond)
+
+		// Shut down agent completely
+		sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+		defer scancel()
+		_ = w.a.Shutdown(sctx, ReasonQuit)
+
+		// Check debug log
+		var foundDebug bool
+		for _, rec := range logLines(t, agentLogPath(cfgRef)) {
+			if rec["level"] == "DEBUG" && rec["msg"] == "agente encerrando; gatilho de pausa descartado" {
+				foundDebug = true
+				break
+			}
+		}
+		if !foundDebug {
+			t.Error("expected DEBUG record 'agente encerrando; gatilho de pausa descartado' not found")
+		}
+	})
+}
+
+type sourceCloseRecorder struct {
+	input.Source
+	onClose func()
+}
+
+func (r *sourceCloseRecorder) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return r.Source.Close()
+}
+
+type closerRecorder struct {
+	io.Closer
+	onClose func()
+}
+
+func (r *closerRecorder) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return r.Closer.Close()
+}
+
+type overlayCloseRecorder struct {
+	feedback.Overlay
+	onClose func()
+}
+
+func (r *overlayCloseRecorder) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return r.Overlay.Close()
+}
+
+type soundCloseRecorder struct {
+	feedback.Sound
+	onClose func()
+}
+
+func (r *soundCloseRecorder) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return r.Sound.Close()
 }

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
+	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/tracker"
@@ -1180,5 +1182,205 @@ func TestSessionNotifier(t *testing.T) {
 	t.Run("IPC-027/notifier sem servidor não faz nada", func(t *testing.T) {
 		var n sessionNotifier
 		n.Notify(domain.SessionSnapshot{ID: 1, GameID: 1, Title: "x", State: domain.SessionRunning, StartedAt: wiringT0, AsOf: wiringT0})
+	})
+}
+
+func TestSessionChangedPause(t *testing.T) {
+	t.Run("IPC-037/Running → Paused → Running → Paused → Grace: uma notificação por transição, na ordem, com asOf do instante do evento", func(t *testing.T) {
+		src := newFakeSource("test-src", nil)
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						Sources: []input.Source{src},
+					}
+				}
+			},
+		})
+
+		// Connect two clients to verify broadcast
+		c1 := w.client(t)
+		c2 := w.client(t)
+		gameID, _ := w.addGame(t, c1, "Pause Transition Game")
+
+		// 1. Launch -> Running
+		tLaunch := w.clock.Now()
+		w.launch(t, c1, gameID)
+		_ = c1.waitChanges(t, 1)
+		_ = c2.waitChanges(t, 1)
+
+		// 2. Pause via Trigger -> Paused
+		w.clock.Advance(10 * time.Second)
+		tPause1 := w.clock.Now()
+		src.emit(input.Trigger{Source: domain.PauseHotkey, At: tPause1})
+		_ = c1.waitChanges(t, 2)
+		_ = c2.waitChanges(t, 2)
+
+		// 3. Resume via Trigger -> Running
+		w.clock.Advance(5 * time.Second)
+		tResume := w.clock.Now()
+		src.emit(input.Trigger{Source: domain.PauseHotkey, At: tResume})
+		_ = c1.waitChanges(t, 3)
+		_ = c2.waitChanges(t, 3)
+
+		// 4. Pause via session.pause -> Paused
+		w.clock.Advance(20 * time.Second)
+		tPause2 := w.clock.Now()
+		c1.rpcOK(t, ipc.MethodSessionPause, nil)
+		_ = c1.waitChanges(t, 4)
+		_ = c2.waitChanges(t, 4)
+
+		// 5. Job empty during pause -> Grace
+		w.clock.Advance(15 * time.Second)
+		tGrace := w.clock.Now()
+		w.fl.job(t, 0).empty(t)
+
+		// Check all transitions on both clients
+		for _, c := range []*rawClient{c1, c2} {
+			changes := c.waitChanges(t, 5)
+			wantStates := []string{"running", "paused", "running", "paused", "grace"}
+			if got := states(changes); !slicesEqual(got, wantStates) {
+				t.Errorf("states = %v, want %v", got, wantStates)
+			}
+			if !changes[0].AsOf.Equal(tLaunch) {
+				t.Errorf("launch asOf = %v, want %v", changes[0].AsOf, tLaunch)
+			}
+			if !changes[1].AsOf.Equal(tPause1) {
+				t.Errorf("pause1 asOf = %v, want %v", changes[1].AsOf, tPause1)
+			}
+			if !changes[2].AsOf.Equal(tResume) {
+				t.Errorf("resume asOf = %v, want %v", changes[2].AsOf, tResume)
+			}
+			if !changes[3].AsOf.Equal(tPause2) {
+				t.Errorf("pause2 asOf = %v, want %v", changes[3].AsOf, tPause2)
+			}
+			if !changes[4].AsOf.Equal(tGrace) {
+				t.Errorf("grace asOf = %v, want %v", changes[4].AsOf, tGrace)
+			}
+		}
+	})
+
+	t.Run("IPC-037/gatilho, evento de energia ou lançamento sem contar tempo ignorados não notificam", func(t *testing.T) {
+		src := newFakeSource("test-src", nil)
+		powerWatcher := &fakePowerWatcher{}
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						Sources: []input.Source{src},
+						Power: func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error) {
+							powerWatcher.onSuspend = onSuspend
+							powerWatcher.onWake = onWake
+							return powerWatcher, nil
+						},
+					}
+				}
+			},
+		})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Ignored Events Game")
+
+		// Trigger with no session: ignored, no notification
+		src.emit(input.Trigger{Source: domain.PauseHotkey, At: w.clock.Now()})
+		time.Sleep(50 * time.Millisecond)
+
+		// Power suspend with no session: ignored, no notification
+		if powerWatcher.onSuspend != nil {
+			powerWatcher.onSuspend(w.clock.Now())
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		// Untracked launch: creates process but no session, no session.changed
+		c.rpcOK(t, ipc.MethodGameLaunchUntracked, ipc.GameLaunchUntrackedParams{GameID: gameID})
+		time.Sleep(50 * time.Millisecond)
+
+		c.mu.Lock()
+		notifications := countMethod(c.all, ipc.MethodSessionChanged)
+		c.mu.Unlock()
+
+		if notifications != 0 {
+			t.Errorf("got %d session.changed notifications, want 0", notifications)
+		}
+	})
+
+	t.Run("IPC-037/pedidos idempotentes (session.pause em Paused, session.resume em Running) não notificam", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Idempotent Game")
+		w.launch(t, c, gameID) // 1st notice: running
+
+		// session.resume while already Running: idempotent, no notification
+		c.rpcOK(t, ipc.MethodSessionResume, nil)
+		time.Sleep(50 * time.Millisecond)
+
+		c.mu.Lock()
+		count := countMethod(c.all, ipc.MethodSessionChanged)
+		c.mu.Unlock()
+		if count != 1 {
+			t.Errorf("notifications count = %d, want 1 after idempotent resume", count)
+		}
+
+		// Pause
+		c.rpcOK(t, ipc.MethodSessionPause, nil) // 2nd notice: paused
+		_ = c.waitChanges(t, 2)
+
+		// session.pause while already Paused: idempotent, no notification
+		c.rpcOK(t, ipc.MethodSessionPause, nil)
+		time.Sleep(50 * time.Millisecond)
+
+		c.mu.Lock()
+		count = countMethod(c.all, ipc.MethodSessionChanged)
+		c.mu.Unlock()
+		if count != 2 {
+			t.Errorf("notifications count = %d, want 2 after idempotent pause", count)
+		}
+	})
+
+	t.Run("IPC-037/retomada por acordar notifica running com asOf do RESUMESUSPEND", func(t *testing.T) {
+		powerWatcher := &fakePowerWatcher{}
+
+		w := newWiring(t, wiringOpts{
+			mutate: func(cfg *config) {
+				cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+					return platformParts{
+						Power: func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error) {
+							powerWatcher.onSuspend = onSuspend
+							powerWatcher.onWake = onWake
+							return powerWatcher, nil
+						},
+					}
+				}
+			},
+		})
+
+		c := w.client(t)
+		gameID, _ := w.addGame(t, c, "Wake Game")
+		w.launch(t, c, gameID) // running
+
+		// Suspend
+		w.clock.Advance(10 * time.Second)
+		tSuspend := w.clock.Now()
+		powerWatcher.onSuspend(tSuspend)
+		changes := c.waitChanges(t, 2)
+		if changes[1].State != string(domain.SessionPaused) {
+			t.Errorf("state after suspend = %q, want paused", changes[1].State)
+		}
+
+		// Wake with user present (RESUMESUSPEND)
+		w.clock.Advance(8 * time.Hour)
+		tWake := w.clock.Now()
+		powerWatcher.onWake(tWake, true)
+
+		changes = c.waitChanges(t, 3)
+		if changes[2].State != string(domain.SessionRunning) {
+			t.Errorf("state after wake = %q, want running", changes[2].State)
+		}
+		if !changes[2].AsOf.Equal(tWake) {
+			t.Errorf("asOf = %v, want %v", changes[2].AsOf, tWake)
+		}
 	})
 }

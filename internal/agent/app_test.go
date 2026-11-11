@@ -23,8 +23,12 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
+	"github.com/arcadia-launcher/arcadia/internal/feedback"
+	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
+	"github.com/arcadia-launcher/arcadia/internal/paths"
 	"github.com/arcadia-launcher/arcadia/internal/store"
+	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
 
 // lumberjackMillRun is the lumberjack cleanup goroutine that Close does not stop
@@ -433,4 +437,291 @@ func TestShutdown(t *testing.T) {
 			t.Errorf("remove agent.log after CloseLog: %v (log still open)", err)
 		}
 	})
+}
+
+func TestStartupOrderWithPause(t *testing.T) {
+	verifyNoLeaks(t)
+
+	t.Run("AGT-012/ordem: recuperação, feedback, tracker, servidor, roteador e depois fontes e energia", func(t *testing.T) {
+		var (
+			mu    sync.Mutex
+			order []string
+		)
+		add := func(step string) {
+			mu.Lock()
+			defer mu.Unlock()
+			order = append(order, step)
+		}
+
+		cfg := testConfig(t, "debug")
+		cfg.Recover = func(ctx context.Context, s tracker.RecoveryStore, c domain.Clock, l *slog.Logger) (int, error) {
+			add("recover")
+			return tracker.RecoverOpenSessions(ctx, s, c, l)
+		}
+
+		src := newFakeSource("test-src", nil)
+		powerWatcher := &fakePowerWatcher{}
+
+		cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+			return platformParts{
+				Sources: []input.Source{
+					&sourceRecorder{
+						Source: src,
+						onStart: func() {
+							add("source")
+						},
+					},
+				},
+				Power: func(onSuspend func(at time.Time), onWake func(at time.Time, userPresent bool)) (io.Closer, error) {
+					add("power")
+					powerWatcher.onSuspend = onSuspend
+					powerWatcher.onWake = onWake
+					return powerWatcher, nil
+				},
+				NewOverlay: func() (feedback.Overlay, error) {
+					add("feedback-overlay")
+					return feedback.NopOverlay{}, nil
+				},
+				NewSound: func() (feedback.Sound, error) {
+					add("feedback-sound")
+					return feedback.NopSound{}, nil
+				},
+			}
+		}
+
+		ln := &tcpListenOrder{
+			onListen: func() {
+				add("listen")
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err != nil {
+			t.Fatalf("startAgent: %v", err)
+		}
+		t.Cleanup(func() {
+			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+			defer scancel()
+			_ = a.Shutdown(sctx, ReasonOther)
+			_ = a.CloseLog()
+		})
+
+		mu.Lock()
+		got := make([]string, len(order))
+		copy(got, order)
+		mu.Unlock()
+
+		// Verify order:
+		// recover before feedback, listen, source, power
+		recIdx := indexOf(got, "recover")
+		ovIdx := indexOf(got, "feedback-overlay")
+		sndIdx := indexOf(got, "feedback-sound")
+		listenIdx := indexOf(got, "listen")
+		srcIdx := indexOf(got, "source")
+		pwrIdx := indexOf(got, "power")
+
+		if recIdx == -1 || ovIdx == -1 || sndIdx == -1 || listenIdx == -1 || srcIdx == -1 || pwrIdx == -1 {
+			t.Fatalf("missing steps in startup order: %v", got)
+		}
+
+		if recIdx > ovIdx || recIdx > sndIdx {
+			t.Errorf("recover (%d) should be before feedback (%d, %d)", recIdx, ovIdx, sndIdx)
+		}
+		if ovIdx > listenIdx || sndIdx > listenIdx {
+			t.Errorf("feedback (%d, %d) should be before listen (%d)", ovIdx, sndIdx, listenIdx)
+		}
+		if listenIdx > srcIdx || listenIdx > pwrIdx {
+			t.Errorf("listen (%d) should be before source (%d) and power (%d)", listenIdx, srcIdx, pwrIdx)
+		}
+	})
+
+	t.Run("AGT-012/nenhuma fonte recebe Start antes de o tracker iniciar", func(t *testing.T) {
+		var (
+			mu            sync.Mutex
+			sourceStarted bool
+			trackerReady  bool
+		)
+
+		cfg := testConfig(t, "debug")
+		src := newFakeSource("test-src", nil)
+
+		cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+			return platformParts{
+				Sources: []input.Source{
+					&sourceRecorder{
+						Source: src,
+						onStart: func() {
+							mu.Lock()
+							defer mu.Unlock()
+							sourceStarted = true
+							if !trackerReady {
+								t.Errorf("source started before tracker was ready")
+							}
+						},
+					},
+				},
+			}
+		}
+
+		ln := &tcpListenOrder{
+			onListen: func() {
+				mu.Lock()
+				defer mu.Unlock()
+				// listener is created after tracker.New and tr.Start()
+				trackerReady = true
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		a, err := startAgent(ctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err != nil {
+			t.Fatalf("startAgent: %v", err)
+		}
+		t.Cleanup(func() {
+			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+			defer scancel()
+			_ = a.Shutdown(sctx, ReasonOther)
+			_ = a.CloseLog()
+		})
+
+		mu.Lock()
+		defer mu.Unlock()
+		if !sourceStarted {
+			t.Error("source was never started")
+		}
+	})
+
+	t.Run("AGT-012/a recuperação fecha a pausa aberta antes de qualquer fonte", func(t *testing.T) {
+		cfg := testConfig(t, "debug")
+		ctx := context.Background()
+
+		// Prepare pre-existing database with an open session and open pause
+		p, err := paths.Resolve(paths.Options{Flag: cfg.DataDir, ExeDir: cfg.ExeDir, Getenv: emptyEnv})
+		if err != nil {
+			t.Fatalf("resolve paths: %v", err)
+		}
+		if err := p.EnsureDirs(); err != nil {
+			t.Fatalf("ensure dirs: %v", err)
+		}
+
+		st, err := store.Open(ctx, p.DB, store.OpenOptions{Migrate: true})
+		if err != nil {
+			t.Fatalf("open store for setup: %v", err)
+		}
+
+		t0 := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)
+		g, err := st.AddGame(ctx, store.NewGame{Title: "Pending Game", Exe: `C:\Jogos\p.exe`, WorkingDir: `C:\Jogos`, At: t0})
+		if err != nil {
+			t.Fatalf("add game: %v", err)
+		}
+		sessID, err := st.StartSession(ctx, g.ID, t0)
+		if err != nil {
+			t.Fatalf("start session: %v", err)
+		}
+		// Pause session at t0 + 10s
+		tPause := t0.Add(10 * time.Second)
+		if err := st.PauseSession(ctx, store.PauseStart{
+			SessionID: sessID,
+			At:        tPause,
+			Reason:    domain.PauseHotkey,
+			Active:    10 * time.Second,
+		}); err != nil {
+			t.Fatalf("pause session: %v", err)
+		}
+		_ = st.Close()
+
+		var verifiedAtSourceStart bool
+		src := newFakeSource("test-src", nil)
+		cfg.Platform = func(c domain.Clock, l *slog.Logger) platformParts {
+			return platformParts{
+				Sources: []input.Source{
+					&sourceRecorder{
+						Source: src,
+						onStart: func() {
+							// Check that the database session was already recovered
+							checkStore, err := store.Open(ctx, p.DB, store.OpenOptions{Migrate: false})
+							if err != nil {
+								t.Errorf("open store at source start: %v", err)
+								return
+							}
+							defer checkStore.Close()
+
+							openSess, err := checkStore.OpenSessions(ctx)
+							if err != nil {
+								t.Errorf("list open sessions: %v", err)
+								return
+							}
+							if len(openSess) != 0 {
+								t.Errorf("session still open at source start: %v", openSess)
+							}
+							pauses, err := checkStore.Pauses(ctx, sessID)
+							if err != nil {
+								t.Errorf("get pauses: %v", err)
+								return
+							}
+							for _, pause := range pauses {
+								if pause.ResumedAt.IsZero() {
+									t.Errorf("pause still open at source start")
+								}
+							}
+							verifiedAtSourceStart = true
+						},
+					},
+				},
+			}
+		}
+
+		ln := &tcpListen{}
+		cctx, ccancel := context.WithCancel(context.Background())
+		defer ccancel()
+
+		a, err := startAgent(cctx, cfg, testClock(), emptyEnv, ln.listen)
+		if err != nil {
+			t.Fatalf("startAgent: %v", err)
+		}
+		t.Cleanup(func() {
+			sctx, scancel := context.WithTimeout(context.Background(), testTimeout)
+			defer scancel()
+			_ = a.Shutdown(sctx, ReasonOther)
+			_ = a.CloseLog()
+		})
+
+		if !verifiedAtSourceStart {
+			t.Error("verification at source start was not reached")
+		}
+	})
+}
+
+type sourceRecorder struct {
+	input.Source
+	onStart func()
+}
+
+func (r *sourceRecorder) Start(out chan<- input.Trigger) error {
+	if r.onStart != nil {
+		r.onStart()
+	}
+	return r.Source.Start(out)
+}
+
+type tcpListenOrder struct {
+	addr     string
+	onListen func()
+}
+
+func (l *tcpListenOrder) listen() (net.Listener, error) {
+	if l.onListen != nil {
+		l.onListen()
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	l.addr = ln.Addr().String()
+	return ln, nil
 }
