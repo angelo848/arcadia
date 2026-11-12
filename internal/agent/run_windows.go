@@ -28,9 +28,6 @@ import (
 // shutdownTimeout bounds agent.Shutdown (AGT-003).
 const shutdownTimeout = 2 * time.Second
 
-// autostartTimeout bounds each autostart Reconcile/Toggle (store access).
-const autostartTimeout = 2 * time.Second
-
 // Run executes the agent and returns the process exit code.
 func Run(opts Options) int {
 	// Bootstrap logger for failures before agent.log exists (invisible with -H windowsgui).
@@ -109,6 +106,19 @@ func Run(opts Options) int {
 	if err != nil {
 		log.Error("falha ao iniciar o watcher de fim de sessão", "error", err.Error())
 		sessionEnd = nil
+	}
+
+	// ADM-004: the Run entry written by the removed autostart feature (ADR 0024)
+	// is deleted once, when this version starts. Dev builds never touch the
+	// registry. A failure is logged and never stops the agent.
+	if cfg.Version != "dev" {
+		removed, err := winapi.RemoveOwnRunEntry(winapi.NewRunValue(winapi.RunKeyPath, winapi.RunValueName), cfg.Exe)
+		switch {
+		case err != nil:
+			log.Warn("limpeza da entrada Run antiga falhou", "error", err.Error())
+		case removed:
+			log.Info("entrada Run antiga do início automático removida")
+		}
 	}
 
 	// runTray returns after systray.Quit ended the message loop (step 1 of the

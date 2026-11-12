@@ -13,10 +13,12 @@ import (
 )
 
 const (
-	// RunKeyPath is the HKCU subkey whose values Windows runs at logon (AST-003).
+	// RunKeyPath is the HKCU subkey whose values Windows runs at logon. Arcadia
+	// no longer writes here (ADR 0024); the value is only read to remove the
+	// entry left by older versions (ADM-004).
 	RunKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
-	// AutostartValueName is the value name of Arcadia's own Run entry.
-	AutostartValueName = "Arcadia"
+	// RunValueName is the value name of the Run entry older versions wrote.
+	RunValueName = "Arcadia"
 )
 
 // RunValue is a REG_SZ value under HKCU\keyPath. It keeps no registry handle:
@@ -88,17 +90,29 @@ func (r *RunValue) Delete() error {
 	return nil
 }
 
-// AutostartCommand builds the Run entry command line (AST-002): the exe always
-// quoted, then " --agent", then " --data-dir <root>" (escaped by
-// windows.EscapeArg) unless root is exeDir\data, compared after
-// filepath.Clean and case-insensitively.
-func AutostartCommand(exe, root, exeDir string) string {
-	cmd := `"` + exe + `" --agent`
-	defaultRoot := filepath.Join(exeDir, "data")
-	if strings.EqualFold(filepath.Clean(root), filepath.Clean(defaultRoot)) {
-		return cmd
+// RemoveOwnRunEntry deletes the Run value run when its command starts exe
+// (ADM-004). It returns removed=true when it deleted the value. An absent value
+// is not an error. A value that starts another executable is kept. An unreadable
+// value is kept and returned as an error, so the caller logs it and goes on.
+func RemoveOwnRunEntry(run *RunValue, exe string) (removed bool, err error) {
+	value, ok, err := run.Get()
+	if err != nil {
+		return false, err
 	}
-	return cmd + " --data-dir " + windows.EscapeArg(root)
+	if !ok {
+		return false, nil
+	}
+	owner, err := CommandExe(value)
+	if err != nil {
+		return false, fmt.Errorf("entrada Run ilegível; mantida: %w", err)
+	}
+	if !strings.EqualFold(filepath.Clean(owner), filepath.Clean(exe)) {
+		return false, nil
+	}
+	if err := run.Delete(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CommandExe returns the first token (the executable) of a command line, as

@@ -21,89 +21,21 @@ var (
 	_ uint32             = winapi.ASFWAny
 )
 
-func TestAutostartConstants(t *testing.T) {
+func TestRunConstants(t *testing.T) {
 	t.Parallel()
 
-	t.Run("AST-003/entrada Run em HKCU com o valor Arcadia", func(t *testing.T) {
+	t.Run("ADM-004/entrada Run antiga em HKCU com o valor Arcadia", func(t *testing.T) {
 		t.Parallel()
 		if got, want := winapi.RunKeyPath, `Software\Microsoft\Windows\CurrentVersion\Run`; got != want {
 			t.Errorf("RunKeyPath = %q, quer %q", got, want)
 		}
-		if got, want := winapi.AutostartValueName, "Arcadia"; got != want {
-			t.Errorf("AutostartValueName = %q, quer %q", got, want)
+		if got, want := winapi.RunValueName, "Arcadia"; got != want {
+			t.Errorf("RunValueName = %q, quer %q", got, want)
 		}
 		if got, want := winapi.ASFWAny, uint32(0xFFFFFFFF); got != want {
 			t.Errorf("ASFWAny = %#x, quer %#x", got, want)
 		}
 	})
-}
-
-func TestAutostartCommand(t *testing.T) {
-	t.Parallel()
-
-	const (
-		dir = `C:\Jogos\Arcadia`
-		exe = `C:\Jogos\Arcadia\arcadia.exe`
-	)
-
-	tests := []struct {
-		name   string
-		exe    string
-		root   string
-		exeDir string
-		want   string
-	}{
-		{
-			name:   "AST-002/root igual a D\\data omite --data-dir",
-			exe:    exe,
-			root:   `C:\Jogos\Arcadia\data`,
-			exeDir: dir,
-			want:   `"C:\Jogos\Arcadia\arcadia.exe" --agent`,
-		},
-		{
-			name:   "AST-002/root igual a D\\data com caixa e barra final diferentes omite --data-dir",
-			exe:    exe,
-			root:   `c:\JOGOS\arcadia\DATA\`,
-			exeDir: dir,
-			want:   `"C:\Jogos\Arcadia\arcadia.exe" --agent`,
-		},
-		{
-			name:   "AST-002/root com espaço vem entre aspas",
-			exe:    exe,
-			root:   `E:\Minha Biblioteca`,
-			exeDir: dir,
-			want:   `"C:\Jogos\Arcadia\arcadia.exe" --agent --data-dir "E:\Minha Biblioteca"`,
-		},
-		{
-			name:   "AST-002/root D:\\ sem aspas",
-			exe:    exe,
-			root:   `D:\`,
-			exeDir: dir,
-			want:   `"C:\Jogos\Arcadia\arcadia.exe" --agent --data-dir D:\`,
-		},
-		{
-			name:   "AST-002/exe sempre entre aspas",
-			exe:    `C:\Program Files\Arcadia\arcadia.exe`,
-			root:   `C:\Program Files\Arcadia\data`,
-			exeDir: `C:\Program Files\Arcadia`,
-			want:   `"C:\Program Files\Arcadia\arcadia.exe" --agent`,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := winapi.AutostartCommand(tc.exe, tc.root, tc.exeDir)
-			if got != tc.want {
-				t.Errorf("AutostartCommand(%q, %q, %q)\n got = %s\nwant = %s", tc.exe, tc.root, tc.exeDir, got, tc.want)
-			}
-			if !strings.HasPrefix(got, `"`+tc.exe+`" `) {
-				t.Errorf("comando %s não começa com o exe entre aspas", got)
-			}
-		})
-	}
-	// "exe sempre entre aspas": the case above uses a path with spaces, and the
-	// other cases cover an exe without spaces (C:\Jogos\Arcadia\arcadia.exe)
-	// that is quoted as well.
 }
 
 func TestCommandExe(t *testing.T) {
@@ -146,26 +78,6 @@ func TestCommandExe(t *testing.T) {
 		}
 	})
 
-	t.Run("AST-005/CommandExe(AutostartCommand(E,...)) == E", func(t *testing.T) {
-		t.Parallel()
-		cases := []struct{ exe, root, exeDir string }{
-			{`C:\Jogos\Arcadia\arcadia.exe`, `C:\Jogos\Arcadia\data`, `C:\Jogos\Arcadia`},
-			{`C:\Jogos\Arcadia\arcadia.exe`, `E:\Minha Biblioteca`, `C:\Jogos\Arcadia`},
-			{`C:\Program Files\Arcadia\arcadia.exe`, `D:\`, `C:\Program Files\Arcadia`},
-			{`D:\Pasta com espaço\Árcadia\arcadia.exe`, `D:\Pasta com espaço\outra\`, `D:\Pasta com espaço\Árcadia`},
-		}
-		for _, c := range cases {
-			cmd := winapi.AutostartCommand(c.exe, c.root, c.exeDir)
-			got, err := winapi.CommandExe(cmd)
-			if err != nil {
-				t.Errorf("CommandExe(%s): %v", cmd, err)
-				continue
-			}
-			if got != c.exe {
-				t.Errorf("CommandExe(%s) = %q, quer %q", cmd, got, c.exe)
-			}
-		}
-	})
 }
 
 // testRunKeyPath returns a throwaway HKCU subkey path, removed in t.Cleanup.
@@ -383,6 +295,73 @@ func TestRunValue(t *testing.T) {
 		const slack = 3
 		if after > before+slack {
 			t.Errorf("handles do processo: antes=%d depois=%d (+%d) após 20 operações; quer no máximo +%d", before, after, after-before, slack)
+		}
+	})
+}
+
+// TestRemoveOwnRunEntry covers the one-time cleanup of the Run entry older versions
+// wrote (ADM-004). Every case uses a throwaway key.
+func TestRemoveOwnRunEntry(t *testing.T) {
+	const exe = `C:\Arcadia\arcadia.exe`
+
+	t.Run("ADM-004/apaga a entrada quando aponta para o mesmo exe, sem diferenciar maiúsculas", func(t *testing.T) {
+		t.Parallel()
+		path := testRunKeyPath(t)
+		run := winapi.NewRunValue(path, winapi.RunValueName)
+		if err := run.Set(`"c:\arcadia\ARCADIA.exe" --agent`); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		removed, err := winapi.RemoveOwnRunEntry(run, exe)
+		if err != nil {
+			t.Fatalf("RemoveOwnRunEntry: %v", err)
+		}
+		if !removed {
+			t.Errorf("removed = false, want true")
+		}
+		if _, _, exists := rawValue(t, path, winapi.RunValueName); exists {
+			t.Errorf("value still present after removal")
+		}
+	})
+
+	t.Run("ADM-004/mantém entrada de outro exe", func(t *testing.T) {
+		t.Parallel()
+		path := testRunKeyPath(t)
+		run := winapi.NewRunValue(path, winapi.RunValueName)
+		const other = `"C:\Outro\app.exe" --agent`
+		if err := run.Set(other); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		removed, err := winapi.RemoveOwnRunEntry(run, exe)
+		if err != nil || removed {
+			t.Fatalf("RemoveOwnRunEntry = (%v, %v), want (false, nil)", removed, err)
+		}
+		if got, _, _ := rawValue(t, path, winapi.RunValueName); got != other {
+			t.Errorf("value = %q, want it kept as %q", got, other)
+		}
+	})
+
+	t.Run("ADM-004/ausência não é erro", func(t *testing.T) {
+		t.Parallel()
+		run := winapi.NewRunValue(testRunKeyPath(t), winapi.RunValueName)
+		removed, err := winapi.RemoveOwnRunEntry(run, exe)
+		if err != nil || removed {
+			t.Errorf("RemoveOwnRunEntry = (%v, %v), want (false, nil)", removed, err)
+		}
+	})
+
+	t.Run("ADM-004/valor ilegível é mantido e reportado", func(t *testing.T) {
+		t.Parallel()
+		path := testRunKeyPath(t)
+		run := winapi.NewRunValue(path, winapi.RunValueName)
+		if err := run.Set(""); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		removed, err := winapi.RemoveOwnRunEntry(run, exe)
+		if err == nil || removed {
+			t.Errorf("RemoveOwnRunEntry = (%v, %v), want (false, error)", removed, err)
+		}
+		if _, _, exists := rawValue(t, path, winapi.RunValueName); !exists {
+			t.Errorf("unreadable value was deleted, want it kept")
 		}
 	})
 }
