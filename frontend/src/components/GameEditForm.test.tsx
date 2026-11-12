@@ -62,6 +62,19 @@ describe('GameEditForm', () => {
     expect(field('Favorito')).toBeChecked()
   })
 
+  it('EDT-004/modos de jogo são editáveis: marcar e desmarcar altera playModes no patch', () => {
+    const { props } = renderForm()
+
+    expect(screen.getByRole('checkbox', { name: 'Um jogador' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Cooperativo online' })).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Cooperativo online' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Um jogador' }))
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ playModes: ['coop_online'] })
+  })
+
   it('UI-039/Salvar envia só o patch e fica desabilitado durante o envio', () => {
     const { props, rerender } = renderForm()
 

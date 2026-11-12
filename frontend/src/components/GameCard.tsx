@@ -71,7 +71,7 @@ export function GameCard({
           {live === 'paused' && <span className="font-medium text-sky-400">Pausado</span>}
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={blocked}

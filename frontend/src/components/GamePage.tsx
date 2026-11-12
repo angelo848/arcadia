@@ -3,7 +3,7 @@ import type { GameStatus } from '../lib/filters'
 import type { SessionView } from '../lib/games'
 import { formatPlayTime } from '../lib/games'
 import { useGame } from '../lib/library'
-import type { PlayModeName } from '../lib/library'
+import { playModeLabels } from '../lib/library'
 import { formatLocalDateTime, formatUtcDate } from '../lib/formatDate'
 import { SessionsList } from './SessionsList'
 
@@ -14,14 +14,6 @@ const statusLabels: Record<GameStatus, string> = {
   completed: 'Concluído',
   abandoned: 'Abandonado',
   backlog: 'Na fila',
-}
-
-const playModeLabels: Record<PlayModeName, string> = {
-  single: 'Um jogador',
-  multi_local: 'Multijogador local',
-  multi_online: 'Multijogador online',
-  coop_local: 'Cooperativo local',
-  coop_online: 'Cooperativo online',
 }
 
 // onEdit and onRemove are called once per click; the parent opens the edit form (UI-039) and the

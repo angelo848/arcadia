@@ -1,8 +1,11 @@
 import { useId, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
-import type { GameDetailView, PlayModeName } from '../lib/library'
+import { playModeLabels, type GameDetailView, type PlayModeName } from '../lib/library'
 import { validateDraft } from '../lib/validation'
+
+// The play modes in the order the form shows them (DOM-014).
+const playModeOrder: PlayModeName[] = ['single', 'multi_local', 'multi_online', 'coop_local', 'coop_online']
 
 // Labels match the library filter (FilterPanel) and the status names of GamePage.
 const statusOptions: Array<{ value: GameStatus; label: string }> = [
@@ -24,6 +27,7 @@ type FormValues = {
   developers: string
   publishers: string
   genres: string
+  playModes: PlayModeName[]
 }
 
 export type GameEditFormProps = {
@@ -45,6 +49,7 @@ function initialValues(game: GameDetailView): FormValues {
     developers: game.developers.join(', '),
     publishers: game.publishers.join(', '),
     genres: game.genres.join(', '),
+    playModes: game.playModes,
   }
 }
 
@@ -54,7 +59,7 @@ function splitNames(text: string): string[] {
   return text.trim() === '' ? [] : text.split(',')
 }
 
-function toDraft(v: FormValues, playModes: PlayModeName[]): EditDraft {
+function toDraft(v: FormValues): EditDraft {
   return {
     title: v.title,
     description: v.description,
@@ -65,7 +70,7 @@ function toDraft(v: FormValues, playModes: PlayModeName[]): EditDraft {
     developers: splitNames(v.developers),
     publishers: splitNames(v.publishers),
     genres: splitNames(v.genres),
-    playModes,
+    playModes: v.playModes,
   }
 }
 
@@ -79,12 +84,20 @@ const inputClass =
 export function GameEditForm({ game, onSave, onCancel, pending, error }: GameEditFormProps): JSX.Element {
   const [values, setValues] = useState<FormValues>(() => initialValues(game))
   const idPrefix = useId()
-  const draft = toDraft(values, game.playModes)
+  const draft = toDraft(values)
   const errors = validateDraft(draft)
   const canSave = !pending && Object.keys(errors).length === 0
 
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function togglePlayMode(mode: PlayModeName, checked: boolean) {
+    setValues((prev) => {
+      const others = prev.playModes.filter((m) => m !== mode)
+      const next = checked ? [...others, mode] : others
+      return { ...prev, playModes: playModeOrder.filter((m) => next.includes(m)) }
+    })
   }
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -170,6 +183,24 @@ export function GameEditForm({ game, onSave, onCancel, pending, error }: GameEdi
           Favorito
         </label>
       </div>
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1 text-sm font-medium text-neutral-300">Modos de jogo</legend>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {playModeOrder.map((mode) => (
+            <label key={mode} className="flex items-center gap-2 text-sm text-neutral-300">
+              <input
+                type="checkbox"
+                checked={values.playModes.includes(mode)}
+                onChange={(e) => togglePlayMode(mode, e.target.checked)}
+                className="h-4 w-4 accent-emerald-600"
+              />
+              {playModeLabels[mode]}
+            </label>
+          ))}
+        </div>
+        {errors.playModes !== undefined && <p className="text-sm text-red-400">{errors.playModes}</p>}
+      </fieldset>
 
       <Row id={id('developers')} label="Desenvolvedora" hint="Separe os nomes por vírgula." message={errors.developers}>
         <input

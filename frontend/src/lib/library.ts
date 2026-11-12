@@ -31,6 +31,15 @@ export type GameDetailView = GameView & {
 
 export type PlayModeName = 'single' | 'multi_local' | 'multi_online' | 'coop_local' | 'coop_online'
 
+// playModeLabels names each play mode in the page of the game and in the edit form (DOM-014).
+export const playModeLabels: Record<PlayModeName, string> = {
+  single: 'Um jogador',
+  multi_local: 'Multijogador local',
+  multi_online: 'Multijogador online',
+  coop_local: 'Cooperativo local',
+  coop_online: 'Cooperativo online',
+}
+
 export type GameListView = { games: GameView[]; total: number; offset: number }
 
 export type SessionEndReason = 'exited' | 'agent-shutdown' | 'recovered'
