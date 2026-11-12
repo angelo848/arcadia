@@ -1,7 +1,8 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-4-pause/contracts/ipc.openrpc.json (v0.5.0, which supersedes
-// the phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0 contracts kept in their specs as history).
+// docs/specs/phase-5-library/contracts/ipc.openrpc.json (v0.6.0, which supersedes
+// the phase-4-pause v0.5.0, phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0
+// contracts kept in their specs as history).
 package ipc
 
 import (
@@ -41,6 +42,15 @@ const (
 	// MethodSessionChanged is the server-to-client notification of a session
 	// state change.
 	MethodSessionChanged = "session.changed"
+
+	// Methods added in v0.6.0 [IPC-041].
+	MethodGameGet        = "game.get"
+	MethodGameUpdate     = "game.update"
+	MethodGameDelete     = "game.delete"
+	MethodSessionList    = "session.list"
+	MethodPlatformList   = "platform.list"
+	MethodPlatformAdd    = "platform.add"
+	MethodLibraryCatalog = "library.catalog"
 )
 
 // JSON-RPC 2.0 error codes.
@@ -175,12 +185,18 @@ type ShutdownParams struct {
 	Reason string `json:"reason"`
 }
 
-// Game is a library entry with its play totals. FirstPlayedAt and LastPlayedAt
-// are null until the first counted session.
+// Game is a library entry with its play totals: the item of game.list and the
+// result of game.add [IPC-042, IPC-020]. Year is null when there is no release
+// date. FirstPlayedAt and LastPlayedAt are null until the first counted session.
 type Game struct {
 	ID               int64      `json:"id"`
 	Title            string     `json:"title"`
+	PlatformID       int64      `json:"platformId"`
+	Platform         string     `json:"platform"`
 	Path             string     `json:"path"`
+	Status           string     `json:"status"`
+	Favorite         bool       `json:"favorite"`
+	Year             *int       `json:"year"`
 	TotalPlaySeconds int64      `json:"totalPlaySeconds"`
 	PlayCount        int64      `json:"playCount"`
 	FirstPlayedAt    *time.Time `json:"firstPlayedAt"`
@@ -230,11 +246,6 @@ type SessionResult struct {
 // ReasonNoSession and ReasonGrace.
 type SessionNotPausableData struct {
 	Reason string `json:"reason"`
-}
-
-// GameListResult is the result of game.list. Games is never nil.
-type GameListResult struct {
-	Games []Game `json:"games"`
 }
 
 // SessionCurrentResult is the result of session.current; Session is null when

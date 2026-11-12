@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-4-pause contract (v0.5.0)
-// supersedes phase-3-tracker (v0.4.0) [IPC-032].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-4-pause", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-5-library contract (v0.6.0)
+// supersedes phase-4-pause (v0.5.0) [IPC-041].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-5-library", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-4-pause/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-5-library/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -32,6 +32,16 @@ type openRPC struct {
 			ClientNotificationBuffer int  `json:"clientNotificationBuffer"`
 			ShutdownDrainMs          *int `json:"shutdownDrainMs"`
 			MaxGameTitleRunes        *int `json:"maxGameTitleRunes"`
+			MaxNameRunes             *int `json:"maxNameRunes"`
+			MaxDescriptionRunes      *int `json:"maxDescriptionRunes"`
+			MaxFilterTextRunes       *int `json:"maxFilterTextRunes"`
+			MaxFilterIds             *int `json:"maxFilterIds"`
+			YearMin                  *int `json:"yearMin"`
+			YearMax                  *int `json:"yearMax"`
+			DefaultGameListLimit     *int `json:"defaultGameListLimit"`
+			MaxGameListLimit         *int `json:"maxGameListLimit"`
+			DefaultSessionListLimit  *int `json:"defaultSessionListLimit"`
+			MaxSessionListLimit      *int `json:"maxSessionListLimit"`
 		} `json:"x-limits"`
 		Tracking *struct {
 			GracePeriodSeconds       *int `json:"gracePeriodSeconds"`
@@ -40,6 +50,10 @@ type openRPC struct {
 			JobPollSeconds           *int `json:"jobPollSeconds"`
 			MaxConcurrentSessions    *int `json:"maxConcurrentSessions"`
 		} `json:"x-tracking"`
+		Library *struct {
+			DefaultSort string   `json:"defaultSort"`
+			SortValues  []string `json:"sortValues"`
+		} `json:"x-library"`
 	} `json:"info"`
 	Methods []struct {
 		Name         string `json:"name"`
@@ -70,12 +84,13 @@ type openRPC struct {
 type jsonSchema struct {
 	Ref        string                     `json:"$ref"`
 	Type       string                     `json:"type"`
+	Enum       []string                   `json:"enum"`
 	Required   []string                   `json:"required"`
 	Properties map[string]json.RawMessage `json:"properties"`
 }
 
 // loadContract parses the contract. The version is asserted by the
-// "IPC-032/versão 0.5.0" case.
+// "IPC-041/versão 0.6.0" case.
 func loadContract(t *testing.T) openRPC {
 	t.Helper()
 	raw, err := os.ReadFile(contractPath)
@@ -104,6 +119,16 @@ func (c openRPC) resolve(t *testing.T, s jsonSchema) jsonSchema {
 		t.Fatalf("$ref %q not found in components.schemas", s.Ref)
 	}
 	return r
+}
+
+// schema returns the resolved components.schemas entry name.
+func (c openRPC) schema(t *testing.T, name string) jsonSchema {
+	t.Helper()
+	s, ok := c.Components.Schemas[name]
+	if !ok {
+		t.Fatalf("contract has no components.schemas.%s", name)
+	}
+	return s
 }
 
 // resultSchema returns the resolved result schema of method, following a local $ref.
@@ -139,6 +164,24 @@ func (c openRPC) paramNames(t *testing.T, method string) (all, required []string
 	return nil, nil
 }
 
+// paramEnum returns the enum of the param name of method (nil when it has none).
+func (c openRPC) paramEnum(t *testing.T, method, name string) []string {
+	t.Helper()
+	for _, m := range c.Methods {
+		if m.Name != method {
+			continue
+		}
+		for _, p := range m.Params {
+			if p.Name == name {
+				return p.Schema.Enum
+			}
+		}
+		t.Fatalf("%s has no param %q in contract", method, name)
+	}
+	t.Fatalf("method %q not in contract", method)
+	return nil
+}
+
 // errorData returns the resolved data schema of the named contract error.
 func (c openRPC) errorData(t *testing.T, name string) jsonSchema {
 	t.Helper()
@@ -168,6 +211,24 @@ func assertExactFields(t *testing.T, what string, schema jsonSchema, v any) {
 	}
 }
 
+// assertEnumMatchesDomain checks that the contract enum is exactly the Go
+// values, that every contract value is accepted by parse and that a value
+// outside the enum is refused.
+func assertEnumMatchesDomain(t *testing.T, what string, contract, goValues []string, parse func(string) error) {
+	t.Helper()
+	if got, want := slices.Sorted(slices.Values(contract)), slices.Sorted(slices.Values(goValues)); !slices.Equal(got, want) {
+		t.Errorf("%s: contract enum %v, domain values %v", what, got, want)
+	}
+	for _, v := range contract {
+		if err := parse(v); err != nil {
+			t.Errorf("%s: domain refuses contract value %q: %v", what, v, err)
+		}
+	}
+	if err := parse("__fora-do-enum__"); err == nil {
+		t.Errorf("%s: domain accepts a value outside the contract enum", what)
+	}
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -188,6 +249,30 @@ func jsonFieldNames(t *testing.T, v any) []string {
 		t.Fatalf("%T is not a JSON object: %v", v, err)
 	}
 	return sortedKeys(m)
+}
+
+// phase5Methods is the complete method set of contract v0.6.0 (notifications
+// included) with their x-notification flag.
+var phase5Methods = map[string]bool{
+	ipc.MethodPing:                false,
+	ipc.MethodStatus:              false,
+	ipc.MethodHeartbeat:           true,
+	ipc.MethodShutdown:            true,
+	ipc.MethodGameAdd:             false,
+	ipc.MethodGameList:            false,
+	ipc.MethodGameGet:             false,
+	ipc.MethodGameUpdate:          false,
+	ipc.MethodGameDelete:          false,
+	ipc.MethodGameLaunch:          false,
+	ipc.MethodGameLaunchUntracked: false,
+	ipc.MethodSessionCurrent:      false,
+	ipc.MethodSessionPause:        false,
+	ipc.MethodSessionResume:       false,
+	ipc.MethodSessionList:         false,
+	ipc.MethodPlatformList:        false,
+	ipc.MethodPlatformAdd:         false,
+	ipc.MethodLibraryCatalog:      false,
+	ipc.MethodSessionChanged:      true,
 }
 
 func TestContract(t *testing.T) {
@@ -241,8 +326,8 @@ func TestContract(t *testing.T) {
 
 	t.Run("IPC-001/nomes de métodos batem com o contrato", func(t *testing.T) {
 		t.Parallel()
-		// The agent.* methods; game.* and session.* are served by internal/agent
-		// and are covered by "IPC-032/todos os métodos e notificações do contrato existem com os mesmos nomes, inclusive game.launchUntracked, session.pause e session.resume".
+		// The agent.* methods; game.*, session.*, platform.* and library.* are served by
+		// internal/agent and are covered by "IPC-041/os sete métodos novos e os antigos existem com os mesmos nomes".
 		var names []string
 		for _, m := range c.Methods {
 			if strings.HasPrefix(m.Name, "agent.") {
@@ -431,31 +516,21 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-032/versão 0.5.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.6.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.5.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.5.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.6.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.6.0\"", contractPath, c.Info.Version)
 		}
 	})
 
-	t.Run("IPC-032/todos os métodos e notificações do contrato existem com os mesmos nomes, inclusive game.launchUntracked, session.pause e session.resume", func(t *testing.T) {
+	t.Run("IPC-041/os sete métodos novos e os antigos existem com os mesmos nomes", func(t *testing.T) {
 		t.Parallel()
-		// Go constant -> whether it is a server-to-client notification.
-		want := map[string]bool{
-			ipc.MethodPing:                false,
-			ipc.MethodStatus:              false,
-			ipc.MethodHeartbeat:           true,
-			ipc.MethodShutdown:            true,
-			ipc.MethodGameAdd:             false,
-			ipc.MethodGameList:            false,
-			ipc.MethodGameLaunch:          false,
-			ipc.MethodGameLaunchUntracked: false,
-			ipc.MethodSessionCurrent:      false,
-			ipc.MethodSessionPause:        false,
-			ipc.MethodSessionResume:       false,
-			ipc.MethodSessionChanged:      true,
-		}
+		// Go constant -> literal wire name, for every method of v0.6.0.
 		literals := map[string]string{
+			"MethodPing":                ipc.MethodPing,
+			"MethodStatus":              ipc.MethodStatus,
+			"MethodHeartbeat":           ipc.MethodHeartbeat,
+			"MethodShutdown":            ipc.MethodShutdown,
 			"MethodGameAdd":             ipc.MethodGameAdd,
 			"MethodGameList":            ipc.MethodGameList,
 			"MethodGameLaunch":          ipc.MethodGameLaunch,
@@ -464,8 +539,20 @@ func TestContract(t *testing.T) {
 			"MethodSessionPause":        ipc.MethodSessionPause,
 			"MethodSessionResume":       ipc.MethodSessionResume,
 			"MethodSessionChanged":      ipc.MethodSessionChanged,
+			// The seven methods added in v0.6.0 [IPC-041].
+			"MethodGameGet":        ipc.MethodGameGet,
+			"MethodGameUpdate":     ipc.MethodGameUpdate,
+			"MethodGameDelete":     ipc.MethodGameDelete,
+			"MethodSessionList":    ipc.MethodSessionList,
+			"MethodPlatformList":   ipc.MethodPlatformList,
+			"MethodPlatformAdd":    ipc.MethodPlatformAdd,
+			"MethodLibraryCatalog": ipc.MethodLibraryCatalog,
 		}
 		wantLiterals := map[string]string{
+			"MethodPing":                "agent.ping",
+			"MethodStatus":              "agent.status",
+			"MethodHeartbeat":           "agent.heartbeat",
+			"MethodShutdown":            "agent.shutdown",
 			"MethodGameAdd":             "game.add",
 			"MethodGameList":            "game.list",
 			"MethodGameLaunch":          "game.launch",
@@ -474,6 +561,13 @@ func TestContract(t *testing.T) {
 			"MethodSessionPause":        "session.pause",
 			"MethodSessionResume":       "session.resume",
 			"MethodSessionChanged":      "session.changed",
+			"MethodGameGet":             "game.get",
+			"MethodGameUpdate":          "game.update",
+			"MethodGameDelete":          "game.delete",
+			"MethodSessionList":         "session.list",
+			"MethodPlatformList":        "platform.list",
+			"MethodPlatformAdd":         "platform.add",
+			"MethodLibraryCatalog":      "library.catalog",
 		}
 		for name, got := range literals {
 			if got != wantLiterals[name] {
@@ -488,22 +582,212 @@ func TestContract(t *testing.T) {
 			}
 			got[m.Name] = m.Notification
 		}
-		if g, w := sortedKeys(got), sortedKeys(want); !slices.Equal(g, w) {
+		if g, w := sortedKeys(got), sortedKeys(phase5Methods); !slices.Equal(g, w) {
 			t.Fatalf("contract methods = %v, Go constants = %v", g, w)
 		}
-		for name, notif := range want {
+		for name, notif := range phase5Methods {
 			if got[name] != notif {
 				t.Errorf("contract %s: x-notification = %v, want %v", name, got[name], notif)
 			}
 		}
 	})
 
-	t.Run("IPC-032/enum Session.state contém running, paused, grace, ended e discarded", func(t *testing.T) {
+	t.Run("IPC-041/parâmetros por nome dos métodos novos batem com as tags Go", func(t *testing.T) {
 		t.Parallel()
-		s, ok := c.Components.Schemas["Session"]
-		if !ok {
-			t.Fatal("contract has no components.schemas.Session")
+		for _, tc := range []struct {
+			method       string
+			v            any
+			wantAll      []string
+			wantRequired []string
+		}{
+			{ipc.MethodGameList, ipc.GameListParams{Filter: &domain.FilterSpec{Version: 1}, Sort: libPtr("title"), Offset: libPtr(0), Limit: libPtr(1)},
+				[]string{"filter", "limit", "offset", "sort"}, nil},
+			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "favorite", "gameId", "genres", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
+			{ipc.MethodSessionList, ipc.SessionListParams{GameID: 1, Offset: libPtr(0), Limit: libPtr(1)}, []string{"gameId", "limit", "offset"}, []string{"gameId"}},
+			{ipc.MethodPlatformAdd, ipc.PlatformAddParams{Name: "PC", Category: "pc"}, []string{"category", "name"}, []string{"category", "name"}},
+		} {
+			all, required := c.paramNames(t, tc.method)
+			if !slices.Equal(all, tc.wantAll) || !slices.Equal(required, tc.wantRequired) {
+				t.Errorf("contract %s params = %v (required %v), want %v (required %v)",
+					tc.method, all, required, tc.wantAll, tc.wantRequired)
+			}
+			if got := jsonFieldNames(t, tc.v); !slices.Equal(got, tc.wantAll) {
+				t.Errorf("%T JSON fields = %v, want exactly %v", tc.v, got, tc.wantAll)
+			}
 		}
+		// Methods by name with only gameId (no Go params type named in the plan).
+		for _, m := range []string{ipc.MethodGameGet, ipc.MethodGameDelete} {
+			if all, required := c.paramNames(t, m); !slices.Equal(all, []string{"gameId"}) || !slices.Equal(required, []string{"gameId"}) {
+				t.Errorf("contract %s params = %v (required %v), want [gameId] required", m, all, required)
+			}
+		}
+		// Methods without params.
+		for _, m := range []string{ipc.MethodPlatformList, ipc.MethodLibraryCatalog} {
+			if all, _ := c.paramNames(t, m); len(all) != 0 {
+				t.Errorf("contract %s params = %v, want none", m, all)
+			}
+		}
+	})
+
+	t.Run("IPC-041/enums sort, playMode, status, played e category batem com o domain", func(t *testing.T) {
+		t.Parallel()
+		// sort: x-library.sortValues, the sort param of game.list and domain.ParseSort.
+		sortGo := []string{string(domain.SortTitle), string(domain.SortLastPlayed), string(domain.SortTotalPlayed), string(domain.SortYear)}
+		if c.Info.Library == nil {
+			t.Fatal("contract info has no x-library")
+		}
+		assertEnumMatchesDomain(t, "sort (x-library.sortValues)", c.Info.Library.SortValues, sortGo,
+			func(s string) error { _, err := domain.ParseSort(s); return err })
+		assertEnumMatchesDomain(t, "sort (game.list param)", c.paramEnum(t, ipc.MethodGameList, "sort"), sortGo,
+			func(s string) error { _, err := domain.ParseSort(s); return err })
+		if got := c.Info.Library.DefaultSort; got != string(domain.DefaultSort) {
+			t.Errorf("x-library.defaultSort = %q, domain.DefaultSort = %q", got, domain.DefaultSort)
+		}
+
+		// playMode: the group of the filter (DOM-014) and the five mode names.
+		assertEnumMatchesDomain(t, "playMode (PlayModeGroup)", c.schema(t, "PlayModeGroup").Enum,
+			[]string{string(domain.PlayGroupAll), string(domain.PlayGroupSingle), string(domain.PlayGroupMulti), string(domain.PlayGroupCoop)},
+			func(s string) error { _, err := domain.ParsePlayModeGroup(s); return err })
+		assertEnumMatchesDomain(t, "playMode (PlayModeName)", c.schema(t, "PlayModeName").Enum,
+			[]string{string(domain.PlayModeSingle), string(domain.PlayModeMultiLocal), string(domain.PlayModeMultiOnline), string(domain.PlayModeCoopLocal), string(domain.PlayModeCoopOnline)},
+			func(s string) error { _, err := domain.ParsePlayMode(s); return err })
+
+		// status: components.schemas.GameStatus and DOM-012.
+		assertEnumMatchesDomain(t, "status (GameStatus)", c.schema(t, "GameStatus").Enum,
+			[]string{string(domain.StatusNotPlayed), string(domain.StatusPlaying), string(domain.StatusCompleted), string(domain.StatusAbandoned), string(domain.StatusBacklog)},
+			func(s string) error { _, err := domain.ParseGameStatus(s); return err })
+
+		// played: FilterSpec.properties.played, validated by FilterSpec.Validate (FLT-006).
+		var played struct {
+			Enum []string `json:"enum"`
+		}
+		raw := c.schema(t, "FilterSpec").Properties["played"]
+		if err := json.Unmarshal(raw, &played); err != nil {
+			t.Fatalf("parse FilterSpec.played schema %s: %v", raw, err)
+		}
+		assertEnumMatchesDomain(t, "played (FilterSpec)", played.Enum, []string{"any", "played", "notPlayed"},
+			func(s string) error { return domain.FilterSpec{Version: domain.FilterVersion, Played: s}.Validate() })
+
+		// category: components.schemas.PlatformCategory and DOM-015.
+		assertEnumMatchesDomain(t, "category (PlatformCategory)", c.schema(t, "PlatformCategory").Enum,
+			[]string{string(domain.CategoryPC), string(domain.CategoryConsole), string(domain.CategoryArcade), string(domain.CategoryHandheld)},
+			func(s string) error { _, err := domain.ParsePlatformCategory(s); return err })
+	})
+
+	t.Run("IPC-041/x-limits batem com as constantes de domain e com MaxGameTitleRunes", func(t *testing.T) {
+		t.Parallel()
+		l := c.Info.Limits
+		for _, tc := range []struct {
+			name string
+			got  *int
+			want int
+		}{
+			{"maxGameTitleRunes", l.MaxGameTitleRunes, domain.MaxTitleRunes},
+			{"maxNameRunes", l.MaxNameRunes, domain.MaxNameRunes},
+			{"maxDescriptionRunes", l.MaxDescriptionRunes, domain.MaxDescriptionRunes},
+			{"maxFilterTextRunes", l.MaxFilterTextRunes, domain.MaxFilterTextRunes},
+			{"maxFilterIds", l.MaxFilterIds, domain.MaxFilterIDs},
+			{"yearMin", l.YearMin, domain.YearMin},
+			{"yearMax", l.YearMax, domain.YearMax},
+			{"defaultGameListLimit", l.DefaultGameListLimit, domain.DefaultPageLimit},
+			{"maxGameListLimit", l.MaxGameListLimit, domain.MaxPageLimit},
+			{"defaultSessionListLimit", l.DefaultSessionListLimit, domain.DefaultSessionLimit},
+			{"maxSessionListLimit", l.MaxSessionListLimit, domain.MaxSessionLimit},
+		} {
+			if tc.got == nil {
+				t.Errorf("contract x-limits has no %s", tc.name)
+				continue
+			}
+			if *tc.got != tc.want {
+				t.Errorf("x-limits.%s = %d, domain constant = %d", tc.name, *tc.got, tc.want)
+			}
+		}
+		if ipc.MaxGameTitleRunes != domain.MaxTitleRunes {
+			t.Errorf("ipc.MaxGameTitleRunes = %d, domain.MaxTitleRunes = %d", ipc.MaxGameTitleRunes, domain.MaxTitleRunes)
+		}
+		if ipc.MaxGameTitleRunes != 200 {
+			t.Errorf("ipc.MaxGameTitleRunes = %d, want 200", ipc.MaxGameTitleRunes)
+		}
+	})
+
+	t.Run("IPC-041/campos obrigatórios de Game, GameDetail, GameListResult, SessionItem, SessionListResult e Catalog batem com as tags Go", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			schema string
+			v      any
+		}{
+			{"Game", ipc.Game{}},
+			{"GameDetail", ipc.GameDetail{}},
+			{"GameListResult", ipc.GameListResult{}},
+			{"SessionItem", ipc.SessionItem{}},
+			{"SessionListResult", ipc.SessionListResult{}},
+			{"Catalog", ipc.Catalog{}},
+		} {
+			assertExactFields(t, tc.schema, c.schema(t, tc.schema), tc.v)
+		}
+
+		// Method results of the new and changed methods.
+		assertExactFields(t, "game.list result", c.resultSchema(t, ipc.MethodGameList), ipc.GameListResult{})
+		assertExactFields(t, "game.get result", c.resultSchema(t, ipc.MethodGameGet), ipc.GameDetailResult{})
+		assertExactFields(t, "game.update result", c.resultSchema(t, ipc.MethodGameUpdate), ipc.GameDetailResult{})
+		assertExactFields(t, "game.delete result", c.resultSchema(t, ipc.MethodGameDelete), ipc.GameDeletedResult{})
+		assertExactFields(t, "session.list result", c.resultSchema(t, ipc.MethodSessionList), ipc.SessionListResult{})
+		assertExactFields(t, "platform.list result", c.resultSchema(t, ipc.MethodPlatformList), ipc.PlatformListResult{})
+		assertExactFields(t, "platform.add result", c.resultSchema(t, ipc.MethodPlatformAdd), ipc.PlatformAddResult{})
+		assertExactFields(t, "library.catalog result", c.resultSchema(t, ipc.MethodLibraryCatalog), ipc.Catalog{})
+	})
+
+	t.Run("IPC-041/campos obrigatórios de Session, SessionRef, SessionResult e LaunchedProcess batem com as tags Go", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			schema string
+			v      any
+		}{
+			{"Session", ipc.Session{}},
+			{"SessionRef", ipc.SessionRef{}},
+			{"SessionResult", ipc.SessionResult{}},
+			{"LaunchedProcess", ipc.LaunchedProcess{}},
+		} {
+			assertExactFields(t, tc.schema, c.schema(t, tc.schema), tc.v)
+		}
+		assertExactFields(t, "game.add result", c.resultSchema(t, ipc.MethodGameAdd), ipc.Game{})
+		assertExactFields(t, "game.launch result", c.resultSchema(t, ipc.MethodGameLaunch), ipc.Session{})
+		assertExactFields(t, "session.current result", c.resultSchema(t, ipc.MethodSessionCurrent), ipc.SessionCurrentResult{})
+		assertExactFields(t, "game.launchUntracked result", c.resultSchema(t, ipc.MethodGameLaunchUntracked), ipc.LaunchedProcess{})
+		assertExactFields(t, "session.pause result", c.resultSchema(t, ipc.MethodSessionPause), ipc.SessionResult{})
+		assertExactFields(t, "session.resume result", c.resultSchema(t, ipc.MethodSessionResume), ipc.SessionResult{})
+		assertExactFields(t, "SessionNotPausable data", c.errorData(t, "SessionNotPausable"), ipc.SessionNotPausableData{})
+
+		// game.add params (unchanged in v0.6.0): title is optional and omitted when empty.
+		all, required := c.paramNames(t, ipc.MethodGameAdd)
+		if !slices.Equal(all, []string{"path", "title"}) || !slices.Equal(required, []string{"path"}) {
+			t.Errorf("contract game.add params = %v (required %v)", all, required)
+		}
+		if got := jsonFieldNames(t, ipc.GameAddParams{Path: `C:\g.exe`}); !slices.Equal(got, []string{"path"}) {
+			t.Errorf("GameAddParams without title JSON fields = %v, want [path]", got)
+		}
+		if got := jsonFieldNames(t, ipc.GameAddParams{Path: `C:\g.exe`, Title: "G"}); !slices.Equal(got, []string{"path", "title"}) {
+			t.Errorf("GameAddParams JSON fields = %v, want [path title]", got)
+		}
+		// The reason enum of SessionNotPausable is exactly the Reason* constants.
+		var reason struct {
+			Enum []string `json:"enum"`
+		}
+		raw := c.errorData(t, "SessionNotPausable").Properties["reason"]
+		if err := json.Unmarshal(raw, &reason); err != nil {
+			t.Fatalf("parse reason schema %s: %v", raw, err)
+		}
+		if want := []string{ipc.ReasonNoSession, ipc.ReasonGrace}; !slices.Equal(reason.Enum, want) {
+			t.Errorf("contract reason enum = %v, Go constants = %v", reason.Enum, want)
+		}
+		if ipc.ReasonNoSession != "no-session" || ipc.ReasonGrace != "grace" {
+			t.Errorf("Reason* = %q, %q, want \"no-session\", \"grace\"", ipc.ReasonNoSession, ipc.ReasonGrace)
+		}
+	})
+
+	t.Run("IPC-041/enum Session.state contém running, paused, grace, ended e discarded", func(t *testing.T) {
+		t.Parallel()
+		s := c.schema(t, "Session")
 		var state struct {
 			Enum []string `json:"enum"`
 		}
@@ -523,147 +807,52 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-032/campos obrigatórios de LaunchedProcess, SessionResult e SessionNotPausableData batem com os tipos Go", func(t *testing.T) {
+	t.Run("IPC-041/códigos de erro batem com as constantes", func(t *testing.T) {
 		t.Parallel()
-		for _, tc := range []struct {
-			schema string
-			v      any
-		}{
-			{"LaunchedProcess", ipc.LaunchedProcess{}},
-			{"SessionResult", ipc.SessionResult{}},
-		} {
-			s, ok := c.Components.Schemas[tc.schema]
-			if !ok {
-				t.Errorf("contract has no components.schemas.%s", tc.schema)
-				continue
-			}
-			assertExactFields(t, tc.schema, s, tc.v)
+		want := map[string]int{
+			"ParseError":         ipc.CodeParseError,
+			"InvalidRequest":     ipc.CodeInvalidRequest,
+			"MethodNotFound":     ipc.CodeMethodNotFound,
+			"InvalidParams":      ipc.CodeInvalidParams,
+			"InternalError":      ipc.CodeInternalError,
+			"GameNotFound":       ipc.CodeGameNotFound,
+			"SessionActive":      ipc.CodeSessionActive,
+			"LaunchFailed":       ipc.CodeLaunchFailed,
+			"InvalidExecutable":  ipc.CodeInvalidExecutable,
+			"SessionNotPausable": ipc.CodeSessionNotPausable,
 		}
-		assertExactFields(t, "SessionNotPausable data", c.errorData(t, "SessionNotPausable"), ipc.SessionNotPausableData{})
-
-		// Method results and params.
-		assertExactFields(t, "game.launchUntracked result", c.resultSchema(t, ipc.MethodGameLaunchUntracked), ipc.LaunchedProcess{})
-		assertExactFields(t, "session.pause result", c.resultSchema(t, ipc.MethodSessionPause), ipc.SessionResult{})
-		assertExactFields(t, "session.resume result", c.resultSchema(t, ipc.MethodSessionResume), ipc.SessionResult{})
-
-		all, required := c.paramNames(t, ipc.MethodGameLaunchUntracked)
-		if want := []string{"gameId"}; !slices.Equal(all, want) || !slices.Equal(required, want) {
-			t.Errorf("contract game.launchUntracked params = %v (required %v), want [gameId] required", all, required)
+		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
+			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)
 		}
-		if got := jsonFieldNames(t, ipc.GameLaunchUntrackedParams{GameID: 1}); !slices.Equal(got, []string{"gameId"}) {
-			t.Errorf("GameLaunchUntrackedParams JSON fields = %v, want [gameId]", got)
-		}
-		for _, m := range []string{ipc.MethodSessionPause, ipc.MethodSessionResume} {
-			if all, _ := c.paramNames(t, m); len(all) != 0 {
-				t.Errorf("contract %s params = %v, want none", m, all)
+		for name, code := range want {
+			if got := c.Components.Errors[name].Code; got != code {
+				t.Errorf("%s: contract code %d, Go constant %d", name, got, code)
 			}
 		}
-
-		// SessionNotPausable reason enum is exactly the Reason* constants.
-		var reason struct {
-			Enum []string `json:"enum"`
-		}
-		raw := c.errorData(t, "SessionNotPausable").Properties["reason"]
-		if err := json.Unmarshal(raw, &reason); err != nil {
-			t.Fatalf("parse reason schema %s: %v", raw, err)
-		}
-		if want := []string{ipc.ReasonNoSession, ipc.ReasonGrace}; !slices.Equal(reason.Enum, want) {
-			t.Errorf("contract reason enum = %v, Go constants = %v", reason.Enum, want)
-		}
-		if ipc.ReasonNoSession != "no-session" || ipc.ReasonGrace != "grace" {
-			t.Errorf("Reason* = %q, %q, want \"no-session\", \"grace\"", ipc.ReasonNoSession, ipc.ReasonGrace)
-		}
-	})
-
-	t.Run("IPC-032/campos obrigatórios de Game, Session e SessionRef batem com as tags JSON", func(t *testing.T) {
-		t.Parallel()
-		for _, tc := range []struct {
-			schema string
-			v      any
-		}{
-			{"Game", ipc.Game{}},
-			{"Session", ipc.Session{}},
-			{"SessionRef", ipc.SessionRef{}},
-		} {
-			s, ok := c.Components.Schemas[tc.schema]
-			if !ok {
-				t.Errorf("contract has no components.schemas.%s", tc.schema)
-				continue
-			}
-			assertExactFields(t, tc.schema, s, tc.v)
-		}
-
-		// Method results.
-		assertExactFields(t, "game.add result", c.resultSchema(t, ipc.MethodGameAdd), ipc.Game{})
-		assertExactFields(t, "game.launch result", c.resultSchema(t, ipc.MethodGameLaunch), ipc.Session{})
-		assertExactFields(t, "game.list result", c.resultSchema(t, ipc.MethodGameList), ipc.GameListResult{})
-		assertExactFields(t, "session.current result", c.resultSchema(t, ipc.MethodSessionCurrent), ipc.SessionCurrentResult{})
-
-		// Params by name.
-		for _, tc := range []struct {
-			method       string
-			v            any
-			wantAll      []string
-			wantRequired []string
-		}{
-			{ipc.MethodGameAdd, ipc.GameAddParams{Path: `C:\g.exe`, Title: "G"}, []string{"path", "title"}, []string{"path"}},
-			{ipc.MethodGameLaunch, ipc.GameLaunchParams{GameID: 1}, []string{"gameId"}, []string{"gameId"}},
-			{ipc.MethodSessionChanged, ipc.SessionChangedParams{}, []string{"session"}, []string{"session"}},
-		} {
-			all, required := c.paramNames(t, tc.method)
-			if !slices.Equal(all, tc.wantAll) || !slices.Equal(required, tc.wantRequired) {
-				t.Errorf("contract %s params = %v (required %v), want %v (required %v)",
-					tc.method, all, required, tc.wantAll, tc.wantRequired)
-			}
-			if got := jsonFieldNames(t, tc.v); !slices.Equal(got, all) {
-				t.Errorf("%T JSON fields = %v, want exactly %v", tc.v, got, all)
-			}
-		}
-		// title is optional: an empty title is omitted on the wire.
-		if got := jsonFieldNames(t, ipc.GameAddParams{Path: `C:\g.exe`}); !slices.Equal(got, []string{"path"}) {
-			t.Errorf("GameAddParams without title JSON fields = %v, want [path]", got)
-		}
-		// Methods without params.
-		for _, m := range []string{ipc.MethodGameList, ipc.MethodSessionCurrent} {
-			if all, _ := c.paramNames(t, m); len(all) != 0 {
-				t.Errorf("contract %s params = %v, want none", m, all)
-			}
-		}
-	})
-
-	t.Run("IPC-032/códigos e mensagens de erro batem com as constantes, inclusive -32005", func(t *testing.T) {
-		t.Parallel()
+		// Messages of the application errors (the v0.5.0 codes; v0.6.0 adds none [IPC-041]).
 		for _, tc := range []struct {
 			name string
-			code int
 			msg  string
-			lit  int
+			code int
 		}{
-			{"GameNotFound", ipc.CodeGameNotFound, ipc.MsgGameNotFound, -32001},
-			{"SessionActive", ipc.CodeSessionActive, ipc.MsgSessionActive, -32002},
-			{"LaunchFailed", ipc.CodeLaunchFailed, ipc.MsgLaunchFailed, -32003},
-			{"InvalidExecutable", ipc.CodeInvalidExecutable, ipc.MsgInvalidExecutable, -32004},
-			{"SessionNotPausable", ipc.CodeSessionNotPausable, ipc.MsgSessionNotPausable, -32005},
-			{"InvalidParams", ipc.CodeInvalidParams, ipc.MsgInvalidParams, -32602},
+			{"GameNotFound", ipc.MsgGameNotFound, ipc.CodeGameNotFound},
+			{"SessionActive", ipc.MsgSessionActive, ipc.CodeSessionActive},
+			{"LaunchFailed", ipc.MsgLaunchFailed, ipc.CodeLaunchFailed},
+			{"InvalidExecutable", ipc.MsgInvalidExecutable, ipc.CodeInvalidExecutable},
+			{"SessionNotPausable", ipc.MsgSessionNotPausable, ipc.CodeSessionNotPausable},
+			{"InvalidParams", ipc.MsgInvalidParams, ipc.CodeInvalidParams},
 		} {
-			e, ok := c.Components.Errors[tc.name]
-			if !ok {
-				t.Errorf("contract has no components.errors.%s", tc.name)
-				continue
-			}
-			if tc.code != tc.lit {
-				t.Errorf("ipc code for %s = %d, want %d", tc.name, tc.code, tc.lit)
-			}
-			if e.Code != tc.code {
-				t.Errorf("%s: contract code %d, Go constant %d", tc.name, e.Code, tc.code)
-			}
+			e := c.Components.Errors[tc.name]
 			if e.Message != tc.msg {
 				t.Errorf("%s: contract message %q, Go constant %q", tc.name, e.Message, tc.msg)
 			}
+			if tc.code != want[tc.name] {
+				t.Errorf("%s: Go code %d, want %d", tc.name, tc.code, want[tc.name])
+			}
 		}
 	})
 
-	t.Run("IPC-032/data de LaunchFailed, InvalidExecutable e GameNotFound batem com os tipos", func(t *testing.T) {
+	t.Run("IPC-041/data de LaunchFailed, InvalidExecutable, GameNotFound e SessionActive batem com os tipos", func(t *testing.T) {
 		t.Parallel()
 		win := uint32(2)
 		for _, tc := range []struct {
@@ -703,20 +892,7 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-032/maxGameTitleRunes é MaxGameTitleRunes", func(t *testing.T) {
-		t.Parallel()
-		if c.Info.Limits.MaxGameTitleRunes == nil {
-			t.Fatal("contract x-limits has no maxGameTitleRunes")
-		}
-		if got := *c.Info.Limits.MaxGameTitleRunes; got != ipc.MaxGameTitleRunes {
-			t.Errorf("x-limits.maxGameTitleRunes = %d, ipc.MaxGameTitleRunes = %d", got, ipc.MaxGameTitleRunes)
-		}
-		if ipc.MaxGameTitleRunes != 200 {
-			t.Errorf("ipc.MaxGameTitleRunes = %d, want 200", ipc.MaxGameTitleRunes)
-		}
-	})
-
-	t.Run("IPC-032/x-tracking bate com as constantes do domain", func(t *testing.T) {
+	t.Run("IPC-041/x-tracking bate com as constantes do domain", func(t *testing.T) {
 		t.Parallel()
 		tr := c.Info.Tracking
 		if tr == nil {
@@ -745,7 +921,7 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-032/comentário do pacote aponta para phase-4-pause", func(t *testing.T) {
+	t.Run("IPC-041/comentário do pacote aponta para phase-5-library", func(t *testing.T) {
 		t.Parallel()
 		files, err := filepath.Glob("*.go")
 		if err != nil {

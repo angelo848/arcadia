@@ -229,7 +229,7 @@ func TestGameJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal Game: %v", err)
 		}
-		want := `{"id":1,"title":"Hollow Knight","path":"C:\\Games\\hk.exe","totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`
+		want := `{"id":1,"title":"Hollow Knight","platformId":0,"platform":"","path":"C:\\Games\\hk.exe","status":"","favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`
 		if got := compactJSON(t, raw); got != want {
 			t.Errorf("Game JSON = %s\nwant       %s", got, want)
 		}

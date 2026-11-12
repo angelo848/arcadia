@@ -5,10 +5,36 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
 )
+
+// Optional distinguishes an absent member from null and from a value [IPC-052].
+// Present is true when the member exists; Null is true when it is the null
+// literal; Value only means something when Present && !Null.
+type Optional[T any] struct {
+	Present bool
+	Null    bool
+	Value   T
+}
+
+// UnmarshalJSON is called only for a member that exists. The null literal sets
+// Present and Null; any other value is decoded into Value and sets Present. A
+// value of the wrong type is an error (DecodeParams turns it into -32602).
+func (o *Optional[T]) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*o = Optional[T]{Present: true, Null: true}
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return fmt.Errorf("ipc: optional member: %w", err)
+	}
+	*o = Optional[T]{Present: true, Value: v}
+	return nil
+}
 
 // DecodeParams decodes named params into v. A nil raw yields nil and leaves v
 // untouched; a non-object (including positional arrays), an unknown member, a

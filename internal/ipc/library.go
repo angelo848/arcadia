@@ -1,0 +1,79 @@
+package ipc
+
+import "time"
+
+// GameListResult is the result of game.list. Games is never nil ([] when the
+// page is empty) and Total counts the games passing the filter, not only this
+// page [LIB-002, LIB-003].
+type GameListResult struct {
+	Games  []Game `json:"games"`
+	Total  int64  `json:"total"`
+	Offset int    `json:"offset"`
+}
+
+// GameDetail is Game plus the fields of the game page [STO-026]. The lists are
+// never nil. CompletedAt is a YYYY-MM-DD date or null.
+type GameDetail struct {
+	Game
+	Description string   `json:"description"`
+	CompletedAt *string  `json:"completedAt"`
+	Developers  []string `json:"developers"`
+	Publishers  []string `json:"publishers"`
+	Genres      []string `json:"genres"`
+	PlayModes   []string `json:"playModes"`
+}
+
+// GameDetailResult is the result of game.get and game.update.
+type GameDetailResult struct {
+	Game GameDetail `json:"game"`
+}
+
+// GameDeletedResult is the result of game.delete.
+type GameDeletedResult struct {
+	GameID int64 `json:"gameId"`
+}
+
+// SessionItem is a session as listed on the game page [STO-027]. EndedAt is
+// null while the session is open; EndReason is null while it is open.
+type SessionItem struct {
+	SessionID     int64      `json:"sessionId"`
+	GameID        int64      `json:"gameId"`
+	State         string     `json:"state"`
+	StartedAt     time.Time  `json:"startedAt"`
+	EndedAt       *time.Time `json:"endedAt"`
+	ActiveSeconds int64      `json:"activeSeconds"`
+	EndReason     *string    `json:"endReason"`
+}
+
+// SessionListResult is the result of session.list. Sessions is never nil.
+type SessionListResult struct {
+	Sessions []SessionItem `json:"sessions"`
+	Total    int64         `json:"total"`
+	Offset   int           `json:"offset"`
+}
+
+// Platform is a platform of the library.
+type Platform struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+}
+
+// PlatformListResult is the result of platform.list.
+type PlatformListResult struct {
+	Platforms []Platform `json:"platforms"`
+}
+
+// PlatformAddResult is the result of platform.add.
+type PlatformAddResult struct {
+	Platform Platform `json:"platform"`
+}
+
+// Catalog is the result of library.catalog: the options of the editor and of
+// the filters [IPC-049, STO-030].
+type Catalog struct {
+	Platforms []Platform `json:"platforms"`
+	Genres    []string   `json:"genres"`
+	Companies []string   `json:"companies"`
+	PlayModes []string   `json:"playModes"`
+}
