@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
+import { libraryGamesKey } from './library'
 
 // GameView mirrors cmd/arcadia GameView (JSON field names).
 export type GameView = {
@@ -270,6 +271,7 @@ export function useReloadOnReconnect(connected: boolean): void {
     }
     if (!was && connected) {
       void qc.invalidateQueries({ queryKey: gamesKey })
+      void qc.invalidateQueries({ queryKey: libraryGamesKey })
       void qc.resetQueries({ queryKey: currentSessionKey })
     }
   }, [connected, qc])
