@@ -35,7 +35,7 @@ func (q *Queries) EnsurePCPlatform(ctx context.Context) error {
 }
 
 const getGame = `-- name: GetGame :one
-SELECT id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at FROM game
+SELECT id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at, emulator_id FROM game
 WHERE id = ?
 `
 
@@ -68,6 +68,7 @@ func (q *Queries) GetGame(ctx context.Context, id int64) (Game, error) {
 		&i.HltbCompleteHours,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmulatorID,
 	)
 	return i, err
 }
@@ -138,7 +139,7 @@ func (q *Queries) HasOpenSession(ctx context.Context, gameID int64) (int64, erro
 const insertGame = `-- name: InsertGame :one
 INSERT INTO game (platform_id, title, launch_type, launch_target, launch_args, working_dir, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at
+RETURNING id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at, emulator_id
 `
 
 type InsertGameParams struct {
@@ -190,6 +191,7 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (Game, e
 		&i.HltbCompleteHours,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmulatorID,
 	)
 	return i, err
 }

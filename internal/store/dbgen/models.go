@@ -61,6 +61,7 @@ type Game struct {
 	HltbCompleteHours sql.NullFloat64
 	CreatedAt         int64
 	UpdatedAt         int64
+	EmulatorID        sql.NullInt64
 }
 
 type GameDeveloper struct {
