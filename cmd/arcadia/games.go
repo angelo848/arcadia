@@ -14,8 +14,6 @@ import (
 const (
 	// addGameTimeout bounds each AddGame binding call.
 	addGameTimeout = 5 * time.Second
-	// listGamesTimeout bounds each ListGames binding call.
-	listGamesTimeout = 2 * time.Second
 	// launchGameTimeout bounds each LaunchGame call (above the handler's 10 s).
 	launchGameTimeout = 12 * time.Second
 	// launchUntrackedTimeout bounds each LaunchGameUntracked call (DSK-013).
@@ -38,16 +36,6 @@ var pickExeTitle = "Escolha o executável do jogo"
 
 // pickExeFilters is the filter of the executable dialog (DSK-012).
 var pickExeFilters = []fileFilter{{DisplayName: "Executáveis (*.exe)", Pattern: "*.exe"}}
-
-// GameView is a game as shown by the frontend.
-type GameView struct {
-	ID               int64  `json:"id"`
-	Title            string `json:"title"`
-	Path             string `json:"path"`
-	TotalPlaySeconds int64  `json:"totalPlaySeconds"`
-	PlayCount        int64  `json:"playCount"`
-	LastPlayedAt     string `json:"lastPlayedAt"` // RFC 3339 or ""
-}
 
 // SessionView is a session as shown by the frontend (DSK-010).
 type SessionView struct {
@@ -72,21 +60,6 @@ type PickedExe struct {
 type fileFilter struct{ DisplayName, Pattern string }
 
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
-
-func gameView(g ipc.Game) GameView {
-	last := ""
-	if g.LastPlayedAt != nil {
-		last = formatTime(*g.LastPlayedAt)
-	}
-	return GameView{
-		ID:               g.ID,
-		Title:            g.Title,
-		Path:             g.Path,
-		TotalPlaySeconds: g.TotalPlaySeconds,
-		PlayCount:        g.PlayCount,
-		LastPlayedAt:     last,
-	}
-}
 
 // sessionView converts s; it fails when the state is unknown.
 func sessionView(s ipc.Session) (SessionView, error) {
@@ -125,16 +98,25 @@ func (a *App) logger() *slog.Logger {
 
 // callAgent calls method with timeout; failures are already user texts.
 func (a *App) callAgent(method string, timeout time.Duration, params, result any) error {
+	if err := a.callAgentRaw(method, timeout, params, result); err != nil {
+		return userError(err, a.logger())
+	}
+	return nil
+}
+
+// callAgentRaw calls method with timeout and returns the error unconverted, so
+// a caller can map a JSON-RPC code itself (DeleteGame, DSK-018).
+func (a *App) callAgentRaw(method string, timeout time.Duration, params, result any) error {
 	a.mu.Lock()
 	c := a.client
 	a.mu.Unlock()
 	if c == nil {
-		return userError(errNoClient, a.logger())
+		return errNoClient
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := c.Call(ctx, method, params, result); err != nil {
-		return userError(fmt.Errorf("desktop: %s: %w", method, err), a.logger())
+		return fmt.Errorf("desktop: %s: %w", method, err)
 	}
 	return nil
 }
@@ -165,19 +147,6 @@ func (a *App) AddGame(path, title string) (GameView, error) {
 		return GameView{}, err
 	}
 	return gameView(g), nil
-}
-
-// ListGames calls game.list (2 s timeout); the result is never nil.
-func (a *App) ListGames() ([]GameView, error) {
-	var res ipc.GameListResult
-	if err := a.callAgent(ipc.MethodGameList, listGamesTimeout, nil, &res); err != nil {
-		return nil, err
-	}
-	out := make([]GameView, 0, len(res.Games))
-	for _, g := range res.Games {
-		out = append(out, gameView(g))
-	}
-	return out, nil
 }
 
 // LaunchGame calls game.launch (12 s timeout). On a client timeout the agent

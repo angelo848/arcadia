@@ -174,8 +174,16 @@ func (s *supervisor) connectedByEnsure(st ipc.AgentStatus) {
 	s.upSince = s.cfg.Clock.Now()
 	if !s.gateMarked {
 		s.gateMarked = true
-		s.cfg.Gate.MarkConnected()
+		s.markConnected()
 		warnIfDataDirDiffers(s.cfg.Log, s.cfg.Root, st.DataDir)
+	}
+}
+
+// markConnected tells the optional Gate that the agent answered (DSK-007). The
+// UI has no gate since phase 5 (ADR 0015), so Gate is nil in production.
+func (s *supervisor) markConnected() {
+	if s.cfg.Gate != nil {
+		s.cfg.Gate.MarkConnected()
 	}
 }
 
@@ -194,7 +202,7 @@ func (s *supervisor) markGateLate(ctx context.Context) {
 		return
 	}
 	s.gateMarked = true
-	s.cfg.Gate.MarkConnected()
+	s.markConnected()
 	cctx, cancel := context.WithTimeout(ctx, statusTimeout)
 	defer cancel()
 	var st ipc.AgentStatus

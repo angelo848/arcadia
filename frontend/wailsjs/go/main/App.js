@@ -6,12 +6,32 @@ export function AddGame(arg1, arg2) {
   return window['go']['main']['App']['AddGame'](arg1, arg2);
 }
 
+export function AddPlatform(arg1, arg2) {
+  return window['go']['main']['App']['AddPlatform'](arg1, arg2);
+}
+
 export function AgentStatus() {
   return window['go']['main']['App']['AgentStatus']();
 }
 
+export function Catalog() {
+  return window['go']['main']['App']['Catalog']();
+}
+
 export function CurrentSession() {
   return window['go']['main']['App']['CurrentSession']();
+}
+
+export function DeleteGame(arg1) {
+  return window['go']['main']['App']['DeleteGame'](arg1);
+}
+
+export function GameSessions(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GameSessions'](arg1, arg2, arg3);
+}
+
+export function GetGame(arg1) {
+  return window['go']['main']['App']['GetGame'](arg1);
 }
 
 export function LaunchGame(arg1) {
@@ -22,12 +42,8 @@ export function LaunchGameUntracked(arg1) {
   return window['go']['main']['App']['LaunchGameUntracked'](arg1);
 }
 
-export function LibrarySummary() {
-  return window['go']['main']['App']['LibrarySummary']();
-}
-
-export function ListGames() {
-  return window['go']['main']['App']['ListGames']();
+export function ListGames(arg1) {
+  return window['go']['main']['App']['ListGames'](arg1);
 }
 
 export function PauseSession() {
@@ -40,4 +56,8 @@ export function PickGameExe() {
 
 export function ResumeSession() {
   return window['go']['main']['App']['ResumeSession']();
+}
+
+export function UpdateGame(arg1, arg2) {
+  return window['go']['main']['App']['UpdateGame'](arg1, arg2);
 }

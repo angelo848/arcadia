@@ -35,11 +35,6 @@ type Store struct {
 	q  *dbgen.Queries
 }
 
-// LibrarySummary holds library-wide counters.
-type LibrarySummary struct {
-	Games, Platforms int64
-}
-
 // dsnPragmas are applied by the driver on every new connection of the pool.
 const dsnPragmas = "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)" +
 	"&_pragma=synchronous(NORMAL)&_txlock=immediate"
@@ -171,16 +166,4 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx, q *dbgen.Queries
 func (s *Store) CurrentVersion(ctx context.Context) (int64, error) {
 	v, _, err := readVersion(ctx, s.db)
 	return v, err
-}
-
-// LibrarySummary counts games and platforms in a single statement, so both
-// numbers come from the same snapshot.
-func (s *Store) LibrarySummary(ctx context.Context) (LibrarySummary, error) {
-	var sum LibrarySummary
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT (SELECT COUNT(*) FROM game), (SELECT COUNT(*) FROM platform)`).
-		Scan(&sum.Games, &sum.Platforms); err != nil {
-		return LibrarySummary{}, fmt.Errorf("store: library summary: %w", err)
-	}
-	return sum, nil
 }

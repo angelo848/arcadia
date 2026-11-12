@@ -28,6 +28,10 @@ const (
 	msgUnexpectedFailure = "Erro inesperado. Veja o log."
 )
 
+// msgRemoveSessionActive is the DSK-018 text of a game.delete refused with -32002
+// (open session). It never names the game.
+const msgRemoveSessionActive = "Não é possível remover: o jogo está em uma sessão ativa. Feche a sessão antes de remover."
+
 // DSK-015 texts for -32005 (session not pausable).
 const (
 	msgNothingToPause   = "Não há jogo em andamento para pausar."

@@ -17,8 +17,6 @@ const (
 	// statusTimeout bounds each AgentStatus binding call (DSK-003, design.md frontend/)
 	// and the one-off agent.status after a late first heartbeat (DSK-006).
 	statusTimeout = 500 * time.Millisecond
-	// summaryTimeout bounds each LibrarySummary binding call.
-	summaryTimeout = 2 * time.Second
 	// agentStartTimeout is how long the UI waits for the agent to answer (DSK-001).
 	agentStartTimeout = 5 * time.Second
 	// firstProbeTimeout bounds the initial "is the agent already running?" probe.
@@ -39,12 +37,6 @@ type StatusView struct {
 	StartedAt     string `json:"startedAt"` // RFC 3339, UTC
 	DataDir       string `json:"dataDir"`
 	UptimeSeconds int64  `json:"uptimeSeconds"`
-}
-
-// LibrarySummaryView is the library counts shown by the empty state.
-type LibrarySummaryView struct {
-	Games     int64 `json:"games"`
-	Platforms int64 `json:"platforms"`
 }
 
 // pinger is the part of *ipc.Client used to call the agent.
@@ -90,7 +82,6 @@ type App struct {
 	mu        sync.Mutex
 	client    pinger // nil until startup created the IPC client
 	log       *slog.Logger
-	gate      *libraryGate
 	owned     ipcClient // the client to close on shutdown
 	logCloser io.Closer
 	cancel    context.CancelFunc
@@ -135,21 +126,6 @@ func (a *App) AgentStatus() StatusView {
 	}
 }
 
-// LibrarySummary returns the library counts through the lazy gate; before the
-// agent was reached it returns ErrAgentNotReady (DSK-007, DSK-008). Each call
-// is bounded by a 2 s timeout.
-func (a *App) LibrarySummary() (LibrarySummaryView, error) {
-	a.mu.Lock()
-	g := a.gate
-	a.mu.Unlock()
-	if g == nil {
-		return LibrarySummaryView{}, ErrAgentNotReady
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), summaryTimeout)
-	defer cancel()
-	return g.Summary(ctx)
-}
-
 // startup is the Wails OnStartup hook (Wails runs it on its own goroutine).
 // Order: paths.Resolve -> setupLogging -> supervisor on a goroutine owned by
 // wg (ensureAgent with a pipe probe, IPC client, relaunch, heartbeats). It
@@ -172,7 +148,6 @@ func (a *App) startup(wailsCtx context.Context) {
 		return
 	}
 	a.log, a.logCloser = log, closer
-	a.gate = newLibraryGate(storeOpener(p.DB))
 	a.wailsCtx = wailsCtx
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -199,7 +174,6 @@ func (a *App) startup(wailsCtx context.Context) {
 		},
 		NewClient: func() (ipcClient, error) { return a.platform.newClient(log) },
 		Publish:   a.publishClient,
-		Gate:      a.gate,
 		Root:      p.Root,
 		Emit:      func(event string, data any) { a.platform.emit(wailsCtx, event, data) },
 		Quit:      func() { a.platform.quit(wailsCtx) },
@@ -251,8 +225,9 @@ func (a *App) secondInstance() {
 }
 
 // shutdown is the Wails OnShutdown hook: cancel (supervisor and any Ensure in
-// progress) -> Client.Close -> wg.Wait (supervisor) -> libraryGate.Close -> log
-// "UI encerrada" -> log Close (ADR 0013). The agent is never touched (DSK-002).
+// progress) -> Client.Close -> wg.Wait (supervisor) -> log "UI encerrada" -> log
+// Close (ADR 0013). The UI holds no database (ADR 0015) and the agent is never
+// touched (DSK-002).
 func (a *App) shutdown(context.Context) {
 	a.mu.Lock()
 	if a.stopped {
@@ -261,7 +236,7 @@ func (a *App) shutdown(context.Context) {
 	}
 	a.stopped = true
 	a.client = nil
-	cancel, owned, gate, log, logCloser := a.cancel, a.owned, a.gate, a.log, a.logCloser
+	cancel, owned, log, logCloser := a.cancel, a.owned, a.log, a.logCloser
 	a.mu.Unlock()
 	// From here on the goroutine sees stopped and never sets a new client, so
 	// owned is the only client that may exist.
@@ -275,11 +250,6 @@ func (a *App) shutdown(context.Context) {
 		}
 	}
 	a.wg.Wait()
-	if gate != nil {
-		if err := gate.Close(); err != nil && log != nil {
-			log.Warn("falha ao fechar a biblioteca", "error", err.Error())
-		}
-	}
 	if log != nil {
 		log.Info("UI encerrada")
 	}
