@@ -11,6 +11,7 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/paths"
+	"github.com/arcadia-launcher/arcadia/internal/winapi"
 )
 
 const (
@@ -334,4 +335,19 @@ func probeStatus(ctx context.Context, p pinger, limit <-chan time.Time) (st ipc.
 		r := <-ch
 		return r.st, r.err != nil, r.err
 	}
+}
+
+// AgentElevated reports whether the agent the UI is connected to runs with
+// administrator rights (ADM-005). Any failure (no agent, no PID, no access)
+// reports false, so the UI shows the warning instead of using that agent.
+func (a *App) AgentElevated() bool {
+	st := a.AgentStatus()
+	if !st.Connected || st.PID <= 0 {
+		return false
+	}
+	elevated, err := winapi.IsProcessElevated(uint32(st.PID))
+	if err != nil {
+		return false
+	}
+	return elevated
 }
