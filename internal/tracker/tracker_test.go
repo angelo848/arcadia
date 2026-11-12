@@ -1145,6 +1145,344 @@ func TestTrackerShuttingDown(t *testing.T) {
 	})
 }
 
+// --- WithoutActiveGame (DEL-002, DEL-003) -----------------------------------
+
+const (
+	opRemoveFn  = "fn" // recorded by removeFn
+	otherGameID = int64(9)
+)
+
+// other is a game different from testGameID, used by the DEL-003 cases.
+var other = tracker.LaunchSpec{GameID: otherGameID, Title: "Celeste", Exe: `C:\Games\Celeste\Celeste.exe`}
+
+// removeFn returns a WithoutActiveGame fn that records its call in the shared
+// log and returns err.
+func removeFn(e *env, err error) func() error {
+	return func() error {
+		e.rec.add(call{op: opRemoveFn, err: err})
+		return err
+	}
+}
+
+// wantSessionActive checks a *SessionActiveError (and ErrSessionActive) for
+// testGameID with session id and title.
+func wantSessionActive(t *testing.T, err error, id int64, title string) {
+	t.Helper()
+	if !errors.Is(err, tracker.ErrSessionActive) {
+		t.Fatalf("WithoutActiveGame error = %v, want ErrSessionActive", err)
+	}
+	var sa *tracker.SessionActiveError
+	if !errors.As(err, &sa) {
+		t.Fatalf("WithoutActiveGame error = %T %v, want *SessionActiveError", err, err)
+	}
+	if sa.Session.ID != id || sa.Session.GameID != testGameID || sa.Session.Title != title {
+		t.Errorf("SessionActiveError session = %d/%d/%q, want %d/%d/%q",
+			sa.Session.ID, sa.Session.GameID, sa.Session.Title, id, testGameID, title)
+	}
+}
+
+// errCtx is a context whose Err is already context.Canceled but whose Done
+// never closes: only a check of Err on the owner side can refuse a request
+// made with it.
+type errCtx struct{ context.Context }
+
+func (errCtx) Done() <-chan struct{} { return nil }
+
+func (errCtx) Err() error { return context.Canceled }
+
+// TestWithoutActiveGame is not parallel as a whole: its goleak case inspects
+// every goroutine of the process. That case is the last sequential subtest, so
+// it finishes before the parallel subtests (paused until this body returns)
+// start.
+func TestWithoutActiveGame(t *testing.T) {
+	t.Run("DEL-002/sem sessão nem lançamento do jogo executa fn e devolve o erro dela", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		if err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, errDisk)); err != errDisk {
+			t.Fatalf("WithoutActiveGame = %v, want fn's error %v as is", err, errDisk)
+		}
+		if n := e.rec.count(opRemoveFn); n != 1 {
+			t.Fatalf("fn calls = %d, want 1", n)
+		}
+		if err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil)); err != nil {
+			t.Errorf("WithoutActiveGame with fn returning nil = %v, want nil", err)
+		}
+		if n := e.rec.count(opRemoveFn); n != 2 {
+			t.Errorf("fn calls = %d, want 2", n)
+		}
+		wantNoCalls(t, e, opPrepare, opStart, opEnd)
+	})
+
+	t.Run("DEL-002/sessão Running, Grace ou Paused do mesmo jogo devolve *SessionActiveError com o id da sessão e sem chamar fn", func(t *testing.T) {
+		t.Parallel()
+		t.Run("Running", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			snap, _ := e.launch(t)
+			err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil))
+			wantSessionActive(t, err, snap.ID, testTitle)
+			wantNoCalls(t, e, opRemoveFn, opEnd, opTerminate)
+		})
+		t.Run("Grace", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			_, j := e.launch(t)
+			toGraceAfter(t, e, j, waitRunning, 100*time.Second)
+			snap := e.waitCurrentState(t, domain.SessionGrace)
+			err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil))
+			wantSessionActive(t, err, snap.ID, testTitle)
+			wantNoCalls(t, e, opRemoveFn, opEnd, opTerminate)
+		})
+		t.Run("Paused", func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, quiet)
+			snap, _ := pausedAt(t, e, 100*time.Second)
+			err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil))
+			wantSessionActive(t, err, snap.ID, testTitle)
+			wantNoCalls(t, e, opRemoveFn, opEnd, opTerminate)
+		})
+	})
+
+	t.Run("DEL-002/lançamento pendente do mesmo jogo devolve *SessionActiveError com ID 0 e sem chamar fn", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		entered, release := e.launcher.block(t)
+		launchCtx := timeoutCtx(t)
+		launched := make(chan error, 1)
+		go func() {
+			_, err := e.tr.Launch(launchCtx, testSpec)
+			launched <- err
+		}()
+		select {
+		case <-entered:
+		case <-time.After(waitTimeout):
+			t.Fatal("Prepare never started")
+		}
+		// Prepare is held, so the owner goroutine is busy: the pending launch
+		// must be answered without waiting for it (sessionId 0, as SES-002).
+		ctx := timeoutCtx(t)
+		res := make(chan error, 1)
+		go func() { res <- e.tr.WithoutActiveGame(ctx, testGameID, removeFn(e, nil)) }()
+		var err error
+		select {
+		case err = <-res:
+		case <-time.After(waitTimeout):
+			release()
+			t.Fatal("WithoutActiveGame waited for the pending launch of the same game")
+		}
+		wantSessionActive(t, err, 0, testTitle)
+		wantNoCalls(t, e, opRemoveFn)
+		release()
+		select {
+		case lerr := <-launched:
+			if lerr != nil {
+				t.Fatalf("Launch: %v", lerr)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatal("Launch did not return")
+		}
+		wantNoCalls(t, e, opRemoveFn)
+	})
+
+	t.Run("DEL-003/sessão de outro jogo não impede fn", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		snap, _ := e.launch(t)
+		if err := e.tr.WithoutActiveGame(timeoutCtx(t), otherGameID, removeFn(e, nil)); err != nil {
+			t.Fatalf("WithoutActiveGame(game %d) with a session of game %d: %v", otherGameID, testGameID, err)
+		}
+		if n := e.rec.count(opRemoveFn); n != 1 {
+			t.Errorf("fn calls = %d, want 1", n)
+		}
+		cur, ok := e.tr.Current()
+		if !ok || cur.ID != snap.ID || cur.State != domain.SessionRunning {
+			t.Errorf("Current = %+v (%v), want the running session %d unchanged", cur, ok, snap.ID)
+		}
+		wantNoCalls(t, e, opEnd, opTerminate, opJobClose)
+	})
+
+	t.Run("DEL-003/lançamento de outro jogo em andamento: fn roda depois que ele termina", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		entered, release := e.launcher.block(t)
+		launchCtx := timeoutCtx(t)
+		launched := make(chan error, 1)
+		go func() {
+			_, err := e.tr.Launch(launchCtx, other)
+			launched <- err
+		}()
+		select {
+		case <-entered:
+		case <-time.After(waitTimeout):
+			t.Fatal("Prepare never started")
+		}
+		ctx := timeoutCtx(t)
+		res := make(chan error, 1)
+		go func() { res <- e.tr.WithoutActiveGame(ctx, testGameID, removeFn(e, nil)) }()
+		// The owner is held in Prepare of another game: fn cannot have run yet.
+		if n := e.rec.count(opRemoveFn); n != 0 {
+			t.Fatalf("fn ran %d time(s) while the launch of another game was in progress", n)
+		}
+		release()
+		select {
+		case lerr := <-launched:
+			if lerr != nil {
+				t.Fatalf("Launch of another game: %v", lerr)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatal("Launch did not return")
+		}
+		select {
+		case err := <-res:
+			if err != nil {
+				t.Errorf("WithoutActiveGame = %v, want nil", err)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatal("WithoutActiveGame did not return after the other launch ended")
+		}
+		wantSeq(t, e, []string{opStart, opResume, opRemoveFn}, opStart, opResume, opRemoveFn)
+		if _, ok := e.tr.Current(); !ok {
+			t.Error("Current: the launched session of the other game is gone")
+		}
+	})
+
+	t.Run("DEL-002/ctx vencido antes de a dona pegar o pedido: fn não roda e devolve ctx.Err()", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		entered, release := e.launcher.block(t)
+		launchCtx := timeoutCtx(t)
+		launched := make(chan error, 1)
+		go func() {
+			_, err := e.tr.Launch(launchCtx, other)
+			launched <- err
+		}()
+		select {
+		case <-entered:
+		case <-time.After(waitTimeout):
+			t.Fatal("Prepare never started")
+		}
+		// The owner is held in Prepare of another game, so the request waits in
+		// the queue; the context is already over before the owner can take it.
+		ctx, cancel := context.WithCancel(timeoutCtx(t))
+		cancel()
+		res := make(chan error, 1)
+		go func() { res <- e.tr.WithoutActiveGame(ctx, testGameID, removeFn(e, nil)) }()
+		var err error
+		select {
+		case err = <-res:
+		case <-time.After(waitTimeout):
+			release()
+			t.Fatal("WithoutActiveGame did not honour its cancelled context")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("WithoutActiveGame = %v, want ctx.Err() (context.Canceled)", err)
+		}
+		release()
+		select {
+		case lerr := <-launched:
+			if lerr != nil {
+				t.Fatalf("Launch of another game: %v", lerr)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatal("Launch did not return")
+		}
+		// Close stops the owner. run() picks stop and ctrlCh at random, so the
+		// owner may or may not take the abandoned request first; either way fn
+		// must not run (the context is over, or the owner is shutting down).
+		if err := e.close(t); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		wantNoCalls(t, e, opRemoveFn)
+	})
+
+	t.Run("DEL-002/ctx vencido antes de a dona pegar o pedido recusa fn pela checagem do dono", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		// Idle owner and a context whose Done never closes: the caller can only
+		// return once the owner replies, and the owner must refuse fn by itself.
+		res := make(chan error, 1)
+		go func() { res <- e.tr.WithoutActiveGame(errCtx{context.Background()}, testGameID, removeFn(e, nil)) }()
+		var err error
+		select {
+		case err = <-res:
+		case <-time.After(waitTimeout):
+			t.Fatal("WithoutActiveGame did not return: the owner did not refuse the request")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("WithoutActiveGame = %v, want ctx.Err() (context.Canceled)", err)
+		}
+		wantNoCalls(t, e, opRemoveFn)
+	})
+
+	t.Run("DEL-002/fn iniciada e ctx vencido: a espera termina com o resultado de fn", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		g := newGate(t)
+		fn := func() error {
+			e.rec.add(call{op: opRemoveFn})
+			g.pass()
+			return errDisk
+		}
+		ctx, cancel := context.WithCancel(timeoutCtx(t))
+		defer cancel()
+		res := make(chan error, 1)
+		go func() { res <- e.tr.WithoutActiveGame(ctx, testGameID, fn) }()
+		g.waitEntered(t, "fn")
+		cancel() // the context ends after fn has started
+		// Bounded negative check: fn is held, so the caller must still be waiting.
+		select {
+		case err := <-res:
+			g.release()
+			t.Fatalf("WithoutActiveGame returned (%v) while fn was still running", err)
+		case <-time.After(50 * time.Millisecond):
+		}
+		g.release()
+		select {
+		case err := <-res:
+			if err != errDisk {
+				t.Errorf("WithoutActiveGame = %v, want fn's error %v as is", err, errDisk)
+			}
+		case <-time.After(waitTimeout):
+			t.Fatal("WithoutActiveGame did not return after fn finished")
+		}
+		if n := e.rec.count(opRemoveFn); n != 1 {
+			t.Errorf("fn calls = %d, want 1", n)
+		}
+	})
+
+	t.Run("DEL-002/agente em shutdown devolve ErrShuttingDown sem chamar fn", func(t *testing.T) {
+		t.Parallel()
+		e := newEnv(t, quiet)
+		e.tr.BeginShutdown()
+		err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil))
+		if !errors.Is(err, tracker.ErrShuttingDown) {
+			t.Fatalf("WithoutActiveGame = %v, want ErrShuttingDown", err)
+		}
+		wantNoCalls(t, e, opRemoveFn, opPrepare, opStart)
+		if err := e.close(t); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		err = e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil))
+		if !errors.Is(err, tracker.ErrShuttingDown) {
+			t.Fatalf("WithoutActiveGame after Close = %v, want ErrShuttingDown", err)
+		}
+		wantNoCalls(t, e, opRemoveFn)
+	})
+
+	// Sequential on purpose: goleak inspects every goroutine of the process.
+	t.Run("DEL-002/depois de Close não sobra goroutine (goleak)", func(t *testing.T) {
+		ignore := goleak.IgnoreCurrent()
+		e := newEnv(t, quiet)
+		if err := e.tr.WithoutActiveGame(timeoutCtx(t), testGameID, removeFn(e, nil)); err != nil {
+			t.Fatalf("WithoutActiveGame: %v", err)
+		}
+		if err := e.close(t); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		goleak.VerifyNone(t, ignore)
+	})
+}
+
 // closeHeldBy starts Close in a goroutine owned by the test, waits until the
 // owner goroutine is held at g (reached during the shutdown) and checks that
 // Close has not returned; then it releases g and returns Close's result.

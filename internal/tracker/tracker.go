@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -58,6 +59,15 @@ const (
 	ctrlSuspend
 	ctrlWake
 	ctrlLaunchDetached
+	ctrlWithoutGame
+)
+
+// Claim states of a ctrlWithoutGame request: the owner and the caller race for
+// it once, so fn starts only if the caller has not given up [DEL-002].
+const (
+	claimOpen    uint32 = iota // neither side has taken the request
+	claimOwner                 // the owner goroutine took it: fn runs or is refused
+	claimAbandon               // the caller gave up before the owner took it
 )
 
 type ctrlResult struct {
@@ -73,6 +83,10 @@ type ctrlReq struct {
 	reason      domain.PauseReason
 	at          time.Time
 	userPresent bool
+	gameID      int64        // ctrlWithoutGame only
+	fn          func() error // ctrlWithoutGame only
+	ctx         context.Context
+	claim       *atomic.Uint32  // ctrlWithoutGame only: claimOpen, claimOwner or claimAbandon
 	reply       chan ctrlResult // buffered 1: the owner never blocks on it
 }
 
@@ -302,6 +316,68 @@ func (t *Tracker) Suspend(ctx context.Context, at time.Time) error {
 func (t *Tracker) Wake(ctx context.Context, at time.Time, userPresent bool) error {
 	_, err := t.control(ctx, ctrlReq{kind: ctrlWake, at: at, userPresent: userPresent})
 	return err
+}
+
+// WithoutActiveGame runs fn in the owner goroutine when gameID has neither an
+// open session nor a launch in progress [DEL-002]. Otherwise it returns
+// *SessionActiveError without calling fn: ID and Title of the open session, or
+// ID 0 and the title while launching. Sessions and launches of other games do
+// not block it [DEL-003]. fn's error is returned as is.
+//
+// Context policy: if ctx is already done when the owner takes the request, fn
+// does not run and ctx.Err() is returned. Once fn has started the caller waits
+// for its result even if ctx ends. After BeginShutdown or Close it returns
+// ErrShuttingDown without calling fn.
+//
+// fn runs in the owner goroutine, which is shared with the tracking loop, so it
+// must be short. It does not receive the tracker's shutdown context: it must
+// honor the ctx that its caller passed to WithoutActiveGame (DeleteGame uses it
+// for the database).
+func (t *Tracker) WithoutActiveGame(ctx context.Context, gameID int64, fn func() error) error {
+	if t.isShuttingDown() {
+		return ErrShuttingDown
+	}
+	// Fast refusal from the published view, as Launch does: a pending launch of
+	// the same game is answered without waiting for it [DEL-002].
+	t.mu.Lock()
+	v := t.view
+	t.mu.Unlock()
+	if g, _, _, ok := v.Pending(); ok && g == gameID {
+		return &SessionActiveError{Session: activeSession(&v, t.clock.Now())}
+	}
+	req := ctrlReq{
+		kind:   ctrlWithoutGame,
+		gameID: gameID,
+		fn:     fn,
+		ctx:    ctx,
+		claim:  new(atomic.Uint32),
+		reply:  make(chan ctrlResult, 1),
+	}
+	select {
+	case t.ctrlCh <- req:
+	case <-t.done:
+		return ErrShuttingDown
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case r := <-req.reply:
+		return r.err
+	case <-t.done:
+		select {
+		case r := <-req.reply:
+			return r.err
+		default:
+			return ErrShuttingDown
+		}
+	case <-ctx.Done():
+		if req.claim.CompareAndSwap(claimOpen, claimAbandon) {
+			return ctx.Err()
+		}
+		// The owner took the request, so fn has started or is refused. The owner
+		// always replies before it exits, so the wait does not need ctx.
+		return (<-req.reply).err
+	}
 }
 
 // control sends req to the owner goroutine. The send is abandoned only when
@@ -591,6 +667,9 @@ func (t *Tracker) handleControl(req ctrlReq) ctrlResult {
 	if t.isShuttingDown() {
 		return ctrlResult{err: ErrShuttingDown}
 	}
+	if req.kind == ctrlWithoutGame {
+		return t.withoutGame(req)
+	}
 	before := t.m.State()
 	if req.kind == ctrlLaunchDetached {
 		if before != StateIdle {
@@ -650,6 +729,22 @@ func (t *Tracker) handleControl(req ctrlReq) ctrlResult {
 	}
 	snap, _ := t.m.Snapshot(now)
 	return ctrlResult{res: res, snap: snap}
+}
+
+// withoutGame runs a WithoutActiveGame request in the owner goroutine [DEL-002,
+// DEL-003]. The claim is taken first: a caller that gave up is skipped, and one
+// whose context ended before this point gets ctx.Err() without fn running.
+func (t *Tracker) withoutGame(req ctrlReq) ctrlResult {
+	if !req.claim.CompareAndSwap(claimOpen, claimOwner) {
+		return ctrlResult{}
+	}
+	if err := req.ctx.Err(); err != nil {
+		return ctrlResult{err: err}
+	}
+	if gameID, _, _, ok := t.m.Pending(); ok && gameID == req.gameID {
+		return ctrlResult{err: &SessionActiveError{Session: activeSession(t.m, t.clock.Now())}}
+	}
+	return ctrlResult{err: req.fn()}
 }
 
 // handlePoll runs the periodic job check [SES-013].
