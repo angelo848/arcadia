@@ -7,12 +7,12 @@
 
 ---
 
-## T00 — ADR 0025 e contrato v0.7.0 (IPC-050..IPC-053)
+## T00 — ADR 0025 e contrato v0.7.0 
 - **Arquivos:** `docs/adr/0025-rastreio-por-processo-adotado.md` (proposto); `docs/specs/phase-6-importers/contracts/ipc.openrpc.json`
   (v0.7.0: `import.scan`, `import.apply`, forma de `CandidateView` e `ApplyResult`, `game.launch` com `uri`).
-- **Testes:** `internal/ipc/contract_phase6_test.go` — `IPC-050/import.scan aceita fonte e caminho`,
-  `IPC-051/import.apply rejeita lista vazia com -32602`, `IPC-052/candidatos usam camelCase`,
-  `IPC-053/game.launch aceita launchType uri`.
+- **Testes:** `internal/ipc/contract_phase6_test.go` — `IMP-001/import.scan aceita fonte e caminho`,
+  `IMP-001/import.apply rejeita lista vazia com -32602`, `IMP-001/candidatos usam camelCase`,
+  `RUL-003/game.launch aceita launchType uri`.
 - **Dependência:** nenhuma.
 
 ## T01 — Parser da Steam (IMP-002)
@@ -48,7 +48,7 @@
   `IMP-007/tempo vira sessão source=import com ended_at na última partida`,
   `IMP-007/sessões rastreadas existentes não mudam`, `IMP-009/apply não cria sessão rastreada`,
   `RUL-001/install_dir gera regra install_dir com learned=0`, `RUL-001/exe gera regra exe_path`,
-  `IMP-001/o scan não grava nada` (no teste de agente, T06).
+  `RUL-006/learned fica false`, `IMP-001/o scan não grava nada` (no teste de agente, T06).
 - **Dependência:** T00.
 
 ## T06 — Handlers do agente (IMP-001, IMP-008)
