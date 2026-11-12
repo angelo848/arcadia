@@ -16,7 +16,9 @@ func TestValidateLaunch(t *testing.T) {
 	}{
 		{"EDT-010/exe com caminho absoluto é válido", "exe", `C:\Jogos\g.exe`, "", true},
 		{"EDT-010/uri é válida sem ser caminho", "uri", "steam://rungameid/730", "", true},
-		{"EDT-010/tipo fora de exe e uri é recusado", "emulator", `C:\g.exe`, "", false},
+		{"EDT-010/tipo fora de exe, uri e emulator é recusado", "steam", `C:\g.exe`, "", false},
+		{"EMU-004/emulator com ROM absoluta é válido", "emulator", `D:\Roms\g.sfc`, "", true},
+		{"EMU-004/emulator com ROM relativa é recusado", "emulator", "g.sfc", "", false},
 		{"EDT-010/alvo vazio é recusado", "uri", "   ", "", false},
 		{"EDT-010/exe com caminho relativo é recusado", "exe", `g.exe`, "", false},
 		{"EDT-010/alvo longo demais é recusado", "uri", long, "", false},

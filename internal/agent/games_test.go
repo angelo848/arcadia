@@ -2061,3 +2061,8 @@ func TestHandleSessionNotPausable(t *testing.T) {
 		})
 	}
 }
+
+// ResolveEmulator delegates to the real store (EMU-004).
+func (s *recordingGameStore) ResolveEmulator(ctx context.Context, gameID int64) (store.Emulator, error) {
+	return s.inner.ResolveEmulator(ctx, gameID)
+}

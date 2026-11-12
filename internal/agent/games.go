@@ -33,6 +33,8 @@ const pauseHandlerTimeout = 5 * time.Second
 const (
 	launchTypeExe = "exe"
 	launchTypeURI = "uri"
+	// launchTypeEmulator runs the ROM in the emulator of the game or its platform (EMU-004).
+	launchTypeEmulator = "emulator"
 )
 
 // Texts of LaunchFailedData.error produced by the agent itself.
@@ -53,6 +55,7 @@ type gameStore interface {
 	Platforms(ctx context.Context) ([]store.Platform, error)
 	AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error)
 	Catalog(ctx context.Context) (store.Catalog, error)
+	ResolveEmulator(ctx context.Context, gameID int64) (store.Emulator, error)
 }
 
 // sessionTracker is the part of *tracker.Tracker used by the game handlers.
@@ -253,6 +256,13 @@ func prepareLaunch(ctx context.Context, st gameStore, params json.RawMessage,
 	case launchTypeExe:
 	case launchTypeURI:
 		spec.Kind = tracker.KindURI
+	case launchTypeEmulator:
+		// The emulator runs as an exe in a Job Object; the ROM is the target (EMU-004).
+		espec, err := emulatorSpec(ctx, st, g, spec)
+		if err != nil {
+			return store.Game{}, none, err
+		}
+		spec = espec
 	default:
 		return store.Game{}, none, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
 			ipc.LaunchFailedData{Error: launchErrUnsupported})

@@ -11,6 +11,8 @@ import (
 const (
 	LaunchTypeExe = "exe"
 	LaunchTypeURI = "uri"
+	// LaunchTypeEmulator runs the ROM in an emulator (EMU-004); the target is the ROM path.
+	LaunchTypeEmulator = "emulator"
 )
 
 // Launch field limits (EDT-010), in runes.
@@ -24,14 +26,14 @@ const (
 // long, and an absolute path for exe games; the arguments are at most
 // MaxLaunchArgsRunes long and may be empty. The error wraps ErrInvalidField.
 func ValidateLaunch(launchType, target, args string) error {
-	if launchType != LaunchTypeExe && launchType != LaunchTypeURI {
+	if launchType != LaunchTypeExe && launchType != LaunchTypeURI && launchType != LaunchTypeEmulator {
 		return fmt.Errorf("launch type %q: %w", launchType, ErrInvalidField)
 	}
 	target = strings.TrimSpace(target)
 	if target == "" || utf8.RuneCountInString(target) > MaxLaunchTargetRunes {
 		return fmt.Errorf("launch target: %w", ErrInvalidField)
 	}
-	if launchType == LaunchTypeExe && !filepath.IsAbs(target) {
+	if (launchType == LaunchTypeExe || launchType == LaunchTypeEmulator) && !filepath.IsAbs(target) {
 		return fmt.Errorf("launch target %q is not an absolute path: %w", target, ErrInvalidField)
 	}
 	if utf8.RuneCountInString(args) > MaxLaunchArgsRunes {
