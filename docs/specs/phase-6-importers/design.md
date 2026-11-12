@@ -50,10 +50,7 @@ type Result struct {
 - **Epic (IMP-003):** `*.item` em `ProgramData\Epic\EpicGamesLauncher\Data\Manifests` (JSON). Campos: `AppName`,
   `DisplayName`, `InstallLocation`. Pasta injetada por `ScanInput` para teste.
 - **Pasta (IMP-004):** `os.ReadDir` de primeiro nível, `.exe` apenas. Título = nome sem extensão.
-- **LaunchBox (IMP-005):** `encoding/xml` sobre `Data\Platforms\*.xml`. Campos esperados: `Title`, `Platform`,
-  `Developer`, `Publisher`, `Genre`, `ReleaseYear`, `Notes`, `ApplicationPath`, `PlayCount`, `LastPlayedDate` e os modos
-  (`Cooperative`/`MaxPlayers`, a mapear no design de detalhe). **Verificação manual com o XML real do usuário** antes de
-  fechar a T05: a fixture é uma cópia reduzida de um arquivo real, anonimizada.
+- **LaunchBox (IMP-005), formato confirmado no arquivo real (`DataPlatformsWindows.xml`, 76 jogos):** `<LaunchBox>` com um `<Game>` por jogo. Campos usados: `Title`, `Platform` (`Windows`), `Developer`, `Publisher`, `Genre` (separado por `; `), `ReleaseDate` (RFC 3339 com offset; o ano é o da data), `Notes` (descrição), `ApplicationPath` (URI ou `.exe`), `PlayCount`, `PlayTime` (inteiro em **segundos**, confirmado: Counter-Strike 2 tem 33060 com 3 partidas) e `LastPlayedDate` (RFC 3339 com offset). `PlayMode` vem em português: `Único jogador` → `single`; `Cooperativo` → `coop_online`; `Multiplayer` → `multi_online` (ver decisão em §9). Campos ignorados: `Source`, `AdditionalApplication`, imagens, `ID` (GUID). Fixture: `internal/importers/testdata/launchbox/Windows-sample.xml` (3 jogos reais anonimizados: Steam, Epic e `.exe`). `PlayTime` com `PlayCount = 0` é importado como sessão mesmo assim (dois casos no arquivo).
 
 Todas as leituras aceitam o diretório base por `ScanInput` (teste sem tocar no sistema). Nenhum `time.Now()`; o relógio
 vem de `domain.Clock` onde houver data.
@@ -155,3 +152,16 @@ qualquer assumção; se o cliente recusar, o caminho exe por pasta (RUL-002) con
   adotado. Mitigação: só casa com processo novo depois do `OpenURI`, e a carência encerra o rastreio quando ele sai.
 - **Tempo de LaunchBox fora do limite:** `LastPlay - Seconds` pode ser antes do início real. Aceito: é um dado
   importado, não medido; a UI mostra a origem `import` na página do jogo.
+
+## 9. Decisões tomadas com o XML real (2026-11-12)
+
+- **Plataforma:** Steam, Epic, pasta avulsa e a plataforma `Windows` do LaunchBox entram na plataforma `PC` (categoria `pc`),
+  para não duplicar plataforma. Outras plataformas do LaunchBox (PS2, Switch, etc.) não são importadas nesta fase: a
+  importação do LaunchBox lê só `Windows.xml`.
+- **Modos de jogo:** `Único jogador` → `single`; `Cooperativo` → `coop_online`; `Multiplayer` → `multi_online`. O XML não
+  diz se é local ou online; a escolha é a mais comum. Se o usuário quiser outra, a edição do jogo (EDT-004) corrige.
+- **Tempo:** `PlayTime` em segundos. `PlayCount` zero com `PlayTime > 0` gera a sessão mesmo assim.
+- **Lançamentos:** LaunchBox traz URIs `steam://`, `com.epicgames.launcher://` (mesmo formato de IMP-002/IMP-003), `xbox://`,
+  `uplay://` e `.exe`. Todos viram `launch_type = uri` ou `exe`; os de Steam e Epic deduplicam com a importação direta
+  pelo `launch_target`.
+- **Fora do escopo desta fase:** `AdditionalApplication` (apps extras do LaunchBox), e imagens.
