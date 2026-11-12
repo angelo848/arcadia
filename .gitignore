@@ -6,3 +6,4 @@ frontend/dist/*
 .devdata/
 *.log
 frontend/package.json.md5
+node_modules/
