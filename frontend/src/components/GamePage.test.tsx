@@ -206,4 +206,19 @@ describe('GamePage', () => {
     await screen.findByText('Hollow Knight')
     expect(screen.queryByText('Em execução')).toBeNull()
   })
+
+  it('UI-039/botão Editar chama onEdit uma vez (o formulário é aberto pelo pai)', async () => {
+    const { props } = renderPage()
+    await loaded('Hollow Knight')
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(props.onEdit).toHaveBeenCalledTimes(1)
+  })
+
+  it('UI-041/botão Remover chama onRemove uma vez (só a entrada; a confirmação é a T33)', async () => {
+    const { props } = renderPage()
+    await loaded('Hollow Knight')
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    expect(props.onRemove).toHaveBeenCalledTimes(1)
+    expect(props.onEdit).not.toHaveBeenCalled()
+  })
 })

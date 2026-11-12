@@ -24,7 +24,8 @@ const playModeLabels: Record<PlayModeName, string> = {
   coop_online: 'Cooperativo online',
 }
 
-// GamePageProps.onEdit and onRemove are accepted now; their buttons come in T32 and T33.
+// onEdit and onRemove are called once per click; the parent opens the edit form (UI-039) and the
+// removal confirmation (UI-041).
 export type GamePageProps = {
   id: number
   current: SessionView | null
@@ -37,7 +38,7 @@ export type GamePageProps = {
 // It shows no media: no img and no video (phase 7). The session marking is above the title;
 // the live clock is the global SessionPanel, so the page does not show a second title.
 export function GamePage(props: GamePageProps): JSX.Element {
-  const { id, current, onBack } = props
+  const { id, current, onBack, onEdit, onRemove } = props
   const q = useGame(id)
 
   if (q.isError) {
@@ -74,6 +75,22 @@ export function GamePage(props: GamePageProps): JSX.Element {
           Voltar
         </button>
         {marking}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onEdit?.()}
+            className="rounded px-3 py-1 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            onClick={() => onRemove?.()}
+            className="rounded px-3 py-1 text-sm font-medium text-red-400 hover:bg-neutral-800"
+          >
+            Remover
+          </button>
+        </div>
       </div>
 
       <header className="flex flex-col gap-1">
