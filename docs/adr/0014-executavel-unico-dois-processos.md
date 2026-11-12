@@ -1,6 +1,6 @@
 # 0014 — Executável único com dois processos
 
-- **Status:** aceito
+- **Status:** aceito; a parte de início com o Windows foi substituída pela [0024](0024-agente-sempre-como-administrador.md)
 - **Data:** 2026-11-08
 - **Substitui em parte:** [0003](0003-agente-separado-da-ui.md) (só a parte "dois executáveis")
 

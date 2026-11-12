@@ -1,13 +1,15 @@
 # Fase 5.1 — Ajustes da biblioteca: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário (decisões de produto registradas abaixo)
+- **Status:** rascunho, aguardando aprovação do usuário (decisões registradas abaixo)
 - **Base:** [phase-5-library](../phase-5-library/requirements.md) (implementada),
   [phase-3-tracker](../phase-3-tracker/requirements.md) (limitação 4: jogos que exigem administrador) e
-  [single-exe](../single-exe/requirements.md) (início com o Windows).
-- **ADRs relacionados:** 0005 (rastreamento em camadas), 0014 (início com o Windows, mantido), 0015 (agente único
-  escritor), 0016 (Job Object permite breakaway), [0023](../../adr/0023-execucao-como-administrador.md) (proposto).
-- **Objetivo:** permitir jogos que exigem administrador, sem perder a precisão do rastreio, e trocar o campo de gêneros
-  por tags que sugerem os gêneros já cadastrados.
+  [single-exe](../single-exe/requirements.md) (início com o Windows, AST-002..AST-011, substituídos aqui).
+- **ADRs relacionados:** 0005 (rastreamento em camadas), 0014 (executável único; a parte de início com o Windows é
+  substituída pela 0024), 0015 (agente único escritor), 0016 (Job Object permite breakaway),
+  [0023](../../adr/0023-execucao-como-administrador.md) e [0024](../../adr/0024-agente-sempre-como-administrador.md)
+  (ambos propostos).
+- **Objetivo:** o Arcadia roda sempre como administrador, para que os jogos que exigem administrador funcionem com o
+  mesmo rastreio; o início automático com o Windows sai; e o campo de gêneros vira tags que sugerem os já cadastrados.
 
 Formato: cada requisito tem ID estável (`ÁREA-NNN`), nunca reutilizado. Critérios em Dado/Quando/Então.
 Áreas novas: **ADM** (execução como administrador) e **TAG** (tags de gênero). Todo ID precisa de pelo menos um teste
@@ -17,50 +19,48 @@ que o cite no nome, exceto os marcados `· verificação: manual`.
 
 ## Decisões de produto
 
-1. **Como rodar jogos que exigem administrador: o agente roda elevado quando o usuário o inicia como administrador.**
-   O agente deixa de ser elevado por padrão. Quem usa jogos de administrador abre o Arcadia como administrador, e a UI
-   inicia o agente com a mesma elevação. O rastreio continua igual (Job Object, pausa e filhos), porque o agente é o
-   único processo envolvido. O início automático com o Windows sobe o agente sem elevação; quem usa jogos de
-   administrador desliga essa opção na bandeja (ADM-005).
-2. **Tags:** entram nesta fase **só para gêneros**, e a condição combinada foi atendida: para um jogo novo, os gêneros
-   já cadastrados aparecem como tags para escolher (TAG-001). Desenvolvedora e editora continuam como texto separado
-   por vírgula e ficam para uma fase futura.
+1. **O Arcadia sempre sobe como administrador.** Não há distinção por jogo: o `arcadia.exe` pede elevação ao ser aberto
+   (manifesto `requireAdministrator`), a UI e o agente que ela inicia rodam elevados, e todos os jogos herdam essa
+   elevação. O rastreio, a pausa e os filhos continuam como estão (fases 3 e 4).
+2. **O início automático com o Windows é removido.** Não há entrada `Run`, nem item na bandeja, nem a preferência
+   `autostart`. Na primeira subida da nova versão, a entrada `Arcadia` já existente é apagada (ADM-004).
+3. **Tags: só gêneros, com sugestões do catálogo.** Para jogo novo ou existente, os gêneros já cadastrados aparecem para
+   escolher (TAG-001). Desenvolvedora e editora continuam como texto separado por vírgula, para uma fase futura.
 
 ---
 
 ## ADM — Execução como administrador
 
-### ADM-001 — Campo `requiresAdmin` no jogo
-Dado um jogo novo, quando o registro é criado, então `requiresAdmin` é `false`. Dado um jogo existente depois da migração
-para a versão 6, então `requiresAdmin` é `false` e nenhum outro campo muda. Dado `game.update` com `requiresAdmin`
-(boolean), quando o agente grava, então o valor é salvo e `updated_at` muda; sem o campo no patch, o valor não muda
-(EDT-009).
+### ADM-001 — Elevação na abertura
+Dado o `arcadia.exe` de release, quando o usuário o abre (UI ou `--agent`), então o Windows pede a elevação (UAC) e o
+processo só sobe se for aceita. Dado que a elevação é recusada, então nada sobe e nada é gravado.
+Dado um build `dev` (`go run`, `wails dev`), então o build não força elevação e não toca no registro. · verificação: manual
 
-### ADM-002 — Jogo que exige administrador com agente sem elevação
-Dado um jogo com `requiresAdmin = true` e um agente sem elevação, quando o usuário toca "Jogar" ou "Sem contar tempo",
-então nenhum processo é lançado, nenhuma sessão é criada e o erro `-32010` chega à UI com a mensagem "Este jogo precisa
-de administrador. Abra o Arcadia como administrador."
-
-### ADM-003 — Jogo que falha por elevação sem a marca
-Dado um jogo sem `requiresAdmin` que falha com `ERROR_ELEVATION_REQUIRED` (740), então a sessão não é criada (como hoje) e
-a mensagem é a mesma de ADM-002, em vez de "Não foi possível iniciar o jogo".
-
-### ADM-004 — Agente elevado: rastreio sem mudança
+### ADM-002 — Agente elevado, jogos herdam
 Dado o agente rodando como administrador, quando um jogo qualquer é lançado, então ele roda elevado e segue as regras de
-rastreio, pausa e filhos já existentes (fases 3 e 4). Os jogos sem a marca também herdam a elevação do agente: isso é
-consequência da decisão 1; o indicador do agente (`AgentIndicator`) mostra "Agente com privilégio de administrador" quando é o caso.
+rastreio, pausa e filhos já existentes (fases 3 e 4). Não há campo por jogo: nenhuma coluna nova, nenhuma mudança em
+`game.update`, nenhuma mudança na página do jogo. Consequência aceita pelo usuário: jogos sem exigência de administrador
+também rodam elevados.
 
-### ADM-005 — Início automático e conflito de agentes
-Dado um agente sem elevação já em execução (por exemplo, iniciado com o Windows), quando o usuário abre a UI como
-administrador, então a UI mostra "Já há um agente rodando sem privilégio de administrador. Saia dele pela bandeja e abra
-o Arcadia de novo como administrador." e não usa o agente antigo. A mesma mensagem inclui a orientação "Para jogos de administrador,
-desligue o início com o Windows na bandeja" (a opção continua na bandeja, sem mudar o padrão).
-· verificação: manual.
+### ADM-003 — Lançamento de jogo que exige administrador
+Dado um jogo que falha com `ERROR_ELEVATION_REQUIRED` (740), então não há sessão (como hoje) e a mensagem não é mais
+"Não foi possível iniciar o jogo", e sim "Não foi possível iniciar o jogo: o Arcadia precisa estar como administrador.
+Feche-o e abra de novo com a elevação." · verificação: manual
 
-### ADM-006 — Edição do campo
-Dado a página de edição de um jogo, quando o usuário marca "Precisa de administrador" e salva, então o patch leva só
-`requiresAdmin` (EDT-001). Dado a página do jogo, então o campo aparece como "Precisa de administrador: sim/não".
-· verificação: manual (UI).
+Observação: com ADM-001 o caso não deve ocorrer; o requisito cobre o caso de um executável do jogo que pede elevação
+ainda mais alta, sem alterar o rastreio.
+
+### ADM-004 — Início automático removido
+Dado uma versão nova do agente subindo, quando há a entrada `HKCU\...\Run` com o valor `Arcadia` apontando para o mesmo
+executável, então a entrada é apagada, e nenhum erro aparece se ela não existir. Dado a bandeja, então não há mais o item
+"Iniciar com o Windows". Dado a preferência `autostart` no banco, então ela é ignorada e não é lida nem gravada; a linha
+pode ficar sem uso (sem migração nova). Erro ao apagar a entrada é registrado em log e não derruba o agente (ver AST-009,
+substituído).
+
+### ADM-005 — Crash e relançamento
+Dado o agente caindo, quando a UI o relança (fase 2, AGT-001/AGT-002), então o agente novo também sobe elevado, porque
+herda a elevação da UI. Dado a UI fechada e o agente rodando, então o agente continua, como antes.
+· verificação: manual
 
 ---
 
@@ -87,7 +87,7 @@ Dado o campo vazio, quando o usuário pressiona Backspace, então a última tag 
 
 ### TAG-005 — Filtro e contrato inalterados
 Dado a biblioteca, então o filtro por gênero continua igual (FLT-002), e o contrato `game.update` continua recebendo
-`genres` como array de nomes (EDT-004). Nenhuma mudança de IPC além de ADM-001.
+`genres` como array de nomes (EDT-004). Nenhuma mudança de IPC nesta fase.
 · verificação: manual (UI).
 
 ---
@@ -95,6 +95,6 @@ Dado a biblioteca, então o filtro por gênero continua igual (FLT-002), e o con
 ## Fora de escopo nesta fase
 
 - Scrapers e busca automática de metadados (fase 7).
-- Tags para desenvolvedora e editora (fase futura, decisão 2).
-- Rodar só o jogo elevado enquanto o agente segue sem elevação (exigiria um processo auxiliar; ADR 0023, alternativas).
-- Trocar o padrão do início automático com o Windows (continua ligado, como no ADR 0014).
+- Tags para desenvolvedora e editora (fase futura).
+- Elevação só do jogo, com o agente sem elevação (ADR 0023, alternativas).
+- Início automático com o Windows, por qualquer mecanismo (ADR 0024).

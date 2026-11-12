@@ -37,3 +37,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0021](0021-remocao-de-jogo.md) | Remoção de jogo | aceito |
 | [0022](0022-listagem-paginada-no-ipc.md) | Listagem paginada no IPC | aceito |
 | [0023](0023-execucao-como-administrador.md) | Execução de jogos como administrador | proposto |
+| [0024](0024-agente-sempre-como-administrador.md) | Remoção do início automático com o Windows | proposto |

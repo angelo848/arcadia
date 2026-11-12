@@ -209,6 +209,7 @@ Dado um banco novo ou na versão 1, quando o agente abre o store com migração,
 STO-011 (docs/specs/phase-3-tracker).
 
 ### AST-002 — Comando gravado na entrada Run
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado o executável `E` na pasta `D` e `Root` `R`, quando monto o valor da entrada Run, então ele é `E` sempre entre
 aspas, seguido de ` --agent`; se `R` ≠ `D\data` (comparação com `filepath.Clean`, sem diferenciar maiúsculas), segue
 ` --data-dir ` e `R` escapado pelas regras de `windows.EscapeArg`. Exemplos:
@@ -217,43 +218,52 @@ aspas, seguido de ` --agent`; se `R` ≠ `D\data` (comparação com `filepath.Cl
 `R = D:\` → `... --agent --data-dir D:\`.
 
 ### AST-003 — Primeira execução liga o início com o Windows
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado um banco sem a chave `autostart` (build de release), quando o agente sobe, então grava `autostart = "true"` e
 escreve em `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` o valor `Arcadia` (REG_SZ) com o comando de AST-002.
 
 ### AST-004 — Ligado: subida corrige a entrada
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado `autostart = "true"`, quando o agente sobe e o valor `Arcadia` não existe ou difere do comando de AST-002, então o
 valor é regravado com o comando atual (ex.: exe movido junto com a biblioteca); quando é igual, então nada é escrito no
 registro.
 
 ### AST-005 — Desligado: subida só remove a entrada própria
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado `autostart = "false"`, quando o agente sobe e o valor `Arcadia` aponta para o mesmo executável (primeiro token da
 linha de comando igual a `E`, sem diferenciar maiúsculas), então o valor é removido; quando aponta para outro
 executável ou não existe, então nada é alterado no registro.
 
 ### AST-006 — Item da bandeja reflete a preferência
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado o agente rodando, quando abro o menu da bandeja, então há o item marcável "Iniciar com o Windows" entre
 "Abrir Arcadia" e o separador de "Sair", marcado se e só se `autostart = "true"`. · verificação: manual
 
 ### AST-007 — Desmarcar desliga
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado `autostart = "true"`, quando aciono "Iniciar com o Windows", então `autostart = "false"` é gravado, o valor
 `Arcadia` é removido segundo a regra de AST-005 e o item fica desmarcado.
 
 ### AST-008 — Marcar liga
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado `autostart = "false"`, quando aciono "Iniciar com o Windows", então `autostart = "true"` é gravado, o valor
 `Arcadia` é escrito com o comando de AST-002 e o item fica marcado.
 
 ### AST-009 — Falha de registro ou banco não derruba o agente
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado que ler/escrever o registro ou a chave `autostart` falha (na subida ou no clique), quando a operação ocorre, então
 o agente registra `Error` com `op` e `error` e continua rodando. Se a gravação da preferência falhou no clique, o item
 mantém o estado anterior e o registro não é tocado; se só o registro falhou, a preferência gravada vale e o item mostra
 o estado novo (a próxima subida tenta de novo por AST-004/AST-005).
 
 ### AST-010 — Build de desenvolvimento não toca no registro
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado um binário sem `-X main.version` (`version == "dev"`), quando o agente sobe ou o item é acionado, então nada é
 lido nem escrito no registro nem na chave `autostart`, o item "Iniciar com o Windows" aparece desabilitado e desmarcado
 e é registrado `Info` "início com o Windows desativado em build de desenvolvimento" uma vez na subida.
 
 ### AST-011 — Login abre só o agente
+· substituído por ADM-004 (docs/specs/phase-5-1-ajustes, decisão 2): início com o Windows removido.
 Dado `autostart = "true"` e um build de release, quando faço logon no Windows, então só o agente sobe (ícone na bandeja,
 nenhuma janela da UI), usando o `Root` do comando gravado. · verificação: manual
 

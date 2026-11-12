@@ -48,7 +48,7 @@
 
 **Por que dois processos?** O rastreamento de tempo nunca depende da janela principal. Um único executável roda nos dois papéis ([ADR 0014](adr/0014-executavel-unico-dois-processos.md)): sem flag abre a UI (instância única) e garante o agente vivo; com `--agent` é o agente.
 Abrir, fechar, atualizar ou até travar a UI **não afeta o tempo de jogo**. O agente é minúsculo,
-inicia com o Windows (ligado por padrão, desligável na bandeja) e fica na bandeja. "Sair" na bandeja encerra o agente e fecha a UI; se o agente cair, a UI o relança. Se a UI for aberta durante um jogo, ela apenas
+sobe sempre como administrador (ADR 0023), não inicia com o Windows (ADR 0024) e fica na bandeja. "Sair" na bandeja encerra o agente e fecha a UI; se o agente cair, a UI o relança. Se a UI for aberta durante um jogo, ela apenas
 se conecta ao pipe e mostra o cronômetro ao vivo.
 
 **Escrita no banco:** o agente é o único escritor de `library.db`, incluindo a biblioteca. A UI pede as escritas
@@ -65,7 +65,7 @@ arcadia/
 │  ├─ arcadia/       # main único (arcadia.exe): UI Wails + wails.json; `--agent` delega a internal/agent
 │  └─ fake-game/     # executável de teste que simula launchers (spawn filho e sai, relança, etc.)
 ├─ internal/
-│  ├─ agent/         # modo agente: bandeja, IPC, store, início com o Windows (Run(Options) int)
+│  ├─ agent/         # modo agente: bandeja, IPC, store (Run(Options) int)
 │  ├─ domain/        # entidades, FilterSpec, cálculo de tempo (sem Win32, 100% testável)
 │  ├─ store/         # SQLite: migrações (goose), queries (sqlc), FTS
 │  ├─ tracker/       # Job Objects, watcher de processos, heurísticas, máquina de estados da sessão
@@ -277,4 +277,4 @@ type MetadataProvider interface {
 2. ~~Nome do projeto~~ → `arcadia` ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 3. ~~Local da biblioteca~~ → portátil, `data/` ao lado do exe, com override ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 4. ~~Atalhos padrão de pausa~~ → `Ctrl+Alt+P` no teclado e `Select + Y` (1 s) no controle, fixos na fase 4 ([ADR 0018](adr/0018-entrada-global-e-feedback-nativo.md)).
-5. ~~Agente iniciando com o Windows~~ → ligado por padrão, com opção na bandeja ([ADR 0014](adr/0014-executavel-unico-dois-processos.md)).
+5. ~~Agente iniciando com o Windows~~ → removido; o agente sobe sempre como administrador ([ADR 0023](adr/0023-execucao-como-administrador.md), [ADR 0024](adr/0024-agente-sempre-como-administrador.md)).
