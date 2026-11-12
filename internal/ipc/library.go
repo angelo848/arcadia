@@ -15,7 +15,9 @@ type GameListResult struct {
 // never nil. CompletedAt is a YYYY-MM-DD date or null.
 type GameDetail struct {
 	Game
-	Description string   `json:"description"`
+	Description string `json:"description"`
+	// EmulatorID is the game's own emulator, nil to use the platform default (EMU-002).
+	EmulatorID  *int64   `json:"emulatorId"`
 	CompletedAt *string  `json:"completedAt"`
 	Developers  []string `json:"developers"`
 	Publishers  []string `json:"publishers"`
@@ -60,6 +62,8 @@ type Platform struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	Category string `json:"category"`
+	// EmulatorID is the default emulator of the platform, nil when none (EMU-002).
+	EmulatorID *int64 `json:"emulatorId"`
 }
 
 // PlatformListResult is the result of platform.list.

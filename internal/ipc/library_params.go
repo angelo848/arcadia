@@ -38,6 +38,7 @@ type GameUpdateParams struct {
 	Publishers   Optional[[]string] `json:"publishers"`
 	Genres       Optional[[]string] `json:"genres"`
 	PlayModes    Optional[[]string] `json:"playModes"`
+	EmulatorID   Optional[int64]    `json:"emulatorId"`
 	LaunchType   Optional[string]   `json:"launchType"`
 	LaunchTarget Optional[string]   `json:"launchTarget"`
 	LaunchArgs   Optional[string]   `json:"launchArgs"`

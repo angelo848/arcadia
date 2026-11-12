@@ -56,6 +56,11 @@ type gameStore interface {
 	AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error)
 	Catalog(ctx context.Context) (store.Catalog, error)
 	ResolveEmulator(ctx context.Context, gameID int64) (store.Emulator, error)
+	Emulators(ctx context.Context) ([]store.Emulator, error)
+	AddEmulator(ctx context.Context, name, exePath, argsTemplate string) (store.Emulator, error)
+	UpdateEmulator(ctx context.Context, id int64, name, exePath, argsTemplate string) (store.Emulator, error)
+	DeleteEmulator(ctx context.Context, id int64) error
+	SetPlatformEmulator(ctx context.Context, platformID int64, emulatorID *int64) error
 }
 
 // sessionTracker is the part of *tracker.Tracker used by the game handlers.

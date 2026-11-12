@@ -133,7 +133,7 @@ func TestGameAddShape(t *testing.T) {
 }
 
 // gameDetailKeys are the members GameDetail adds to Game [STO-026, IPC-044].
-var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes", "launchType", "launchArgs"}
+var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes", "launchType", "launchArgs", "emulatorId"}
 
 // sessionItemKeys are the members of SessionItem [STO-027, IPC-047].
 var sessionItemKeys = []string{"sessionId", "gameId", "state", "startedAt", "endedAt", "activeSeconds", "endReason"}
@@ -1363,7 +1363,7 @@ func platformAddOK(t *testing.T, h *gamesHarness, name, category string) ipc.Pla
 	}
 	top := objectOf(t, resp.Result)
 	wantKeys(t, top, "platform")
-	wantKeys(t, objectOf(t, top["platform"]), "id", "name", "category")
+	wantKeys(t, objectOf(t, top["platform"]), "id", "name", "category", "emulatorId")
 	var out ipc.PlatformAddResult
 	resultInto(t, resp, &out)
 	return out.Platform
@@ -1439,7 +1439,7 @@ func TestPlatformAndCatalog(t *testing.T) {
 		}
 		var names []string
 		for _, it := range items {
-			wantKeys(t, it, "id", "name", "category")
+			wantKeys(t, it, "id", "name", "category", "emulatorId")
 			var name string
 			if err := json.Unmarshal(it["name"], &name); err != nil {
 				t.Fatalf("name: %v", err)

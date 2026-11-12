@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-6-importers contract (v0.7.0)
+// contractPath is the source of truth: the phase-6b-emulators contract (v0.8.0)
 // supersedes phase-4-pause (v0.5.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-6-importers", "contracts", "ipc.openrpc.json")
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-6b-emulators", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-6-importers/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-6b-emulators/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -275,6 +275,11 @@ var phase6Methods = map[string]bool{
 	ipc.MethodLibraryCatalog:      false,
 	ipc.MethodImportScan:          false,
 	ipc.MethodImportApply:         false,
+	ipc.MethodEmulatorList:        false,
+	ipc.MethodEmulatorAdd:         false,
+	ipc.MethodEmulatorUpdate:      false,
+	ipc.MethodEmulatorDelete:      false,
+	ipc.MethodPlatformSetEmulator: false,
 	ipc.MethodSessionChanged:      true,
 }
 
@@ -519,10 +524,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.7.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.8.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.7.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.7.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.8.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.8.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -543,15 +548,20 @@ func TestContract(t *testing.T) {
 			"MethodSessionResume":       ipc.MethodSessionResume,
 			"MethodSessionChanged":      ipc.MethodSessionChanged,
 			// The seven methods added in v0.6.0 [IPC-041].
-			"MethodGameGet":        ipc.MethodGameGet,
-			"MethodGameUpdate":     ipc.MethodGameUpdate,
-			"MethodGameDelete":     ipc.MethodGameDelete,
-			"MethodSessionList":    ipc.MethodSessionList,
-			"MethodPlatformList":   ipc.MethodPlatformList,
-			"MethodPlatformAdd":    ipc.MethodPlatformAdd,
-			"MethodLibraryCatalog": ipc.MethodLibraryCatalog,
-			"MethodImportScan":     ipc.MethodImportScan,
-			"MethodImportApply":    ipc.MethodImportApply,
+			"MethodGameGet":             ipc.MethodGameGet,
+			"MethodGameUpdate":          ipc.MethodGameUpdate,
+			"MethodGameDelete":          ipc.MethodGameDelete,
+			"MethodSessionList":         ipc.MethodSessionList,
+			"MethodPlatformList":        ipc.MethodPlatformList,
+			"MethodPlatformAdd":         ipc.MethodPlatformAdd,
+			"MethodLibraryCatalog":      ipc.MethodLibraryCatalog,
+			"MethodImportScan":          ipc.MethodImportScan,
+			"MethodImportApply":         ipc.MethodImportApply,
+			"MethodEmulatorList":        ipc.MethodEmulatorList,
+			"MethodEmulatorAdd":         ipc.MethodEmulatorAdd,
+			"MethodEmulatorUpdate":      ipc.MethodEmulatorUpdate,
+			"MethodEmulatorDelete":      ipc.MethodEmulatorDelete,
+			"MethodPlatformSetEmulator": ipc.MethodPlatformSetEmulator,
 		}
 		wantLiterals := map[string]string{
 			"MethodPing":                "agent.ping",
@@ -575,6 +585,11 @@ func TestContract(t *testing.T) {
 			"MethodLibraryCatalog":      "library.catalog",
 			"MethodImportScan":          "import.scan",
 			"MethodImportApply":         "import.apply",
+			"MethodEmulatorList":        "emulator.list",
+			"MethodEmulatorAdd":         "emulator.add",
+			"MethodEmulatorUpdate":      "emulator.update",
+			"MethodEmulatorDelete":      "emulator.delete",
+			"MethodPlatformSetEmulator": "platform.setEmulator",
 		}
 		for name, got := range literals {
 			if got != wantLiterals[name] {
@@ -609,7 +624,7 @@ func TestContract(t *testing.T) {
 		}{
 			{ipc.MethodGameList, ipc.GameListParams{Filter: &domain.FilterSpec{Version: 1}, Sort: libPtr("title"), Offset: libPtr(0), Limit: libPtr(1)},
 				[]string{"filter", "limit", "offset", "sort"}, nil},
-			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "favorite", "gameId", "genres", "launchArgs", "launchTarget", "launchType", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
+			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "emulatorId", "favorite", "gameId", "genres", "launchArgs", "launchTarget", "launchType", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
 			{ipc.MethodSessionList, ipc.SessionListParams{GameID: 1, Offset: libPtr(0), Limit: libPtr(1)}, []string{"gameId", "limit", "offset"}, []string{"gameId"}},
 			{ipc.MethodPlatformAdd, ipc.PlatformAddParams{Name: "PC", Category: "pc"}, []string{"category", "name"}, []string{"category", "name"}},
 		} {
@@ -959,7 +974,7 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/comentário do pacote aponta para phase-6-importers", func(t *testing.T) {
+	t.Run("IPC-041/comentário do pacote aponta para phase-6b-emulators", func(t *testing.T) {
 		t.Parallel()
 		files, err := filepath.Glob("*.go")
 		if err != nil {

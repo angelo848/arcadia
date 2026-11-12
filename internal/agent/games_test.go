@@ -2066,3 +2066,24 @@ func TestHandleSessionNotPausable(t *testing.T) {
 func (s *recordingGameStore) ResolveEmulator(ctx context.Context, gameID int64) (store.Emulator, error) {
 	return s.inner.ResolveEmulator(ctx, gameID)
 }
+
+// Emulator methods of the store are delegated to the real store (EMU-001, EMU-002).
+func (s *recordingGameStore) Emulators(ctx context.Context) ([]store.Emulator, error) {
+	return s.inner.Emulators(ctx)
+}
+
+func (s *recordingGameStore) AddEmulator(ctx context.Context, name, exePath, argsTemplate string) (store.Emulator, error) {
+	return s.inner.AddEmulator(ctx, name, exePath, argsTemplate)
+}
+
+func (s *recordingGameStore) UpdateEmulator(ctx context.Context, id int64, name, exePath, argsTemplate string) (store.Emulator, error) {
+	return s.inner.UpdateEmulator(ctx, id, name, exePath, argsTemplate)
+}
+
+func (s *recordingGameStore) DeleteEmulator(ctx context.Context, id int64) error {
+	return s.inner.DeleteEmulator(ctx, id)
+}
+
+func (s *recordingGameStore) SetPlatformEmulator(ctx context.Context, platformID int64, emulatorID *int64) error {
+	return s.inner.SetPlatformEmulator(ctx, platformID, emulatorID)
+}

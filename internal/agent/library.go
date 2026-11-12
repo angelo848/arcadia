@@ -209,6 +209,15 @@ func patchFromParams(p ipc.GameUpdateParams, clock domain.Clock) (store.GamePatc
 	if out.LaunchArgs, err = field(p.LaunchArgs, keep[string]); err != nil {
 		return store.GamePatch{}, fmt.Errorf("launchArgs: %w", err)
 	}
+	// The game emulator (EMU-002): an absent field keeps it; null clears it.
+	if p.EmulatorID.Present {
+		var emu *int64
+		if !p.EmulatorID.Null {
+			v := p.EmulatorID.Value
+			emu = &v
+		}
+		out.EmulatorID = &emu
+	}
 	if p.CompletedAt.Present {
 		var c *time.Time
 		if !p.CompletedAt.Null {
@@ -357,6 +366,7 @@ func gameDetailToIPC(d store.GameDetail) ipc.GameDetail {
 		Publishers:  nonNilStrings(d.Publishers),
 		Genres:      nonNilStrings(d.Genres),
 		PlayModes:   nonNilStrings(d.PlayModes),
+		EmulatorID:  d.EmulatorID,
 		LaunchType:  d.LaunchType,
 		LaunchArgs:  d.LaunchArgs,
 	}
@@ -578,7 +588,7 @@ func toIPCCatalogItems(items []store.CatalogItem) []ipc.CatalogItem {
 
 // toIPCPlatform converts a store platform to its wire form [IPC-048].
 func toIPCPlatform(p store.Platform) ipc.Platform {
-	return ipc.Platform{ID: p.ID, Name: p.Name, Category: string(p.Category)}
+	return ipc.Platform{ID: p.ID, Name: p.Name, Category: string(p.Category), EmulatorID: p.EmulatorID}
 }
 
 // toIPCPlatforms converts a list of platforms; the result is never nil.
