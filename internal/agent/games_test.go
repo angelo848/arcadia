@@ -108,6 +108,11 @@ func (s *recordingGameStore) gameCalls() int {
 	return len(s.gameIDs)
 }
 
+// DeleteGame forwards to the wrapped store [DEL-001].
+func (s *recordingGameStore) DeleteGame(ctx context.Context, id int64) error {
+	return s.inner.DeleteGame(ctx, id)
+}
+
 // fakeTracker is a programmable sessionTracker.
 type fakeTracker struct {
 	mu         sync.Mutex
@@ -212,6 +217,21 @@ func (f *fakeTracker) Current() (domain.SessionSnapshot, bool) {
 	defer f.mu.Unlock()
 	f.curCalls++
 	return f.current, f.hasCurrent
+}
+
+// WithoutActiveGame refuses a game whose session is the programmed current one
+// with *tracker.SessionActiveError, without calling fn; otherwise it runs fn and
+// returns its error [DEL-002, DEL-003]. deleteTracker overrides it for the
+// delete tests.
+func (f *fakeTracker) WithoutActiveGame(ctx context.Context, gameID int64, fn func() error) error {
+	f.mu.Lock()
+	busy := f.hasCurrent && f.current.GameID == gameID
+	snap := f.current
+	f.mu.Unlock()
+	if busy {
+		return &tracker.SessionActiveError{Session: snap}
+	}
+	return fn()
 }
 
 func (f *fakeTracker) launches() []tracker.LaunchSpec {

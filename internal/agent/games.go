@@ -45,6 +45,7 @@ type gameStore interface {
 	GameDetail(ctx context.Context, id int64) (store.GameDetail, error)
 	GameSessions(ctx context.Context, gameID int64, offset, limit int) (store.SessionPage, error)
 	UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error)
+	DeleteGame(ctx context.Context, id int64) error
 }
 
 // sessionTracker is the part of *tracker.Tracker used by the game handlers.
@@ -54,6 +55,7 @@ type sessionTracker interface {
 	LaunchUntracked(ctx context.Context, spec tracker.LaunchSpec) (uint32, error)
 	Pause(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
 	Resume(ctx context.Context, at time.Time) (domain.SessionSnapshot, error)
+	WithoutActiveGame(ctx context.Context, gameID int64, fn func() error) error
 }
 
 // gameAddParams are the server-side params of game.add; pointers tell an
