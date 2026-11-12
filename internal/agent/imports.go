@@ -221,7 +221,7 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	}
 	platformID, ok := platforms[platformName]
 	if !ok {
-		platformID, err = st.EnsurePlatformID(ctx, platformName, domain.PlatformCategory("pc"))
+		platformID, err = st.EnsurePlatformID(ctx, platformName, platformCategoryFor(c.Source, platformName))
 		if err != nil {
 			return store.ImportGame{}, fmt.Errorf("platform %q: %w", platformName, err)
 		}
@@ -256,4 +256,13 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 		g.Played = &store.ImportPlayed{Seconds: *c.PlayedSeconds, LastPlay: last.UTC()}
 	}
 	return g, nil
+}
+
+// platformCategoryFor returns the category of a platform created by an import: PC for
+// PC games, and console for the other LaunchBox platforms (DOM-015).
+func platformCategoryFor(source, name string) domain.PlatformCategory {
+	if source == ipc.ImportSourceLaunchBox && name != importers.PlatformPC {
+		return domain.PlatformCategory("console")
+	}
+	return domain.PlatformCategory("pc")
 }

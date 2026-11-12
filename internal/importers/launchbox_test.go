@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,6 +148,51 @@ func TestLaunchBoxScan(t *testing.T) {
 		res := scanLaunchBox(t, dir)
 		if len(res.Candidates) != 0 || len(res.Warnings) != 1 {
 			t.Errorf("result = %+v", res)
+		}
+	})
+
+	t.Run("IMP-005/lê todas as plataformas da pasta e usa a plataforma de cada jogo", func(t *testing.T) {
+		t.Parallel()
+		dir := lbFixture(t)
+		writeFile(t, filepath.Join(dir, "Sony Playstation 2.xml"), `<LaunchBox><Game><Title>Jogo PS2</Title><Platform>Sony Playstation 2</Platform><ApplicationPath>C:/roms/ps2.iso</ApplicationPath><Emulator></Emulator></Game></LaunchBox>`)
+		res := scanLaunchBox(t, dir)
+		ps2 := byTitle(t, res, "Jogo PS2")
+		if ps2.Platform != "Sony Playstation 2" {
+			t.Errorf("platform = %q, want Sony Playstation 2", ps2.Platform)
+		}
+		if byTitle(t, res, "Counter-Strike 2").Platform != importers.PlatformPC {
+			t.Errorf("Windows games must stay PC")
+		}
+	})
+
+	t.Run("IMP-005/jogos que usam emulador ficam de fora com aviso por plataforma", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "Nintendo 64.xml"), `<LaunchBox><Game><Title>Mario</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/roms/m.z64</ApplicationPath><Emulator>Project64</Emulator></Game><Game><Title>Zelda</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/roms/z.z64</ApplicationPath><Emulator>Project64</Emulator></Game></LaunchBox>`)
+		res := scanLaunchBox(t, dir)
+		if len(res.Candidates) != 0 {
+			t.Errorf("emulated games listed: %+v", res.Candidates)
+		}
+		found := false
+		for _, w := range res.Warnings {
+			if strings.Contains(w, "2 jogo(s) de Nintendo 64 usam emulador") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("warnings = %v, want the emulator count for Nintendo 64", res.Warnings)
+		}
+	})
+
+	t.Run("IMP-005/arquivos que não são .xml são ignorados", func(t *testing.T) {
+		t.Parallel()
+		dir := lbFixture(t)
+		writeFile(t, filepath.Join(dir, "Nintendo Switch 2.xml.bak-before-move"), `<LaunchBox><Game><Title>Backup</Title><ApplicationPath>C:/b.exe</ApplicationPath></Game></LaunchBox>`)
+		res := scanLaunchBox(t, dir)
+		for _, c := range res.Candidates {
+			if c.Title == "Backup" {
+				t.Errorf("a .bak file was imported")
+			}
 		}
 	})
 }

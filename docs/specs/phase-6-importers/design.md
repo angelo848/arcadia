@@ -177,3 +177,7 @@ qualquer assumção; se o cliente recusar, o caminho exe por pasta (RUL-002) con
 - **Sinal da Steam:** a transição `Running 1 -> 0` depois da adoção leva a carência a zero (`EffArmGrace` com atraso 0).
   Com `Running = 0` antes de qualquer `1`, nada acontece.
 - **Campo `tracking`:** o contrato v0.7.0 ganha `tracking` (obrigatório em `Session`, valores `job` e `process`).
+- **Todas as plataformas (2026-11-12, correção):** o importador lê todos os `*.xml` de `Data\Platforms` (IMP-005), com o
+  nome da plataforma de cada jogo. Jogos que usam emulador (`Emulator` preenchido, como em todas as plataformas de
+  console do LaunchBox) ficam de fora com um aviso por plataforma: o `ApplicationPath` deles é a ROM, e o lançamento
+  por emulador é a fase 6b. Plataformas que não são PC viram categoria `console`.

@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
 
-// launchBoxSource is the LaunchBox importer (IMP-005). It reads Data\Platforms\Windows.xml
-// only: the other platforms are out of this phase (design §9).
+// launchBoxSource is the LaunchBox importer (IMP-005). It reads every platform
+// file (*.xml) of Data\Platforms. Games that run through an emulator are left out
+// with a warning per platform: the emulator launch is out of this phase (fase 6b).
 type launchBoxSource struct{}
 
 // LaunchBox returns the LaunchBox source. ScanInput.Path is the LaunchBox
@@ -20,16 +23,16 @@ func LaunchBox() Source { return launchBoxSource{} }
 
 func (launchBoxSource) ID() string { return SourceLaunchBox }
 
-// launchBoxFile is the file read from the platforms folder.
-const launchBoxFile = "Windows.xml"
+// launchBoxWindows is the name LaunchBox gives the PC platform; it maps to PC.
+const launchBoxWindows = "Windows"
 
 // lbLibrary is the root of a LaunchBox platform file.
 type lbLibrary struct {
 	Games []lbGame `xml:"Game"`
 }
 
-// lbGame holds the fields confirmed on the real Windows.xml (76 games). Unknown
-// fields are ignored by encoding/xml.
+// lbGame holds the fields confirmed on the real platform files. Unknown fields are
+// ignored by encoding/xml.
 type lbGame struct {
 	Title           string `xml:"Title"`
 	Platform        string `xml:"Platform"`
@@ -39,6 +42,7 @@ type lbGame struct {
 	ReleaseDate     string `xml:"ReleaseDate"`
 	Notes           string `xml:"Notes"`
 	ApplicationPath string `xml:"ApplicationPath"`
+	Emulator        string `xml:"Emulator"`
 	PlayMode        string `xml:"PlayMode"`
 	PlayCount       int    `xml:"PlayCount"`
 	PlayTime        int64  `xml:"PlayTime"`
@@ -53,43 +57,91 @@ var lbPlayModes = map[string]string{
 	"Multiplayer":   "multi_online",
 }
 
+// Scan reads every *.xml platform file of the folder, in name order. A file that
+// cannot be read or parsed is a warning and the others are still read (IMP-008).
 func (launchBoxSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 	var res Result
 	if err := ctx.Err(); err != nil {
 		return res, err
 	}
 	if in.Path == "" {
-		res.Warnings = append(res.Warnings, "LaunchBox: pasta Data\\Platforms não escolhida")
+		res.Warnings = append(res.Warnings, `LaunchBox: pasta Data\Platforms não escolhida`)
 		return res, nil
 	}
-	data, err := os.ReadFile(filepath.Join(in.Path, launchBoxFile))
+	entries, err := os.ReadDir(in.Path)
 	if err != nil {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %s não encontrado em %s", launchBoxFile, in.Path))
+		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: pasta %s ilegível", in.Path))
 		return res, nil
 	}
-	var lib lbLibrary
-	if err := xml.Unmarshal(data, &lib); err != nil {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %s inválido (%v)", launchBoxFile, err))
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".xml") {
+			files = append(files, e.Name())
+		}
+	}
+	if len(files) == 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: nenhum arquivo de plataforma (.xml) em %s", in.Path))
 		return res, nil
 	}
+
 	skipped := 0
-	for _, g := range lib.Games {
-		c, ok := launchBoxCandidate(g)
-		if !ok {
-			skipped++
+	emulated := map[string]int{} // platform name -> games left out for their emulator
+	for _, name := range files {
+		if err := ctx.Err(); err != nil {
+			return res, err
+		}
+		data, err := os.ReadFile(filepath.Join(in.Path, name))
+		if err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %s ilegível", name))
 			continue
 		}
-		res.Candidates = append(res.Candidates, c)
+		var lib lbLibrary
+		if err := xml.Unmarshal(data, &lib); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %s inválido (%v)", name, err))
+			continue
+		}
+		fallback := strings.TrimSuffix(name, filepath.Ext(name))
+		for _, g := range lib.Games {
+			platform := platformOf(g, fallback)
+			if strings.TrimSpace(g.Emulator) != "" {
+				emulated[platform]++
+				continue
+			}
+			c, ok := launchBoxCandidate(g, platform)
+			if !ok {
+				skipped++
+				continue
+			}
+			res.Candidates = append(res.Candidates, c)
+		}
 	}
 	if skipped > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %d jogo(s) sem título ou caminho ignorado(s)", skipped))
 	}
+	for _, p := range slices.Sorted(maps.Keys(emulated)) {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"LaunchBox: %d jogo(s) de %s usam emulador; o suporte a emulador fica para a fase 6b e não foram listados",
+			emulated[p], p))
+	}
 	return res, nil
 }
 
-// launchBoxCandidate converts one <Game>. It reports false when the game has no
-// title or no launch target.
-func launchBoxCandidate(g lbGame) (Candidate, bool) {
+// platformOf returns the platform of a game: its own Platform field, or the name of
+// its file when the field is empty. The LaunchBox "Windows" platform is PC.
+func platformOf(g lbGame, fallback string) string {
+	name := strings.TrimSpace(g.Platform)
+	if name == "" {
+		name = fallback
+	}
+	if name == launchBoxWindows {
+		return PlatformPC
+	}
+	return name
+}
+
+// launchBoxCandidate converts one <Game> of the given platform. It reports false
+// when the game has no title or no launch target.
+func launchBoxCandidate(g lbGame, platform string) (Candidate, bool) {
 	title := strings.TrimSpace(g.Title)
 	target := strings.TrimSpace(g.ApplicationPath)
 	if title == "" || target == "" {
@@ -102,7 +154,7 @@ func launchBoxCandidate(g lbGame) (Candidate, bool) {
 	c := Candidate{
 		Source:       SourceLaunchBox,
 		Title:        title,
-		Platform:     PlatformPC,
+		Platform:     platform,
 		LaunchType:   launch,
 		LaunchTarget: target,
 		Developers:   splitList(g.Developer),
