@@ -246,6 +246,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	}
 	handlers := ipc.AgentHandlers(info, clock)
 	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
+	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), log))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)
 

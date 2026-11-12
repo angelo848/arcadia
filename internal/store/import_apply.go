@@ -208,3 +208,46 @@ func (s *Store) EnsurePlatformID(ctx context.Context, name string, category doma
 	}
 	return p.ID, nil
 }
+
+// ImportDuplicate reports whether the library already has the game a candidate
+// describes: the same launch target, or the same title on the same platform
+// (IMP-006). A platform id of 0 (a folder candidate without a platform yet)
+// compares the launch target only.
+func (s *Store) ImportDuplicate(ctx context.Context, launchType, launchTarget, title string, platformID int64) (bool, error) {
+	_, err := s.q.FindGameByLaunchTarget(ctx, dbgen.FindGameByLaunchTargetParams{
+		LaunchType: launchType, LaunchTarget: launchTarget,
+	})
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("store: import duplicate by target: %w", err)
+	}
+	if platformID == 0 {
+		return false, nil
+	}
+	_, err = s.q.FindGameByTitleAndPlatform(ctx, dbgen.FindGameByTitleAndPlatformParams{
+		Title: title, PlatformID: platformID,
+	})
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return false, fmt.Errorf("store: import duplicate by title: %w", err)
+}
+
+// PlatformIDByName returns the id of the platform called name, without regard to
+// case, and false when there is none. It never creates a platform, so the scan
+// can use it (IMP-001).
+func (s *Store) PlatformIDByName(ctx context.Context, name string) (int64, bool, error) {
+	row, err := s.q.GetPlatformByNameNoCase(ctx, name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("store: platform %q: %w", name, err)
+	}
+	return row.ID, true, nil
+}
