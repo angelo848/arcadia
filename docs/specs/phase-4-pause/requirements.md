@@ -1,6 +1,8 @@
 # Fase 4 — Pausa, retomada e "iniciar sem contar tempo": requisitos
 
 - **Status:** aprovado pelo usuário (2026-11-10)
+- **Alterado em 2026-11-12 (docs/specs/phase-5-library):** o contrato v0.5.0 deste arquivo é substituído pela v0.6.0
+  (IPC-041); os itens de UI-019 e UI-024 ganham o card da grade (UI-029, UI-031).
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.5.0,
   substitui a v0.4.0 de [phase-3-tracker](../phase-3-tracker/contracts/ipc.openrpc.json) como fonte da verdade) ·
   [contracts/session-state-machine.md](contracts/session-state-machine.md) (estende a da fase 3 com `Paused`) ·
@@ -639,6 +641,7 @@ termina em < 2 s (AGT-003), sem nenhum feedback no encerramento.
 Contrato: [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) v0.5.0.
 
 ### IPC-032 — Contrato v0.5.0 é a fonte da verdade
+· substituído por IPC-041 (docs/specs/phase-5-library): a fonte da verdade passa a ser o contrato v0.6.0.
 Dado `docs/specs/phase-4-pause/contracts/ipc.openrpc.json`, quando o teste de contrato roda, então a versão é `0.5.0`,
 todos os métodos e notificações dele existem no servidor/`internal/ipc` com os mesmos nomes (inclusive
 `game.launchUntracked`), os campos obrigatórios dos resultados batem com os tipos Go, o enum `Session.state` contém
@@ -719,6 +722,7 @@ e não é repassado (DSK-010).
 ## Frontend (UI)
 
 ### UI-019 — Botão "Sem contar tempo"
+· alterado em 2026-11-12 (docs/specs/phase-5-library, UI-031): os dois botões também ficam no card da grade e na linha da lista.
 Dada a lista de jogos, então cada linha mostra, ao lado do botão "Jogar", um botão "Sem contar tempo".
 
 ### UI-020 — Lançar sem contar tempo
@@ -744,6 +748,7 @@ avançar 1000 ms → "0:01:41". Quando chega `grace` (job esvaziou em pausa), en
 congelado (UI-015) e não "Pausado".
 
 ### UI-024 — Linha do jogo pausado
+· alterado em 2026-11-12 (docs/specs/phase-5-library, UI-029): a marcação vale também para o card da grade.
 Dada uma sessão em `paused`, então a linha do jogo dela mostra "Pausado" no lugar de "Em execução"; em `running` ou
 `grace` continua "Em execução"; quando chega `ended` ou `discarded` a marcação some e a lista é recarregada (UI-006).
 

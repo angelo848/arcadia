@@ -67,6 +67,7 @@ Dado um `FakeClock` em `T`:
 ## Store (STO)
 
 ### STO-001 — Migração em banco novo · alterado em 2026-11-10: schema na versão 4 (docs/specs/phase-4-pause, STO-018)
+· alterado em 2026-11-12: schema na versão 5 (docs/specs/phase-5-library, STO-024).
 Dado um arquivo inexistente, quando abro o store **com migração**, então o schema completo da arquitetura (§5)
 existe, com FTS5.
 · alterado em 2026-11-08: migração passa a ser opção de `Open` (ADR 0010).
@@ -145,6 +146,7 @@ Dado o servidor real, então o pipe se chama `\\.\pipe\arcadia-agent-<SID>`, ace
 escuta no mesmo nome falha.
 
 ### IPC-008 — Params vazios aceitos
+· alterado em 2026-11-12 (docs/specs/phase-5-library, IPC-042): `game.list` deixa de ser um método sem params; a regra vale para os demais.
 Quando chamo `agent.ping` com `params` ausente, `null`, `[]` ou `{}`, então recebo o resultado normal em todos os casos.
 
 ### IPC-009 — Requisição inválida
@@ -294,6 +296,7 @@ Dada a UI iniciando, quando ela ainda não conectou ao agente, então o banco n�
 só depois da primeira conexão bem-sucedida. (ADR 0010)
 
 ### DSK-008 — Schema incompatível na UI
+· alterado em 2026-11-12 (docs/specs/phase-5-library, DSK-019): o binding `LibrarySummary` sai; a regra vale para as leituras de DSK-016.
 Dado que abrir o banco retorna `ErrSchemaMismatch`, quando chamo `LibrarySummary()`, então recebo o erro
 "agente ainda não pronto" (sem encerrar a UI) e a próxima chamada tenta abrir o banco de novo. (ADR 0010)
 

@@ -1,0 +1,643 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "arcadia agent IPC",
+    "version": "0.6.0",
+    "description": "JSON-RPC 2.0 over NDJSON on \\\\.\\pipe\\arcadia-agent-<SID>, served by `arcadia.exe --agent`. Supersedes docs/specs/phase-4-pause/contracts/ipc.openrpc.json (v0.5.0) as the source of truth [IPC-041]; v0.6.0 adds the library methods (game.get, game.update, game.delete, session.list, platform.list, platform.add, library.catalog), makes game.list paged and filterable with a FilterSpec [IPC-042], and keeps every v0.5.0 method, notification and error code. One message per line; max 1048576 bytes per message excluding the trailing \\n [IPC-012]; larger messages close only that connection [IPC-003]. Batches are rejected with a single -32600, id null [IPC-010]. Requests without id are notifications and get no response [IPC-011]. jsonrpc must be exactly \"2.0\" and params, if present, must be null, an array or an object, otherwise -32600 [IPC-009]. Methods without params accept params absent, null, [] or {} [IPC-008]; any non-empty array/object is -32602 [IPC-002]. Methods with params take them by name only; a positional array, a missing required member, a member of the wrong type or an unknown member is -32602 [IPC-028, IPC-035, IPC-043, IPC-052]. Patch semantics for game.update: an absent member leaves the field unchanged, null clears only the fields that accept null. Library writes never emit notifications [IPC-050]. All instants are RFC 3339 strings in UTC. Dates without time (completedAt) are YYYY-MM-DD.",
+    "x-limits": {
+      "maxMessageBytes": 1048576,
+      "heartbeatIntervalSeconds": 5,
+      "clientBackoff": { "initialMs": 250, "factor": 2, "maxMs": 5000, "jitter": false, "resetOnConnect": true },
+      "clientNotificationBuffer": 16,
+      "shutdownDrainMs": 500,
+      "maxGameTitleRunes": 200,
+      "maxNameRunes": 100,
+      "maxDescriptionRunes": 10000,
+      "maxFilterTextRunes": 200,
+      "maxFilterIds": 50,
+      "yearMin": 1900,
+      "yearMax": 2100,
+      "defaultGameListLimit": 200,
+      "maxGameListLimit": 500,
+      "defaultSessionListLimit": 50,
+      "maxSessionListLimit": 200
+    },
+    "x-tracking": {
+      "description": "Agent constants (not configurable yet, not part of the wire), unchanged from v0.5.0 [SES-003..SES-013, DOM-008, PAU-004, PWR-005].",
+      "gracePeriodSeconds": 15,
+      "minCountedSessionSeconds": 30,
+      "sessionHeartbeatSeconds": 30,
+      "jobPollSeconds": 5,
+      "maxConcurrentSessions": 1,
+      "pauseToggleDebounceMs": 300,
+      "powerHandlerTimeoutMs": 1500,
+      "pauseHandlerTimeoutMs": 5000
+    },
+    "x-library": {
+      "description": "Library constants (not part of the wire) [LIB-001..LIB-002, FTS-005, EDT-001, EDT-003].",
+      "defaultSort": "title",
+      "sortValues": ["title", "lastPlayed", "totalPlayed", "year"],
+      "searchDebounceMs": 300
+    }
+  },
+  "methods": [
+    {
+      "name": "agent.ping",
+      "summary": "Liveness check [IPC-001]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "pong",
+        "schema": {
+          "type": "object",
+          "required": ["pong"],
+          "properties": { "pong": { "type": "boolean", "const": true } },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.status",
+      "summary": "Agent identity and uptime [IPC-001, AGT-004]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "status", "schema": { "$ref": "#/components/schemas/AgentStatus" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "agent.heartbeat",
+      "summary": "Server-to-client notification every 5 s (no id, no response) [IPC-004]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "uptimeSeconds", "required": true, "schema": { "type": "integer", "minimum": 0 } }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    },
+    {
+      "name": "agent.shutdown",
+      "summary": "Server-to-client notification sent once to every connection when the agent starts an orderly shutdown, and as the first message of any connection accepted while draining (no id, no response). A client that receives it must not restart the agent [EXE-013..EXE-017]. From this point game.launch, game.launchUntracked and game.delete are refused or not applied as described in their methods [AGT-011, SES-033]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "reason",
+          "required": true,
+          "description": "quit: tray \"Sair\"; session-end: WM_ENDSESSION; signal: Ctrl+C/SIGTERM; other: the tray loop ended on its own, or Serve ended with an error [EXE-016, EXE-026]",
+          "schema": { "type": "string", "enum": ["quit", "session-end", "signal", "other"] }
+        }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    },
+    {
+      "name": "game.add",
+      "summary": "Adds an exe game to the library; the agent writes the row and its game_fts row in the same transaction. Adding the same path again creates another, distinct game (no duplicate check) [IPC-020, IPC-021, GAM-001..GAM-003, FTS-002]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "path",
+          "required": true,
+          "description": "Absolute path of an existing regular file ending in .exe (case-insensitive). Stored as filepath.Clean(path).",
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "title",
+          "required": false,
+          "description": "Trimmed; absent or empty after trimming means the default title (file name without .exe) [DOM-009, GAM-003]. More than maxGameTitleRunes after trimming is -32602.",
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": { "name": "game", "schema": { "$ref": "#/components/schemas/Game" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InvalidExecutable" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.list",
+      "summary": "Paged, filtered and sorted list of games [IPC-042, IPC-043, LIB-001, LIB-002, FLT-001..FLT-008]. Without params (or {}) it returns the first 200 games of the empty filter ordered by title. Replaces the parameterless v0.5.0 method [IPC-023 is superseded by IPC-042]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "filter",
+          "required": false,
+          "description": "FilterSpec; absent means the whole library [FLT-008]",
+          "schema": { "$ref": "#/components/schemas/FilterSpec" }
+        },
+        {
+          "name": "sort",
+          "required": false,
+          "description": "Default title [LIB-001]",
+          "schema": { "type": "string", "enum": ["title", "lastPlayed", "totalPlayed", "year"] }
+        },
+        {
+          "name": "offset",
+          "required": false,
+          "description": "Default 0 [LIB-002]",
+          "schema": { "type": "integer", "minimum": 0 }
+        },
+        {
+          "name": "limit",
+          "required": false,
+          "description": "Default 200, between 1 and 500 [LIB-002]",
+          "schema": { "type": "integer", "minimum": 1, "maximum": 500 }
+        }
+      ],
+      "result": { "name": "page", "schema": { "$ref": "#/components/schemas/GameListResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.get",
+      "summary": "Full detail of one game, with genres, developers, publishers and play modes [IPC-044, STO-026]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+      ],
+      "result": { "name": "detail", "schema": { "$ref": "#/components/schemas/GameDetailResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.update",
+      "summary": "Edits the metadata of a game as a patch: an absent member is unchanged, null clears only completedAt and year. Works with the game in a session (the session is untouched). Atomic: any invalid member changes nothing. updated_at changes only when a field really changed [IPC-045, IPC-052, EDT-001..EDT-007, STO-028]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+        { "name": "title", "required": false, "description": "Trimmed; empty or more than maxGameTitleRunes is -32602 (no default here) [EDT-001]", "schema": { "type": "string" } },
+        { "name": "platformId", "required": false, "description": "Must be an existing platform id [EDT-002]", "schema": { "type": "integer", "minimum": 1 } },
+        { "name": "status", "required": false, "schema": { "$ref": "#/components/schemas/GameStatus" } },
+        { "name": "favorite", "required": false, "schema": { "type": "boolean" } },
+        { "name": "completedAt", "required": false, "description": "YYYY-MM-DD or null (clears); stored as UTC midnight [EDT-001]", "schema": { "oneOf": [ { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }, { "type": "null" } ] } },
+        { "name": "description", "required": false, "schema": { "type": "string" } },
+        { "name": "year", "required": false, "description": "1900..2100 or null (clears release_date) [EDT-003]", "schema": { "oneOf": [ { "type": "integer", "minimum": 1900, "maximum": 2100 }, { "type": "null" } ] } },
+        { "name": "developers", "required": false, "description": "Replaces the set; names reuse the catalog case-insensitively [EDT-004]", "schema": { "$ref": "#/components/schemas/NameList" } },
+        { "name": "publishers", "required": false, "description": "Replaces the set [EDT-004]", "schema": { "$ref": "#/components/schemas/NameList" } },
+        { "name": "genres", "required": false, "description": "Replaces the set [EDT-004]", "schema": { "$ref": "#/components/schemas/NameList" } },
+        { "name": "playModes", "required": false, "description": "Replaces the set; exact names of DOM-014 [EDT-004]", "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PlayModeName" }, "uniqueItems": true, "maxItems": 5 } }
+      ],
+      "result": { "name": "detail", "schema": { "$ref": "#/components/schemas/GameDetailResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.delete",
+      "summary": "Removes a game with its sessions and pauses (cascade), its link rows and its game_fts row [DEL-001]. Refused with SessionActive while the game has a session in running, grace or paused, or a tracked launch of it in progress; nothing changes then [DEL-002, DEL-003]. A process started by game.launchUntracked is not affected [DEL-005]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+      ],
+      "result": { "name": "deleted", "schema": { "$ref": "#/components/schemas/GameDeletedResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/SessionActive" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.launch",
+      "summary": "Launches the game inside a new Job Object and opens a tracked session; returns once the process was resumed. The existence of the game is checked before the active session; an active session is running, grace or paused [SES-031]. If the handler deadline (10 s) expires first, the result is -32603 [IPC-024, IPC-025, SES-001, SES-002, SES-012]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+      ],
+      "result": { "name": "session", "schema": { "$ref": "#/components/schemas/Session" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/SessionActive" },
+        { "$ref": "#/components/errors/LaunchFailed" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "game.launchUntracked",
+      "summary": "Launches the game as a plain detached process (\"Sem contar tempo\"): no Job Object, no play_session row, no session.changed [IPC-033, IPC-034, IPC-035, SES-032..SES-034, ADR 0019]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+      ],
+      "result": { "name": "launched", "schema": { "$ref": "#/components/schemas/LaunchedProcess" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/SessionActive" },
+        { "$ref": "#/components/errors/LaunchFailed" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "session.current",
+      "summary": "The active session (running, paused or grace), or null. activeMs/activeSeconds are measured at asOf; they do not advance in paused or grace [IPC-026, IPC-031, IPC-036]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "current",
+        "schema": {
+          "type": "object",
+          "required": ["session"],
+          "properties": {
+            "session": { "oneOf": [ { "$ref": "#/components/schemas/Session" }, { "type": "null" } ] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" }
+      ]
+    },
+    {
+      "name": "session.pause",
+      "summary": "Explicitly pauses the active session (reason `ui`). Idempotent; refused with SessionNotPausable in grace or without a session [IPC-038, SES-035, SES-037]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "current", "schema": { "$ref": "#/components/schemas/SessionResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/SessionNotPausable" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "session.resume",
+      "summary": "Explicitly resumes a paused session (any pause reason). Idempotent; refused with SessionNotPausable in grace or without a session [IPC-039, SES-036, SES-037]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "current", "schema": { "$ref": "#/components/schemas/SessionResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/SessionNotPausable" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "session.list",
+      "summary": "Sessions of one game, newest first (started_at, then id), including discarded and the open one [IPC-047, STO-027]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "gameId", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+        { "name": "offset", "required": false, "schema": { "type": "integer", "minimum": 0 } },
+        { "name": "limit", "required": false, "description": "Default 50, between 1 and 200", "schema": { "type": "integer", "minimum": 1, "maximum": 200 } }
+      ],
+      "result": { "name": "page", "schema": { "$ref": "#/components/schemas/SessionListResult" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/GameNotFound" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "platform.list",
+      "summary": "All platforms ordered by name [IPC-048]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "platforms",
+        "schema": {
+          "type": "object",
+          "required": ["platforms"],
+          "properties": { "platforms": { "type": "array", "items": { "$ref": "#/components/schemas/Platform" } } },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "platform.add",
+      "summary": "Returns the platform with the same name (case-insensitive; category ignored) or creates it [IPC-048, EDT-008]",
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "name", "required": true, "schema": { "type": "string" } },
+        { "name": "category", "required": true, "schema": { "$ref": "#/components/schemas/PlatformCategory" } }
+      ],
+      "result": {
+        "name": "platform",
+        "schema": {
+          "type": "object",
+          "required": ["platform"],
+          "properties": { "platform": { "$ref": "#/components/schemas/Platform" } },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "library.catalog",
+      "summary": "Options for the editor and the filters: platforms, genre names, company names and the five play modes [IPC-049, STO-030]",
+      "paramStructure": "either",
+      "params": [],
+      "result": { "name": "catalog", "schema": { "$ref": "#/components/schemas/Catalog" } },
+      "errors": [
+        { "$ref": "#/components/errors/InvalidParams" },
+        { "$ref": "#/components/errors/InternalError" }
+      ]
+    },
+    {
+      "name": "session.changed",
+      "summary": "Server-to-client notification (no id, no response) sent to every connection once per session transition [IPC-027, IPC-037]. Library writes never cause it [IPC-050]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        { "name": "session", "required": true, "schema": { "$ref": "#/components/schemas/Session" } }
+      ],
+      "result": { "name": "none", "schema": { "type": "null" } }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "AgentStatus": {
+        "type": "object",
+        "required": ["version", "pid", "startedAt", "dataDir", "uptimeSeconds"],
+        "properties": {
+          "version": { "type": "string", "description": "From -ldflags -X main.version; \"dev\" when not set [AGT-004]" },
+          "pid": { "type": "integer" },
+          "startedAt": { "type": "string", "format": "date-time", "description": "RFC 3339, UTC" },
+          "dataDir": { "type": "string", "description": "Absolute Root resolved by the agent [DSK-006]" },
+          "uptimeSeconds": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "GameStatus": {
+        "type": "string",
+        "enum": ["not_played", "playing", "completed", "abandoned", "backlog"],
+        "description": "Validated in domain (DOM-012); no CHECK in the database (ADR 0012)."
+      },
+      "PlayModeName": {
+        "type": "string",
+        "enum": ["single", "multi_local", "multi_online", "coop_local", "coop_online"],
+        "description": "DOM-014"
+      },
+      "PlayModeGroup": {
+        "type": "string",
+        "enum": ["all", "single", "multi", "coop"],
+        "description": "DOM-014: multi = multi_local or multi_online; coop = coop_local or coop_online; all = any mode, including none"
+      },
+      "PlatformCategory": {
+        "type": "string",
+        "enum": ["pc", "console", "arcade", "handheld"],
+        "description": "DOM-015"
+      },
+      "NameList": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "maxItems": 50,
+        "description": "Trimmed, at most 100 runes each (DOM-016); case-insensitive duplicates are removed [EDT-004]"
+      },
+      "IdList": {
+        "type": "array",
+        "items": { "type": "integer", "minimum": 1 },
+        "uniqueItems": true,
+        "maxItems": 50
+      },
+      "FilterSpec": {
+        "type": "object",
+        "description": "Serializable filter [FLT-001]. Facets with lists match any of their items; the facets are combined with AND [FLT-002]. The same object will back smart playlists (out of scope now). version is required.",
+        "required": ["version"],
+        "properties": {
+          "version": { "type": "integer", "const": 1 },
+          "platformIds": { "$ref": "#/components/schemas/IdList" },
+          "genreIds": { "$ref": "#/components/schemas/IdList" },
+          "developerIds": { "$ref": "#/components/schemas/IdList" },
+          "publisherIds": { "$ref": "#/components/schemas/IdList" },
+          "playMode": { "$ref": "#/components/schemas/PlayModeGroup", "description": "Default all [FLT-003]" },
+          "yearFrom": { "oneOf": [ { "type": "integer", "minimum": 1900, "maximum": 2100 }, { "type": "null" } ] },
+          "yearTo": { "oneOf": [ { "type": "integer", "minimum": 1900, "maximum": 2100 }, { "type": "null" } ] },
+          "statuses": { "type": "array", "items": { "$ref": "#/components/schemas/GameStatus" }, "uniqueItems": true, "maxItems": 5, "description": "Empty means any [FLT-005]" },
+          "favorite": { "oneOf": [ { "type": "boolean" }, { "type": "null" } ] },
+          "played": { "type": "string", "enum": ["any", "played", "notPlayed"], "description": "Default any; played = play_count > 0 [FLT-006]" },
+          "playSecondsMin": { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "null" } ] },
+          "playSecondsMax": { "oneOf": [ { "type": "integer", "minimum": 0 }, { "type": "null" } ] },
+          "text": { "type": "string", "maxLength": 200, "description": "Free text, FTS5 over title, description, developer and publisher; blank means no filter [FTS-005, FLT-007]" }
+        },
+        "additionalProperties": false
+      },
+      "Platform": {
+        "type": "object",
+        "required": ["id", "name", "category"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string" },
+          "category": { "$ref": "#/components/schemas/PlatformCategory" }
+        },
+        "additionalProperties": false
+      },
+      "Game": {
+        "type": "object",
+        "description": "Summary of a game; the item of game.list and the result of game.add [IPC-042, IPC-020]",
+        "required": ["id", "title", "platformId", "platform", "path", "status", "favorite", "year", "totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "platformId": { "type": "integer", "minimum": 1 },
+          "platform": { "type": "string", "description": "Platform name" },
+          "path": { "type": "string", "description": "game.launch_target (absolute, cleaned)" },
+          "status": { "$ref": "#/components/schemas/GameStatus" },
+          "favorite": { "type": "boolean" },
+          "year": { "oneOf": [ { "type": "integer", "minimum": 1900, "maximum": 2100 }, { "type": "null" } ], "description": "From release_date (DOM-013); null when there is no date" },
+          "totalPlaySeconds": { "type": "integer", "minimum": 0, "description": "Sum of active_seconds of the game's ended sessions; paused time is never included [STO-016]" },
+          "playCount": { "type": "integer", "minimum": 0 },
+          "firstPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ] },
+          "lastPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ] }
+        },
+        "additionalProperties": false
+      },
+      "GameDetail": {
+        "type": "object",
+        "description": "Game plus the fields of the game page [STO-026]. Lists are never null. No media (phase 7).",
+        "required": ["id", "title", "platformId", "platform", "path", "status", "favorite", "year", "totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt", "description", "completedAt", "developers", "publishers", "genres", "playModes"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "platformId": { "type": "integer", "minimum": 1 },
+          "platform": { "type": "string" },
+          "path": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/GameStatus" },
+          "favorite": { "type": "boolean" },
+          "year": { "oneOf": [ { "type": "integer", "minimum": 1900, "maximum": 2100 }, { "type": "null" } ] },
+          "totalPlaySeconds": { "type": "integer", "minimum": 0 },
+          "playCount": { "type": "integer", "minimum": 0 },
+          "firstPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ] },
+          "lastPlayedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ] },
+          "description": { "type": "string", "maxLength": 10000 },
+          "completedAt": { "oneOf": [ { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }, { "type": "null" } ], "description": "Date (UTC) of completed_at" },
+          "developers": { "type": "array", "items": { "type": "string" } },
+          "publishers": { "type": "array", "items": { "type": "string" } },
+          "genres": { "type": "array", "items": { "type": "string" } },
+          "playModes": { "type": "array", "items": { "$ref": "#/components/schemas/PlayModeName" } }
+        },
+        "additionalProperties": false
+      },
+      "GameListResult": {
+        "type": "object",
+        "required": ["games", "total", "offset"],
+        "properties": {
+          "games": { "type": "array", "items": { "$ref": "#/components/schemas/Game" }, "description": "Never null; [] when the page is empty [LIB-003]" },
+          "total": { "type": "integer", "minimum": 0, "description": "Games passing the filter, not only this page [LIB-002]" },
+          "offset": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "GameDetailResult": {
+        "type": "object",
+        "required": ["game"],
+        "properties": { "game": { "$ref": "#/components/schemas/GameDetail" } },
+        "additionalProperties": false
+      },
+      "GameDeletedResult": {
+        "type": "object",
+        "required": ["gameId"],
+        "properties": { "gameId": { "type": "integer", "minimum": 1 } },
+        "additionalProperties": false
+      },
+      "Session": {
+        "type": "object",
+        "required": ["sessionId", "gameId", "title", "state", "startedAt", "endedAt", "activeSeconds", "activeMs", "asOf"],
+        "description": "Snapshot of a live session. activeMs and asOf come from the same agent clock reading [IPC-031]. A live display anchors on activeMs and advances it with the client's own monotonic clock in running only [UI-014, UI-022]. Display-only: the recorded time is the agent's.",
+        "properties": {
+          "sessionId": { "type": "integer", "minimum": 1 },
+          "gameId": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string", "description": "Title of the game when the session was opened" },
+          "state": { "type": "string", "enum": ["running", "paused", "grace", "ended", "discarded"], "description": "ended/discarded only appear in session.changed [DOM-007, DOM-008, DOM-010]" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "endedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ] },
+          "activeSeconds": { "type": "integer", "minimum": 0, "description": "floor(activeMs / 1000)" },
+          "activeMs": { "type": "integer", "minimum": 0, "description": "Time spent in running up to asOf, in milliseconds, truncated [IPC-031]" },
+          "asOf": { "type": "string", "format": "date-time", "description": "RFC 3339 UTC with three fraction digits [IPC-031]" }
+        },
+        "additionalProperties": false
+      },
+      "SessionItem": {
+        "type": "object",
+        "description": "A session as listed on the game page [STO-027]. Durations of closed sessions come from the agent; the UI only formats them [UI-038].",
+        "required": ["sessionId", "gameId", "state", "startedAt", "endedAt", "activeSeconds", "endReason"],
+        "properties": {
+          "sessionId": { "type": "integer", "minimum": 1 },
+          "gameId": { "type": "integer", "minimum": 1 },
+          "state": { "type": "string", "enum": ["running", "paused", "grace", "ended", "discarded"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "endedAt": { "oneOf": [ { "type": "string", "format": "date-time" }, { "type": "null" } ], "description": "null while the session is open" },
+          "activeSeconds": { "type": "integer", "minimum": 0 },
+          "endReason": { "oneOf": [ { "type": "string", "enum": ["exited", "agent-shutdown", "recovered"] }, { "type": "null" } ] }
+        },
+        "additionalProperties": false
+      },
+      "SessionListResult": {
+        "type": "object",
+        "required": ["sessions", "total", "offset"],
+        "properties": {
+          "sessions": { "type": "array", "items": { "$ref": "#/components/schemas/SessionItem" }, "description": "Never null" },
+          "total": { "type": "integer", "minimum": 0 },
+          "offset": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": ["sessionId", "gameId", "title"],
+        "properties": {
+          "sessionId": { "type": "integer", "minimum": 0, "description": "0 while the launch is still being prepared, or when only a tracked launch of the game is pending [DEL-002]" },
+          "gameId": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "SessionResult": {
+        "type": "object",
+        "required": ["session"],
+        "properties": { "session": { "$ref": "#/components/schemas/Session" } },
+        "additionalProperties": false
+      },
+      "LaunchedProcess": {
+        "type": "object",
+        "required": ["pid"],
+        "properties": {
+          "pid": { "type": "integer", "minimum": 1, "description": "Process id of the executable started by game.launchUntracked; informational, the agent keeps no state about it [DEL-005]" }
+        },
+        "additionalProperties": false
+      },
+      "Catalog": {
+        "type": "object",
+        "required": ["platforms", "genres", "companies", "playModes"],
+        "properties": {
+          "platforms": { "type": "array", "items": { "$ref": "#/components/schemas/Platform" } },
+          "genres": { "type": "array", "items": { "type": "string" }, "description": "Sorted case-insensitively" },
+          "companies": { "type": "array", "items": { "type": "string" }, "description": "Sorted case-insensitively" },
+          "playModes": { "type": "array", "items": { "$ref": "#/components/schemas/PlayModeName" }, "minItems": 5, "maxItems": 5 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "ParseError": { "code": -32700, "message": "Parse error" },
+      "InvalidRequest": { "code": -32600, "message": "Invalid Request" },
+      "MethodNotFound": { "code": -32601, "message": "Method not found" },
+      "InvalidParams": { "code": -32602, "message": "Invalid params", "description": "Also used for every domain rule that a param breaks (title, year, name, category, FilterSpec, limits) [IPC-043, IPC-052]" },
+      "InternalError": { "code": -32603, "message": "Internal error" },
+      "GameNotFound": {
+        "code": -32001,
+        "message": "Game not found",
+        "data": { "type": "object", "required": ["gameId"], "properties": { "gameId": { "type": "integer" } }, "additionalProperties": false }
+      },
+      "SessionActive": {
+        "code": -32002,
+        "message": "Session already active",
+        "description": "Used by game.launch, game.launchUntracked and game.delete (DEL-002); for game.delete data.gameId is the game being removed [DEL-002]",
+        "data": { "$ref": "#/components/schemas/SessionRef" }
+      },
+      "LaunchFailed": {
+        "code": -32003,
+        "message": "Launch failed",
+        "data": {
+          "type": "object",
+          "required": ["error"],
+          "properties": {
+            "error": { "type": "string" },
+            "winError": { "type": "integer" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "SessionNotPausable": {
+        "code": -32005,
+        "message": "Session not pausable",
+        "data": {
+          "type": "object",
+          "required": ["reason"],
+          "properties": { "reason": { "type": "string", "enum": ["no-session", "grace"] } },
+          "additionalProperties": false
+        }
+      },
+      "InvalidExecutable": {
+        "code": -32004,
+        "message": "Invalid executable",
+        "data": {
+          "type": "object",
+          "required": ["reason"],
+          "properties": { "reason": { "type": "string", "enum": ["not-absolute", "not-found", "not-a-file", "not-exe"] } },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

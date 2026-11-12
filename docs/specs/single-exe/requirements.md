@@ -200,6 +200,7 @@ início do `OnShutdown` e o `OnShutdown` só retorna depois que a goroutine de s
 ## Início com o Windows (AST)
 
 ### AST-001 — Tabela de preferências · alterado em 2026-11-10: `store.SchemaVersion` passa de 3 para 4; resto mantido (docs/specs/phase-4-pause, STO-018)
+· alterado em 2026-11-12: `store.SchemaVersion` passa de 4 para 5; resto mantido (docs/specs/phase-5-library, STO-024).
 Dado um banco novo ou na versão 1, quando o agente abre o store com migração, então existe a tabela
 `app_setting(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`, a versão do goose é 2
 (`store.SchemaVersion = 2`) e os dados existentes permanecem. Dada uma chave inexistente, quando a leio, então recebo

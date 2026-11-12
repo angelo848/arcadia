@@ -47,6 +47,7 @@ marcados `verificação: manual`, conferidos pelo reviewer. Instantes nos exempl
 - **P3 — Formato do total:** "Nunca jogado", "< 1 min", "N min", "H h MM min" (UI-005).
 - **P4 — Carência não conta** como tempo jogado; `ended_at` é o início da carência (SES-006).
 - **P5 — Remover/editar jogo:** fora desta fase (fase 5).
+  · alterado em 2026-11-12 (docs/specs/phase-5-library): entra na fase 5 (EDT-*, DEL-*).
 - **P6 — Breakaway:** o job usa `JOB_OBJECT_LIMIT_BREAKAWAY_OK`, sem `SILENT_BREAKAWAY_OK` (ADR 0016, TRK-006).
 - **P7 — Cronômetro ao vivo:** a UI mostra o jogo em sessão e o tempo jogado, avançando a cada segundo, inclusive
   quando aberta no meio da sessão; é só exibição, calculado na UI a partir de `activeMs`/`asOf` do agente, e nunca
@@ -68,7 +69,7 @@ marcados `verificação: manual`, conferidos pelo reviewer. Instantes nos exempl
 
 Inalterados e ainda válidos: BLD-001, PTH-*, DOM-001..006, STO-002..010, IPC-001..019, AGT-001..002 (substituídos
 como antes), AGT-004..005, DSK-*, UI-001, EXE-*, AST-002..011. DSK-007/DSK-008 continuam valendo para o binding
-`LibrarySummary`, que a tela deixa de usar nesta fase (design.md).
+`LibrarySummary`, que a tela deixa de usar nesta fase (design.md). · alterado em 2026-11-12 (docs/specs/phase-5-library, DSK-019): o binding `LibrarySummary` sai de vez.
 
 ---
 
@@ -94,6 +95,7 @@ Dado o caminho de um executável, quando calculo o título padrão, então ele �
 ## Biblioteca de jogos (GAM)
 
 ### GAM-001 — Adicionar jogo grava a linha
+· alterado em 2026-11-12 (docs/specs/phase-5-library, FTS-002): a linha de `game_fts` é gravada na mesma transação.
 Dado um executável válido `P` (absoluto, existente, arquivo regular, extensão `.exe`) e o título `X`, quando o agente
 adiciona o jogo, então existe uma linha em `game` com `title = X`, `launch_type = 'exe'`,
 `launch_target = filepath.Clean(P)`, `working_dir` = pasta de `P`, `launch_args = ''`, `total_play_seconds = 0`,
@@ -114,6 +116,7 @@ for ausente ou ficar vazio, então é o título padrão de DOM-009; se tiver mai
 corte, então nada é gravado e o pedido é recusado como parâmetro inválido.
 
 ### GAM-005 — Ordem da lista
+· alterado em 2026-11-12 (docs/specs/phase-5-library, LIB-001): é a ordem `sort = title` de `game.list`; a regra não muda.
 Dados jogos com títulos `b`, `A`, `a` e `C` (ids 1..4), quando listo os jogos, então a ordem é por título sem
 diferenciar maiúsculas e, em empate, por id: `A`(2), `a`(3), `b`(1), `C`(4).
 
@@ -307,6 +310,7 @@ Dado um caminho inválido (GAM-002), quando chamo `game.add`, então recebo o er
 `data.reason` ∈ {`not-absolute`, `not-found`, `not-a-file`, `not-exe`}.
 
 ### IPC-023 — `game.list`
+· substituído por IPC-042 (docs/specs/phase-5-library): `game.list` passa a ser paginado e filtrado, com `{games, total, offset}`.
 Dados jogos cadastrados, quando chamo `game.list`, então recebo `{"games": [...]}` na ordem de GAM-005, com os campos
 de `Game`; dado nenhum jogo, então `games` é `[]` (nunca `null`).
 
@@ -336,6 +340,7 @@ termina como `ended` ou `discarded`), então cada cliente recebe uma notificaç�
 falhou, para sessões recuperadas na subida nem para o encerramento feito depois de `Server.Close` (SES-011).
 
 ### IPC-028 — Params inválidos nos métodos novos
+· alterado em 2026-11-12 (docs/specs/phase-5-library, IPC-043): `game.list` passa a aceitar params; as mesmas regras de tipo valem para ele.
 Quando chamo `game.add` ou `game.launch` com params de tipo errado (ex.: `gameId` texto,
 fracionário ou `< 1`; `path` ausente ou não texto), com array posicional ou com membro desconhecido, então recebo
 `-32602`. `game.list` e `session.current` seguem IPC-008 (params vazios aceitos) e IPC-002 (não vazios → `-32602`).
@@ -398,6 +403,7 @@ diálogo falha, então o erro é registrado em `Error` e o binding devolve "Erro
 ## Frontend (UI)
 
 ### UI-004 — Lista de jogos · alterado em 2026-11-10: segundo botão "Sem contar tempo" (docs/specs/phase-4-pause, UI-019)
+· substituído por UI-029 e UI-030 (docs/specs/phase-5-library): a grade de cards e a lista alternativa.
 Dada a lista de `game.list` não vazia, então a tela mostra uma linha por jogo, na ordem recebida, com o título, o
 tempo total (UI-005) e o botão "Jogar".
 
@@ -406,6 +412,7 @@ Dado `totalPlaySeconds`, então o texto é: `0` → "Nunca jogado"; `1` e `59` �
 "59 min"; `3600` → "1 h 00 min"; `3900` → "1 h 05 min"; `451800` → "125 h 30 min".
 
 ### UI-006 — Jogo em execução · alterado em 2026-11-10: `paused` mostra "Pausado", não "Em execução" (docs/specs/phase-4-pause, UI-024)
+· alterado em 2026-11-12 (docs/specs/phase-5-library): a marcação também aparece no card da grade (UI-029) e na página do jogo (UI-038).
 Dada uma sessão em `running` ou `grace` (lida de `CurrentSession` ao carregar e atualizada pelos eventos
 `session:changed`, sem polling), então a linha do jogo dela mostra "Em execução"; quando chega `session:changed` com
 `ended` ou `discarded`, então a marcação some e a lista é recarregada (total atualizado).
@@ -425,6 +432,7 @@ botão daquele jogo mostra "Iniciando…" e fica desabilitado.
 Dado que o indicador passa de "Desconectado" para "Conectado", então a UI recarrega a lista de jogos e a sessão atual.
 
 ### UI-010 — Estado vazio e carregamento
+· substituído por UI-044 (docs/specs/phase-5-library): mesmos textos, agora dentro da grade e com contagem de `total`.
 Dado `game.list` com `[]`, então a tela mostra "Nenhum jogo ainda" (sem contadores) e o botão "Adicionar jogo"
 continua disponível; enquanto a lista não carregou ou a chamada falha, então a tela mostra "Conectando ao agente…" e
 tenta de novo a cada 2 s.
@@ -519,7 +527,7 @@ e argumentos de lançamento na UI · pausa por atalho/controle, pausa em suspens
 contar tempo" e apps adicionais · remover/editar jogo (P5) · cronômetro fora da janela da UI (bandeja,
 sobreposição no jogo) · readotar o jogo depois de o agente reiniciar · mudar `game.status` automaticamente · edição
 manual de sessões · várias sessões simultâneas · constantes configuráveis pelo usuário · indicação de sessão na
-bandeja · grade, filtros e mídia (fase 5).
+bandeja · grade, filtros e mídia (fase 5). · alterado em 2026-11-12 (docs/specs/phase-5-library): grade, filtros, busca e edição/remoção de jogo entram na fase 5; mídia fica na fase 7.
 
 ## Limitações conhecidas
 A confirmar na aprovação; não geram requisito nem teste.
