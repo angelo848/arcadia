@@ -14,9 +14,8 @@ const trayReadyTimeout = 30 * time.Second
 
 // trayItems carries the menu click channels from onReady to the tray loop.
 type trayItems struct {
-	open      <-chan struct{}
-	quit      <-chan struct{}
-	autostart <-chan struct{} // "Iniciar com o Windows" (T07)
+	open <-chan struct{}
+	quit <-chan struct{}
 }
 
 // trayLoopDeps are the channels and callbacks of trayLoop.
@@ -26,8 +25,6 @@ type trayLoopDeps struct {
 	Stop                  <-chan struct{}
 	Quit, QuitBeforeReady func()
 	OnOpen                func()
-	OnToggle              func() bool // T07
-	SetChecked            func(bool)  // T07
 }
 
 // trayLoop is the portable tray event loop; it returns why the agent is
@@ -36,8 +33,7 @@ type trayLoopDeps struct {
 // QuitBeforeReady (which must end the systray message loop without a tray
 // window) and returns; if Ready does not deliver within trayReadyTimeout it
 // logs an Error once and keeps waiting. After Ready delivers, "Abrir Arcadia"
-// calls OnOpen synchronously, "Iniciar com o Windows" calls OnToggle and then
-// SetChecked with its result (AST-007, AST-008), and "Sair", ctx done, SessionEnd or IPCFailed
+// calls OnOpen synchronously, and "Sair", ctx done, SessionEnd or IPCFailed
 // call Quit and return. A close of Stop (the systray loop ended on its own)
 // returns ReasonOther without calling anything.
 //
@@ -77,8 +73,6 @@ waitReady:
 		select {
 		case <-it.open:
 			d.OnOpen()
-		case <-it.autostart:
-			d.SetChecked(d.OnToggle())
 		case <-it.quit:
 			d.Quit()
 			return ReasonQuit

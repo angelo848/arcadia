@@ -16,7 +16,7 @@
   `internal/winapi/autostart_windows_test.go`.
 - **Tray:** `internal/agent/tray_windows.go`, `tray_loop.go`, `tray_loop_test.go` — sai "Iniciar com o Windows", o canal
   `autostart` e `OnToggle`; os testes do menu são ajustados.
-- **Testes:** `tray_loop_test.go` — `ADM-004/menu tem só Abrir Arcadia e Sair`.
+- **Testes:** o loop não tem mais canal nem callback de início (compilação). O menu da bandeja é Windows-only e não é unitário: `· verificação: manual` (ADM-004, menu só com "Abrir Arcadia" e "Sair").
 - **Dependência:** nenhuma.
 
 ## T03 — Limpeza única da entrada Run (ADM-004)

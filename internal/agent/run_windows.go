@@ -111,37 +111,10 @@ func Run(opts Options) int {
 		sessionEnd = nil
 	}
 
-	// Start with Windows (AST-003..AST-005, AST-010): after the store is open
-	// and migrated, before the tray. Failures are logged and never stop the
-	// agent (AST-009).
-	auto := &autostart{
-		dev:      cfg.Version == "dev",
-		command:  winapi.AutostartCommand(cfg.Exe, a.paths.Root, cfg.ExeDir),
-		exe:      cfg.Exe,
-		exeOf:    winapi.CommandExe,
-		run:      winapi.NewRunValue(winapi.RunKeyPath, winapi.AutostartValueName),
-		settings: a.store,
-		clock:    clock,
-		log:      log,
-	}
-	rctx, rcancel := context.WithTimeout(context.Background(), autostartTimeout)
-	checked := auto.Reconcile(rctx)
-	rcancel()
-
 	// runTray returns after systray.Quit ended the message loop (step 1 of the
 	// shutdown order); the reason goes to the clients in agent.shutdown.
 	reason := runTray(ctx, clock, log, sessionEnd, a.IPCFailed(), func() {
 		openUI(cfg.Exe, a.paths.Root, winapi.CreateDetached, log)
-	}, trayAutostart{
-		checked:  checked,
-		disabled: auto.dev,
-		// Runs on the tray loop goroutine, like "Abrir Arcadia" (short: one
-		// preference write and one registry operation).
-		onToggle: func() bool {
-			tctx, tcancel := context.WithTimeout(context.Background(), autostartTimeout)
-			defer tcancel()
-			return auto.Toggle(tctx)
-		},
 	})
 
 	// AGT-003: the 2 s budget is measured and reported; closing is never
