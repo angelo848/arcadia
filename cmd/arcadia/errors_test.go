@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
@@ -286,5 +287,63 @@ func TestUserErrorNotPausable(t *testing.T) {
 		wantText(t, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams), txtInvalidData)
 		wantText(t, ipc.ErrConnectionLost, txtNotResponding)
 		wantText(t, errors.New("boom"), txtUnexpected)
+	})
+}
+
+// T24 (docs/specs/phase-5-library/tasks.md): DSK-018 gives DeleteGame its own
+// text for -32002 (refused removal, no title); the other codes keep DSK-011.
+//
+// Assumptions beyond tasks.md (the implementer must follow them):
+//   - The DSK-018 text is used for every -32002 of game.delete, with or without
+//     a data member, and it never contains the game title.
+//   - -32002 is not logged at Error (DSK-011 excludes the codes -32002..-32004
+//     from Error logging; DSK-018 does not change that).
+//   - userError keeps the DSK-011 text of -32002 for the other bindings.
+const txtRemoveSessionActive = "Não é possível remover: o jogo está em uma sessão ativa. Feche a sessão antes de remover."
+
+func TestDeleteMessage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-018/-32002 em DeleteGame mostra exatamente a mensagem de DSK-018, sem o título", func(t *testing.T) {
+		t.Parallel()
+		for _, agentErr := range []error{
+			sessionActiveErr("Hollow Knight"),
+			fmt.Errorf("desktop: game.delete: %w", sessionActiveErr("Hollow Knight")),
+			rawDataErr(ipc.CodeSessionActive, ipc.MsgSessionActive, ""),
+			rawDataErr(ipc.CodeSessionActive, ipc.MsgSessionActive, `"x"`),
+		} {
+			logs := newRecLog()
+			p := &gamePinger{errs: map[string]error{ipc.MethodGameDelete: agentErr}}
+			a := &App{client: p, log: logs.logger()}
+
+			err := a.DeleteGame(3)
+
+			wantErrText(t, err, txtRemoveSessionActive)
+			if err != nil && strings.Contains(err.Error(), "Hollow Knight") {
+				t.Errorf("DeleteGame err = %q, must not repeat the title", err)
+			}
+			if n := logs.countLevel(slog.LevelError); n != 0 {
+				t.Errorf("DeleteGame(%v) logged %d Error records, want 0; log:\n%s", agentErr, n, logs.dump())
+			}
+		}
+	})
+
+	t.Run("DSK-018/demais códigos em DeleteGame seguem DSK-011", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			agentErr error
+			want     string
+		}{
+			{gameNotFoundErr(), txtGameNotFound},
+			{ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams), txtInvalidData},
+			{ipc.ErrConnectionLost, txtNotResponding},
+			{errors.New("boom"), txtUnexpected},
+		}
+		for _, tc := range cases {
+			p := &gamePinger{errs: map[string]error{ipc.MethodGameDelete: tc.agentErr}}
+			a := &App{client: p, log: discardLog()}
+
+			wantErrText(t, a.DeleteGame(3), tc.want)
+		}
 	})
 }

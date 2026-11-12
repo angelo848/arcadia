@@ -17,7 +17,6 @@ package main
 //     inject a fake; a nil client means "not connected yet" and AgentStatus
 //     returns Connected=false without panicking.
 //   - App has an unexported field `log *slog.Logger`.
-//   - App has an unexported field `gate *libraryGate`.
 
 import (
 	"bytes"
@@ -730,7 +729,7 @@ func TestAppShutdown(t *testing.T) {
 
 		h.app.mu.Lock()
 		h.app.stopped = true
-		cancel, gate, logCloser := h.app.cancel, h.app.gate, h.app.logCloser
+		cancel, logCloser := h.app.cancel, h.app.logCloser
 		h.app.mu.Unlock()
 		close(probe.release)
 
@@ -761,9 +760,6 @@ func TestAppShutdown(t *testing.T) {
 
 		// The rest of OnShutdown (it returns early since stopped is set).
 		cancel()
-		if err := gate.Close(); err != nil {
-			t.Errorf("gate close: %v", err)
-		}
 		if err := logCloser.Close(); err != nil {
 			t.Errorf("log close: %v", err)
 		}
@@ -902,44 +898,6 @@ func TestSecondInstance(t *testing.T) {
 		}
 		if n := h.startN.Load(); n != 0 {
 			t.Errorf("startAgent calls = %d, want 0", n)
-		}
-	})
-}
-
-func TestAppLibrarySummary(t *testing.T) {
-	t.Parallel()
-
-	t.Run("DSK-007/binding antes de conectar retorna ErrAgentNotReady sem abrir o banco", func(t *testing.T) {
-		t.Parallel()
-		op := &fakeOpener{}
-		a := &App{gate: newLibraryGate(op.open), log: discardLog()}
-
-		_, err := a.LibrarySummary()
-
-		if !errors.Is(err, ErrAgentNotReady) {
-			t.Errorf("LibrarySummary() err = %v, want ErrAgentNotReady", err)
-		}
-		if n := op.count(); n != 0 {
-			t.Errorf("open called %d times, want 0", n)
-		}
-	})
-
-	t.Run("DSK-007/binding após MarkConnected repassa o resumo", func(t *testing.T) {
-		t.Parallel()
-		fs := &fakeStore{summary: summaryOf(7, 2)}
-		op := &fakeOpener{results: []openResult{{st: fs}}}
-		g := newLibraryGate(op.open)
-		t.Cleanup(func() { _ = g.Close() })
-		a := &App{gate: g, log: discardLog()}
-		g.MarkConnected()
-
-		got, err := a.LibrarySummary()
-
-		if err != nil {
-			t.Fatalf("LibrarySummary() err = %v", err)
-		}
-		if want := (LibrarySummaryView{Games: 7, Platforms: 2}); got != want {
-			t.Errorf("LibrarySummary() = %+v, want %+v", got, want)
 		}
 	})
 }

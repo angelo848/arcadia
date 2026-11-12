@@ -17,6 +17,7 @@ import (
 
 	_ "modernc.org/sqlite" // raw driver "sqlite" for fixtures that bypass store.Open
 
+	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/store/dbgen"
 )
@@ -655,8 +656,8 @@ func TestConcurrentStores(t *testing.T) {
 				defer wg.Done()
 				<-start
 				for i := range iterations {
-					if _, err := reader.LibrarySummary(ctx); err != nil {
-						errs <- fmt.Errorf("reader %d iteration %d LibrarySummary: %w", r, i, err)
+					if _, err := libraryTotal(ctx, reader); err != nil {
+						errs <- fmt.Errorf("reader %d iteration %d ListGames: %w", r, i, err)
 					}
 					if _, err := reader.Queries().CountGames(ctx); err != nil {
 						errs <- fmt.Errorf("reader %d iteration %d CountGames: %w", r, i, err)
@@ -672,17 +673,45 @@ func TestConcurrentStores(t *testing.T) {
 			t.Error(err) // any error fails; SQLITE_BUSY is the one this requirement targets
 		}
 
-		sum, err := reader.LibrarySummary(ctx)
+		games, err := libraryTotal(ctx, reader)
 		if err != nil {
-			t.Fatalf("final LibrarySummary: %v", err)
+			t.Fatalf("final ListGames: %v", err)
 		}
-		if want := int64(writers * iterations); sum.Platforms != want {
-			t.Errorf("Platforms = %d, want %d", sum.Platforms, want)
+		platforms, err := platformCount(ctx, reader)
+		if err != nil {
+			t.Fatalf("final ListPlatforms: %v", err)
 		}
-		if sum.Games != 0 {
-			t.Errorf("Games = %d, want 0", sum.Games)
+		if want := writers * iterations; platforms != want {
+			t.Errorf("Platforms = %d, want %d", platforms, want)
+		}
+		if games != 0 {
+			t.Errorf("Games = %d, want 0", games)
 		}
 	})
+}
+
+// libraryTotal returns the number of games: the Total of an unfiltered ListGames.
+// It replaces the removed LibrarySummary (phase 5, T23; DSK-019).
+func libraryTotal(ctx context.Context, s *store.Store) (int64, error) {
+	q := store.Query{
+		Filter: domain.FilterSpec{Version: domain.FilterVersion}, // unfiltered: {"version":1}
+		Sort:   domain.DefaultSort,
+		Limit:  1,
+	}
+	page, err := s.ListGames(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	return page.Total, nil
+}
+
+// platformCount returns the number of platform rows.
+func platformCount(ctx context.Context, s *store.Store) (int, error) {
+	platforms, err := s.Queries().ListPlatforms(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return len(platforms), nil
 }
 
 // --- STO-006 ---------------------------------------------------------------
@@ -749,12 +778,12 @@ func TestOpenWithoutMigrateCompatible(t *testing.T) {
 		if v != store.SchemaVersion {
 			t.Errorf("CurrentVersion = %d, want %d", v, store.SchemaVersion)
 		}
-		sum, err := ui.LibrarySummary(ctx)
+		games, err := libraryTotal(ctx, ui)
 		if err != nil {
-			t.Fatalf("LibrarySummary: %v", err)
+			t.Fatalf("ListGames: %v", err)
 		}
-		if sum != (store.LibrarySummary{Games: 1, Platforms: 1}) {
-			t.Errorf("LibrarySummary = %+v, want {Games:1 Platforms:1}", sum)
+		if games != 1 {
+			t.Errorf("ListGames total = %d, want 1", games)
 		}
 		n, err := ui.Queries().CountGames(ctx)
 		if err != nil {

@@ -325,7 +325,7 @@ func TestGameBindings(t *testing.T) {
 		t.Parallel()
 		a := &App{log: discardLog()}
 
-		_, err := a.ListGames()
+		_, err := a.ListGames(LibraryQuery{})
 
 		if err == nil || err.Error() != txtNotResponding {
 			t.Errorf("ListGames() err = %v, want %q", err, txtNotResponding)
@@ -346,15 +346,15 @@ func TestGameBindings(t *testing.T) {
 		p := &gamePinger{results: map[string]any{ipc.MethodGameList: ipc.GameListResult{Games: []ipc.Game{}}}}
 		a := &App{client: p, log: discardLog()}
 
-		got, err := a.ListGames()
+		got, err := a.ListGames(LibraryQuery{})
 
 		if err != nil {
 			t.Fatalf("ListGames() err = %v", err)
 		}
-		if got == nil || len(got) != 0 {
-			t.Errorf("ListGames() = %#v, want non-nil empty slice", got)
+		if got.Games == nil || len(got.Games) != 0 {
+			t.Errorf("ListGames() = %#v, want non-nil empty slice", got.Games)
 		}
-		if raw, _ := json.Marshal(got); string(raw) != "[]" {
+		if raw, _ := json.Marshal(got.Games); string(raw) != "[]" {
 			t.Errorf("ListGames() JSON = %s, want []", raw)
 		}
 		singleCall(t, p, ipc.MethodGameList, listGamesTimeout)
@@ -362,9 +362,9 @@ func TestGameBindings(t *testing.T) {
 		// A null games array from the agent still yields [].
 		p2 := &gamePinger{results: map[string]any{ipc.MethodGameList: json.RawMessage(`{"games":null}`)}}
 		a.client = p2
-		got, err = a.ListGames()
-		if err != nil || got == nil || len(got) != 0 {
-			t.Errorf("ListGames() with games:null = %#v, %v; want [] and nil", got, err)
+		got, err = a.ListGames(LibraryQuery{})
+		if err != nil || got.Games == nil || len(got.Games) != 0 {
+			t.Errorf("ListGames() with games:null = %#v, %v; want [] and nil", got.Games, err)
 		}
 	})
 
@@ -378,23 +378,23 @@ func TestGameBindings(t *testing.T) {
 		p := &gamePinger{results: map[string]any{ipc.MethodGameList: ipc.GameListResult{Games: games}}}
 		a := &App{client: p, log: discardLog()}
 
-		got, err := a.ListGames()
+		got, err := a.ListGames(LibraryQuery{})
 
 		if err != nil {
 			t.Fatalf("ListGames() err = %v", err)
 		}
-		if len(got) != 2 {
-			t.Fatalf("ListGames() = %+v, want 2 games", got)
+		if len(got.Games) != 2 {
+			t.Fatalf("ListGames() = %+v, want 2 games", got.Games)
 		}
-		g0 := got[0]
+		g0 := got.Games[0]
 		if g0.ID != 2 || g0.Title != "B" || g0.Path != `C:\G\b.exe` || g0.TotalPlaySeconds != 3900 || g0.PlayCount != 2 {
 			t.Errorf("game[0] = %+v, want id 2 / B / b.exe / 3900 / 2", g0)
 		}
 		if at, err := time.Parse(time.RFC3339, g0.LastPlayedAt); err != nil || !at.Equal(last) {
 			t.Errorf("game[0].LastPlayedAt = %q, want RFC 3339 of %s", g0.LastPlayedAt, last.Format(time.RFC3339))
 		}
-		if got[1].ID != 1 || got[1].LastPlayedAt != "" {
-			t.Errorf("game[1] = %+v, want id 1 with lastPlayedAt \"\"", got[1])
+		if got.Games[1].ID != 1 || got.Games[1].LastPlayedAt != "" {
+			t.Errorf("game[1] = %+v, want id 1 with lastPlayedAt \"\"", got.Games[1])
 		}
 	})
 
@@ -440,7 +440,7 @@ func TestGameBindings(t *testing.T) {
 		if _, err := a.AddGame(`C:\G\x.txt`, ""); err == nil || err.Error() != txtNotExe {
 			t.Errorf("AddGame err = %v, want %q", err, txtNotExe)
 		}
-		if _, err := a.ListGames(); err == nil || err.Error() != txtNotResponding {
+		if _, err := a.ListGames(LibraryQuery{}); err == nil || err.Error() != txtNotResponding {
 			t.Errorf("ListGames err = %v, want %q", err, txtNotResponding)
 		}
 		if _, err := a.CurrentSession(); err == nil || err.Error() != txtUnexpected {
