@@ -12,7 +12,7 @@ export type GameView = {
   lastPlayedAt: string
 }
 
-export type SessionState = 'running' | 'grace' | 'ended' | 'discarded'
+export type SessionState = 'running' | 'paused' | 'grace' | 'ended' | 'discarded'
 
 // SessionView mirrors cmd/arcadia SessionView (JSON field names).
 export type SessionView = {
@@ -38,6 +38,9 @@ type WailsApp = {
   AddGame?: (path: string, title: string) => Promise<GameView>
   LaunchGame?: (id: number) => Promise<SessionView>
   PickGameExe?: () => Promise<PickedExe>
+  LaunchGameUntracked?: (id: number) => Promise<void>
+  PauseSession?: () => Promise<SessionView>
+  ResumeSession?: () => Promise<SessionView>
 }
 
 type WailsRuntime = {
@@ -129,6 +132,33 @@ export async function pickGameExe(): Promise<PickedExe> {
   }
 }
 
+// launchGameUntracked starts a game without counting its time [UI-020].
+export async function launchGameUntracked(id: number): Promise<void> {
+  try {
+    await binding('LaunchGameUntracked')(id)
+  } catch (e) {
+    throw toError(e)
+  }
+}
+
+// pauseSession asks the agent to pause the active session [UI-028].
+export async function pauseSession(): Promise<SessionView> {
+  try {
+    return await binding('PauseSession')()
+  } catch (e) {
+    throw toError(e)
+  }
+}
+
+// resumeSession asks the agent to resume the paused session [UI-028].
+export async function resumeSession(): Promise<SessionView> {
+  try {
+    return await binding('ResumeSession')()
+  } catch (e) {
+    throw toError(e)
+  }
+}
+
 // Per-QueryClient count of applied session:changed events [UI-018].
 const eventSeqs = new WeakMap<QueryClient, number>()
 
@@ -141,7 +171,7 @@ function bumpSessionEventSeq(qc: QueryClient): void {
 }
 
 function isLive(s: SessionView): boolean {
-  return s.state === 'running' || s.state === 'grace'
+  return s.state === 'running' || s.state === 'paused' || s.state === 'grace'
 }
 
 function isSessionView(v: unknown): v is SessionView {
@@ -149,7 +179,13 @@ function isSessionView(v: unknown): v is SessionView {
     return false
   }
   const state = (v as { state?: unknown }).state
-  return state === 'running' || state === 'grace' || state === 'ended' || state === 'discarded'
+  return (
+    state === 'running' ||
+    state === 'paused' ||
+    state === 'grace' ||
+    state === 'ended' ||
+    state === 'discarded'
+  )
 }
 
 // useGames loads the library. While the call fails it retries every 2 s.
@@ -247,6 +283,33 @@ export function useLaunchGame(): UseMutationResult<SessionView, Error, number> {
     mutationFn: async (id: number) => {
       const seq = sessionEventSeq(qc)
       const s = await launchGame(id)
+      if (sessionEventSeq(qc) === seq) {
+        qc.setQueryData<SessionView | null>(currentSessionKey, isLive(s) ? s : null)
+      }
+      return s
+    },
+  })
+}
+
+// useLaunchGameUntracked starts a game without tracking time. It does not touch
+// the session cache nor reload the list [UI-020].
+export function useLaunchGameUntracked(): UseMutationResult<void, Error, number> {
+  return useMutation<void, Error, number>({
+    mutationFn: (id: number) => launchGameUntracked(id),
+  })
+}
+
+// useToggleSession pauses the session when the cache shows it running (or any
+// non-paused state, which the agent then judges) and resumes it when the cache
+// shows it paused. The cache changes only with the response, and only if no
+// session:changed was applied since the request [UI-028, UI-018].
+export function useToggleSession(): UseMutationResult<SessionView, Error, void> {
+  const qc = useQueryClient()
+  return useMutation<SessionView, Error, void>({
+    mutationFn: async () => {
+      const seq = sessionEventSeq(qc)
+      const current = qc.getQueryData<SessionView | null>(currentSessionKey)
+      const s = current?.state === 'paused' ? await resumeSession() : await pauseSession()
       if (sessionEventSeq(qc) === seq) {
         qc.setQueryData<SessionView | null>(currentSessionKey, isLive(s) ? s : null)
       }

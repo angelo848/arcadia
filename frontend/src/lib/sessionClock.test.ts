@@ -79,6 +79,13 @@ describe('anchorFrom', () => {
   })
 })
 
+describe('anchorFrom com paused', () => {
+  it('UI-022 anchorFrom mapeia paused para state paused, com activeMs e receivedAt do relógio injetado', () => {
+    const p = anchorFrom(session({ state: 'paused', activeMs: 100000 }), () => 777)
+    expect(p).toEqual({ activeMs: 100000, state: 'paused', receivedAt: 777 })
+  })
+})
+
 describe('useElapsedSeconds', () => {
   beforeEach(() => {
     vi.useFakeTimers({
@@ -226,6 +233,88 @@ describe('useElapsedSeconds', () => {
 
   it('UI-017 sem âncora não arma temporizador', () => {
     renderHook(() => useElapsedSeconds(null))
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('UI-022/anchorFrom de paused congela: A = 100000 mostra 0:01:40 e depois de 10 min falsos continua 0:01:40', () => {
+    const anchor = anchorFrom(session({ state: 'paused', activeMs: 100000 }))
+    const { result } = renderHook(() => useElapsedSeconds(anchor))
+
+    expect(shown(result.current)).toBe('0:01:40')
+    advance(10 * 60 * 1000)
+    expect(shown(result.current)).toBe('0:01:40')
+  })
+
+  it('UI-023/de paused para running o cronômetro volta a avançar de A: 0:01:40 → 0:01:41 após 1000 ms', () => {
+    const paused = anchorFrom(session({ state: 'paused', activeMs: 100000 }))
+    const { result, rerender } = renderHook(
+      ({ anchor }: { anchor: SessionAnchor | null }) => useElapsedSeconds(anchor),
+      { initialProps: { anchor: paused } },
+    )
+    advance(5 * 60 * 1000)
+    expect(shown(result.current)).toBe('0:01:40')
+
+    const running = anchorFrom(session({ state: 'running', activeMs: 100000 }))
+    rerender({ anchor: running })
+    expect(shown(result.current)).toBe('0:01:40')
+    advance(999)
+    expect(shown(result.current)).toBe('0:01:40')
+    advance(1)
+    expect(shown(result.current)).toBe('0:01:41')
+  })
+
+  it('UI-023/retomada depois de pausa no meio usa o activeMs da pausa e não soma o intervalo pausado', () => {
+    const first = anchorFrom(session({ state: 'running', activeMs: 100000 }))
+    const { result, rerender } = renderHook(
+      ({ anchor }: { anchor: SessionAnchor | null }) => useElapsedSeconds(anchor),
+      { initialProps: { anchor: first } },
+    )
+    advance(30000)
+    expect(shown(result.current)).toBe('0:02:10')
+
+    // Paused at active 130 s: the paused interval (here 10 min on the fake clock) must not count.
+    rerender({ anchor: anchorFrom(session({ state: 'paused', activeMs: 130000 })) })
+    advance(10 * 60 * 1000)
+    expect(shown(result.current)).toBe('0:02:10')
+
+    rerender({ anchor: anchorFrom(session({ state: 'running', activeMs: 130000 })) })
+    expect(shown(result.current)).toBe('0:02:10')
+    advance(1000)
+    expect(shown(result.current)).toBe('0:02:11')
+  })
+
+  it('UI-023/de paused para grace congela no valor de A', () => {
+    const paused = anchorFrom(session({ state: 'paused', activeMs: 100000 }))
+    const { result, rerender } = renderHook(
+      ({ anchor }: { anchor: SessionAnchor | null }) => useElapsedSeconds(anchor),
+      { initialProps: { anchor: paused } },
+    )
+    rerender({ anchor: anchorFrom(session({ state: 'grace', activeMs: 100000 })) })
+    expect(shown(result.current)).toBe('0:01:40')
+    expect(vi.getTimerCount()).toBe(0)
+    advance(60000)
+    expect(shown(result.current)).toBe('0:01:40')
+  })
+
+  it('UI-025/em paused nenhum setTimeout fica armado (vi.getTimerCount() é 0)', () => {
+    const anchor = anchorFrom(session({ state: 'paused', activeMs: 100000 }))
+    const { result } = renderHook(() => useElapsedSeconds(anchor))
+    expect(vi.getTimerCount()).toBe(0)
+
+    advance(10 * 60 * 1000)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(shown(result.current)).toBe('0:01:40')
+  })
+
+  it('UI-025/running para paused desarma o temporizador que estava armado', () => {
+    const running = anchorFrom(session({ state: 'running', activeMs: 252400 }))
+    const { rerender } = renderHook(
+      ({ anchor }: { anchor: SessionAnchor | null }) => useElapsedSeconds(anchor),
+      { initialProps: { anchor: running } },
+    )
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    rerender({ anchor: anchorFrom(session({ state: 'paused', activeMs: 252400 })) })
     expect(vi.getTimerCount()).toBe(0)
   })
 })

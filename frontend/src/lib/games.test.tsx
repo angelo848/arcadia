@@ -9,13 +9,18 @@ import {
   formatPlayTime,
   gamesKey,
   launchGame,
+  launchGameUntracked,
   listGames,
+  pauseSession,
+  resumeSession,
   sessionEventSeq,
   useCurrentSession,
   useGames,
   useLaunchGame,
+  useLaunchGameUntracked,
   useReloadOnReconnect,
   useSessionEvents,
+  useToggleSession,
 } from './games'
 import type { GameView, SessionView } from './games'
 
@@ -29,9 +34,12 @@ type FakeApp = {
   AgentStatus: Fn
   CurrentSession: Fn
   LaunchGame: Fn
+  LaunchGameUntracked: Fn
   LibrarySummary: Fn
   ListGames: Fn
+  PauseSession: Fn
   PickGameExe: Fn
+  ResumeSession: Fn
 }
 
 let app: FakeApp
@@ -44,9 +52,12 @@ function install() {
     AgentStatus: vi.fn(() => Promise.resolve({ connected: true })),
     CurrentSession: vi.fn(() => Promise.resolve(null)),
     LaunchGame: vi.fn(() => Promise.resolve(session())),
+    LaunchGameUntracked: vi.fn(() => Promise.resolve()),
     LibrarySummary: vi.fn(() => Promise.resolve({ games: 0, platforms: 0 })),
     ListGames: vi.fn(() => Promise.resolve([])),
+    PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
     PickGameExe: vi.fn(() => Promise.resolve({ path: '', title: '' })),
+    ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
   }
   const w = window as unknown as { go?: unknown; runtime?: unknown }
   w.go = { main: { App: app } }
@@ -534,5 +545,311 @@ describe('useReloadOnReconnect', () => {
       await reload.promise
     })
     await waitFor(() => expect(result.current.current.data).toEqual(fresh))
+  })
+
+  it('UI-016/reconexão com sessão paused zera o cache e recarrega', async () => {
+    const qc = newClient()
+    const old = session({ state: 'paused', activeMs: 100000 })
+    const fresh = session({ state: 'paused', activeMs: 100000 })
+    const reload = deferred<SessionView | null>()
+    app.ListGames.mockResolvedValue([game()])
+    app.CurrentSession.mockResolvedValueOnce(old).mockReturnValueOnce(reload.promise)
+
+    const { result, rerender } = renderHook(({ connected }) => useAll(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: false },
+    })
+    await waitFor(() => expect(result.current.current.data).toEqual(old))
+
+    rerender({ connected: true })
+    await waitFor(() => expect(app.CurrentSession).toHaveBeenCalledTimes(2))
+    // The paused value from before the disconnect must not be shown while reloading.
+    expect(result.current.current.data).toBeUndefined()
+    expect(qc.getQueryData(currentSessionKey)).toBeUndefined()
+
+    await act(async () => {
+      reload.resolve(fresh)
+      await reload.promise
+    })
+    await waitFor(() => expect(result.current.current.data).toEqual(fresh))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sessão paused no cache [UI-022, UI-024]
+// ---------------------------------------------------------------------------
+
+describe('sessão paused no cache', () => {
+  it('UI-022/session:changed com paused entra no cache como sessão viva, sem recarregar a lista', () => {
+    const qc = newClient()
+    qc.setQueryData(gamesKey, [game()])
+    renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
+
+    const paused = session({ state: 'paused', activeMs: 100000 })
+    emit('session:changed', paused)
+
+    expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+  })
+
+  it('UI-022/currentSession devolve a sessão paused no formato recebido', async () => {
+    const paused = session({ state: 'paused', activeMs: 100000 })
+    app.CurrentSession.mockResolvedValueOnce(paused)
+    await expect(currentSession()).resolves.toEqual(paused)
+  })
+
+  it('UI-024/running, paused e grace mantêm a lista sem recarga; ended depois de paused a recarrega', () => {
+    const qc = newClient()
+    qc.setQueryData(gamesKey, [game()])
+    renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
+
+    emit('session:changed', session({ state: 'running', activeMs: 1000 }))
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+
+    const paused = session({ state: 'paused', activeMs: 1000 })
+    emit('session:changed', paused)
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
+
+    emit('session:changed', session({ state: 'grace', activeMs: 1000 }))
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+
+    emit('session:changed', session({ state: 'paused', activeMs: 1000 }))
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+
+    emit('session:changed', session({ state: 'ended', activeMs: 1000, endedAt: '2026-11-09T10:30:00.000Z' }))
+    expect(qc.getQueryData(currentSessionKey)).toBeNull()
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+  })
+
+  for (const state of ['ended', 'discarded'] as const) {
+    it(`UI-024/${state} vindo de paused limpa a sessão e invalida games`, () => {
+      const qc = newClient()
+      qc.setQueryData(gamesKey, [game()])
+      qc.setQueryData(currentSessionKey, session({ state: 'paused', activeMs: 100000 }))
+      renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
+
+      emit('session:changed', session({ state, activeMs: 100000, endedAt: '2026-11-09T10:30:00.000Z' }))
+
+      expect(qc.getQueryData(currentSessionKey)).toBeNull()
+      expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+    })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// pauseSession, resumeSession e launchGameUntracked (bindings) [UI-020, UI-028]
+// ---------------------------------------------------------------------------
+
+describe('bindings de pausa e lançamento sem contar tempo', () => {
+  it('UI-028/pauseSession e resumeSession chamam o binding sem argumentos e devolvem a sessão', async () => {
+    const paused = session({ state: 'paused', activeMs: 100000 })
+    const running = session({ state: 'running', activeMs: 100000 })
+    app.PauseSession.mockResolvedValueOnce(paused)
+    app.ResumeSession.mockResolvedValueOnce(running)
+
+    await expect(pauseSession()).resolves.toEqual(paused)
+    expect(app.PauseSession).toHaveBeenCalledWith()
+    await expect(resumeSession()).resolves.toEqual(running)
+    expect(app.ResumeSession).toHaveBeenCalledWith()
+  })
+
+  it('UI-028/rejeição em string de PauseSession e ResumeSession vira Error com a mesma mensagem', async () => {
+    const msg = 'Sessão não pode ser pausada agora.'
+    app.PauseSession.mockRejectedValueOnce(msg)
+    app.ResumeSession.mockRejectedValueOnce(msg)
+
+    for (const p of [pauseSession(), resumeSession()]) {
+      const err = await p.then(
+        () => null,
+        (e: unknown) => e,
+      )
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toBe(msg)
+    }
+  })
+
+  it('UI-020/launchGameUntracked chama LaunchGameUntracked com o id e resolve sem valor', async () => {
+    await expect(launchGameUntracked(10)).resolves.toBeUndefined()
+    expect(app.LaunchGameUntracked).toHaveBeenCalledWith(10)
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+  })
+
+  it('UI-020/rejeição em string de LaunchGameUntracked (sessão ativa, -32002) vira Error com a mensagem', async () => {
+    const msg = 'Já existe uma sessão ativa.'
+    app.LaunchGameUntracked.mockRejectedValueOnce(msg)
+
+    const err = await launchGameUntracked(10).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe(msg)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useLaunchGameUntracked [UI-020]
+// ---------------------------------------------------------------------------
+
+describe('useLaunchGameUntracked', () => {
+  it('UI-020/useLaunchGameUntracked chama LaunchGameUntracked uma vez e não toca no cache de sessão nem recarrega a lista', async () => {
+    const qc = newClient()
+    app.ListGames.mockResolvedValue([game()])
+    app.CurrentSession.mockResolvedValue(null)
+
+    const { result } = renderHook(
+      () => ({
+        games: useGames(),
+        current: useCurrentSession(),
+        launch: useLaunchGameUntracked(),
+      }),
+      { wrapper: wrapperFor(qc) },
+    )
+    await waitFor(() => expect(result.current.games.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.current.isSuccess).toBe(true))
+    const gamesCalls = app.ListGames.mock.calls.length
+    const sessionCalls = app.CurrentSession.mock.calls.length
+
+    act(() => {
+      result.current.launch.mutate(10)
+    })
+    await waitFor(() => expect(result.current.launch.isSuccess).toBe(true))
+
+    expect(app.LaunchGameUntracked).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).toHaveBeenCalledWith(10)
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(app.ListGames).toHaveBeenCalledTimes(gamesCalls)
+    expect(app.CurrentSession).toHaveBeenCalledTimes(sessionCalls)
+    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryData(currentSessionKey)).toBeNull()
+  })
+
+  it('UI-020/erro de LaunchGameUntracked vira Error na mutation e não muda o cache de sessão', async () => {
+    const qc = newClient()
+    const running = session({ state: 'running', activeMs: 5000 })
+    qc.setQueryData(currentSessionKey, running)
+    app.LaunchGameUntracked.mockRejectedValueOnce('Já existe uma sessão ativa.')
+    const { result } = renderHook(() => useLaunchGameUntracked(), { wrapper: wrapperFor(qc) })
+
+    act(() => {
+      result.current.mutate(10)
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.error?.message).toBe('Já existe uma sessão ativa.')
+    expect(qc.getQueryData(currentSessionKey)).toEqual(running)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useToggleSession [UI-028, UI-018]
+// ---------------------------------------------------------------------------
+
+describe('useToggleSession', () => {
+  it('UI-028/useToggleSession chama PauseSession em running e ResumeSession em paused, uma vez cada', async () => {
+    const qc = newClient()
+    qc.setQueryData(currentSessionKey, session({ state: 'running', activeMs: 0 }))
+    const { result } = renderHook(() => useToggleSession(), { wrapper: wrapperFor(qc) })
+
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(app.PauseSession).toHaveBeenCalledTimes(1)
+    expect(app.ResumeSession).not.toHaveBeenCalled()
+
+    qc.setQueryData(currentSessionKey, session({ state: 'paused', activeMs: 0 }))
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(app.ResumeSession).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(app.PauseSession).toHaveBeenCalledTimes(1)
+    expect(app.ResumeSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('UI-028/o cache não muda antes da resposta de PauseSession', async () => {
+    const qc = newClient()
+    const running = session({ state: 'running', activeMs: 5000 })
+    const paused = session({ state: 'paused', activeMs: 5000 })
+    qc.setQueryData(currentSessionKey, running)
+    const pending = deferred<SessionView>()
+    app.PauseSession.mockReturnValueOnce(pending.promise)
+    const { result } = renderHook(() => useToggleSession(), { wrapper: wrapperFor(qc) })
+
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(app.PauseSession).toHaveBeenCalledTimes(1))
+    expect(qc.getQueryData(currentSessionKey)).toEqual(running)
+
+    await act(async () => {
+      pending.resolve(paused)
+      await pending.promise
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
+  })
+
+  it('UI-018/resposta de pauseSession atrasada, depois de um session:changed, não sobrescreve o cache (caso paused)', async () => {
+    const qc = newClient()
+    qc.setQueryData(currentSessionKey, session({ state: 'running', activeMs: 40000 }))
+    const pending = deferred<SessionView>()
+    app.PauseSession.mockReturnValueOnce(pending.promise)
+    const { result } = renderHook(
+      () => {
+        useSessionEvents()
+        return useToggleSession()
+      },
+      { wrapper: wrapperFor(qc) },
+    )
+
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(app.PauseSession).toHaveBeenCalledTimes(1))
+
+    const evt = session({ state: 'paused', activeMs: 50000 })
+    emit('session:changed', evt)
+    await act(async () => {
+      pending.resolve(session({ state: 'paused', activeMs: 60000 }))
+      await pending.promise
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(qc.getQueryData(currentSessionKey)).toEqual(evt)
+  })
+
+  it('UI-028/erro de PauseSession vira Error na mutation e o cache não muda', async () => {
+    const qc = newClient()
+    const running = session({ state: 'running', activeMs: 5000 })
+    qc.setQueryData(currentSessionKey, running)
+    app.PauseSession.mockRejectedValueOnce('Sessão não pode ser pausada agora.')
+    const { result } = renderHook(() => useToggleSession(), { wrapper: wrapperFor(qc) })
+
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.error?.message).toBe('Sessão não pode ser pausada agora.')
+    expect(qc.getQueryData(currentSessionKey)).toEqual(running)
+  })
+
+  it('UI-028/erro de ResumeSession vira Error na mutation e o cache não muda', async () => {
+    const qc = newClient()
+    const paused = session({ state: 'paused', activeMs: 100000 })
+    qc.setQueryData(currentSessionKey, paused)
+    app.ResumeSession.mockRejectedValueOnce('Sessão não pode ser retomada agora.')
+    const { result } = renderHook(() => useToggleSession(), { wrapper: wrapperFor(qc) })
+
+    act(() => {
+      result.current.mutate()
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.error?.message).toBe('Sessão não pode ser retomada agora.')
+    expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
   })
 })
