@@ -1,6 +1,6 @@
 # 0025 — Rastreio por processo adotado (jogos que saem da árvore do Arcadia)
 
-- **Status:** proposto (aguarda a aprovação das tarefas da fase 6, [phase-6-importers](../specs/phase-6-importers/requirements.md))
+- **Status:** aceito (aprovado com a fase 6, [phase-6-importers](../specs/phase-6-importers/requirements.md)). A adoção mede saída por snapshot, não por SYNCHRONIZE: ver design §5.
 - **Data:** 2026-11-12
 
 ## Contexto

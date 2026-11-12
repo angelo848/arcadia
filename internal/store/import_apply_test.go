@@ -187,4 +187,20 @@ func TestApplyImport(t *testing.T) {
 			t.Errorf("games = %d, want only the good one", n)
 		}
 	})
+
+	t.Run("RUL-006/regras importadas ficam com learned=0 (a heurística fica para depois)", func(t *testing.T) {
+		t.Parallel()
+		s := ftsOpen(t)
+		pc := importPC(t, s)
+		id, err := s.ApplyImport(t.Context(), ImportGame{
+			PlatformID: pc, Title: "Pasta", LaunchType: "exe", LaunchTarget: `D:\Pasta\p.exe`,
+			InstallDir: `D:\Pasta`,
+		}, importAt)
+		if err != nil {
+			t.Fatalf("ApplyImport: %v", err)
+		}
+		if n := count(t, s, `SELECT COUNT(*) FROM tracking_rule WHERE game_id = ? AND learned <> 0`, id); n != 0 {
+			t.Errorf("learned rules = %d, want 0", n)
+		}
+	})
 }

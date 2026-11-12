@@ -165,3 +165,15 @@ qualquer assumção; se o cliente recusar, o caminho exe por pasta (RUL-002) con
   `uplay://` e `.exe`. Todos viram `launch_type = uri` ou `exe`; os de Steam e Epic deduplicam com a importação direta
   pelo `launch_target`.
 - **Fora do escopo desta fase:** `AdditionalApplication` (apps extras do LaunchBox), e imagens.
+
+## 10. Desvios do design na implementação (registrados em 2026-11-12)
+
+- **Saída do processo adotado:** o watcher detecta saída comparando snapshots (Toolhelp a cada 1,5 s), e não com
+  `OpenProcess(SYNCHRONIZE)` por processo. Motivo: evita uma goroutine por processo e reaproveita o mesmo snapshot do
+  casamento. A precisão é de um período (1,5 s), dentro da carência de 15 s.
+- **Tempo antes da adoção:** a sessão conta a partir da adoção (`Adopted`), e não do clique em "Jogar". O tempo que a
+  loja leva para abrir o jogo não entra no tempo jogado.
+- **Motivo de término:** `client-no-launch` (com hífen, como `agent-shutdown`), em vez de `client_no_launch`.
+- **Sinal da Steam:** a transição `Running 1 -> 0` depois da adoção leva a carência a zero (`EffArmGrace` com atraso 0).
+  Com `Running = 0` antes de qualquer `1`, nada acontece.
+- **Campo `tracking`:** o contrato v0.7.0 ganha `tracking` (obrigatório em `Session`, valores `job` e `process`).

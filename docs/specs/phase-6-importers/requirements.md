@@ -1,6 +1,6 @@
 # Fase 6 — Importadores e rastreio fora da árvore: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário (três decisões de produto abaixo)
+- **Status:** aprovado pelo usuário (2026-11-12); implementado nas tarefas T00..T12; verificação manual pendente (IMP-005, IMP-010, STM-001).
 - **Base:** [phase-5-1-ajustes](../phase-5-1-ajustes/requirements.md) (aceita), [phase-3-tracker](../phase-3-tracker/requirements.md)
   (limitação 2: jogos que saem em segundos; limitação 3: filhos com breakaway) e
   [phase-4-pause](../phase-4-pause/requirements.md).
