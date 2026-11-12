@@ -104,7 +104,7 @@ func TestImportHandlers(t *testing.T) {
 		LaunchType: importers.LaunchURI, LaunchTarget: "steam://rungameid/730",
 	}
 	folderCandidate := importers.Candidate{
-		Source: importers.SourceFolder, Title: "ABZU", LaunchType: importers.LaunchExe,
+		Source: importers.SourceFile, Title: "ABZU", LaunchType: importers.LaunchExe,
 		LaunchTarget: `D:\ABZU\ABZU.exe`, InstallDir: `D:\ABZU`,
 	}
 
@@ -162,8 +162,8 @@ func TestImportHandlers(t *testing.T) {
 		t.Parallel()
 		st := newFakeImportStore()
 		sources := map[string]importers.Source{
-			ipc.ImportSourceSteam:  fakeImportSource{id: "steam", err: errors.New("boom")},
-			ipc.ImportSourceFolder: fakeImportSource{id: "folder", res: importers.Result{Candidates: []importers.Candidate{folderCandidate}}},
+			ipc.ImportSourceSteam: fakeImportSource{id: "steam", err: errors.New("boom")},
+			ipc.ImportSourceFile:  fakeImportSource{id: "file", res: importers.Result{Candidates: []importers.Candidate{folderCandidate}}},
 		}
 		h := importHandlers(st, fakeLocations{}, testClock(), sources, quietLog())[ipc.MethodImportScan]
 		out, err := h(context.Background(), rawParams(t, map[string]string{"source": "steam"}))
@@ -173,12 +173,12 @@ func TestImportHandlers(t *testing.T) {
 		if res := out.(ipc.ImportScanResult); len(res.Warnings) == 0 {
 			t.Errorf("warnings empty, want the source failure")
 		}
-		out, err = h(context.Background(), rawParams(t, map[string]string{"source": "folder", "path": `D:\ABZU`}))
+		out, err = h(context.Background(), rawParams(t, map[string]string{"source": "file", "path": `D:\ABZU`}))
 		if err != nil {
 			t.Fatalf("folder scan: %v", err)
 		}
 		if res := out.(ipc.ImportScanResult); len(res.Candidates) != 1 {
-			t.Errorf("folder candidates = %d, want 1", len(res.Candidates))
+			t.Errorf("file candidates = %d, want 1", len(res.Candidates))
 		}
 	})
 
@@ -187,8 +187,8 @@ func TestImportHandlers(t *testing.T) {
 		st := newFakeImportStore()
 		st.failTitle = "Quebra"
 		h := importHandlers(st, fakeLocations{}, testClock(), nil, quietLog())[ipc.MethodImportApply]
-		bad := importers.Candidate{Source: importers.SourceFolder, Title: "Quebra", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\q.exe`}
-		good := importers.Candidate{Source: importers.SourceFolder, Title: "Bom", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\b.exe`}
+		bad := importers.Candidate{Source: importers.SourceFile, Title: "Quebra", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\q.exe`}
+		good := importers.Candidate{Source: importers.SourceFile, Title: "Bom", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\b.exe`}
 		out, err := h(context.Background(), rawParams(t, ipc.ImportApplyParams{Candidates: []ipc.ImportCandidate{
 			toIPCCandidate(bad, false), toIPCCandidate(good, false),
 		}}))
@@ -233,7 +233,7 @@ func TestImportHandlers(t *testing.T) {
 				return err
 			}()},
 			{"pasta relativa", func() error {
-				_, err := scan(context.Background(), rawParams(t, map[string]string{"source": "folder", "path": "relativa"}))
+				_, err := scan(context.Background(), rawParams(t, map[string]string{"source": "file", "path": "relativa"}))
 				return err
 			}()},
 			{"apply sem candidatos", func() error {

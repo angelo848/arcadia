@@ -1666,7 +1666,7 @@
         "enum": [
           "steam",
           "epic",
-          "folder",
+          "file",
           "launchbox"
         ],
         "description": "Import origin (IMP-002..IMP-005)."
@@ -1692,7 +1692,7 @@
           "platform": {
             "type": "string",
             "maxLength": 100,
-            "description": "Empty for folder candidates: chosen at apply (IMP-004). LaunchBox and Steam/Epic use PC."
+            "description": "Empty for file candidates: chosen at apply (IMP-004). LaunchBox and Steam/Epic use PC."
           },
           "launchType": {
             "type": "string",
@@ -1784,7 +1784,7 @@
           "path": {
             "type": "string",
             "maxLength": 4096,
-            "description": "Folder for folder and launchbox sources; ignored for steam and epic."
+            "description": "File for file and folder for launchbox sources; ignored for steam and epic."
           }
         }
       },

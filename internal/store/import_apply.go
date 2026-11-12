@@ -211,7 +211,7 @@ func (s *Store) EnsurePlatformID(ctx context.Context, name string, category doma
 
 // ImportDuplicate reports whether the library already has the game a candidate
 // describes: the same launch target, or the same title on the same platform
-// (IMP-006). A platform id of 0 (a folder candidate without a platform yet)
+// (IMP-006). A platform id of 0 (a file candidate without a platform yet)
 // compares the launch target only.
 func (s *Store) ImportDuplicate(ctx context.Context, launchType, launchTarget, title string, platformID int64) (bool, error) {
 	_, err := s.q.FindGameByLaunchTarget(ctx, dbgen.FindGameByLaunchTargetParams{

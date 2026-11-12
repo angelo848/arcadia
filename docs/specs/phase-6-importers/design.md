@@ -22,7 +22,7 @@ type Source interface {
 type Candidate struct {
     Source       string   // ID of the Source
     Title        string   // DOM-009 rules apply on apply
-    Platform     string   // "" for folder: chosen at apply (IMP-004)
+    Platform     string   // "" for file: chosen at apply (IMP-004)
     LaunchType   string   // "uri" | "exe"
     LaunchTarget string   // steam://rungameid/<appid> | com.epicgames...?AppName= | exe path
     InstallDir   string   // "" when unknown
@@ -49,7 +49,7 @@ type Result struct {
   para achar a pasta (winapi; teste com a pasta de fixture). Fixtures em `testdata/steam/`.
 - **Epic (IMP-003):** `*.item` em `ProgramData\Epic\EpicGamesLauncher\Data\Manifests` (JSON). Campos: `AppName`,
   `DisplayName`, `InstallLocation`. Pasta injetada por `ScanInput` para teste.
-- **Pasta (IMP-004):** `os.ReadDir` de primeiro nível, `.exe` apenas. Título = nome sem extensão.
+- **Arquivo (IMP-004):** `os.Stat` do arquivo escolhido (sem leitura de pasta). `.exe`/`.bat`/`.cmd` → `exe`; demais arquivos (ROM) → `emulator` com o arquivo como alvo. Título = nome sem extensão. Seletor: `PickFile` (todos os arquivos).
 - **LaunchBox (IMP-005), formato confirmado no arquivo real (`DataPlatformsWindows.xml`, 76 jogos):** `<LaunchBox>` com um `<Game>` por jogo. Campos usados: `Title`, `Platform` (`Windows`), `Developer`, `Publisher`, `Genre` (separado por `; `), `ReleaseDate` (RFC 3339 com offset; o ano é o da data), `Notes` (descrição), `ApplicationPath` (URI ou `.exe`), `PlayCount`, `PlayTime` (inteiro em **segundos**, confirmado: Counter-Strike 2 tem 33060 com 3 partidas) e `LastPlayedDate` (RFC 3339 com offset). `PlayMode` vem em português: `Único jogador` → `single`; `Cooperativo` → `coop_online`; `Multiplayer` → `multi_online` (ver decisão em §9). Campos ignorados: `Source`, `AdditionalApplication`, imagens, `ID` (GUID). Fixture: `internal/importers/testdata/launchbox/Windows-sample.xml` (3 jogos reais anonimizados: Steam, Epic e `.exe`). `PlayTime` com `PlayCount = 0` é importado como sessão mesmo assim (dois casos no arquivo).
 
 Todas as leituras aceitam o diretório base por `ScanInput` (teste sem tocar no sistema). Nenhum `time.Now()`; o relógio

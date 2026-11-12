@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
@@ -74,4 +76,23 @@ func (a *App) PlatformSetEmulator(platformID, emulatorID int64) (PlatformView, e
 		return PlatformView{}, err
 	}
 	return platformView(res.Platform), nil
+}
+
+// pickEmulatorTitle is the title of the emulator executable dialog (EMU-006).
+const pickEmulatorTitle = "Escolha o executável do emulador"
+
+// PickEmulatorExe opens the executable dialog for an emulator; "" means cancelled.
+// It only picks the path: the emulator is stored by EmulatorAdd or EmulatorUpdate (EMU-006).
+func (a *App) PickEmulatorExe() (string, error) {
+	a.mu.Lock()
+	wailsCtx := a.wailsCtx
+	a.mu.Unlock()
+	if wailsCtx == nil || a.platform.openFile == nil {
+		return "", userError(errNoDialog, a.logger())
+	}
+	path, err := a.platform.openFile(wailsCtx, pickEmulatorTitle, pickExeFilters)
+	if err != nil {
+		return "", userError(fmt.Errorf("desktop: pick emulator exe: %w", err), a.logger())
+	}
+	return path, nil
 }

@@ -48,11 +48,13 @@ Dado `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item`, quando leio 
 `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`. Itens sem `DisplayName` são ignorados e contados no
 aviso.
 
-### IMP-004 — Pasta ou executável avulso
-Dado uma pasta escolhida pelo usuário, quando o scan roda, então cada `.exe` de primeiro nível vira candidato com
-`launch_type = exe`, alvo = caminho do executável e título = nome do arquivo sem `.exe`. Dado que a pasta tem
-subpastas, então só o primeiro nível é lido nesta fase (escopo explícito, para evitar falsos positivos como
-instaladores e utilitários). Os candidatos ficam sem plataforma definida; a plataforma é escolhida na confirmação.
+### IMP-004 — Arquivo avulso
+Dado que o usuário escolhe um arquivo (de qualquer tipo) na fonte "Arquivo", quando o scan roda, então o arquivo vira um
+candidato. `.exe`, `.bat` e `.cmd` viram `launch_type = exe`, com alvo = caminho do arquivo. Qualquer outro arquivo (ROM)
+vira `launch_type = emulator`, com alvo = caminho do arquivo; o emulador é o da plataforma ou o do jogo (EMU-002), escolhido
+depois da importação. O título é o nome do arquivo sem extensão. Pasta escolhida, arquivo inexistente ou caminho vazio
+devolvem aviso e nenhum candidato. O candidato fica sem plataforma definida; a plataforma é escolhida na confirmação.
+A fonte "Pasta de executáveis" foi removida: a única forma de adicionar jogos avulsos é esta, pelo diálogo Importar.
 
 ### IMP-005 — LaunchBox
 Dado a pasta `Data\Platforms` do LaunchBox, quando leio os `*.xml` de plataforma, então cada `<Game>` vira candidato com

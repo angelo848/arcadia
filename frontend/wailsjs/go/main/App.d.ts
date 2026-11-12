@@ -41,6 +41,10 @@ export function ListGames(arg1:main.LibraryQuery):Promise<main.GameListView>;
 
 export function PauseSession():Promise<main.SessionView>;
 
+export function PickEmulatorExe():Promise<string>;
+
+export function PickFile():Promise<string>;
+
 export function PickFolder():Promise<string>;
 
 export function PickGameExe():Promise<main.PickedExe>;

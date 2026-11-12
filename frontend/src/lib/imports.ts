@@ -1,7 +1,7 @@
 // Import calls (phase 6, IMP-001..IMP-010). The bound methods are reached through
 // window with local types, like lib/games.ts, so tests can fake window.go.
 
-export type ImportSource = 'steam' | 'epic' | 'folder' | 'launchbox'
+export type ImportSource = 'steam' | 'epic' | 'file' | 'launchbox'
 
 // ImportCandidate mirrors cmd/arcadia ImportCandidateView (JSON names of contract v0.7.0).
 export type ImportCandidate = {
@@ -35,6 +35,7 @@ export type ImportApplyResult = {
 type WailsApp = {
   ImportScan?: (source: string, path: string) => Promise<ImportScanResult>
   ImportApply?: (candidates: ImportCandidate[]) => Promise<ImportApplyResult>
+  PickFile?: () => Promise<string>
   PickFolder?: () => Promise<string>
 }
 
@@ -63,6 +64,15 @@ export async function applyImport(candidates: ImportCandidate[]): Promise<Import
   return fn(candidates)
 }
 
+// pickFile opens the single-file dialog of the file source; "" means cancelled (IMP-004).
+export async function pickFile(): Promise<string> {
+  const fn = app().PickFile
+  if (!fn) {
+    throw new Error('PickFile indisponível')
+  }
+  return fn()
+}
+
 // pickFolder opens the folder dialog; "" means cancelled (IMP-010).
 export async function pickFolder(): Promise<string> {
   const fn = app().PickFolder
@@ -76,13 +86,13 @@ export async function pickFolder(): Promise<string> {
 export const sourceLabels: Record<ImportSource, string> = {
   steam: 'Steam',
   epic: 'Epic Games',
-  folder: 'Pasta de executáveis',
+  file: 'Arquivo',
   launchbox: 'LaunchBox',
 }
 
 // needsPath tells whether a source reads a folder chosen by the user (IMP-004, IMP-005).
 export function needsPath(source: ImportSource): boolean {
-  return source === 'folder' || source === 'launchbox'
+  return source === 'file' || source === 'launchbox'
 }
 
 // skipReasonLabels names the reasons of ImportApplyResult.skipped.

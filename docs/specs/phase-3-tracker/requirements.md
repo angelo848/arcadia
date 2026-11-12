@@ -394,6 +394,8 @@ possível iniciar o jogo."; `-32004` com motivo desconhecido → "Dados inválid
 como conexão ("O agente não está respondendo. Tente de novo.").
 
 ### DSK-012 — Seletor de executável
+> **Removido na fase 6:** `PickGameExe` não é mais usado pela UI; o seletor de arquivos do Importar é `PickFile` (IMP-004).
+
 Quando chamo `PickGameExe`, então abre o diálogo de arquivo com título "Escolha o executável do jogo" e filtro
 "Executáveis (*.exe)" / `*.exe`; dado que o usuário cancela, então o resultado é `{path: "", title: ""}` e nada é
 enviado ao agente; dado um arquivo escolhido `P`, então o resultado é `{path: P, title: DOM-009(P)}`; dado que o
@@ -418,6 +420,8 @@ Dada uma sessão em `running` ou `grace` (lida de `CurrentSession` ao carregar e
 `ended` ou `discarded`, então a marcação some e a lista é recarregada (total atualizado).
 
 ### UI-007 — Adicionar jogo
+> **Removido na fase 6 (sem botão "Adicionar jogo"):** a única forma de adicionar jogos avulsos é a fonte "Arquivo" do diálogo Importar (IMP-004, fase 6). Este requisito não vale mais.
+
 Quando clico "Adicionar jogo" e escolho um `.exe`, então aparece o formulário com o caminho escolhido e o campo
 "Título" preenchido com o título padrão (editável, no máximo 200 caracteres), e os botões "Salvar" e "Cancelar";
 "Salvar" fica desabilitado com título vazio (após cortar espaços) ou durante o envio; quando salvo com sucesso, então

@@ -60,7 +60,7 @@ func jsonKeys(t *testing.T, v any) []string {
 func TestImportContract(t *testing.T) {
 	t.Run("IMP-001/import.scan aceita fonte e caminho como no contrato", func(t *testing.T) {
 		t.Parallel()
-		got := jsonKeys(t, ipc.ImportScanParams{Source: ipc.ImportSourceFolder, Path: `C:\Games`})
+		got := jsonKeys(t, ipc.ImportScanParams{Source: ipc.ImportSourceFile, Path: `C:\Games`})
 		if want := schemaProps(t, "ImportScanParams"); !slices.Equal(got, want) {
 			t.Errorf("ImportScanParams keys = %v, want %v", got, want)
 		}

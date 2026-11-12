@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import { LibraryStates } from './LibraryStates'
 
 type StatesProps = Parameters<typeof LibraryStates>[0]
@@ -9,7 +9,6 @@ function states(over: Partial<StatesProps> = {}): ReturnType<typeof render> {
     loaded: true,
     total: 0,
     filtered: false,
-    onAdd: () => {},
     ...over,
   }
   return render(<LibraryStates {...props} />)
@@ -24,15 +23,13 @@ describe('LibraryStates', () => {
     expect(screen.queryByText('Nenhum jogo ainda')).not.toBeInTheDocument()
   })
 
-  it("UI-044/total 0 sem filtro mostra 'Nenhum jogo ainda' e 'Adicionar jogo'", () => {
-    const onAdd = vi.fn()
-    states({ loaded: true, total: 0, filtered: false, onAdd })
+  it("UI-044/total 0 sem filtro mostra 'Nenhum jogo ainda' e a dica de Importar", () => {
+    states({ loaded: true, total: 0, filtered: false })
 
     expect(screen.getByText('Nenhum jogo ainda')).toBeInTheDocument()
     expect(screen.queryByText('Nenhum jogo com estes filtros.')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Use Importar para adicionar jogos.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Adicionar jogo' })).not.toBeInTheDocument()
   })
 
   it('UI-044/total > 0 mostra N jogos e nenhum contador de plataformas', () => {

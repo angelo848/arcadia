@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import {
-  addGame,
   currentSession,
   currentSessionKey,
   formatPlayTime,
@@ -29,14 +28,12 @@ import { libraryKeys, useInfiniteGames, type GameListView, type GameView } from 
 
 type Fn = ReturnType<typeof vi.fn>
 type FakeApp = {
-  AddGame: Fn
   AgentStatus: Fn
   CurrentSession: Fn
   LaunchGame: Fn
   LaunchGameUntracked: Fn
   ListGames: Fn
   PauseSession: Fn
-  PickGameExe: Fn
   ResumeSession: Fn
 }
 
@@ -46,14 +43,12 @@ let handlers: Map<string, Set<(...data: unknown[]) => void>>
 function install() {
   handlers = new Map()
   app = {
-    AddGame: vi.fn(() => Promise.resolve(game())),
     AgentStatus: vi.fn(() => Promise.resolve({ connected: true })),
     CurrentSession: vi.fn(() => Promise.resolve(null)),
     LaunchGame: vi.fn(() => Promise.resolve(session())),
     LaunchGameUntracked: vi.fn(() => Promise.resolve()),
     ListGames: vi.fn(() => Promise.resolve(listPage([]))),
     PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
-    PickGameExe: vi.fn(() => Promise.resolve({ path: '', title: '' })),
     ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
   }
   const w = window as unknown as { go?: unknown; runtime?: unknown }
@@ -212,11 +207,10 @@ describe('bindings', () => {
 
   it('UI-008 rejeição em string vira Error com a mesma mensagem', async () => {
     const msg = 'O agente não está respondendo. Tente de novo.'
-    app.AddGame.mockRejectedValueOnce(msg)
     app.LaunchGame.mockRejectedValueOnce(msg)
     app.CurrentSession.mockRejectedValueOnce(msg)
 
-    for (const p of [addGame('C:\\x.exe', 'X'), launchGame(10), currentSession()]) {
+    for (const p of [launchGame(10), currentSession()]) {
       const err = await p.then(
         () => null,
         (e: unknown) => e,
@@ -224,7 +218,6 @@ describe('bindings', () => {
       expect(err).toBeInstanceOf(Error)
       expect((err as Error).message).toBe(msg)
     }
-    expect(app.AddGame).toHaveBeenCalledWith('C:\\x.exe', 'X')
     expect(app.LaunchGame).toHaveBeenCalledWith(10)
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
-import { libraryGamesKey, type GameView } from './library'
+import { libraryGamesKey } from './library'
 
 export type SessionState = 'running' | 'paused' | 'grace' | 'ended' | 'discarded'
 
@@ -20,16 +20,11 @@ export type SessionView = {
   tracking?: 'job' | 'process'
 }
 
-// PickedExe mirrors cmd/arcadia PickedExe; an empty path means the dialog was cancelled.
-export type PickedExe = { path: string; title: string }
-
 // The bound methods and runtime are reached through window with local types,
 // the same way lib/agent.ts does.
 type WailsApp = {
   CurrentSession?: () => Promise<SessionView | null>
-  AddGame?: (path: string, title: string) => Promise<GameView>
   LaunchGame?: (id: number) => Promise<SessionView>
-  PickGameExe?: () => Promise<PickedExe>
   LaunchGameUntracked?: (id: number) => Promise<void>
   PauseSession?: () => Promise<SessionView>
   ResumeSession?: () => Promise<SessionView>
@@ -91,25 +86,9 @@ export async function currentSession(): Promise<SessionView | null> {
   }
 }
 
-export async function addGame(path: string, title: string): Promise<GameView> {
-  try {
-    return await binding('AddGame')(path, title)
-  } catch (e) {
-    throw toError(e)
-  }
-}
-
 export async function launchGame(id: number): Promise<SessionView> {
   try {
     return await binding('LaunchGame')(id)
-  } catch (e) {
-    throw toError(e)
-  }
-}
-
-export async function pickGameExe(): Promise<PickedExe> {
-  try {
-    return await binding('PickGameExe')()
   } catch (e) {
     throw toError(e)
   }

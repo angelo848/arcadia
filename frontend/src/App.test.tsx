@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import App from './App'
-import type { PickedExe, SessionView } from './lib/games'
+import type { SessionView } from './lib/games'
 import type { CatalogView, GameDetailView, GameListView, GameView } from './lib/library'
 import { readLibraryView, writeLibraryView } from './lib/libraryView'
 
@@ -315,14 +315,15 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('App: estado vazio e carregamento', () => {
-  it('UI-010 [] mostra Nenhum jogo ainda sem contadores, com Adicionar jogo', async () => {
+  it('UI-010 [] mostra Nenhum jogo ainda sem contadores, com a dica de Importar', async () => {
     app.ListGames.mockResolvedValue(page([]))
     renderApp()
 
     expect(await screen.findByText('Nenhum jogo ainda')).toBeInTheDocument()
     expect(screen.queryByText('Conectando ao agente…')).toBeNull()
     expect(screen.queryByText(/jogos ·|plataformas/)).toBeNull()
-    expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled()
+    expect(screen.getByText('Use Importar para adicionar jogos.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Adicionar jogo' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Jogar' })).toBeNull()
   })
 
@@ -444,113 +445,6 @@ describe('App: grade e lista', () => {
     expect(screen.queryAllByRole('article')).toHaveLength(0)
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Mostrar em grade' })).toBeInTheDocument()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// UI-007 add game
-// ---------------------------------------------------------------------------
-
-describe('App: adicionar jogo', () => {
-  const picked: PickedExe = { path: 'C:\\Games\\HK\\hollow_knight.exe', title: 'hollow_knight' }
-
-  it('UI-007 escolher exe abre o formulário; salvar fecha e o jogo aparece', async () => {
-    let library: GameView[] = []
-    app.ListGames.mockImplementation(() => Promise.resolve(page(library)))
-    app.PickGameExe.mockResolvedValue(picked)
-    const added = game({ id: 77, title: 'Hollow Knight', path: picked.path })
-    app.AddGame.mockImplementation(() => {
-      library = [added]
-      return Promise.resolve(added)
-    })
-    renderApp()
-    await screen.findByText('Nenhum jogo ainda')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    const input = (await screen.findByLabelText('Título')) as HTMLInputElement
-    expect(app.PickGameExe).toHaveBeenCalledTimes(1)
-    expect(input).toHaveValue('hollow_knight')
-    expect(screen.queryByText(picked.path) ?? screen.queryByDisplayValue(picked.path)).not.toBeNull()
-
-    fireEvent.change(input, { target: { value: 'Hollow Knight' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => expect(screen.queryByLabelText('Título')).toBeNull())
-    expect(app.AddGame).toHaveBeenCalledTimes(1)
-    expect(app.AddGame).toHaveBeenCalledWith(picked.path, 'Hollow Knight')
-    const row = await findRow('Hollow Knight')
-    expect(within(row).getByRole('button', { name: 'Jogar' })).toBeEnabled()
-    expect(screen.queryByText('Nenhum jogo ainda')).toBeNull()
-  })
-
-  it('UI-007 Adicionar jogo fica desabilitado enquanto Salvar está pendente', async () => {
-    app.ListGames.mockResolvedValue(page([]))
-    app.PickGameExe.mockResolvedValue(picked)
-    const pending = deferred<GameView>()
-    app.AddGame.mockImplementation(() => pending.promise)
-    renderApp()
-    await screen.findByText('Nenhum jogo ainda')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    await screen.findByLabelText('Título')
-    expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-    await waitFor(() => expect(app.AddGame).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeDisabled())
-
-    // A click while disabled does not open the dialog again.
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    await act(async () => {
-      await Promise.resolve()
-    })
-    expect(app.PickGameExe).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      pending.resolve(game({ id: 77, path: picked.path }))
-      await pending.promise
-    })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled())
-  })
-
-  it('UI-007 cancelar no diálogo não muda nada', async () => {
-    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Celeste', totalPlaySeconds: 60 })]))
-    app.PickGameExe.mockResolvedValue({ path: '', title: '' })
-    renderApp()
-    await findRow('Celeste')
-    await waitConnected()
-    // Let the reconnect reload (if any) finish before counting.
-    await waitFor(() => expect(screen.queryByText('Conectando ao agente…')).toBeNull())
-    const listCalls = app.ListGames.mock.calls.length
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    await waitFor(() => expect(app.PickGameExe).toHaveBeenCalledTimes(1))
-    // Give a pending state update a chance to happen.
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(screen.queryByLabelText('Título')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
-    expect(app.AddGame).not.toHaveBeenCalled()
-    expect(app.ListGames).toHaveBeenCalledTimes(listCalls)
-    expect(rowOf('Celeste')).toHaveTextContent('1 min')
-    expect(screen.getByRole('button', { name: 'Adicionar jogo' })).toBeEnabled()
-  })
-
-  it('UI-007 cancelar no formulário não muda nada', async () => {
-    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Celeste' })]))
-    app.PickGameExe.mockResolvedValue(picked)
-    renderApp()
-    await findRow('Celeste')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    await screen.findByLabelText('Título')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
-
-    await waitFor(() => expect(screen.queryByLabelText('Título')).toBeNull())
-    expect(app.AddGame).not.toHaveBeenCalled()
-    expect(rowOf('Celeste')).toBeInTheDocument()
   })
 })
 
@@ -930,27 +824,6 @@ describe('App: atualização depois de escrita (UI-042)', () => {
     expect(app.ListGames.mock.calls.length).toBe(lists0 + 2)
     expect(app.Catalog.mock.calls.length).toBe(catalog0 + 2)
   })
-
-  it('UI-042/após AddGame a grade é recarregada', async () => {
-    let library: GameView[] = []
-    app.ListGames.mockImplementation(() => Promise.resolve(page(library)))
-    app.PickGameExe.mockResolvedValue({ path: 'C:\\Games\\HK\\hollow_knight.exe', title: 'hollow_knight' })
-    app.AddGame.mockImplementation(() => {
-      library = [game({ id: 77, title: 'Hollow Knight' })]
-      return Promise.resolve(library[0])
-    })
-    renderApp()
-    await screen.findByText('Nenhum jogo ainda')
-    const before = app.ListGames.mock.calls.length
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Hollow Knight' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await findRow('Hollow Knight')
-    await flush()
-    expect(app.ListGames.mock.calls.length).toBe(before + 1)
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -959,7 +832,6 @@ describe('App: atualização depois de escrita (UI-042)', () => {
 
 describe('App: erros', () => {
   const launchMsg = 'Já há um jogo em andamento: Celeste. Feche-o antes de iniciar outro.'
-  const addMsg = 'Escolha um arquivo .exe.'
 
   it('UI-008 falha de Jogar mostra a mensagem no aviso', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
@@ -1000,26 +872,6 @@ describe('App: erros', () => {
       await pending.promise
     })
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Iniciando…' })).toBeNull())
-  })
-
-  it('UI-008 erro novo substitui o anterior', async () => {
-    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
-    app.LaunchGame.mockRejectedValue(launchMsg)
-    app.PickGameExe.mockResolvedValue({ path: 'C:\\Games\\readme.txt', title: 'readme' })
-    app.AddGame.mockRejectedValue(addMsg)
-    renderApp()
-    const row = await findRow('Hollow Knight')
-
-    fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
-    await screen.findByText(launchMsg)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-    await screen.findByLabelText('Título')
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await screen.findByText(addMsg)
-    expect(screen.queryByText(launchMsg)).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Fechar' })).toHaveLength(1)
   })
 
   it('UI-008 ação bem-sucedida remove o aviso', async () => {

@@ -113,6 +113,28 @@ func (a *App) PickFolder() (string, error) {
 	return path, nil
 }
 
+// pickFileTitle is the title of the single-file dialog of the import (IMP-004).
+const pickFileTitle = "Escolha o arquivo do jogo"
+
+// pickAnyFilters accepts any file: a ROM has no fixed extension (IMP-004).
+var pickAnyFilters = []fileFilter{{DisplayName: "Todos os arquivos (*.*)", Pattern: "*.*"}}
+
+// PickFile shows the file dialog of the single-file import. An empty result means
+// the user cancelled.
+func (a *App) PickFile() (string, error) {
+	a.mu.Lock()
+	wailsCtx := a.wailsCtx
+	a.mu.Unlock()
+	if wailsCtx == nil || a.platform.openFile == nil {
+		return "", userError(errNoDialog, a.logger())
+	}
+	path, err := a.platform.openFile(wailsCtx, pickFileTitle, pickAnyFilters)
+	if err != nil {
+		return "", userError(fmt.Errorf("desktop: pick file: %w", err), a.logger())
+	}
+	return path, nil
+}
+
 func importCandidateView(c ipc.ImportCandidate) ImportCandidateView {
 	return ImportCandidateView{
 		Source: c.Source, Title: c.Title, Platform: c.Platform, LaunchType: c.LaunchType,

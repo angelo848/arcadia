@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AddGameForm } from './components/AddGameForm'
+import { useQueryClient } from '@tanstack/react-query'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
@@ -21,15 +20,12 @@ import { ViewToggle } from './components/ViewToggle'
 import { disconnectedStatus, useAgentElevated, useAgentStatus } from './lib/agent'
 import { resetQuery, withSort, withText, type LibraryQuery } from './lib/filters'
 import {
-  addGame,
-  pickGameExe,
   useCurrentSession,
   useLaunchGame,
   useLaunchGameUntracked,
   useReloadOnReconnect,
   useSessionEvents,
   useToggleSession,
-  type PickedExe,
   type SessionView,
 } from './lib/games'
 import {
@@ -39,7 +35,6 @@ import {
   useGame,
   useInfiniteGames,
   useUpdateGame,
-  type GameView,
 } from './lib/library'
 import { readLibraryView, writeLibraryView, type LibraryView } from './lib/libraryView'
 import type { PendingLaunch } from './lib/pendingLaunch'
@@ -161,15 +156,11 @@ export default function App() {
   const launch = useLaunchGame()
   const untracked = useLaunchGameUntracked()
   const toggle = useToggleSession()
-  const add = useMutation<GameView, Error, { path: string; title: string }>({
-    mutationFn: ({ path, title }) => addGame(path, title),
-  })
   const update = useUpdateGame()
   const remove = useDeleteGame()
 
-  // Last failed action's message [UI-008, UI-020, UI-028, UI-041] and the exe chosen in the dialog [UI-007].
+  // Last failed action's message [UI-008, UI-020, UI-028, UI-041].
   const [error, setError] = useState<string | null>(null)
-  const [picked, setPicked] = useState<PickedExe | null>(null)
   const [importing, setImporting] = useState(false)
   const [emulating, setEmulating] = useState(false)
   const emulators = useEmulators()
@@ -227,36 +218,6 @@ export default function App() {
       onSuccess: () => setError(null),
       onError: (e) => setError(errorMessage(e)),
     })
-  }
-
-  async function pick() {
-    try {
-      const p = await pickGameExe()
-      // An empty path means the dialog was cancelled: nothing changes.
-      if (p.path !== '') {
-        setPicked(p)
-      }
-    } catch (e) {
-      setError(errorMessage(e))
-    }
-  }
-
-  function save(title: string) {
-    if (!picked) {
-      return
-    }
-    add.mutate(
-      { path: picked.path, title },
-      {
-        onSuccess: async () => {
-          setError(null)
-          setPicked(null)
-          await qc.invalidateQueries({ queryKey: libraryGamesKey })
-        },
-        // The form stays open so the title can be fixed and saved again.
-        onError: (e) => setError(errorMessage(e)),
-      },
-    )
   }
 
   function openGame(id: number) {
@@ -326,7 +287,6 @@ export default function App() {
   }
 
   // The empty library has its add button in LibraryStates; the header keeps it otherwise.
-  const libraryEmpty = selectedId === null && loaded && total === 0 && !filtered
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100">
@@ -347,16 +307,6 @@ export default function App() {
           >
             Importar
           </button>
-          {!libraryEmpty && (
-            <button
-              type="button"
-              onClick={() => void pick()}
-              disabled={add.isPending}
-              className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-500"
-            >
-              Adicionar jogo
-            </button>
-          )}
           <AgentIndicator status={agent} elevated={elevation.data ?? undefined} />
         </div>
       </header>
@@ -367,15 +317,6 @@ export default function App() {
         <ImportDialog
           onImported={() => void qc.invalidateQueries({ queryKey: libraryGamesKey })}
           onClose={() => setImporting(false)}
-        />
-      )}
-      {picked && (
-        <AddGameForm
-          key={picked.path}
-          picked={picked}
-          pending={add.isPending}
-          onSave={save}
-          onCancel={() => setPicked(null)}
         />
       )}
       {/* Without the agent the UI cannot know whether the session goes on [UI-016]. */}
@@ -424,9 +365,7 @@ export default function App() {
               loaded={loaded}
               total={total}
               filtered={filtered}
-              onAdd={() => void pick()}
               onClear={() => changeFilter(resetQuery())}
-              addPending={add.isPending}
             />
             {loaded && total !== undefined && total > 0 && (
               <div className="flex min-h-0 flex-1 flex-col">

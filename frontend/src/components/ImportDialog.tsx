@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type JSX, type KeyboardEvent } from
 import {
   applyImport,
   needsPath,
+  pickFile,
   pickFolder,
   scanImport,
   skipReasonLabels,
@@ -57,10 +58,10 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const checkable = (candidates ?? []).map((c, i) => ({ c, i })).filter(({ c }) => !c.exists)
   const selectedCount = checkable.filter(({ i }) => checked.has(i)).length
 
-  async function chooseFolder() {
+  async function choosePath() {
     setError(null)
     try {
-      const picked = await pickFolder()
+      const picked = source === 'file' ? await pickFile() : await pickFolder()
       if (picked !== '') {
         setPath(picked)
       }
@@ -90,7 +91,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   async function apply() {
     const chosen = checkable
       .filter(({ i }) => checked.has(i))
-      .map(({ c }) => ({ ...c, platform: c.platform || (source === 'folder' ? platform.trim() : c.platform) }))
+      .map(({ c }) => ({ ...c, platform: c.platform || (source === 'file' ? platform.trim() : c.platform) }))
     setBusy(true)
     setError(null)
     try {
@@ -185,15 +186,15 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
 
           {needsPath(source) && (
             <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-neutral-300">
-              <label htmlFor={pathId}>Pasta</label>
+              <label htmlFor={pathId}>{source === 'file' ? 'Arquivo' : 'Pasta'}</label>
               <div className="flex gap-2">
                 <input id={pathId} type="text" readOnly value={path} className={`${inputClass} min-w-0 flex-1`} />
                 <button
                   type="button"
-                  onClick={() => void chooseFolder()}
+                  onClick={() => void choosePath()}
                   className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
                 >
-                  Escolher pasta
+                  {source === 'file' ? 'Escolher arquivo' : 'Escolher pasta'}
                 </button>
               </div>
             </div>
@@ -248,9 +249,9 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           </ul>
         )}
 
-        {candidates !== null && source === 'folder' && (
+        {candidates !== null && source === 'file' && (
           <div className="flex items-center gap-2 text-sm text-neutral-300">
-            <label htmlFor={platformId}>Plataforma dos executáveis</label>
+            <label htmlFor={platformId}>Plataforma do arquivo</label>
             <input
               id={platformId}
               type="text"

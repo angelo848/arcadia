@@ -7,11 +7,11 @@ package ipc
 const (
 	ImportSourceSteam     = "steam"
 	ImportSourceEpic      = "epic"
-	ImportSourceFolder    = "folder"
+	ImportSourceFile      = "file"
 	ImportSourceLaunchBox = "launchbox"
 )
 
-// ImportScanParams is the params of import.scan. Path is used by the folder and
+// ImportScanParams is the params of import.scan. Path is used by the file and
 // launchbox sources only.
 type ImportScanParams struct {
 	Source string `json:"source"`

@@ -9,10 +9,10 @@ import (
 const (
 	SourceSteam     = "steam"
 	SourceEpic      = "epic"
-	SourceFolder    = "folder"
+	SourceFile      = "file"
 	SourceLaunchBox = "launchbox"
 
-	// PlatformPC is the platform of Steam, Epic and folder games, and of the
+	// PlatformPC is the platform of Steam, Epic and file games, and of the
 	// LaunchBox "Windows" platform (design §9).
 	PlatformPC = "PC"
 
@@ -33,7 +33,7 @@ type Source interface {
 	Scan(ctx context.Context, in ScanInput) (Result, error)
 }
 
-// Candidate is one game a source offers. Platform is empty for folder candidates
+// Candidate is one game a source offers. Platform is empty for file candidates
 // (chosen at apply, IMP-004). Year and PlayedSeconds are nil when unknown.
 type Candidate struct {
 	Source       string

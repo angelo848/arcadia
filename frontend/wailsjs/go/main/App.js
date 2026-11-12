@@ -78,6 +78,14 @@ export function PauseSession() {
   return window['go']['main']['App']['PauseSession']();
 }
 
+export function PickEmulatorExe() {
+  return window['go']['main']['App']['PickEmulatorExe']();
+}
+
+export function PickFile() {
+  return window['go']['main']['App']['PickFile']();
+}
+
 export function PickFolder() {
   return window['go']['main']['App']['PickFolder']();
 }

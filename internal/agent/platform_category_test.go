@@ -23,7 +23,7 @@ func TestPlatformCategoryFor(t *testing.T) {
 		if got := platformCategoryFor(ipc.ImportSourceSteam, importers.PlatformPC); got != domain.PlatformCategory("pc") {
 			t.Errorf("steam category = %q, want pc", got)
 		}
-		if got := platformCategoryFor(ipc.ImportSourceFolder, "Meu PC"); got != domain.PlatformCategory("pc") {
+		if got := platformCategoryFor(ipc.ImportSourceFile, "Meu PC"); got != domain.PlatformCategory("pc") {
 			t.Errorf("folder category = %q, want pc", got)
 		}
 	})
