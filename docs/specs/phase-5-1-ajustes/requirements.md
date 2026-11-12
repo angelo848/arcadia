@@ -1,11 +1,13 @@
 # Fase 5.1 — Ajustes da biblioteca: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário
-- **Base:** [phase-5-library](../phase-5-library/requirements.md) (implementada) e
-  [phase-3-tracker](../phase-3-tracker/requirements.md) (limitação 4: jogos que exigem administrador).
-- **ADRs relacionados:** 0015 (agente único escritor), 0016 (Job Object permite breakaway), 0005 (rastreamento em camadas),
-  [0023](../../adr/0023-execucao-como-administrador.md) (proposto, decisão do item ADM).
-- **Objetivo:** permitir jogos que exigem administrador e transformar os gêneros em tags na edição.
+- **Status:** rascunho, aguardando aprovação do usuário (decisões de produto registradas abaixo)
+- **Base:** [phase-5-library](../phase-5-library/requirements.md) (implementada),
+  [phase-3-tracker](../phase-3-tracker/requirements.md) (limitação 4: jogos que exigem administrador) e
+  [single-exe](../single-exe/requirements.md) (início com o Windows).
+- **ADRs relacionados:** 0005 (rastreamento em camadas), 0014 (início com o Windows, mantido), 0015 (agente único
+  escritor), 0016 (Job Object permite breakaway), [0023](../../adr/0023-execucao-como-administrador.md) (proposto).
+- **Objetivo:** permitir jogos que exigem administrador, sem perder a precisão do rastreio, e trocar o campo de gêneros
+  por tags que sugerem os gêneros já cadastrados.
 
 Formato: cada requisito tem ID estável (`ÁREA-NNN`), nunca reutilizado. Critérios em Dado/Quando/Então.
 Áreas novas: **ADM** (execução como administrador) e **TAG** (tags de gênero). Todo ID precisa de pelo menos um teste
@@ -13,57 +15,62 @@ que o cite no nome, exceto os marcados `· verificação: manual`.
 
 ---
 
-## Perguntas para o usuário
+## Decisões de produto
 
-Duas decisões de produto. A spec usa a recomendação indicada; se o usuário discordar, o requisito muda antes da aprovação.
-
-1. **Como rastrear um jogo que roda como administrador? (recomendação: opção A).**
-   - **A (recomendada):** o agente lança o jogo com elevação (UAC) e mede o tempo pelo ciclo de vida do processo
-     principal, sem Job Object. Não há pausa por teclado/controle nesse modo, e o tempo dos processos filhos não é contado.
-   - **B:** rodar o agente inteiro como administrador. Descartada: o agente inicia com o Windows e um serviço elevado
-     amplia a superfície de ataque.
-   - **C:** não rastrear esses jogos. Descartada: é a limitação atual, e o usuário pediu suporte.
-2. **Gêneros como tags, e desenvolvedora/editora também? (recomendação: só gêneros nesta fase).** Desenvolvedora e editora
-   continuam como texto separado por vírgula. Estender para elas é trocar o componente de TAG-001, sem mudar o contrato.
+1. **Como rodar jogos que exigem administrador: o agente roda elevado quando o usuário o inicia como administrador.**
+   O agente deixa de ser elevado por padrão. Quem usa jogos de administrador abre o Arcadia como administrador, e a UI
+   inicia o agente com a mesma elevação. O rastreio continua igual (Job Object, pausa e filhos), porque o agente é o
+   único processo envolvido. O início automático com o Windows sobe o agente sem elevação; quem usa jogos de
+   administrador desliga essa opção na bandeja (ADM-005).
+2. **Tags:** entram nesta fase **só para gêneros**, e a condição combinada foi atendida: para um jogo novo, os gêneros
+   já cadastrados aparecem como tags para escolher (TAG-001). Desenvolvedora e editora continuam como texto separado
+   por vírgula e ficam para uma fase futura.
 
 ---
 
 ## ADM — Execução como administrador
 
-### ADM-001 — Campo `runAsAdmin` no jogo
-Dado um jogo novo, quando o registro é criado, então `runAsAdmin` é `false`. Dado um jogo existente depois da migração
-para a versão 6, então `runAsAdmin` é `false` e nenhum outro campo muda. Dado `game.update` com `runAsAdmin` (boolean),
-quando o agente grava, então o valor é salvo e `updated_at` muda; sem o campo no patch, o valor não muda (EDT-009).
+### ADM-001 — Campo `requiresAdmin` no jogo
+Dado um jogo novo, quando o registro é criado, então `requiresAdmin` é `false`. Dado um jogo existente depois da migração
+para a versão 6, então `requiresAdmin` é `false` e nenhum outro campo muda. Dado `game.update` com `requiresAdmin`
+(boolean), quando o agente grava, então o valor é salvo e `updated_at` muda; sem o campo no patch, o valor não muda
+(EDT-009).
 
-### ADM-002 — Elevação pelo Windows
-Dado um jogo com `runAsAdmin = true`, quando o usuário toca "Jogar" ou "Sem contar tempo", então o agente lança o
-executável pelo verbo `runas` (UAC), e o Windows mostra a confirmação de elevação. Dado que o usuário recusa a
-confirmação, então nenhuma sessão é criada e o erro `-32010` ("elevação recusada") chega à UI com a mensagem
-"Permissão de administrador recusada".
+### ADM-002 — Jogo que exige administrador com agente sem elevação
+Dado um jogo com `requiresAdmin = true` e um agente sem elevação, quando o usuário toca "Jogar" ou "Sem contar tempo",
+então nenhum processo é lançado, nenhuma sessão é criada e o erro `-32010` chega à UI com a mensagem "Este jogo precisa
+de administrador. Abra o Arcadia como administrador."
 
-### ADM-003 — Rastreio de jogo elevado (opção A)
-Dado um jogo elevado iniciado com sucesso, quando o processo principal encerra, então a sessão termina com o instante de
-saída (mesma regra de SES-005). Dado que o agente não consegue abrir o processo elevado com `SYNCHRONIZE`, então a sessão
-não é criada e o erro `-32011` ("não foi possível acompanhar o jogo elevado") é mostrado, sem contar tempo.
+### ADM-003 — Jogo que falha por elevação sem a marca
+Dado um jogo sem `requiresAdmin` que falha com `ERROR_ELEVATION_REQUIRED` (740), então a sessão não é criada (como hoje) e
+a mensagem é a mesma de ADM-002, em vez de "Não foi possível iniciar o jogo".
 
-### ADM-004 — Pausa e filhos em jogo elevado
-Dado uma sessão elevada em execução, quando o usuário pressiona a combinação de pausa, então nada acontece e a UI mostra
-"Pausa indisponível para jogos com administrador". Dado que o jogo abre um processo filho, então o filho não entra no
-tempo; a limitação aparece na página do jogo.
+### ADM-004 — Agente elevado: rastreio sem mudança
+Dado o agente rodando como administrador, quando um jogo qualquer é lançado, então ele roda elevado e segue as regras de
+rastreio, pausa e filhos já existentes (fases 3 e 4). Os jogos sem a marca também herdam a elevação do agente: isso é
+consequência da decisão 1; o indicador do agente (`AgentIndicator`) mostra "Agente com privilégio de administrador" quando é o caso.
 
-### ADM-005 — Edição do campo
-Dado a página de edição de um jogo, quando o usuário marca "Executar como administrador" e salva, então o patch leva só
-`runAsAdmin` (EDT-001). Dado a página do jogo, então o campo aparece como "Executa como administrador: sim/não".
+### ADM-005 — Início automático e conflito de agentes
+Dado um agente sem elevação já em execução (por exemplo, iniciado com o Windows), quando o usuário abre a UI como
+administrador, então a UI mostra "Já há um agente rodando sem privilégio de administrador. Saia dele pela bandeja e abra
+o Arcadia de novo como administrador." e não usa o agente antigo. A mesma mensagem inclui a orientação "Para jogos de administrador,
+desligue o início com o Windows na bandeja" (a opção continua na bandeja, sem mudar o padrão).
+· verificação: manual.
+
+### ADM-006 — Edição do campo
+Dado a página de edição de um jogo, quando o usuário marca "Precisa de administrador" e salva, então o patch leva só
+`requiresAdmin` (EDT-001). Dado a página do jogo, então o campo aparece como "Precisa de administrador: sim/não".
 · verificação: manual (UI).
 
 ---
 
 ## TAG — Gêneros como tags
 
-### TAG-001 — Entrada de tags
-Dado o campo de gêneros da edição, quando o usuário digita, então aparecem as sugestões do catálogo de gêneros que
-contêm o texto digitado, sem diferenciar maiúsculas. Quando o usuário confirma com Enter ou vírgula, então o texto vira
-uma tag. Quando o usuário toca numa sugestão, então ela vira uma tag com o nome exato do catálogo.
+### TAG-001 — Entrada de tags com gêneros já cadastrados
+Dado o campo de gêneros na edição de um jogo novo ou existente, quando o usuário digita, então aparecem as sugestões do
+catálogo de gêneros que contêm o texto digitado, sem diferenciar maiúsculas. Quando o usuário confirma com Enter ou
+vírgula, então o texto vira uma tag. Quando o usuário toca numa sugestão, então ela vira uma tag com o nome exato do
+catálogo.
 
 ### TAG-002 — Criação de tag nova
 Dado um texto que não existe no catálogo, quando a tag é confirmada, então ela aparece marcada como "nova" e é criada
@@ -87,6 +94,7 @@ Dado a biblioteca, então o filtro por gênero continua igual (FLT-002), e o con
 
 ## Fora de escopo nesta fase
 
-- Scrapers e busca automática de metadados (fase 7). A escolha de candidato entra lá.
-- Elevação do agente inteiro (opção B da pergunta 1).
-- Pausa e rastreio de filhos em jogo elevado (ADM-004): só com a fase 6 (Camada 2).
+- Scrapers e busca automática de metadados (fase 7).
+- Tags para desenvolvedora e editora (fase futura, decisão 2).
+- Rodar só o jogo elevado enquanto o agente segue sem elevação (exigiria um processo auxiliar; ADR 0023, alternativas).
+- Trocar o padrão do início automático com o Windows (continua ligado, como no ADR 0014).
