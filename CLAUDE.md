@@ -5,7 +5,7 @@ watcher de processos, pausa por teclado/controle, "iniciar sem contar tempo").
 
 - Arquitetura completa: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Decisões registradas: [docs/adr/](docs/adr/README.md)
-- Spec atual: [docs/specs/phase-5-library/](docs/specs/phase-5-library/requirements.md) — **Biblioteca** (lista, filtros, busca, página do jogo, edição e remoção) (sobre [phase-4-pause](docs/specs/phase-4-pause/requirements.md),
+- Spec atual: [docs/specs/phase-5-1-ajustes/](docs/specs/phase-5-1-ajustes/requirements.md) — **Ajustes da biblioteca** (execução como administrador, fim do início automático, tags de gênero) (sobre [phase-5-library](docs/specs/phase-5-library/requirements.md), [phase-4-pause](docs/specs/phase-4-pause/requirements.md),
   [phase-3-tracker](docs/specs/phase-3-tracker/requirements.md), [single-exe](docs/specs/single-exe/requirements.md) e a fase 2, [phase-2-skeleton](docs/specs/phase-2-skeleton/requirements.md))
 - Processo: **Spec-Driven Development** ([ADR 0008](docs/adr/0008-spec-driven-development.md)) — a spec é a fonte da verdade.
 
