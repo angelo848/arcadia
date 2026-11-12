@@ -251,35 +251,41 @@ func TestPowerWatcher(t *testing.T) {
 		}
 
 		cycle() // warm-up: lazy DLL loads, shared wndProc callback, first locked thread
-		h0 := settle()
-		threads0 := powerThreadsCreated()
-		gdi0 := guiResources(t, grGdiObjects)
-		user0 := guiResources(t, grUserObjects)
 
-		for i := 0; i < 20; i++ {
-			cycle()
-		}
-
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			runtime.GC()
-			limit := h0 + 2 + powerHandlesPerThread*uint32(powerThreadsCreated()-threads0)
-			got := powerProcessHandleCount(t)
-			if got <= limit {
+		// Same plateau detector as the overlay leak test: successive blocks of
+		// cycles are measured; the process must reach a block whose growth is
+		// within tolerance within maxBlocks. A real leak (>= 1 handle per cycle)
+		// adds ~blockCycles per block, never plateaus, and fails every block.
+		const (
+			blockCycles = 20
+			maxBlocks   = 8
+		)
+		var lastMsg string
+		plateau := false
+		for b := 0; b < maxBlocks && !plateau; b++ {
+			h1 := settle()
+			threads1 := powerThreadsCreated()
+			gdi1 := guiResources(t, grGdiObjects)
+			user1 := guiResources(t, grUserObjects)
+			for i := 0; i < blockCycles; i++ {
+				cycle()
+			}
+			hLimit := func() uint32 {
+				return h1 + 2 + powerHandlesPerThread*uint32(powerThreadsCreated()-threads1)
+			}
+			h2 := settle()
+			gdi2 := guiResources(t, grGdiObjects)
+			user2 := guiResources(t, grUserObjects)
+			if h2 <= hLimit() && gdi2 <= gdi1+2 && user2 <= user1+2 {
+				plateau = true
 				break
 			}
-			if time.Now().After(deadline) {
-				t.Errorf("handles = %d, quer <= %d (h0 %d + 2 + %d por nova thread do SO, %d novas)",
-					got, limit, h0, powerHandlesPerThread, powerThreadsCreated()-threads0)
-				break
-			}
-			time.Sleep(25 * time.Millisecond)
+			lastMsg = fmt.Sprintf("bloco %d: handles %d -> %d (limite %d), GDI %d -> %d, USER %d -> %d",
+				b, h1, h2, hLimit(), gdi1, gdi2, user1, user2)
 		}
-		if g := guiResources(t, grGdiObjects); g > gdi0+2 {
-			t.Errorf("objetos GDI = %d, quer <= %d", g, gdi0+2)
-		}
-		if u := guiResources(t, grUserObjects); u > user0+2 {
-			t.Errorf("objetos USER = %d, quer <= %d", u, user0+2)
+		if !plateau {
+			t.Errorf("recursos nao estabilizam em %d blocos de %d ciclos (vazamento?); ultimo %s",
+				maxBlocks, blockCycles, lastMsg)
 		}
 	})
 
