@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,6 +15,118 @@ import (
 
 // gameListTimeout bounds the ListGames call of game.list [IPC-042].
 const gameListTimeout = 2 * time.Second
+
+// handleGameGet serves game.get: the game with its detail [IPC-044, STO-026].
+// gameId must be an integer >= 1; an unknown game is -32001.
+func handleGameGet(ctx context.Context, st gameStore, log *slog.Logger, params json.RawMessage) (any, error) {
+	var p ipc.GameGetParams
+	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
+		return nil, rpcErr
+	}
+	if p.GameID < 1 {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	d, err := st.GameDetail(ctx, p.GameID)
+	if err != nil {
+		return nil, gameReadError("game.get", p.GameID, err, log)
+	}
+	return ipc.GameDetailResult{Game: gameDetailToIPC(d)}, nil
+}
+
+// handleSessionList serves session.list: one page of the sessions of a game,
+// most recent first [IPC-047, STO-027]. limit defaults to
+// domain.DefaultSessionLimit and must be in 1..domain.MaxSessionLimit; offset
+// defaults to 0 and must be >= 0. Anything else is -32602 and the store is not
+// used.
+func handleSessionList(ctx context.Context, st gameStore, log *slog.Logger, params json.RawMessage) (any, error) {
+	var p ipc.SessionListParams
+	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
+		return nil, rpcErr
+	}
+	if p.GameID < 1 {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	offset := 0
+	if p.Offset != nil {
+		if *p.Offset < 0 {
+			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		}
+		offset = *p.Offset
+	}
+	limit := domain.DefaultSessionLimit
+	if p.Limit != nil {
+		if *p.Limit < 1 || *p.Limit > domain.MaxSessionLimit {
+			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		}
+		limit = *p.Limit
+	}
+	page, err := st.GameSessions(ctx, p.GameID, offset, limit)
+	if err != nil {
+		return nil, gameReadError("session.list", p.GameID, err, log)
+	}
+	items := make([]ipc.SessionItem, 0, len(page.Sessions))
+	for _, s := range page.Sessions {
+		items = append(items, sessionItemToIPC(s))
+	}
+	return ipc.SessionListResult{Sessions: items, Total: page.Total, Offset: offset}, nil
+}
+
+// gameReadError maps a store error of a read by game id: an unknown game is
+// -32001 [IPC-044, IPC-047]; anything else is logged and returned for -32603.
+func gameReadError(method string, gameID int64, err error, log *slog.Logger) error {
+	if errors.Is(err, store.ErrGameNotFound) {
+		return ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound, ipc.GameNotFoundData{GameID: gameID})
+	}
+	log.Error("falha ao ler o jogo", "method", method, "game_id", gameID, "error", err.Error())
+	return fmt.Errorf("%s: %w", method, err)
+}
+
+// gameDetailToIPC converts a store game detail to its wire form [STO-026,
+// IPC-044]. The lists are never nil; CompletedAt is a YYYY-MM-DD or null.
+func gameDetailToIPC(d store.GameDetail) ipc.GameDetail {
+	out := ipc.GameDetail{
+		Game:        toIPCGame(d.Game),
+		Description: d.Description,
+		Developers:  nonNilStrings(d.Developers),
+		Publishers:  nonNilStrings(d.Publishers),
+		Genres:      nonNilStrings(d.Genres),
+		PlayModes:   nonNilStrings(d.PlayModes),
+	}
+	if !d.CompletedAt.IsZero() {
+		s := domain.FormatCompletedDate(d.CompletedAt)
+		out.CompletedAt = &s
+	}
+	return out
+}
+
+// sessionItemToIPC converts a store session to its wire form [STO-027,
+// IPC-047]. EndedAt and EndReason are null while the session is open.
+func sessionItemToIPC(s store.SessionItem) ipc.SessionItem {
+	out := ipc.SessionItem{
+		SessionID:     s.ID,
+		GameID:        s.GameID,
+		State:         string(s.State),
+		StartedAt:     s.StartedAt.UTC(),
+		ActiveSeconds: s.ActiveSeconds,
+	}
+	if !s.EndedAt.IsZero() {
+		t := s.EndedAt.UTC()
+		out.EndedAt = &t
+	}
+	if s.EndReason != "" {
+		r := s.EndReason
+		out.EndReason = &r
+	}
+	return out
+}
+
+// nonNilStrings returns s, or [] when s is nil, so the JSON is [] and not null.
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
 
 // handleGameList serves game.list: one page of the library [IPC-042, IPC-043,
 // LIB-002]. Absent or {} params are the first page of the empty filter; [] and
