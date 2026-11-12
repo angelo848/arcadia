@@ -59,6 +59,39 @@ func (q *Queries) GetGame(ctx context.Context, id int64) (Game, error) {
 	return i, err
 }
 
+const getGameForUpdate = `-- name: GetGameForUpdate :one
+SELECT id, platform_id, title, description, release_date, status, favorite, completed_at
+FROM game
+WHERE id = ?
+`
+
+type GetGameForUpdateRow struct {
+	ID          int64
+	PlatformID  int64
+	Title       string
+	Description string
+	ReleaseDate sql.NullString
+	Status      string
+	Favorite    int64
+	CompletedAt sql.NullInt64
+}
+
+func (q *Queries) GetGameForUpdate(ctx context.Context, id int64) (GetGameForUpdateRow, error) {
+	row := q.db.QueryRowContext(ctx, getGameForUpdate, id)
+	var i GetGameForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.PlatformID,
+		&i.Title,
+		&i.Description,
+		&i.ReleaseDate,
+		&i.Status,
+		&i.Favorite,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const getPlatformIDByName = `-- name: GetPlatformIDByName :one
 SELECT id FROM platform
 WHERE name = ?
@@ -199,4 +232,59 @@ func (q *Queries) ListGames(ctx context.Context) ([]ListGamesRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const platformExists = `-- name: PlatformExists :one
+SELECT COUNT(*) FROM platform
+WHERE id = ?
+`
+
+func (q *Queries) PlatformExists(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, platformExists, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const updateGameFields = `-- name: UpdateGameFields :execrows
+UPDATE game
+SET title = ?1,
+    description = ?2,
+    platform_id = ?3,
+    status = ?4,
+    favorite = ?5,
+    completed_at = ?6,
+    release_date = ?7,
+    updated_at = ?8
+WHERE id = ?9
+`
+
+type UpdateGameFieldsParams struct {
+	Title       string
+	Description string
+	PlatformID  int64
+	Status      string
+	Favorite    int64
+	CompletedAt sql.NullInt64
+	ReleaseDate sql.NullString
+	UpdatedAt   int64
+	ID          int64
+}
+
+func (q *Queries) UpdateGameFields(ctx context.Context, arg UpdateGameFieldsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateGameFields,
+		arg.Title,
+		arg.Description,
+		arg.PlatformID,
+		arg.Status,
+		arg.Favorite,
+		arg.CompletedAt,
+		arg.ReleaseDate,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

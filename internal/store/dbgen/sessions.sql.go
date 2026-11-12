@@ -71,6 +71,18 @@ func (q *Queries) CloseSession(ctx context.Context, arg CloseSessionParams) (int
 	return result.RowsAffected()
 }
 
+const countSessionsByGame = `-- name: CountSessionsByGame :one
+SELECT COUNT(*) FROM play_session
+WHERE game_id = ?
+`
+
+func (q *Queries) CountSessionsByGame(ctx context.Context, gameID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionsByGame, gameID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM play_session
 WHERE id = ?
@@ -155,6 +167,60 @@ func (q *Queries) ListOpenSessions(ctx context.Context) ([]ListOpenSessionsRow, 
 			&i.StartedAt,
 			&i.LastSeenAt,
 			&i.ActiveSeconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionsByGame = `-- name: ListSessionsByGame :many
+SELECT id, game_id, state, started_at, ended_at, active_seconds, end_reason FROM play_session
+WHERE game_id = ?1
+ORDER BY started_at DESC, id DESC
+LIMIT ?3 OFFSET ?2
+`
+
+type ListSessionsByGameParams struct {
+	GameID     int64
+	PageOffset int64
+	PageLimit  int64
+}
+
+type ListSessionsByGameRow struct {
+	ID            int64
+	GameID        int64
+	State         string
+	StartedAt     int64
+	EndedAt       sql.NullInt64
+	ActiveSeconds int64
+	EndReason     sql.NullString
+}
+
+func (q *Queries) ListSessionsByGame(ctx context.Context, arg ListSessionsByGameParams) ([]ListSessionsByGameRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByGame, arg.GameID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionsByGameRow{}
+	for rows.Next() {
+		var i ListSessionsByGameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GameID,
+			&i.State,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.ActiveSeconds,
+			&i.EndReason,
 		); err != nil {
 			return nil, err
 		}

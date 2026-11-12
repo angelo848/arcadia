@@ -24,3 +24,24 @@ ORDER BY g.title COLLATE NOCASE, g.id;
 -- name: GetGame :one
 SELECT * FROM game
 WHERE id = ?;
+
+-- name: GetGameForUpdate :one
+SELECT id, platform_id, title, description, release_date, status, favorite, completed_at
+FROM game
+WHERE id = ?;
+
+-- name: UpdateGameFields :execrows
+UPDATE game
+SET title = sqlc.arg(title),
+    description = sqlc.arg(description),
+    platform_id = sqlc.arg(platform_id),
+    status = sqlc.arg(status),
+    favorite = sqlc.arg(favorite),
+    completed_at = sqlc.arg(completed_at),
+    release_date = sqlc.arg(release_date),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id);
+
+-- name: PlatformExists :one
+SELECT COUNT(*) FROM platform
+WHERE id = ?;

@@ -256,29 +256,39 @@ type GameDetail struct {
 func (s *Store) GameDetail(ctx context.Context, id int64) (GameDetail, error) {
 	var d GameDetail
 	err := s.withTx(ctx, func(_ *sql.Tx, q *dbgen.Queries) error {
-		row, err := gameRow(ctx, q, id)
-		if err != nil {
-			return err
-		}
-		d.Game = gameFromRow(row)
-		d.Description = row.Description
-		d.CompletedAt = nullMillisToTime(row.CompletedAt)
-		if d.Developers, err = q.GameDeveloperNames(ctx, id); err != nil {
-			return fmt.Errorf("store: developers of game %d: %w", id, err)
-		}
-		if d.Publishers, err = q.GamePublisherNames(ctx, id); err != nil {
-			return fmt.Errorf("store: publishers of game %d: %w", id, err)
-		}
-		if d.Genres, err = q.GameGenreNames(ctx, id); err != nil {
-			return fmt.Errorf("store: genres of game %d: %w", id, err)
-		}
-		if d.PlayModes, err = q.GamePlayModeNames(ctx, id); err != nil {
-			return fmt.Errorf("store: play modes of game %d: %w", id, err)
-		}
-		return nil
+		var err error
+		d, err = readGameDetail(ctx, q, id)
+		return err
 	})
 	if err != nil {
 		return GameDetail{}, err
+	}
+	return d, nil
+}
+
+// readGameDetail reads the game of id with its details using q, so it can run
+// inside a transaction (UpdateGame returns the same shape). An unknown id gives
+// an error wrapping ErrGameNotFound.
+func readGameDetail(ctx context.Context, q *dbgen.Queries, id int64) (GameDetail, error) {
+	var d GameDetail
+	row, err := gameRow(ctx, q, id)
+	if err != nil {
+		return GameDetail{}, err
+	}
+	d.Game = gameFromRow(row)
+	d.Description = row.Description
+	d.CompletedAt = nullMillisToTime(row.CompletedAt)
+	if d.Developers, err = q.GameDeveloperNames(ctx, id); err != nil {
+		return GameDetail{}, fmt.Errorf("store: developers of game %d: %w", id, err)
+	}
+	if d.Publishers, err = q.GamePublisherNames(ctx, id); err != nil {
+		return GameDetail{}, fmt.Errorf("store: publishers of game %d: %w", id, err)
+	}
+	if d.Genres, err = q.GameGenreNames(ctx, id); err != nil {
+		return GameDetail{}, fmt.Errorf("store: genres of game %d: %w", id, err)
+	}
+	if d.PlayModes, err = q.GamePlayModeNames(ctx, id); err != nil {
+		return GameDetail{}, fmt.Errorf("store: play modes of game %d: %w", id, err)
 	}
 	return d, nil
 }
