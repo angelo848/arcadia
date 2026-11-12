@@ -37,7 +37,9 @@ const games: GameView[] = [
 ]
 
 // rowOf returns the smallest ancestor of the title that contains a button:
-// the game's row, without assuming a particular markup (li, tr, div...).
+// the game's row, without assuming a particular markup (li, tr, div...). Each
+// row now has two buttons ("Jogar" and "Sem contar tempo"), so the caller picks
+// one of them by name.
 function rowOf(title: string): HTMLElement {
   let el: HTMLElement | null = screen.getByText(title)
   while (el && within(el).queryAllByRole('button').length === 0) {
@@ -46,7 +48,6 @@ function rowOf(title: string): HTMLElement {
   if (!el) {
     throw new Error(`no row with a button for ${title}`)
   }
-  expect(within(el).getAllByRole('button'), `one button in the row of ${title}`).toHaveLength(1)
   return el
 }
 
@@ -57,7 +58,15 @@ function precedes(a: Node, b: Node): boolean {
 describe('GameList', () => {
   it('UI-004 uma linha por jogo na ordem recebida, com título, total e Jogar', () => {
     const onPlay = vi.fn()
-    render(<GameList games={games} current={null} pendingId={null} onPlay={onPlay} />)
+    render(
+      <GameList
+        games={games}
+        current={null}
+        pending={null}
+        onPlay={onPlay}
+        onPlayUntracked={() => {}}
+      />,
+    )
 
     expect(screen.getAllByRole('button', { name: 'Jogar' })).toHaveLength(3)
 
@@ -87,7 +96,13 @@ describe('GameList', () => {
 
   it('UI-006 Em execução só na linha do gameId da sessão', () => {
     const { rerender } = render(
-      <GameList games={games} current={session({ gameId: 10 })} pendingId={null} onPlay={() => {}} />,
+      <GameList
+        games={games}
+        current={session({ gameId: 10 })}
+        pending={null}
+        onPlay={() => {}}
+        onPlayUntracked={() => {}}
+      />,
     )
     expect(screen.getAllByText(/Em execução/)).toHaveLength(1)
     expect(rowOf('Hollow Knight')).toHaveTextContent('Em execução')
@@ -99,33 +114,173 @@ describe('GameList', () => {
       <GameList
         games={games}
         current={session({ gameId: 20, state: 'grace' })}
-        pendingId={null}
+        pending={null}
         onPlay={() => {}}
+        onPlayUntracked={() => {}}
       />,
     )
     expect(screen.getAllByText(/Em execução/)).toHaveLength(1)
     expect(rowOf('Hades')).toHaveTextContent('Em execução')
     expect(rowOf('Hollow Knight')).not.toHaveTextContent('Em execução')
 
-    rerender(<GameList games={games} current={null} pendingId={null} onPlay={() => {}} />)
+    rerender(
+      <GameList games={games} current={null} pending={null} onPlay={() => {}} onPlayUntracked={() => {}} />,
+    )
     expect(screen.queryByText(/Em execução/)).toBeNull()
   })
 
   it('UI-008 Jogar pendente mostra Iniciando… desabilitado', () => {
     const onPlay = vi.fn()
-    render(<GameList games={games} current={null} pendingId={10} onPlay={onPlay} />)
+    render(
+      <GameList
+        games={games}
+        current={null}
+        pending={{ id: 10, mode: 'tracked' }}
+        onPlay={onPlay}
+        onPlayUntracked={() => {}}
+      />,
+    )
 
-    const pending = within(rowOf('Hollow Knight')).getByRole('button')
-    expect(pending).toHaveAccessibleName('Iniciando…')
+    const pending = within(rowOf('Hollow Knight')).getByRole('button', { name: 'Iniciando…' })
     expect(pending).toBeDisabled()
     fireEvent.click(pending)
     expect(onPlay).not.toHaveBeenCalled()
 
     for (const title of ['Celeste', 'Hades']) {
-      const btn = within(rowOf(title)).getByRole('button')
-      expect(btn, title).toHaveAccessibleName('Jogar')
+      const btn = within(rowOf(title)).getByRole('button', { name: 'Jogar' })
       expect(btn, title).toBeEnabled()
     }
     expect(screen.getAllByRole('button', { name: 'Iniciando…' })).toHaveLength(1)
+  })
+
+  it('UI-019/cada linha mostra Jogar e Sem contar tempo', () => {
+    const onPlay = vi.fn()
+    const onPlayUntracked = vi.fn()
+    render(
+      <GameList
+        games={games}
+        current={null}
+        pending={null}
+        onPlay={onPlay}
+        onPlayUntracked={onPlayUntracked}
+      />,
+    )
+
+    expect(screen.getAllByRole('button', { name: 'Sem contar tempo' })).toHaveLength(3)
+    for (const g of games) {
+      const row = rowOf(g.title)
+      const play = within(row).getByRole('button', { name: 'Jogar' })
+      const untracked = within(row).getByRole('button', { name: 'Sem contar tempo' })
+      expect(play, `Jogar of ${g.title}`).toBeEnabled()
+      expect(untracked, `Sem contar tempo of ${g.title}`).toBeEnabled()
+      // The untracked button sits next to Jogar.
+      expect(precedes(play, untracked), `order in ${g.title}`).toBe(true)
+    }
+
+    fireEvent.click(within(rowOf('Hades')).getByRole('button', { name: 'Sem contar tempo' }))
+    expect(onPlayUntracked).toHaveBeenCalledTimes(1)
+    expect(onPlayUntracked).toHaveBeenCalledWith(20)
+    expect(onPlay).not.toHaveBeenCalled()
+  })
+
+  it('UI-021/lançamento pendente do jogo G desabilita os dois botões de G, só o acionado mostra Iniciando… e os outros jogos continuam habilitados', () => {
+    // The triggered button shows Iniciando…; the other one keeps its own label.
+    const cases = [
+      { mode: 'tracked' as const, otherLabel: 'Sem contar tempo' },
+      { mode: 'untracked' as const, otherLabel: 'Jogar' },
+    ]
+    for (const { mode, otherLabel } of cases) {
+      const onPlay = vi.fn()
+      const onPlayUntracked = vi.fn()
+      const { unmount } = render(
+        <GameList
+          games={games}
+          current={null}
+          pending={{ id: 10, mode }}
+          onPlay={onPlay}
+          onPlayUntracked={onPlayUntracked}
+        />,
+      )
+
+      const row = rowOf('Hollow Knight')
+      const triggered = within(row).getByRole('button', { name: 'Iniciando…' })
+      const other = within(row).getByRole('button', { name: otherLabel })
+      expect(triggered, `${mode}: triggered button`).toBeDisabled()
+      expect(other, `${mode}: other button of G`).toBeDisabled()
+
+      fireEvent.click(triggered)
+      fireEvent.click(other)
+      expect(onPlay, `${mode}: onPlay`).not.toHaveBeenCalled()
+      expect(onPlayUntracked, `${mode}: onPlayUntracked`).not.toHaveBeenCalled()
+
+      for (const title of ['Celeste', 'Hades']) {
+        const r = rowOf(title)
+        expect(within(r).getByRole('button', { name: 'Jogar' }), `${mode}: Jogar of ${title}`).toBeEnabled()
+        expect(
+          within(r).getByRole('button', { name: 'Sem contar tempo' }),
+          `${mode}: Sem contar tempo of ${title}`,
+        ).toBeEnabled()
+      }
+      expect(screen.getAllByRole('button', { name: 'Iniciando…' })).toHaveLength(1)
+      unmount()
+    }
+  })
+
+  it('UI-024/sessão paused mostra Pausado no lugar de Em execução; running e grace mostram Em execução', () => {
+    const { rerender } = render(
+      <GameList
+        games={games}
+        current={session({ gameId: 10, state: 'paused' })}
+        pending={null}
+        onPlay={() => {}}
+        onPlayUntracked={() => {}}
+      />,
+    )
+    expect(rowOf('Hollow Knight')).toHaveTextContent('Pausado')
+    expect(rowOf('Hollow Knight')).not.toHaveTextContent('Em execução')
+    expect(screen.queryByText(/Em execução/)).toBeNull()
+    expect(screen.getAllByText('Pausado')).toHaveLength(1)
+    expect(rowOf('Celeste')).not.toHaveTextContent('Pausado')
+
+    for (const state of ['running', 'grace'] as const) {
+      rerender(
+        <GameList
+          games={games}
+          current={session({ gameId: 10, state })}
+          pending={null}
+          onPlay={() => {}}
+          onPlayUntracked={() => {}}
+        />,
+      )
+      expect(rowOf('Hollow Knight'), state).toHaveTextContent('Em execução')
+      expect(rowOf('Hollow Knight'), state).not.toHaveTextContent('Pausado')
+      expect(screen.queryByText('Pausado'), state).toBeNull()
+    }
+  })
+
+  it('UI-024/ended ou discarded: a marcação some', () => {
+    const { rerender } = render(
+      <GameList
+        games={games}
+        current={session({ gameId: 10, state: 'paused' })}
+        pending={null}
+        onPlay={() => {}}
+        onPlayUntracked={() => {}}
+      />,
+    )
+    for (const state of ['ended', 'discarded'] as const) {
+      rerender(
+        <GameList
+          games={games}
+          current={session({ gameId: 10, state, endedAt: '2026-11-09T10:10:00.000Z' })}
+          pending={null}
+          onPlay={() => {}}
+          onPlayUntracked={() => {}}
+        />,
+      )
+      expect(screen.queryByText(/Em execução|Pausado/), state).toBeNull()
+      expect(rowOf('Hollow Knight'), state).not.toHaveTextContent('Em execução')
+      expect(rowOf('Hollow Knight'), state).not.toHaveTextContent('Pausado')
+    }
   })
 })

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AddGameForm } from './components/AddGameForm'
 import { AgentIndicator } from './components/AgentIndicator'
 import { ErrorBanner } from './components/ErrorBanner'
-import { GameList } from './components/GameList'
+import { GameList, type PendingLaunch } from './components/GameList'
 import { SessionPanel } from './components/SessionPanel'
 import { disconnectedStatus, useAgentStatus } from './lib/agent'
 import {
@@ -13,8 +13,10 @@ import {
   useCurrentSession,
   useGames,
   useLaunchGame,
+  useLaunchGameUntracked,
   useReloadOnReconnect,
   useSessionEvents,
+  useToggleSession,
   type GameView,
   type PickedExe,
   type SessionView,
@@ -30,13 +32,15 @@ function errorMessage(e: unknown): string {
 function LibraryBody({
   games,
   current,
-  pendingId,
+  pending,
   onPlay,
+  onPlayUntracked,
 }: {
   games: GameView[] | undefined
   current: SessionView | null
-  pendingId: number | null
+  pending: PendingLaunch
   onPlay: (id: number) => void
+  onPlayUntracked: (id: number) => void
 }): JSX.Element {
   if (!games) {
     return (
@@ -52,7 +56,15 @@ function LibraryBody({
       </section>
     )
   }
-  return <GameList games={games} current={current} pendingId={pendingId} onPlay={onPlay} />
+  return (
+    <GameList
+      games={games}
+      current={current}
+      pending={pending}
+      onPlay={onPlay}
+      onPlayUntracked={onPlayUntracked}
+    />
+  )
 }
 
 export default function App() {
@@ -67,22 +79,54 @@ export default function App() {
   useReloadOnReconnect(connected)
 
   const launch = useLaunchGame()
+  const untracked = useLaunchGameUntracked()
+  const toggle = useToggleSession()
   const add = useMutation<GameView, Error, { path: string; title: string }>({
     mutationFn: ({ path, title }) => addGame(path, title),
   })
 
-  // Last failed action's message [UI-008] and the exe chosen in the dialog [UI-007].
+  // Last failed action's message [UI-008, UI-020, UI-028] and the exe chosen in the dialog [UI-007].
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<PickedExe | null>(null)
 
   const session = current.data ?? null
-  const pendingId = launch.isPending ? (launch.variables ?? null) : null
+
+  // The one launch in flight, with the mode it was started with [UI-021]. Only
+  // one launch runs at a time, so at most one game's buttons are disabled.
+  const pending: PendingLaunch =
+    launch.isPending && launch.variables !== undefined
+      ? { id: launch.variables, mode: 'tracked' }
+      : untracked.isPending && untracked.variables !== undefined
+        ? { id: untracked.variables, mode: 'untracked' }
+        : null
 
   function play(id: number) {
-    if (launch.isPending) {
+    if (pending !== null) {
       return
     }
     launch.mutate(id, {
+      onSuccess: () => setError(null),
+      onError: (e) => setError(errorMessage(e)),
+    })
+  }
+
+  // Untracked launch: no session or list change; the result only clears or sets the banner [UI-020].
+  function playUntracked(id: number) {
+    if (pending !== null) {
+      return
+    }
+    untracked.mutate(id, {
+      onSuccess: () => setError(null),
+      onError: (e) => setError(errorMessage(e)),
+    })
+  }
+
+  // Pause or resume the current session; the panel label follows the session state, not the click [UI-027, UI-028].
+  function toggleSession() {
+    if (toggle.isPending) {
+      return
+    }
+    toggle.mutate(undefined, {
       onSuccess: () => setError(null),
       onError: (e) => setError(errorMessage(e)),
     })
@@ -147,8 +191,16 @@ export default function App() {
         />
       )}
       {/* Without the agent the UI cannot know whether the session goes on [UI-016]. */}
-      {connected && session && <SessionPanel session={session} />}
-      <LibraryBody games={list} current={session} pendingId={pendingId} onPlay={play} />
+      {connected && session && (
+        <SessionPanel session={session} onToggle={toggleSession} pending={toggle.isPending} />
+      )}
+      <LibraryBody
+        games={list}
+        current={session}
+        pending={pending}
+        onPlay={play}
+        onPlayUntracked={playUntracked}
+      />
     </main>
   )
 }

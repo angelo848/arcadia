@@ -15,9 +15,12 @@ type FakeApp = {
   AgentStatus: Fn
   CurrentSession: Fn
   LaunchGame: Fn
+  LaunchGameUntracked: Fn
   LibrarySummary: Fn
   ListGames: Fn
   PickGameExe: Fn
+  PauseSession: Fn
+  ResumeSession: Fn
 }
 
 let app: FakeApp
@@ -44,6 +47,9 @@ function install() {
     LibrarySummary: vi.fn(() => Promise.resolve({ games: 0, platforms: 0 })),
     ListGames: vi.fn(() => Promise.resolve([])),
     PickGameExe: vi.fn(() => Promise.resolve({ path: '', title: '' })),
+    LaunchGameUntracked: vi.fn(() => Promise.resolve()),
+    PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
+    ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
   }
   const w = window as unknown as { go?: unknown; runtime?: unknown }
   w.go = { main: { App: app } }
@@ -399,7 +405,7 @@ describe('App: erros', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
     await waitFor(() => {
-      const btn = within(rowOf('Hollow Knight')).getByRole('button')
+      const btn = within(rowOf('Hollow Knight')).getByRole('button', { name: 'Iniciando…' })
       expect(btn).toHaveAccessibleName('Iniciando…')
       expect(btn).toBeDisabled()
     })
@@ -759,5 +765,210 @@ describe('App: cronômetro e ordem', () => {
 
     expect(queryPanel()).toBeNull()
     expect(rowOf('Hollow Knight')).not.toHaveTextContent('Em execução')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// UI-020/021 untracked launch, UI-022/024/027/028 pause and resume
+// ---------------------------------------------------------------------------
+
+function toggleIn(panelEl: HTMLElement | null): HTMLElement {
+  expect(panelEl, 'session panel').not.toBeNull()
+  return within(panelEl as HTMLElement).getByRole('button', { name: /Pausar|Retomar/ })
+}
+
+function untrackedOf(title: string): HTMLElement {
+  return within(rowOf(title)).getByRole('button', { name: 'Sem contar tempo' })
+}
+
+async function flush() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20))
+  })
+}
+
+describe('App: sem contar tempo', () => {
+  it('UI-020/Sem contar tempo chama LaunchGameUntracked(G) uma vez e não LaunchGame; sem painel, sem Em execução, sem recarregar a lista', async () => {
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.CurrentSession.mockResolvedValue(null)
+    app.LaunchGameUntracked.mockResolvedValue(undefined)
+    renderApp()
+    await waitConnected()
+    await findRow('Hollow Knight')
+    await waitFor(() => expect(app.CurrentSession).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('Conectando ao agente…')).toBeNull())
+    await flush()
+    const listCalls = app.ListGames.mock.calls.length
+
+    fireEvent.click(untrackedOf('Hollow Knight'))
+    await waitFor(() => expect(app.LaunchGameUntracked).toHaveBeenCalledTimes(1))
+    expect(app.LaunchGameUntracked).toHaveBeenCalledWith(10)
+    await flush()
+
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(queryPanel()).toBeNull()
+    expect(screen.queryByText(/Em execução|Pausado/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(app.ListGames.mock.calls.length).toBe(listCalls)
+  })
+
+  it('UI-020/erro -32002 mostra o aviso do topo com Fechar e a próxima ação bem-sucedida o remove', async () => {
+    const msg = 'Já há um jogo em andamento: Celeste. Feche-o antes de iniciar outro.'
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.LaunchGameUntracked.mockRejectedValueOnce(msg).mockResolvedValueOnce(undefined)
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.click(untrackedOf('Hollow Knight'))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(msg)
+    expect(within(alert).getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+
+    fireEvent.click(untrackedOf('Hollow Knight'))
+    await waitFor(() => expect(app.LaunchGameUntracked).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Fechar' })).toBeNull()
+  })
+
+  it('UI-021/lançamento pendente sem contar tempo desabilita os dois botões do jogo no App', async () => {
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })])
+    const pending = deferred<void>()
+    app.LaunchGameUntracked.mockImplementation(() => pending.promise)
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.click(untrackedOf('Hollow Knight'))
+    await waitFor(() => {
+      const row = rowOf('Hollow Knight')
+      expect(within(row).getByRole('button', { name: 'Iniciando…' })).toBeDisabled()
+      expect(within(row).getByRole('button', { name: 'Jogar' })).toBeDisabled()
+    })
+    expect(within(rowOf('Hades')).getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    expect(within(rowOf('Hades')).getByRole('button', { name: 'Sem contar tempo' })).toBeEnabled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Iniciando…' })).toBeNull())
+  })
+
+  it('UI-022/painel carregado por CurrentSession em paused mostra Pausado', async () => {
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'paused', activeMs: 100000 }))
+    renderApp()
+    await waitConnected()
+
+    const p = await screen.findByRole('status', { name: panelName })
+    expect(p).toHaveTextContent('Hollow Knight')
+    expect(p).toHaveTextContent('0:01:40')
+    expect(within(p).getByText('Pausado')).toBeInTheDocument()
+    expect(p).not.toHaveTextContent('Encerrando…')
+    expect(within(p).getByRole('button', { name: 'Retomar' })).toBeEnabled()
+    expect(rowOf('Hollow Knight')).toHaveTextContent('Pausado')
+    expect(rowOf('Hollow Knight')).not.toHaveTextContent('Em execução')
+  })
+
+  it('UI-024/sessão paused mostra Pausado no lugar de Em execução; ended ou discarded: a marcação some e a lista é recarregada', async () => {
+    let total = 0
+    app.ListGames.mockImplementation(() => Promise.resolve([game({ id: 10, totalPlaySeconds: total })]))
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'running' }))
+    renderApp()
+    await waitConnected()
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveTextContent('Em execução'))
+
+    emit('session:changed', session({ gameId: 10, state: 'paused', activeMs: 100000 }))
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveTextContent('Pausado'))
+    expect(rowOf('Hollow Knight')).not.toHaveTextContent('Em execução')
+
+    const listCalls = app.ListGames.mock.calls.length
+    total = 100
+    emit('session:changed', session({ gameId: 10, state: 'ended', endedAt: '2026-11-09T10:10:00.000Z', activeMs: 100000 }))
+    await waitFor(() => expect(rowOf('Hollow Knight')).not.toHaveTextContent('Pausado'))
+    await waitFor(() => expect(app.ListGames.mock.calls.length).toBeGreaterThan(listCalls))
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveTextContent('1 min'))
+    expect(screen.queryByText(/Em execução|Pausado/)).toBeNull()
+    expect(queryPanel()).toBeNull()
+  })
+
+  it('UI-027/botão desabilitado durante a chamada pendente (sem duplo clique)', async () => {
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'running', activeMs: 100000 }))
+    const pending = deferred<SessionView>()
+    app.PauseSession.mockImplementation(() => pending.promise)
+    renderApp()
+    await waitConnected()
+    await screen.findByRole('status', { name: panelName })
+
+    fireEvent.click(toggleIn(queryPanel()))
+    await waitFor(() => expect(toggleIn(queryPanel())).toBeDisabled())
+
+    fireEvent.click(toggleIn(queryPanel()))
+    await flush()
+    expect(app.PauseSession).toHaveBeenCalledTimes(1)
+    expect(app.ResumeSession).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve(session({ gameId: 10, state: 'paused', activeMs: 100000 }))
+      await pending.promise
+    })
+    await waitFor(() => expect(toggleIn(queryPanel())).toBeEnabled())
+    expect(toggleIn(queryPanel())).toHaveAccessibleName('Retomar')
+  })
+
+  it('UI-028/clicar Pausar chama PauseSession uma vez e Retomar chama ResumeSession uma vez', async () => {
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'running', activeMs: 100000 }))
+    app.PauseSession.mockResolvedValue(session({ gameId: 10, state: 'paused', activeMs: 100000 }))
+    app.ResumeSession.mockResolvedValue(session({ gameId: 10, state: 'running', activeMs: 100000 }))
+    renderApp()
+    await waitConnected()
+    await screen.findByRole('status', { name: panelName })
+
+    fireEvent.click(within(queryPanel() as HTMLElement).getByRole('button', { name: 'Pausar' }))
+    await waitFor(() => expect(app.PauseSession).toHaveBeenCalledTimes(1))
+    expect(app.PauseSession).toHaveBeenCalledWith()
+    await waitFor(() => expect(within(queryPanel() as HTMLElement).getByText('Pausado')).toBeInTheDocument())
+    expect(app.ResumeSession).not.toHaveBeenCalled()
+
+    fireEvent.click(within(queryPanel() as HTMLElement).getByRole('button', { name: 'Retomar' }))
+    await waitFor(() => expect(app.ResumeSession).toHaveBeenCalledTimes(1))
+    expect(app.ResumeSession).toHaveBeenCalledWith()
+    expect(app.PauseSession).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(within(queryPanel() as HTMLElement).getByRole('button', { name: 'Pausar' })).toBeEnabled(),
+    )
+  })
+
+  it('UI-028/erro (-32005, conexão perdida) mostra o aviso, o painel não muda e a próxima ação bem-sucedida o remove', async () => {
+    const notPausable = 'Não há jogo em andamento para pausar.'
+    const lost = 'O agente não está respondendo. Tente de novo.'
+    app.ListGames.mockResolvedValue([game({ id: 10, title: 'Hollow Knight' })])
+    app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'running', activeMs: 100000 }))
+    app.PauseSession.mockRejectedValueOnce(notPausable)
+      .mockRejectedValueOnce(lost)
+      .mockResolvedValueOnce(session({ gameId: 10, state: 'paused', activeMs: 100000 }))
+    renderApp()
+    await waitConnected()
+    await screen.findByRole('status', { name: panelName })
+
+    fireEvent.click(toggleIn(queryPanel()))
+    expect(await screen.findByRole('alert')).toHaveTextContent(notPausable)
+    expect(queryPanel()).toHaveTextContent('Hollow Knight')
+    expect(toggleIn(queryPanel())).toHaveAccessibleName('Pausar')
+    expect(queryPanel()).not.toHaveTextContent('Pausado')
+
+    fireEvent.click(toggleIn(queryPanel()))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(lost))
+    expect(screen.getByRole('alert')).not.toHaveTextContent(notPausable)
+    expect(toggleIn(queryPanel())).toHaveAccessibleName('Pausar')
+    expect(queryPanel()).not.toHaveTextContent('Pausado')
+
+    // The next successful action removes the banner.
+    fireEvent.click(toggleIn(queryPanel()))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(app.PauseSession).toHaveBeenCalledTimes(3)
+    await waitFor(() => expect(toggleIn(queryPanel())).toHaveAccessibleName('Retomar'))
   })
 })
