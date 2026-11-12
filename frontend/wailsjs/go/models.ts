@@ -389,20 +389,6 @@ export namespace main {
 	        this.limit = source["limit"];
 	    }
 	}
-	export class PickedExe {
-	    path: string;
-	    title: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new PickedExe(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.title = source["title"];
-	    }
-	}
 	
 	export class SessionItemView {
 	    sessionId: number;

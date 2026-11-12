@@ -3,8 +3,6 @@
 import {main} from '../models';
 import {jsontext} from '../models';
 
-export function AddGame(arg1:string,arg2:string):Promise<main.GameView>;
-
 export function AddPlatform(arg1:string,arg2:string):Promise<main.PlatformView>;
 
 export function AgentElevated():Promise<boolean>;
@@ -46,8 +44,6 @@ export function PickEmulatorExe():Promise<string>;
 export function PickFile():Promise<string>;
 
 export function PickFolder():Promise<string>;
-
-export function PickGameExe():Promise<main.PickedExe>;
 
 export function PlatformSetEmulator(arg1:number,arg2:number):Promise<main.PlatformView>;
 

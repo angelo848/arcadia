@@ -1,13 +1,12 @@
 package main
 
 // Tests for T12 (docs/specs/phase-3-tracker/tasks.md): the game bindings
-// (PickGameExe, AddGame, ListGames, LaunchGame, CurrentSession) and the
+// (ListGames, LaunchGame, CurrentSession) and the
 // GameView/SessionView conversion (DSK-010, DSK-011, DSK-012).
 //
 // Assumptions beyond tasks.md (the implementer must follow them):
 //   - The bindings call the agent through App.client (pinger); a nil client is
 //     errNoClient, mapped by userError.
-//   - PickGameExe calls platform.openFile with the Wails ctx given to startup
 //     (App.wailsCtx), like emit; openFile returns "" when the user cancels.
 //   - game.add params are ipc.GameAddParams, game.launch params are
 //     ipc.GameLaunchParams; game.list and session.current send no params.
@@ -20,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -146,124 +144,6 @@ type openFileCall struct {
 	filters []fileFilter
 }
 
-func TestPickGameExe(t *testing.T) {
-	t.Parallel()
-
-	newApp := func(answer string) (*App, *gamePinger, chan openFileCall, context.Context) {
-		calls := make(chan openFileCall, 4)
-		p := &gamePinger{}
-		wctx := context.WithValue(context.Background(), ctxKey{}, "wails")
-		a := &App{
-			client:   p,
-			log:      discardLog(),
-			wailsCtx: wctx,
-			platform: platform{
-				openFile: func(ctx context.Context, title string, filters []fileFilter) (string, error) {
-					calls <- openFileCall{ctx, title, filters}
-					return answer, nil
-				},
-			},
-		}
-		return a, p, calls, wctx
-	}
-
-	t.Run("DSK-012/diálogo com título e filtro Executáveis (*.exe) / *.exe", func(t *testing.T) {
-		t.Parallel()
-		a, _, calls, wctx := newApp("")
-
-		if _, err := a.PickGameExe(); err != nil {
-			t.Fatalf("PickGameExe() err = %v", err)
-		}
-		select {
-		case c := <-calls:
-			if c.ctx != wctx {
-				t.Errorf("openFile got a different context, want the Wails context")
-			}
-			if c.title != "Escolha o executável do jogo" || pickExeTitle != c.title {
-				t.Errorf("dialog title = %q, want %q", c.title, "Escolha o executável do jogo")
-			}
-			want := []fileFilter{{DisplayName: "Executáveis (*.exe)", Pattern: "*.exe"}}
-			if len(c.filters) != 1 || c.filters[0] != want[0] {
-				t.Errorf("dialog filters = %+v, want %+v", c.filters, want)
-			}
-		default:
-			t.Fatalf("openFile not called")
-		}
-		if n := len(calls); n != 0 {
-			t.Errorf("openFile called %d more times, want once", n)
-		}
-	})
-
-	t.Run("DSK-012/cancelar devolve vazio sem chamar o agente", func(t *testing.T) {
-		t.Parallel()
-		a, p, _, _ := newApp("")
-
-		got, err := a.PickGameExe()
-
-		if err != nil {
-			t.Fatalf("PickGameExe() err = %v, want nil on cancel", err)
-		}
-		if got != (PickedExe{}) {
-			t.Errorf("PickGameExe() = %+v, want {path: \"\", title: \"\"}", got)
-		}
-		if calls := p.recorded(); len(calls) != 0 {
-			t.Errorf("agent calls = %+v, want none", calls)
-		}
-	})
-
-	t.Run("DSK-012/arquivo escolhido devolve path e título padrão", func(t *testing.T) {
-		t.Parallel()
-		const path = `C:\Games\Celeste\Celeste.EXE`
-		a, p, _, _ := newApp(path)
-
-		got, err := a.PickGameExe()
-
-		if err != nil {
-			t.Fatalf("PickGameExe() err = %v", err)
-		}
-		if want := (PickedExe{Path: path, Title: domain.DefaultGameTitle(path)}); got != want {
-			t.Errorf("PickGameExe() = %+v, want %+v", got, want)
-		}
-		if got.Title != "Celeste" {
-			t.Errorf("Title = %q, want %q (DOM-009)", got.Title, "Celeste")
-		}
-		if calls := p.recorded(); len(calls) != 0 {
-			t.Errorf("agent calls = %+v, want none (PickGameExe does not add the game)", calls)
-		}
-	})
-
-	t.Run("DSK-012/falha do diálogo loga Error e devolve Erro inesperado. Veja o log.", func(t *testing.T) {
-		t.Parallel()
-		logs := newRecLog()
-		p := &gamePinger{}
-		a := &App{
-			client:   p,
-			log:      logs.logger(),
-			wailsCtx: context.Background(),
-			platform: platform{
-				openFile: func(context.Context, string, []fileFilter) (string, error) {
-					return `C:\ignored.exe`, errors.New("dialog boom")
-				},
-			},
-		}
-
-		got, err := a.PickGameExe()
-
-		if err == nil || err.Error() != txtUnexpected {
-			t.Errorf("PickGameExe() err = %v, want %q", err, txtUnexpected)
-		}
-		if got != (PickedExe{}) {
-			t.Errorf("PickGameExe() = %+v, want zero PickedExe on error", got)
-		}
-		if n := logs.countLevel(slog.LevelError); n != 1 {
-			t.Errorf("Error records = %d, want 1; log:\n%s", n, logs.dump())
-		}
-		if calls := p.recorded(); len(calls) != 0 {
-			t.Errorf("agent calls = %+v, want none", calls)
-		}
-	})
-}
-
 func TestGameBindings(t *testing.T) {
 	t.Parallel()
 
@@ -331,7 +211,6 @@ func TestGameBindings(t *testing.T) {
 			t.Errorf("ListGames() err = %v, want %q", err, txtNotResponding)
 		}
 		for name, call := range map[string]func() error{
-			"AddGame":        func() error { _, err := a.AddGame(`C:\G\x.exe`, ""); return err },
 			"LaunchGame":     func() error { _, err := a.LaunchGame(1); return err },
 			"CurrentSession": func() error { _, err := a.CurrentSession(); return err },
 		} {
@@ -398,37 +277,10 @@ func TestGameBindings(t *testing.T) {
 		}
 	})
 
-	t.Run("DSK-010/AddGame envia path e title", func(t *testing.T) {
-		t.Parallel()
-		const path = `C:\Games\Celeste\Celeste.exe`
-		added := ipc.Game{ID: 5, Title: "Meu Celeste", Path: path}
-		p := &gamePinger{results: map[string]any{ipc.MethodGameAdd: added}}
-		a := &App{client: p, log: discardLog()}
-
-		got, err := a.AddGame(path, "Meu Celeste")
-
-		if err != nil {
-			t.Fatalf("AddGame err = %v", err)
-		}
-		want := GameView{ID: 5, Title: "Meu Celeste", Path: path, LastPlayedAt: ""}
-		if got != want {
-			t.Errorf("AddGame = %+v, want %+v", got, want)
-		}
-		c := singleCall(t, p, ipc.MethodGameAdd, addGameTimeout)
-		var ap ipc.GameAddParams
-		if err := json.Unmarshal(c.params, &ap); err != nil {
-			t.Fatalf("game.add params %s: %v", c.params, err)
-		}
-		if ap.Path != path || ap.Title != "Meu Celeste" {
-			t.Errorf("game.add params = %s, want path %q and title %q", c.params, path, "Meu Celeste")
-		}
-	})
-
 	t.Run("DSK-011/bindings devolvem o texto de userError", func(t *testing.T) {
 		t.Parallel()
 		p := &gamePinger{errs: map[string]error{
 			ipc.MethodGameLaunch:     gameNotFoundErr(),
-			ipc.MethodGameAdd:        invalidExeErr(ipc.ReasonNotExe),
 			ipc.MethodGameList:       ipc.ErrConnectionLost,
 			ipc.MethodSessionCurrent: errors.New("boom"),
 		}}
@@ -436,9 +288,6 @@ func TestGameBindings(t *testing.T) {
 
 		if _, err := a.LaunchGame(3); err == nil || err.Error() != txtGameNotFound {
 			t.Errorf("LaunchGame err = %v, want %q", err, txtGameNotFound)
-		}
-		if _, err := a.AddGame(`C:\G\x.txt`, ""); err == nil || err.Error() != txtNotExe {
-			t.Errorf("AddGame err = %v, want %q", err, txtNotExe)
 		}
 		if _, err := a.ListGames(LibraryQuery{}); err == nil || err.Error() != txtNotResponding {
 			t.Errorf("ListGames err = %v, want %q", err, txtNotResponding)

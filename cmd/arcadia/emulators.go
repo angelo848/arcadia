@@ -65,12 +65,13 @@ func (a *App) EmulatorDelete(id int64) error {
 
 // PlatformSetEmulator sets the default emulator of a platform; 0 clears it (EMU-002).
 func (a *App) PlatformSetEmulator(platformID, emulatorID int64) (PlatformView, error) {
-	params := ipc.PlatformSetEmulatorParams{PlatformID: platformID}
+	// ipc.Optional has no JSON encoding, so a typed struct would send its Go fields. The
+	// params are a map: emulatorId is null to clear the default, or the id (the contract).
+	var emu any
 	if emulatorID > 0 {
-		params.EmulatorID = ipc.Optional[int64]{Present: true, Value: emulatorID}
-	} else {
-		params.EmulatorID = ipc.Optional[int64]{Present: true, Null: true}
+		emu = emulatorID
 	}
+	params := map[string]any{"platformId": platformID, "emulatorId": emu}
 	var res ipc.PlatformResult
 	if err := a.callAgent(ipc.MethodPlatformSetEmulator, libraryTimeout, params, &res); err != nil {
 		return PlatformView{}, err

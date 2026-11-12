@@ -12,8 +12,6 @@ import (
 )
 
 const (
-	// addGameTimeout bounds each AddGame binding call.
-	addGameTimeout = 5 * time.Second
 	// launchGameTimeout bounds each LaunchGame call (above the handler's 10 s).
 	launchGameTimeout = 12 * time.Second
 	// launchUntrackedTimeout bounds each LaunchGameUntracked call (DSK-013).
@@ -28,13 +26,7 @@ const (
 	viewAsOfLayout = "2006-01-02T15:04:05.000Z07:00"
 )
 
-// pickExeTitle is the title of the executable dialog (DSK-012). It is a var,
-// not a const, only because games_test.go compares c.title against both this
-// name and the literal, which go vet (bools, also run by go test) flags as
-// "suspect or" when both operands are constants.
-var pickExeTitle = "Escolha o executável do jogo"
-
-// pickExeFilters is the filter of the executable dialog (DSK-012).
+// pickExeFilters is the filter of the executable dialogs (DSK-012, EMU-006).
 var pickExeFilters = []fileFilter{{DisplayName: "Executáveis (*.exe)", Pattern: "*.exe"}}
 
 // SessionView is a session as shown by the frontend (DSK-010).
@@ -50,12 +42,6 @@ type SessionView struct {
 	AsOf          string `json:"asOf"` // RFC 3339 UTC with ms
 	// Tracking is "job" or "process": the UI says so for adopted games (RUL-005).
 	Tracking string `json:"tracking"`
-}
-
-// PickedExe is the result of PickGameExe; the zero value means cancelled.
-type PickedExe struct {
-	Path  string `json:"path"`
-	Title string `json:"title"`
 }
 
 // fileFilter is one filter of the open-file dialog.
@@ -86,7 +72,7 @@ func sessionView(s ipc.Session) (SessionView, error) {
 	}, nil
 }
 
-// errNoDialog is PickGameExe before startup gave the Wails context.
+// errNoDialog is a file dialog asked for before startup gave the Wails context.
 var errNoDialog = errors.New("desktop: pick exe: dialog not available")
 
 // logger returns the App's logger (slog.Default before startup).
@@ -122,34 +108,6 @@ func (a *App) callAgentRaw(method string, timeout time.Duration, params, result 
 		return fmt.Errorf("desktop: %s: %w", method, err)
 	}
 	return nil
-}
-
-// PickGameExe opens the executable dialog; cancelling yields the zero
-// PickedExe and nothing is sent to the agent (DSK-012).
-func (a *App) PickGameExe() (PickedExe, error) {
-	a.mu.Lock()
-	wailsCtx := a.wailsCtx
-	a.mu.Unlock()
-	if wailsCtx == nil || a.platform.openFile == nil {
-		return PickedExe{}, userError(errNoDialog, a.logger())
-	}
-	path, err := a.platform.openFile(wailsCtx, pickExeTitle, pickExeFilters)
-	if err != nil {
-		return PickedExe{}, userError(fmt.Errorf("desktop: pick exe: %w", err), a.logger())
-	}
-	if path == "" {
-		return PickedExe{}, nil
-	}
-	return PickedExe{Path: path, Title: domain.DefaultGameTitle(path)}, nil
-}
-
-// AddGame calls game.add (5 s timeout).
-func (a *App) AddGame(path, title string) (GameView, error) {
-	var g ipc.Game
-	if err := a.callAgent(ipc.MethodGameAdd, addGameTimeout, ipc.GameAddParams{Path: path, Title: title}, &g); err != nil {
-		return GameView{}, err
-	}
-	return gameView(g), nil
 }
 
 // LaunchGame calls game.launch (12 s timeout). On a client timeout the agent
