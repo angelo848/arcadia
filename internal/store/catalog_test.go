@@ -13,6 +13,12 @@ import (
 // at store level). The catalog is read by library.catalog and the platform list
 // by platform.list; the agent tests cover the wire format.
 
+// idName is an expected genre or company item: its database id and its name.
+type idName struct {
+	ID   int64
+	Name string
+}
+
 // platformsByName sorts the platforms by name (binary order), for comparisons
 // that do not depend on the order returned by the store.
 func platformsByName(ps []store.Platform) []store.Platform {
@@ -44,11 +50,31 @@ func TestCatalog(t *testing.T) {
 		if got := platformsByName(c.Platforms); !slices.Equal(got, wantPlatforms) {
 			t.Errorf("Platforms = %+v, want %+v", got, wantPlatforms)
 		}
-		if want := []string{"Action", "rpg", "Zelda"}; !slices.Equal(c.Genres, want) {
-			t.Errorf("Genres = %v, want %v (NOCASE order)", c.Genres, want)
+		// Genres and companies are {id, name} items: the ids are the database ids
+		// the FilterSpec filters by (FLT-002, FLT-003).
+		wantGenres := []idName{
+			{libLookup(t, s, "genre", "Action"), "Action"},
+			{libLookup(t, s, "genre", "rpg"), "rpg"},
+			{libLookup(t, s, "genre", "Zelda"), "Zelda"},
 		}
-		if want := []string{"bungie", "Capcom", "team cherry"}; !slices.Equal(c.Companies, want) {
-			t.Errorf("Companies = %v, want %v (NOCASE order)", c.Companies, want)
+		var gotGenres []idName
+		for _, g := range c.Genres {
+			gotGenres = append(gotGenres, idName{g.ID, g.Name})
+		}
+		if !slices.Equal(gotGenres, wantGenres) {
+			t.Errorf("Genres = %+v, want %+v (NOCASE order)", gotGenres, wantGenres)
+		}
+		wantCompanies := []idName{
+			{libLookup(t, s, "company", "bungie"), "bungie"},
+			{libLookup(t, s, "company", "Capcom"), "Capcom"},
+			{libLookup(t, s, "company", "team cherry"), "team cherry"},
+		}
+		var gotCompanies []idName
+		for _, co := range c.Companies {
+			gotCompanies = append(gotCompanies, idName{co.ID, co.Name})
+		}
+		if !slices.Equal(gotCompanies, wantCompanies) {
+			t.Errorf("Companies = %+v, want %+v (NOCASE order)", gotCompanies, wantCompanies)
 		}
 		wantModes := []domain.PlayMode{
 			domain.PlayModeCoopLocal, domain.PlayModeCoopOnline, domain.PlayModeMultiLocal,
@@ -82,7 +108,7 @@ func TestCatalog(t *testing.T) {
 			t.Errorf("PlayModes = %v, want the five modes", c.PlayModes)
 		}
 		if len(c.Genres) != 0 || len(c.Companies) != 0 {
-			t.Errorf("Genres %v and Companies %v, want both empty", c.Genres, c.Companies)
+			t.Errorf("Genres %+v and Companies %+v, want both empty", c.Genres, c.Companies)
 		}
 	})
 }

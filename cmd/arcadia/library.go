@@ -90,13 +90,20 @@ type PlatformView struct {
 	Category string `json:"category"`
 }
 
+// CatalogItemView is a genre or a company of the catalog: the database id the
+// filters use, and the name.
+type CatalogItemView struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // CatalogView is the options of the editor and of the filters. Every list is
 // never nil.
 type CatalogView struct {
-	Platforms []PlatformView `json:"platforms"`
-	Genres    []string       `json:"genres"`
-	Companies []string       `json:"companies"`
-	PlayModes []string       `json:"playModes"`
+	Platforms []PlatformView    `json:"platforms"`
+	Genres    []CatalogItemView `json:"genres"`
+	Companies []CatalogItemView `json:"companies"`
+	PlayModes []string          `json:"playModes"`
 }
 
 // gameView converts a game of the agent without recomputing its times.
@@ -302,10 +309,19 @@ func (a *App) Catalog() (CatalogView, error) {
 	}
 	return CatalogView{
 		Platforms: platforms,
-		Genres:    nonNilStrings(res.Genres),
-		Companies: nonNilStrings(res.Companies),
+		Genres:    catalogItemViews(res.Genres),
+		Companies: catalogItemViews(res.Companies),
 		PlayModes: nonNilStrings(res.PlayModes),
 	}, nil
+}
+
+// catalogItemViews converts genre or company items to views. The result is never nil.
+func catalogItemViews(items []ipc.CatalogItem) []CatalogItemView {
+	out := make([]CatalogItemView, 0, len(items))
+	for _, it := range items {
+		out = append(out, CatalogItemView{ID: it.ID, Name: it.Name})
+	}
+	return out
 }
 
 // AddPlatform calls platform.add (5 s timeout).

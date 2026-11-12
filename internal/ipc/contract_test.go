@@ -87,6 +87,7 @@ type jsonSchema struct {
 	Enum       []string                   `json:"enum"`
 	Required   []string                   `json:"required"`
 	Properties map[string]json.RawMessage `json:"properties"`
+	Items      json.RawMessage            `json:"items"`
 }
 
 // loadContract parses the contract. The version is asserted by the
@@ -735,6 +736,37 @@ func TestContract(t *testing.T) {
 		assertExactFields(t, "platform.list result", c.resultSchema(t, ipc.MethodPlatformList), ipc.PlatformListResult{})
 		assertExactFields(t, "platform.add result", c.resultSchema(t, ipc.MethodPlatformAdd), ipc.PlatformAddResult{})
 		assertExactFields(t, "library.catalog result", c.resultSchema(t, ipc.MethodLibraryCatalog), ipc.Catalog{})
+	})
+
+	t.Run("IPC-049/Catalog: genres e companies são itens {id, name} (id inteiro, name texto) no contrato", func(t *testing.T) {
+		t.Parallel()
+		cc := loadContract(t)
+		catalog := cc.schema(t, "Catalog")
+		for _, prop := range []string{"genres", "companies"} {
+			var list jsonSchema
+			if err := json.Unmarshal(catalog.Properties[prop], &list); err != nil {
+				t.Fatalf("Catalog.%s schema: %v", prop, err)
+			}
+			if list.Type != "array" {
+				t.Errorf("Catalog.%s type = %q, want array", prop, list.Type)
+			}
+			var items jsonSchema
+			if err := json.Unmarshal(list.Items, &items); err != nil {
+				t.Fatalf("Catalog.%s items: %v", prop, err)
+			}
+			item := cc.resolve(t, items)
+			// Exactly the members id and name, both required [IPC-049, FLT-002].
+			assertExactFields(t, "Catalog."+prop+" item", item, map[string]any{"id": 1, "name": "RPG"})
+			var idSchema, nameSchema struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(item.Properties["id"], &idSchema); err != nil || idSchema.Type != "integer" {
+				t.Errorf("Catalog.%s item id type = %q (%v), want integer", prop, idSchema.Type, err)
+			}
+			if err := json.Unmarshal(item.Properties["name"], &nameSchema); err != nil || nameSchema.Type != "string" {
+				t.Errorf("Catalog.%s item name type = %q (%v), want string", prop, nameSchema.Type, err)
+			}
+		}
 	})
 
 	t.Run("IPC-041/campos obrigatórios de Session, SessionRef, SessionResult e LaunchedProcess batem com as tags Go", func(t *testing.T) {

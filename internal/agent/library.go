@@ -531,9 +531,10 @@ func handlePlatformAdd(ctx context.Context, st gameStore, log *slog.Logger, para
 	return ipc.PlatformAddResult{Platform: toIPCPlatform(pl)}, nil
 }
 
-// handleLibraryCatalog serves library.catalog: the platforms, the genre and
-// company names and the five play modes of DOM-014 [IPC-049, STO-030]. Every
-// list is never nil. The params are checked by the caller (ipc.NoParams).
+// handleLibraryCatalog serves library.catalog: the platforms, the genres and
+// companies as {id, name} items and the five play modes of DOM-014 [IPC-049,
+// STO-030]. Every list is never nil. The params are checked by the caller
+// (ipc.NoParams).
 func handleLibraryCatalog(ctx context.Context, st gameStore, log *slog.Logger) (any, error) {
 	cat, err := st.Catalog(ctx)
 	if err != nil {
@@ -546,10 +547,20 @@ func handleLibraryCatalog(ctx context.Context, st gameStore, log *slog.Logger) (
 	}
 	return ipc.Catalog{
 		Platforms: toIPCPlatforms(cat.Platforms),
-		Genres:    nonNilStrings(cat.Genres),
-		Companies: nonNilStrings(cat.Companies),
+		Genres:    toIPCCatalogItems(cat.Genres),
+		Companies: toIPCCatalogItems(cat.Companies),
 		PlayModes: modes,
 	}, nil
+}
+
+// toIPCCatalogItems converts store genre or company items to their wire form
+// [IPC-049]. The result is never nil.
+func toIPCCatalogItems(items []store.CatalogItem) []ipc.CatalogItem {
+	out := make([]ipc.CatalogItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, ipc.CatalogItem{ID: it.ID, Name: it.Name})
+	}
+	return out
 }
 
 // toIPCPlatform converts a store platform to its wire form [IPC-048].

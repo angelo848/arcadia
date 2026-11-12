@@ -383,7 +383,7 @@ describe('leituras da biblioteca', () => {
   })
 
   it('IPC-049/useCatalog chama library.catalog e devolve o catálogo', async () => {
-    const c = catalog({ genres: ['Ação'], companies: ['Team Cherry'] })
+    const c = catalog({ genres: [{ id: 5, name: 'Ação' }], companies: [{ id: 9, name: 'Team Cherry' }] })
     app.Catalog.mockResolvedValueOnce(c)
     const { result } = renderHook(() => useCatalog(), { wrapper: wrapperFor(newClient()) })
 

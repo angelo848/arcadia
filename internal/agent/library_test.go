@@ -714,7 +714,11 @@ func TestGameUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Catalog: %v", err)
 		}
-		if fmt.Sprint(cat.Companies) != "[Team Cherry]" {
+		var companyNames []string
+		for _, co := range cat.Companies {
+			companyNames = append(companyNames, co.Name)
+		}
+		if fmt.Sprint(companyNames) != "[Team Cherry]" {
 			t.Errorf("companies = %v, want one company Team Cherry", cat.Companies)
 		}
 	})
@@ -1365,6 +1369,43 @@ func platformAddOK(t *testing.T, h *gamesHarness, name, category string) ipc.Pla
 	return out.Platform
 }
 
+// wantCatalogItems checks that raw is a list of {id, name} items (exactly those two
+// members) with the names in want, in that order, and that each id is the database
+// id of the row of table with that name [IPC-049, STO-030]. The ids are the ones the
+// FilterSpec filters by (FLT-002, FLT-003).
+func wantCatalogItems(t *testing.T, h *gamesHarness, raw json.RawMessage, table string, want []string) {
+	t.Helper()
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatalf("%s items %s: %v", table, raw, err)
+	}
+	if len(items) != len(want) {
+		t.Fatalf("%s items = %s, want %d items %v", table, raw, len(want), want)
+	}
+	for i, it := range items {
+		wantKeys(t, it, "id", "name")
+		var id int64
+		var name string
+		if err := json.Unmarshal(it["id"], &id); err != nil {
+			t.Fatalf("%s item %d id %s: %v", table, i, it["id"], err)
+		}
+		if err := json.Unmarshal(it["name"], &name); err != nil {
+			t.Fatalf("%s item %d name %s: %v", table, i, it["name"], err)
+		}
+		if name != want[i] {
+			t.Errorf("%s item %d name = %q, want %q", table, i, name, want[i])
+		}
+		var dbID int64
+		if err := h.st.DB().QueryRowContext(t.Context(),
+			`SELECT id FROM `+table+` WHERE name = ?`, name).Scan(&dbID); err != nil {
+			t.Fatalf("lookup %s %q: %v", table, name, err)
+		}
+		if id != dbID {
+			t.Errorf("%s item %q id = %d, want the database id %d", table, name, id, dbID)
+		}
+	}
+}
+
 func TestPlatformAndCatalog(t *testing.T) {
 	t.Parallel()
 
@@ -1537,8 +1578,10 @@ func TestPlatformAndCatalog(t *testing.T) {
 		wantKeys(t, cat, "platforms", "genres", "companies", "playModes")
 		// The platforms of the catalog are the ones of platform.list [IPC-048, IPC-049].
 		wantRaw(t, cat, "platforms", platformsRaw(t, h))
-		wantRaw(t, cat, "genres", `["Action","adventure","roguelike"]`)
-		wantRaw(t, cat, "companies", `["Ace","team cherry"]`)
+		// Genres and companies are {id, name} items, the ids being the database ids
+		// that the FilterSpec filters by, in name order without case [IPC-049, STO-030].
+		wantCatalogItems(t, h, cat["genres"], "genre", []string{"Action", "adventure", "roguelike"})
+		wantCatalogItems(t, h, cat["companies"], "company", []string{"Ace", "team cherry"})
 
 		var modes []string
 		if err := json.Unmarshal(cat["playModes"], &modes); err != nil {

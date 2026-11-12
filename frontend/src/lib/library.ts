@@ -49,10 +49,13 @@ export type SessionListView = { sessions: SessionItemView[]; total: number; offs
 
 export type PlatformView = { id: number; name: string; category: string }
 
+// A genre or a company of the catalog: id is the database id the FilterSpec filters by (FLT-002, FLT-003).
+export type CatalogItemView = { id: number; name: string }
+
 export type CatalogView = {
   platforms: PlatformView[]
-  genres: string[]
-  companies: string[]
+  genres: CatalogItemView[]
+  companies: CatalogItemView[]
   playModes: PlayModeName[]
 }
 

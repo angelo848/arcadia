@@ -18,12 +18,19 @@ type Platform struct {
 	Category domain.PlatformCategory
 }
 
-// Catalog is what the edit form offers: the platforms, the genre and company names
+// CatalogItem is a genre or a company of the catalog: its database id, which the
+// FilterSpec filters by (FLT-002, FLT-003), and its name.
+type CatalogItem struct {
+	ID   int64
+	Name string
+}
+
+// Catalog is what the edit form offers: the platforms, the genres and companies
 // already stored, and the five play modes (STO-030). No field is nil.
 type Catalog struct {
 	Platforms []Platform
-	Genres    []string
-	Companies []string
+	Genres    []CatalogItem
+	Companies []CatalogItem
 	PlayModes []domain.PlayMode // the five of DOM-014
 }
 
@@ -55,9 +62,9 @@ func platformsWith(ctx context.Context, q *dbgen.Queries) ([]Platform, error) {
 	return out, nil
 }
 
-// Catalog reads the platforms, genre names, company names and play modes in one
+// Catalog reads the platforms, genres, companies and play modes in one
 // transaction. Genres and companies are in name order without regard to case
-// (NOCASE). Nothing in the result is nil.
+// (NOCASE), each with its database id. Nothing in the result is nil.
 func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 	var c Catalog
 	err := s.withTx(ctx, func(_ *sql.Tx, q *dbgen.Queries) error {
@@ -75,8 +82,8 @@ func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 		}
 		c = Catalog{
 			Platforms: ps,
-			Genres:    genres,
-			Companies: companies,
+			Genres:    genreItems(genres),
+			Companies: companyItems(companies),
 			PlayModes: slices.Clone(catalogPlayModes),
 		}
 		return nil
@@ -122,6 +129,24 @@ func (s *Store) AddPlatform(ctx context.Context, name string, category domain.Pl
 		return Platform{}, err
 	}
 	return out, nil
+}
+
+// genreItems maps genre rows to CatalogItem, never returning nil.
+func genreItems(rows []dbgen.Genre) []CatalogItem {
+	out := make([]CatalogItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, CatalogItem{ID: r.ID, Name: r.Name})
+	}
+	return out
+}
+
+// companyItems maps company rows to CatalogItem, never returning nil.
+func companyItems(rows []dbgen.Company) []CatalogItem {
+	out := make([]CatalogItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, CatalogItem{ID: r.ID, Name: r.Name})
+	}
+	return out
 }
 
 // platformFromModel maps a platform row to Platform.

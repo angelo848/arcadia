@@ -73,6 +73,26 @@ func TestLibraryTypes(t *testing.T) {
 	})
 }
 
+func TestCatalogItems(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-049/library.catalog: genres e companies são {id, name} com o id do banco e os nomes na ordem recebida", func(t *testing.T) {
+		t.Parallel()
+		// The wire result as the agent sends it: id is the database id the FilterSpec
+		// filters by (FLT-002, FLT-003), and the lists are never null.
+		const wire = `{"platforms":[{"id":1,"name":"PC","category":"pc"}],` +
+			`"genres":[{"id":5,"name":"Action"},{"id":6,"name":"RPG"}],` +
+			`"companies":[{"id":9,"name":"Team Cherry"}],"playModes":["single"]}`
+		var cat ipc.Catalog
+		if err := json.Unmarshal([]byte(wire), &cat); err != nil {
+			t.Fatalf("decode library.catalog result: %v", err)
+		}
+		if got := compactJSON(t, mustMarshal(t, cat)); got != wire {
+			t.Errorf("Catalog JSON = %s, want %s", got, wire)
+		}
+	})
+}
+
 // mustMarshal marshals v and fails the test on error.
 func mustMarshal(t *testing.T, v any) json.RawMessage {
 	t.Helper()

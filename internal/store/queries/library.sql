@@ -122,11 +122,11 @@ INSERT INTO game_play_mode (game_id, play_mode_id)
 VALUES (?, ?);
 
 -- name: ListGenreNames :many
-SELECT name FROM genre
+SELECT id, name FROM genre
 ORDER BY name COLLATE NOCASE, id;
 
 -- name: ListCompanyNames :many
-SELECT name FROM company
+SELECT id, name FROM company
 ORDER BY name COLLATE NOCASE, id;
 
 -- name: ListPlatformsByName :many

@@ -576,13 +576,22 @@
         },
         "additionalProperties": false
       },
+      "CatalogItem": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 100 }
+        }
+      },
       "Catalog": {
         "type": "object",
         "required": ["platforms", "genres", "companies", "playModes"],
         "properties": {
           "platforms": { "type": "array", "items": { "$ref": "#/components/schemas/Platform" } },
-          "genres": { "type": "array", "items": { "type": "string" }, "description": "Sorted case-insensitively" },
-          "companies": { "type": "array", "items": { "type": "string" }, "description": "Sorted case-insensitively" },
+          "genres": { "type": "array", "items": { "$ref": "#/components/schemas/CatalogItem" }, "description": "Itens {id, name}, ordenados sem diferenciar maiúsculas (alterado em 2026-11-12: FilterSpec filtra por id)" },
+          "companies": { "type": "array", "items": { "$ref": "#/components/schemas/CatalogItem" }, "description": "Itens {id, name}, ordenados sem diferenciar maiúsculas (alterado em 2026-11-12)" },
           "playModes": { "type": "array", "items": { "$ref": "#/components/schemas/PlayModeName" }, "minItems": 5, "maxItems": 5 }
         },
         "additionalProperties": false

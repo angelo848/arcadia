@@ -69,11 +69,18 @@ type PlatformAddResult struct {
 	Platform Platform `json:"platform"`
 }
 
+// CatalogItem is a genre or a company of library.catalog: the database id the
+// FilterSpec filters by (FLT-002, FLT-003) and the name [IPC-049].
+type CatalogItem struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // Catalog is the result of library.catalog: the options of the editor and of
 // the filters [IPC-049, STO-030].
 type Catalog struct {
-	Platforms []Platform `json:"platforms"`
-	Genres    []string   `json:"genres"`
-	Companies []string   `json:"companies"`
-	PlayModes []string   `json:"playModes"`
+	Platforms []Platform    `json:"platforms"`
+	Genres    []CatalogItem `json:"genres"`
+	Companies []CatalogItem `json:"companies"`
+	PlayModes []string      `json:"playModes"`
 }

@@ -484,12 +484,8 @@ func TestLibraryWrites(t *testing.T) {
 	t.Run("DSK-017/Catalog e AddPlatform chamam library.catalog e platform.add e devolvem views", func(t *testing.T) {
 		t.Parallel()
 		p := &gamePinger{results: map[string]any{
-			ipc.MethodLibraryCatalog: ipc.Catalog{
-				Platforms: []ipc.Platform{{ID: 1, Name: "PC", Category: "pc"}},
-				Genres:    []string{"RPG"},
-				Companies: []string{"Team Cherry"},
-				PlayModes: []string{"single"},
-			},
+			ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[{"id":1,"name":"PC","category":"pc"}],` +
+				`"genres":[{"id":5,"name":"RPG"}],"companies":[{"id":7,"name":"Team Cherry"}],"playModes":["single"]}`),
 			ipc.MethodPlatformAdd: ipc.PlatformAddResult{Platform: ipc.Platform{ID: 9, Name: "Arcade X", Category: "arcade"}},
 		}}
 		a := &App{client: p, log: discardLog()}
@@ -500,8 +496,8 @@ func TestLibraryWrites(t *testing.T) {
 			t.Fatalf("Catalog() err = %v", err)
 		}
 		singleCall(t, p, ipc.MethodLibraryCatalog, 5*time.Second)
-		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc"}],"genres":["RPG"],`+
-			`"companies":["Team Cherry"],"playModes":["single"]}`)
+		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc"}],"genres":[{"id":5,"name":"RPG"}],`+
+			`"companies":[{"id":7,"name":"Team Cherry"}],"playModes":["single"]}`)
 
 		p2 := &gamePinger{results: p.results}
 		a.client = p2
@@ -517,7 +513,7 @@ func TestLibraryWrites(t *testing.T) {
 		wantJSON(t, pl, `{"id":9,"name":"Arcade X","category":"arcade"}`)
 
 		// An empty catalog gives [] in every list, never null.
-		p3 := &gamePinger{results: map[string]any{ipc.MethodLibraryCatalog: ipc.Catalog{}}}
+		p3 := &gamePinger{results: map[string]any{ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[],"genres":[],"companies":[],"playModes":[]}`)}}
 		a.client = p3
 		empty, err := a.Catalog()
 		if err != nil {
@@ -531,7 +527,7 @@ func TestLibraryWrites(t *testing.T) {
 		p := &gamePinger{results: map[string]any{
 			ipc.MethodGameUpdate:     ipc.GameDetailResult{Game: ipc.GameDetail{Game: ipc.Game{ID: 3}}},
 			ipc.MethodGameDelete:     ipc.GameDeletedResult{GameID: 3},
-			ipc.MethodLibraryCatalog: ipc.Catalog{},
+			ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[],"genres":[],"companies":[],"playModes":[]}`),
 			ipc.MethodPlatformAdd:    ipc.PlatformAddResult{Platform: ipc.Platform{ID: 9}},
 		}}
 		em := &gameEmitLog{}

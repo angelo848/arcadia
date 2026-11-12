@@ -354,7 +354,7 @@ Premissas:
       Game
       Description                    string
       CompletedAt                    time.Time // zero = NULL
-      Developers, Publishers, Genres []string  // nunca nil; ordem NOCASE
+      Developers, Publishers, Genres []CatalogItem  // nunca nil; ordem NOCASE
       PlayModes                      []string  // nunca nil; nomes de DOM-014
   }
   func (s *Store) GameDetail(ctx context.Context, id int64) (GameDetail, error) // id inexistente => erro que embrulha ErrGameNotFound
@@ -585,7 +585,7 @@ Premissas:
   type Catalog struct {
       Platforms []Platform
       Genres    []string
-      Companies []string
+      Companies []CatalogItem
       PlayModes []domain.PlayMode // os cinco de DOM-014
   }
   // Platforms: ordem de nome sem diferenciar maiúsculas (IPC-048). Nunca nil.
@@ -724,7 +724,7 @@ Premissas:
   type Catalog struct {
       Platforms []Platform `json:"platforms"`
       Genres    []string   `json:"genres"`
-      Companies []string   `json:"companies"`
+      Companies []CatalogItem   `json:"companies"`
       PlayModes []string   `json:"playModes"`
   }
   ```

@@ -505,23 +505,23 @@ func (q *Queries) InsertPlatform(ctx context.Context, arg InsertPlatformParams) 
 }
 
 const listCompanyNames = `-- name: ListCompanyNames :many
-SELECT name FROM company
+SELECT id, name FROM company
 ORDER BY name COLLATE NOCASE, id
 `
 
-func (q *Queries) ListCompanyNames(ctx context.Context) ([]string, error) {
+func (q *Queries) ListCompanyNames(ctx context.Context) ([]Company, error) {
 	rows, err := q.db.QueryContext(ctx, listCompanyNames)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []Company{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var i Company
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -533,23 +533,23 @@ func (q *Queries) ListCompanyNames(ctx context.Context) ([]string, error) {
 }
 
 const listGenreNames = `-- name: ListGenreNames :many
-SELECT name FROM genre
+SELECT id, name FROM genre
 ORDER BY name COLLATE NOCASE, id
 `
 
-func (q *Queries) ListGenreNames(ctx context.Context) ([]string, error) {
+func (q *Queries) ListGenreNames(ctx context.Context) ([]Genre, error) {
 	rows, err := q.db.QueryContext(ctx, listGenreNames)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []Genre{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var i Genre
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
