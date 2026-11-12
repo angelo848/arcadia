@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -69,6 +70,192 @@ func handleSessionList(ctx context.Context, st gameStore, log *slog.Logger, para
 		items = append(items, sessionItemToIPC(s))
 	}
 	return ipc.SessionListResult{Sessions: items, Total: page.Total, Offset: offset}, nil
+}
+
+// updateHandlerTimeout bounds the UpdateGame call of game.update [IPC-045].
+const updateHandlerTimeout = 5 * time.Second
+
+// maxPlayModesPerGame is the maxItems of playModes in the contract [IPC-045].
+const maxPlayModesPerGame = 5
+
+// handleGameUpdate serves game.update: a patch of the metadata of a game, answered
+// with its detail [IPC-045, IPC-052, EDT-001..EDT-009]. The patch is checked here,
+// before the store is used, so an invalid member writes nothing. The time of the
+// edit is clock.Now() read at receipt (ADR 0011). No notification is sent for a
+// library write [IPC-050], and the tracker is not involved (EDT-006).
+func handleGameUpdate(ctx context.Context, st gameStore, clock domain.Clock, log *slog.Logger,
+	params json.RawMessage) (any, error) {
+	var p ipc.GameUpdateParams
+	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
+		return nil, rpcErr
+	}
+	if p.GameID < 1 {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	at := clock.Now()
+	patch, err := patchFromParams(p, clock)
+	if err != nil {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	uctx, cancel := context.WithTimeout(ctx, updateHandlerTimeout)
+	defer cancel()
+	d, err := st.UpdateGame(uctx, p.GameID, patch, at)
+	if err != nil {
+		return nil, gameUpdateError(p.GameID, err, log)
+	}
+	return ipc.GameDetailResult{Game: gameDetailToIPC(d)}, nil
+}
+
+// patchFromParams turns the members of game.update into a store patch [IPC-052].
+// An absent member gives a nil field (unchanged). A null is refused for every
+// member except completedAt and year, where it clears the value. Each value is
+// checked with the domain rules: title, description, status, dates, years, names
+// (DOM-016, duplicates without regard to case are removed), play modes (DOM-014)
+// and platformId >= 1. Any failure is an error wrapping domain.ErrInvalidField.
+func patchFromParams(p ipc.GameUpdateParams, clock domain.Clock) (store.GamePatch, error) {
+	var out store.GamePatch
+	var err error
+	if out.Title, err = field(p.Title, domain.ValidateTitle); err != nil {
+		return store.GamePatch{}, fmt.Errorf("title: %w", err)
+	}
+	if out.PlatformID, err = field(p.PlatformID, platformID); err != nil {
+		return store.GamePatch{}, fmt.Errorf("platformId: %w", err)
+	}
+	if out.Status, err = field(p.Status, domain.ParseGameStatus); err != nil {
+		return store.GamePatch{}, fmt.Errorf("status: %w", err)
+	}
+	if out.Favorite, err = field(p.Favorite, keep[bool]); err != nil {
+		return store.GamePatch{}, fmt.Errorf("favorite: %w", err)
+	}
+	if out.Description, err = field(p.Description, domain.ValidateDescription); err != nil {
+		return store.GamePatch{}, fmt.Errorf("description: %w", err)
+	}
+	if p.CompletedAt.Present {
+		var c *time.Time
+		if !p.CompletedAt.Null {
+			t, err := domain.ParseCompletedDate(p.CompletedAt.Value)
+			if err != nil {
+				return store.GamePatch{}, fmt.Errorf("completedAt: %w", err)
+			}
+			c = &t
+		}
+		out.CompletedAt = &c
+	}
+	if p.Year.Present {
+		var y *int
+		if !p.Year.Null {
+			if p.Year.Value < domain.YearMin || p.Year.Value > domain.YearMax {
+				return store.GamePatch{}, fmt.Errorf("year %d outside %d..%d: %w",
+					p.Year.Value, domain.YearMin, domain.YearMax, domain.ErrInvalidField)
+			}
+			v := p.Year.Value
+			y = &v
+		}
+		out.Year = &y
+	}
+	if out.Developers, err = field(p.Developers, nameList); err != nil {
+		return store.GamePatch{}, fmt.Errorf("developers: %w", err)
+	}
+	if out.Publishers, err = field(p.Publishers, nameList); err != nil {
+		return store.GamePatch{}, fmt.Errorf("publishers: %w", err)
+	}
+	if out.Genres, err = field(p.Genres, nameList); err != nil {
+		return store.GamePatch{}, fmt.Errorf("genres: %w", err)
+	}
+	if out.PlayModes, err = field(p.PlayModes, playModeList); err != nil {
+		return store.GamePatch{}, fmt.Errorf("playModes: %w", err)
+	}
+	return out, nil
+}
+
+// field converts a patch member for the store: nil when absent, an error when it
+// is null (only completedAt and year accept null) or conv refuses the value.
+func field[T, R any](o ipc.Optional[T], conv func(T) (R, error)) (*R, error) {
+	if !o.Present {
+		return nil, nil
+	}
+	if o.Null {
+		return nil, fmt.Errorf("null is not allowed: %w", domain.ErrInvalidField)
+	}
+	v, err := conv(o.Value)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// keep is the conversion of a value that needs no check.
+func keep[T any](v T) (T, error) {
+	return v, nil
+}
+
+// platformID accepts a platform id >= 1; whether it exists is the store's check.
+func platformID(id int64) (int64, error) {
+	if id < 1 {
+		return 0, fmt.Errorf("platform id %d: %w", id, domain.ErrInvalidField)
+	}
+	return id, nil
+}
+
+// nameList checks a list of catalog names [EDT-004, DOM-016]: at most
+// domain.MaxNameList items, each trimmed and at most domain.MaxNameRunes runes,
+// and the duplicates without regard to case removed (the first spelling stays).
+// The result is never nil.
+func nameList(names []string) ([]string, error) {
+	if len(names) > domain.MaxNameList {
+		return nil, fmt.Errorf("%d names, max %d: %w", len(names), domain.MaxNameList, domain.ErrInvalidField)
+	}
+	out := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		clean, err := domain.NormalizeName(n)
+		if err != nil {
+			return nil, err
+		}
+		key := strings.ToLower(clean)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, clean)
+	}
+	return out, nil
+}
+
+// playModeList checks the play modes of a game [EDT-004, DOM-014]: exact names,
+// at most maxPlayModesPerGame items and no repetition. The result is never nil.
+func playModeList(names []string) ([]domain.PlayMode, error) {
+	if len(names) > maxPlayModesPerGame {
+		return nil, fmt.Errorf("%d play modes, max %d: %w", len(names), maxPlayModesPerGame, domain.ErrInvalidField)
+	}
+	out := make([]domain.PlayMode, 0, len(names))
+	seen := make(map[domain.PlayMode]struct{}, len(names))
+	for _, n := range names {
+		m, err := domain.ParsePlayMode(n)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := seen[m]; dup {
+			return nil, fmt.Errorf("play mode %q repeated: %w", n, domain.ErrInvalidField)
+		}
+		seen[m] = struct{}{}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// gameUpdateError maps a store error of game.update: an unknown game is -32001
+// [IPC-045]; an unknown platform or a rejected field is -32602 (EDT-002, EDT-007);
+// anything else is logged and returned for -32603.
+func gameUpdateError(gameID int64, err error, log *slog.Logger) error {
+	if errors.Is(err, store.ErrGameNotFound) {
+		return ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound, ipc.GameNotFoundData{GameID: gameID})
+	}
+	if errors.Is(err, store.ErrPlatformNotFound) || errors.Is(err, domain.ErrInvalidField) {
+		return ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	log.Error("falha ao alterar o jogo", "game_id", gameID, "error", err.Error())
+	return fmt.Errorf("game.update: %w", err)
 }
 
 // gameReadError maps a store error of a read by game id: an unknown game is

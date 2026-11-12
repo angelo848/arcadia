@@ -44,6 +44,7 @@ type gameStore interface {
 	Game(ctx context.Context, id int64) (store.Game, error)
 	GameDetail(ctx context.Context, id int64) (store.GameDetail, error)
 	GameSessions(ctx context.Context, gameID int64, offset, limit int) (store.SessionPage, error)
+	UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error)
 }
 
 // sessionTracker is the part of *tracker.Tracker used by the game handlers.
@@ -69,8 +70,9 @@ type gameLaunchParams struct {
 }
 
 // gameHandlers returns the handlers of game.add, game.list, game.get,
-// session.list, game.launch and session.current [IPC-020..IPC-026, IPC-028,
-// IPC-031, IPC-044, IPC-047, AGT-011]. stat is os.Stat in production.
+// game.update, session.list, game.launch and session.current [IPC-020..IPC-026,
+// IPC-028, IPC-031, IPC-044, IPC-045, IPC-047, AGT-011]. stat is os.Stat in
+// production.
 func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 	stat func(string) (fs.FileInfo, error), log *slog.Logger) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
@@ -85,6 +87,9 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 		},
 		ipc.MethodSessionList: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleSessionList(ctx, st, log, params)
+		},
+		ipc.MethodGameUpdate: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleGameUpdate(ctx, st, clock, log, params)
 		},
 		ipc.MethodGameLaunch: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameLaunch(ctx, st, tr, log, params)

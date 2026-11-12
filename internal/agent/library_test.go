@@ -4,14 +4,19 @@ package agent
 // with the v0.6.0 Game shape [IPC-020] and the helpers of the game.list tests in
 // games_test.go (TestGameList): raw responses for the 1 MiB budget [IPC-051], a
 // ListGames stub that pages over a fixed slice, and the worst-case games. T19:
-// game.get [IPC-044] and session.list [IPC-047].
+// game.get [IPC-044] and session.list [IPC-047]. T20: game.update [IPC-045,
+// IPC-050, IPC-052] and its EDT-001..EDT-009 mapping, in TestGameUpdate (handler
+// level) and TestGameUpdateNotifications (full agent with two clients).
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,6 +137,11 @@ func (s *recordingGameStore) GameDetail(ctx context.Context, id int64) (store.Ga
 
 func (s *recordingGameStore) GameSessions(ctx context.Context, gameID int64, offset, limit int) (store.SessionPage, error) {
 	return s.inner.GameSessions(ctx, gameID, offset, limit)
+}
+
+// UpdateGame forwards to the real store. T20 adds it to gameStore.
+func (s *recordingGameStore) UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error) {
+	return s.inner.UpdateGame(ctx, id, p, at)
 }
 
 // seededSession describes a session written through the store: it starts at
@@ -408,5 +418,513 @@ func TestSessionList(t *testing.T) {
 		wantRaw(t, obj, "sessions", "[]")
 		wantRaw(t, obj, "total", "0")
 		wantRaw(t, obj, "offset", "0")
+	})
+}
+
+// updateCall is one UpdateGame call seen by updateRecorder.
+type updateCall struct {
+	patch    store.GamePatch
+	at       time.Time
+	deadline time.Time // zero = the ctx had no deadline
+}
+
+// updateRecorder wraps the recording game store and records each UpdateGame
+// call [IPC-045]. It forwards to the real store.
+type updateRecorder struct {
+	*recordingGameStore
+
+	mu    sync.Mutex
+	calls []updateCall
+}
+
+func (u *updateRecorder) UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error) {
+	dl, _ := ctx.Deadline()
+	u.mu.Lock()
+	u.calls = append(u.calls, updateCall{patch: p, at: at, deadline: dl})
+	u.mu.Unlock()
+	return u.recordingGameStore.inner.UpdateGame(ctx, id, p, at)
+}
+
+// recorded returns the UpdateGame calls so far, in order.
+func (u *updateRecorder) recorded() []updateCall {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]updateCall(nil), u.calls...)
+}
+
+// newUpdateHarness is newGamesHarness whose game.update goes through an
+// updateRecorder, so the tests see each UpdateGame call.
+func newUpdateHarness(t *testing.T) (*gamesHarness, *updateRecorder) {
+	t.Helper()
+	h := newGamesHarness(t, nil)
+	up := &updateRecorder{recordingGameStore: h.gs}
+	h.handlers = gameHandlers(up, h.tr, h.clock, os.Stat, slog.New(h.logs))
+	if h.handlers[ipc.MethodGameUpdate] == nil {
+		t.Fatalf("gameHandlers has no handler for %q", ipc.MethodGameUpdate)
+	}
+	return h, up
+}
+
+// gameUpdate calls game.update for gameID with members, the JSON members of the
+// patch without gameId ("" = only gameId) [IPC-045].
+func gameUpdate(t *testing.T, h *gamesHarness, gameID int64, members string) ipc.Response {
+	t.Helper()
+	params := fmt.Sprintf(`{"gameId":%d`, gameID)
+	if members != "" {
+		params += "," + members
+	}
+	return h.call(t, ipc.MethodGameUpdate, params+"}")
+}
+
+// updatedGame returns the game member of a successful game.update or game.get
+// response, and checks that it has no other member [IPC-045].
+func updatedGame(t *testing.T, resp ipc.Response) map[string]json.RawMessage {
+	t.Helper()
+	if resp.Error != nil {
+		t.Fatalf("error %d %q (data %s)", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	top := objectOf(t, resp.Result)
+	wantKeys(t, top, "game")
+	return objectOf(t, top["game"])
+}
+
+// getGame returns the game member that game.get gives for gameID.
+func getGame(t *testing.T, h *gamesHarness, gameID int64) map[string]json.RawMessage {
+	t.Helper()
+	return updatedGame(t, h.call(t, ipc.MethodGameGet, fmt.Sprintf(`{"gameId":%d}`, gameID)))
+}
+
+// wantSameObject checks that got has exactly the members of want, with the same
+// raw values.
+func wantSameObject(t *testing.T, got, want map[string]json.RawMessage) {
+	t.Helper()
+	keys := make([]string, 0, len(want))
+	for k := range want {
+		keys = append(keys, k)
+	}
+	wantKeys(t, got, keys...)
+	for _, k := range keys {
+		wantRaw(t, got, k, string(want[k]))
+	}
+}
+
+// wantUpdateInvalid checks that each members patch of gameID is refused with
+// -32602 [IPC-052, EDT-009].
+func wantUpdateInvalid(t *testing.T, h *gamesHarness, gameID int64, members ...string) {
+	t.Helper()
+	for _, m := range members {
+		resp := gameUpdate(t, h, gameID, m)
+		if resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+			t.Errorf("game.update %q: result %s, error %+v; want -32602", m, resp.Result, resp.Error)
+		}
+	}
+}
+
+// wantGameUnchanged checks that game.get of gameID still gives before, the
+// response that was read before a rejected update [EDT-007].
+func wantGameUnchanged(t *testing.T, h *gamesHarness, gameID int64, before []byte) {
+	t.Helper()
+	if after := rawGetResponse(t, h, gameID); string(after) != string(before) {
+		t.Errorf("game.get after the rejected update = %s, want %s", after, before)
+	}
+}
+
+// catalogNames returns the company and genre names of the catalog, to check
+// that a rejected patch creates none [EDT-007].
+func catalogNames(t *testing.T, h *gamesHarness) string {
+	t.Helper()
+	cat, err := h.st.Catalog(t.Context())
+	if err != nil {
+		t.Fatalf("Catalog: %v", err)
+	}
+	return fmt.Sprint(cat.Companies, cat.Genres)
+}
+
+// countNotifications counts the messages without an id, that is the
+// notifications [IPC-050].
+func countNotifications(msgs []rawMsg) int {
+	n := 0
+	for _, m := range msgs {
+		if m.method() != "" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestGameUpdate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-045/patch válido devolve game com o detalhe já alterado", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		obj := updatedGame(t, gameUpdate(t, h, g.ID,
+			`"title":"Hades","favorite":true,"status":"playing","description":"Roguelike","completedAt":"2026-11-12",`+
+				`"year":2020,"developers":["Supergiant"],"publishers":["Supergiant"],"genres":["Action","Roguelike"],"playModes":["single"]`))
+		wantKeys(t, obj, append(append([]string{}, gameKeys...), gameDetailKeys...)...)
+		wantRaw(t, obj, "id", fmt.Sprint(g.ID))
+		wantRaw(t, obj, "title", `"Hades"`)
+		wantRaw(t, obj, "favorite", "true")
+		wantRaw(t, obj, "status", `"playing"`)
+		wantRaw(t, obj, "year", "2020")
+		wantRaw(t, obj, "description", `"Roguelike"`)
+		wantRaw(t, obj, "completedAt", `"2026-11-12"`)
+		wantRaw(t, obj, "developers", `["Supergiant"]`)
+		wantRaw(t, obj, "publishers", `["Supergiant"]`)
+		wantRaw(t, obj, "genres", `["Action","Roguelike"]`)
+		wantRaw(t, obj, "playModes", `["single"]`)
+		// The result is the detail that game.get reads afterwards.
+		wantSameObject(t, obj, getGame(t, h, g.ID))
+	})
+
+	t.Run("IPC-045/gameId inexistente é -32001 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantError(t, gameUpdate(t, h, 999, `"title":"Fantasma"`), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-045/gameId 0, texto ou params ausentes são -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		wantEachInvalidParams(t, h, ipc.MethodGameUpdate,
+			"", `{"title":"X"}`, `{"gameId":0,"title":"X"}`, `{"gameId":-1}`, `{"gameId":"1"}`, `{"gameId":1.5}`)
+	})
+
+	t.Run("IPC-045/patch inválido (title vazio) é -32602 e nada muda (EDT-007)", func(t *testing.T) {
+		t.Parallel()
+		h, up := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantError(t, gameUpdate(t, h, g.ID, `"title":""`), ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		wantGameUnchanged(t, h, g.ID, before)
+		if n := len(up.recorded()); n != 0 {
+			t.Errorf("UpdateGame calls = %d, want 0: the patch is checked before any write", n)
+		}
+	})
+
+	t.Run("IPC-045/UpdateGame recebe clock.Now() lido ao receber o pedido", func(t *testing.T) {
+		t.Parallel()
+		h, up := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		h.clock.Advance(3 * time.Second)
+		updatedGame(t, gameUpdate(t, h, g.ID, `"title":"Hades"`))
+		calls := up.recorded()
+		if len(calls) != 1 {
+			t.Fatalf("UpdateGame calls = %d, want 1", len(calls))
+		}
+		if want := gamesT0.Add(3 * time.Second); !calls[0].at.Equal(want) {
+			t.Errorf("UpdateGame at = %v, want %v (clock.Now at receipt)", calls[0].at, want)
+		}
+	})
+
+	t.Run("IPC-045/UpdateGame tem prazo de 5 s", func(t *testing.T) {
+		t.Parallel()
+		h, up := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		updatedGame(t, gameUpdate(t, h, g.ID, `"title":"Hades"`))
+		calls := up.recorded()
+		if len(calls) != 1 || calls[0].deadline.IsZero() {
+			t.Fatalf("UpdateGame calls = %+v, want one call with a deadline", calls)
+		}
+		if left := time.Until(calls[0].deadline); left > 5*time.Second || left < 4*time.Second {
+			t.Errorf("UpdateGame ctx deadline in %v, want about 5 s", left)
+		}
+	})
+
+	t.Run("EDT-007/title vazio junto com developers novos é -32602 e nenhum nome novo é criado", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		names := catalogNames(t, h)
+		wantError(t, gameUpdate(t, h, g.ID, `"title":"  ","developers":["Empresa Nova"],"genres":["Gênero Novo"]`),
+			ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		wantGameUnchanged(t, h, g.ID, before)
+		if got := catalogNames(t, h); got != names {
+			t.Errorf("catalog names = %s, want %s unchanged", got, names)
+		}
+	})
+
+	t.Run("EDT-009/só gameId devolve o jogo sem alteração e com sucesso", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := getGame(t, h, g.ID)
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, ""))
+		wantSameObject(t, obj, before)
+	})
+
+	t.Run("EDT-009/membro desconhecido é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"nope":1`, `"title":"X","nope":null`, `"Title":"X"`, `"playmodes":["single"]`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("EDT-004/playModes com nome fora de DOM-014 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"playModes":["party"]`, `"playModes":["Single"]`, `"playModes":["single","multi"]`, `"playModes":[""]`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("EDT-004/developers com nomes repetidos sem diferenciar maiúsculas sai com uma só entrada", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"developers":["Team Cherry"]`))
+		wantRaw(t, obj, "developers", `["Team Cherry"]`)
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"developers":["Team Cherry","team cherry","TEAM CHERRY"]`))
+		wantRaw(t, obj, "developers", `["Team Cherry"]`)
+		// The company exists: another spelling in a link reuses the stored spelling.
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"publishers":["team cherry"]`))
+		wantRaw(t, obj, "publishers", `["Team Cherry"]`)
+		cat, err := h.st.Catalog(t.Context())
+		if err != nil {
+			t.Fatalf("Catalog: %v", err)
+		}
+		if fmt.Sprint(cat.Companies) != "[Team Cherry]" {
+			t.Errorf("companies = %v, want one company Team Cherry", cat.Companies)
+		}
+	})
+
+	t.Run("EDT-004/array vazio limpa developers, genres e playModes", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		updatedGame(t, gameUpdate(t, h, g.ID, `"developers":["Team Cherry"],"genres":["Action"],"playModes":["single"]`))
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"developers":[],"genres":[],"playModes":[]`))
+		wantRaw(t, obj, "developers", "[]")
+		wantRaw(t, obj, "genres", "[]")
+		wantRaw(t, obj, "playModes", "[]")
+	})
+
+	t.Run("EDT-004/nome de catálogo vazio ou com 101 runas é -32602 sem criar nome", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		names := catalogNames(t, h)
+		wantUpdateInvalid(t, h, g.ID,
+			`"developers":["   "]`, `"genres":[""]`, `"publishers":["`+strings.Repeat("é", domain.MaxNameRunes+1)+`"]`)
+		wantGameUnchanged(t, h, g.ID, before)
+		if got := catalogNames(t, h); got != names {
+			t.Errorf("catalog names = %s, want %s unchanged", got, names)
+		}
+	})
+
+	t.Run("EDT-001/title de 200 runas aceito e 201 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		title := strings.Repeat("é", ipc.MaxGameTitleRunes)
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"title":"  `+title+`  "`))
+		wantRaw(t, obj, "title", mustJSON(t, title))
+		wantUpdateInvalid(t, h, g.ID, `"title":"`+strings.Repeat("é", ipc.MaxGameTitleRunes+1)+`"`)
+	})
+
+	t.Run("EDT-001/description de 10 000 runas aceita e 10 001 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"description":"`+strings.Repeat("ç", domain.MaxDescriptionRunes)+`"`))
+		var d string
+		if err := json.Unmarshal(obj["description"], &d); err != nil {
+			t.Fatalf("description: %v", err)
+		}
+		if n := len([]rune(d)); n != domain.MaxDescriptionRunes {
+			t.Errorf("description has %d runes, want %d", n, domain.MaxDescriptionRunes)
+		}
+		wantUpdateInvalid(t, h, g.ID, `"description":"`+strings.Repeat("ç", domain.MaxDescriptionRunes+1)+`"`)
+	})
+
+	t.Run("EDT-001/status fora de DOM-012 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"status":"Playing"`, `"status":""`, `"status":"done"`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("EDT-001/completedAt em outro formato que YYYY-MM-DD é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"completedAt":"12/11/2026"`, `"completedAt":"2026-02-30"`,
+			`"completedAt":"2026-11-12T00:00:00Z"`, `"completedAt":""`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("EDT-002/platformId existente troca a plataforma e inexistente é -32602 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		sw, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
+		if err != nil {
+			t.Fatalf("AddPlatform: %v", err)
+		}
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, fmt.Sprintf(`"platformId":%d`, sw.ID)))
+		wantRaw(t, obj, "platformId", fmt.Sprint(sw.ID))
+		wantRaw(t, obj, "platform", `"Switch"`)
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"platformId":999999`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("EDT-003/year null limpa o ano e year fora de 1900..2100 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"year":1900`))
+		wantRaw(t, obj, "year", "1900")
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"year":2100`))
+		wantRaw(t, obj, "year", "2100")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"year":1899`, `"year":2101`)
+		wantGameUnchanged(t, h, g.ID, before)
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"year":null`))
+		wantRaw(t, obj, "year", "null")
+	})
+
+	t.Run("EDT-005/editar não muda total, contagem, sessões nem pausas", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		h.seedSessions(t, g.ID,
+			seededSession{start: 0, active: 100 * time.Second},
+			seededSession{start: time.Hour, active: 60 * time.Second},
+		)
+		beforeGame := getGame(t, h, g.ID)
+		wantRaw(t, beforeGame, "totalPlaySeconds", "160")
+		beforeSessions := h.call(t, ipc.MethodSessionList, fmt.Sprintf(`{"gameId":%d}`, g.ID)).Result
+		obj := updatedGame(t, gameUpdate(t, h, g.ID,
+			`"title":"Renomeado","favorite":true,"developers":["Team Cherry"],"genres":["Action"],"year":1998,`+
+				`"completedAt":"2026-11-12","playModes":["single"]`))
+		for _, k := range []string{"totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"} {
+			wantRaw(t, obj, k, string(beforeGame[k]))
+		}
+		if got := h.call(t, ipc.MethodSessionList, fmt.Sprintf(`{"gameId":%d}`, g.ID)).Result; string(got) != string(beforeSessions) {
+			t.Errorf("session.list = %s after the edit, want %s", got, beforeSessions)
+		}
+	})
+
+	t.Run("IPC-052/completedAt null apaga e completedAt ausente não mexe", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		obj := updatedGame(t, gameUpdate(t, h, g.ID, `"completedAt":"2026-11-12"`))
+		wantRaw(t, obj, "completedAt", `"2026-11-12"`)
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"title":"Renomeado"`))
+		wantRaw(t, obj, "title", `"Renomeado"`)
+		wantRaw(t, obj, "completedAt", `"2026-11-12"`)
+		obj = updatedGame(t, gameUpdate(t, h, g.ID, `"completedAt":null`))
+		wantRaw(t, obj, "completedAt", "null")
+	})
+
+	t.Run("IPC-052/null em campo que não aceita null é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"title":null`, `"favorite":null`, `"status":null`, `"description":null`,
+			`"platformId":null`, `"developers":null`, `"publishers":null`, `"genres":null`, `"playModes":null`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-052/tipo errado em um campo é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"favorite":"sim"`, `"year":"1998"`, `"year":1998.5`, `"platformId":"1"`,
+			`"title":5`, `"status":1`, `"completedAt":20261112`, `"developers":"Team Cherry"`, `"description":false`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-052/item de tipo errado em array é -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		wantUpdateInvalid(t, h, g.ID, `"genres":[1]`, `"developers":[null]`, `"playModes":[true]`, `"publishers":["Ok",2]`)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-052/params posicionais são -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _ := newUpdateHarness(t)
+		wantEachInvalidParams(t, h, ipc.MethodGameUpdate, `[1]`, `[]`, `[{"gameId":1}]`)
+	})
+}
+
+// TestGameUpdateNotifications runs game.update in a full agent with two clients
+// [IPC-050, EDT-006]. It is not parallel: newWiring checks for leaked goroutines.
+func TestGameUpdateNotifications(t *testing.T) {
+	t.Run("IPC-050/game.update não envia notificação", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+		c1, c2 := w.client(t), w.client(t)
+		id, _ := w.addGame(t, c1, "Hollow Knight")
+		c1.rpcOK(t, ipc.MethodStatus, nil)
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		before1, before2 := countNotifications(c1.snapshotAll()), countNotifications(c2.snapshotAll())
+
+		c1.rpcOK(t, ipc.MethodGameUpdate, map[string]any{
+			"gameId": id, "title": "Hades", "favorite": true, "developers": []string{"Team Cherry"},
+		})
+		// A round trip on each connection: anything queued before the response has arrived.
+		c1.rpcOK(t, ipc.MethodStatus, nil)
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		if n := countNotifications(c1.snapshotAll()); n != before1 {
+			t.Errorf("client 1 got %d notification(s) after game.update, want none", n-before1)
+		}
+		if n := countNotifications(c2.snapshotAll()); n != before2 {
+			t.Errorf("client 2 got %d notification(s) after game.update, want none", n-before2)
+		}
+	})
+
+	// checkUpdateKeepsSession launches the game (and pauses it when pause is set),
+	// edits it through client 1 and checks that session.current and the
+	// session.changed count of client 2 do not move [EDT-006].
+	checkUpdateKeepsSession := func(t *testing.T, pause bool, state string) {
+		w := newWiring(t, wiringOpts{})
+		c1, c2 := w.client(t), w.client(t)
+		id, _ := w.addGame(t, c1, "Hollow Knight")
+		w.launch(t, c1, id)
+		if pause {
+			c1.rpcOK(t, ipc.MethodSessionPause, nil)
+		}
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		cur := c1.rpcOK(t, ipc.MethodSessionCurrent, nil).Result
+		wantRaw(t, objectOf(t, objectOf(t, cur)["session"]), "state", mustJSON(t, state))
+		changes := countMethod(c2.snapshotAll(), ipc.MethodSessionChanged)
+
+		c1.rpcOK(t, ipc.MethodGameUpdate, map[string]any{
+			"gameId": id, "title": "Renomeado", "favorite": true, "playModes": []string{"single"},
+		})
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		if got := c1.rpcOK(t, ipc.MethodSessionCurrent, nil).Result; string(got) != string(cur) {
+			t.Errorf("session.current = %s after game.update, want %s", got, cur)
+		}
+		if n := countMethod(c2.snapshotAll(), ipc.MethodSessionChanged); n != changes {
+			t.Errorf("session.changed count = %d after game.update, want %d", n, changes)
+		}
+	}
+
+	t.Run("EDT-006/game.update com sessão Running não muda session.current nem envia session.changed", func(t *testing.T) {
+		checkUpdateKeepsSession(t, false, "running")
+	})
+
+	t.Run("EDT-006/game.update com sessão Paused não muda session.current nem envia session.changed", func(t *testing.T) {
+		checkUpdateKeepsSession(t, true, "paused")
 	})
 }
