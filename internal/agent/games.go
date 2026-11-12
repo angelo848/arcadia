@@ -40,7 +40,7 @@ const (
 // gameStore is the part of *store.Store used by the game handlers.
 type gameStore interface {
 	AddGame(ctx context.Context, g store.NewGame) (store.Game, error)
-	Games(ctx context.Context) ([]store.Game, error)
+	ListGames(ctx context.Context, q store.Query) (store.Page, error)
 	Game(ctx context.Context, id int64) (store.Game, error)
 }
 
@@ -75,18 +75,9 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 		ipc.MethodGameAdd: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameAdd(ctx, st, clock, stat, log, params)
 		},
-		ipc.MethodGameList: ipc.NoParams(func(ctx context.Context) (any, error) {
-			games, err := st.Games(ctx)
-			if err != nil {
-				log.Error("falha ao listar os jogos", "error", err.Error())
-				return nil, fmt.Errorf("game.list: %w", err)
-			}
-			out := ipc.GameListResult{Games: make([]ipc.Game, 0, len(games))}
-			for _, g := range games {
-				out.Games = append(out.Games, toIPCGame(g))
-			}
-			return out, nil
-		}),
+		ipc.MethodGameList: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleGameList(ctx, st, log, params)
+		},
 		ipc.MethodGameLaunch: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameLaunch(ctx, st, tr, log, params)
 		},
@@ -344,14 +335,22 @@ func parseGameID(raw json.RawMessage) (int64, bool) {
 	return id, true
 }
 
-// toIPCGame converts a store game to its wire form; zero instants become null.
+// toIPCGame converts a store game to its wire form [IPC-020, IPC-042]; zero
+// instants and an invalid release date become null.
 func toIPCGame(g store.Game) ipc.Game {
 	out := ipc.Game{
 		ID:               g.ID,
 		Title:            g.Title,
+		PlatformID:       g.PlatformID,
+		Platform:         g.Platform,
 		Path:             g.LaunchTarget,
+		Status:           string(g.Status),
+		Favorite:         g.Favorite,
 		TotalPlaySeconds: g.TotalPlaySeconds,
 		PlayCount:        g.PlayCount,
+	}
+	if year, ok := domain.ReleaseYear(g.ReleaseDate); ok {
+		out.Year = &year
 	}
 	if !g.FirstPlayedAt.IsZero() {
 		t := g.FirstPlayedAt.UTC()

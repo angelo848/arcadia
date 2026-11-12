@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -29,16 +30,17 @@ import (
 var gamesT0 = time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)
 
 // recordingGameStore wraps a real store, records the calls and lets a test
-// override Game/Games.
+// override Game and ListGames.
 type recordingGameStore struct {
-	inner gameStore
+	inner *store.Store
 
-	mu        sync.Mutex
-	added     []store.NewGame
-	gameIDs   []int64
-	gamesCall int
-	gameFn    func(id int64) (store.Game, error)
-	gamesFn   func() ([]store.Game, error)
+	mu      sync.Mutex
+	added   []store.NewGame
+	gameIDs []int64
+	queries []store.Query
+	listDLs []time.Time // ListGames ctx deadlines, zero = none
+	gameFn  func(id int64) (store.Game, error)
+	listFn  func(ctx context.Context, q store.Query) (store.Page, error)
 }
 
 func (s *recordingGameStore) AddGame(ctx context.Context, g store.NewGame) (store.Game, error) {
@@ -48,14 +50,38 @@ func (s *recordingGameStore) AddGame(ctx context.Context, g store.NewGame) (stor
 	return s.inner.AddGame(ctx, g)
 }
 
-func (s *recordingGameStore) Games(ctx context.Context) ([]store.Game, error) {
+// ListGames records the query and its ctx deadline, then runs listFn or the
+// real store [IPC-042].
+func (s *recordingGameStore) ListGames(ctx context.Context, q store.Query) (store.Page, error) {
 	s.mu.Lock()
-	s.gamesCall++
-	fn := s.gamesFn
+	s.queries = append(s.queries, q)
+	dl, _ := ctx.Deadline()
+	s.listDLs = append(s.listDLs, dl)
+	fn := s.listFn
 	s.mu.Unlock()
 	if fn != nil {
-		return fn()
+		return fn(ctx, q)
 	}
+	return s.inner.ListGames(ctx, q)
+}
+
+// listQueries returns the queries ListGames received, in order.
+func (s *recordingGameStore) listQueries() []store.Query {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]store.Query(nil), s.queries...)
+}
+
+// listDeadlines returns the ctx deadline of each ListGames call, in order.
+func (s *recordingGameStore) listDeadlines() []time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]time.Time(nil), s.listDLs...)
+}
+
+// Games is the pre-T18 listing. It is kept only so the package compiles until
+// Store.Games and gameStore.Games leave in T18; then delete this method.
+func (s *recordingGameStore) Games(ctx context.Context) ([]store.Game, error) {
 	return s.inner.Games(ctx)
 }
 
@@ -365,7 +391,9 @@ func wantRaw(t *testing.T, obj map[string]json.RawMessage, key, want string) {
 	}
 }
 
-var gameKeys = []string{"id", "title", "path", "totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"}
+// gameKeys are the members of Game in v0.6.0 (IPC-020, IPC-042).
+var gameKeys = []string{"id", "title", "platformId", "platform", "path", "status", "favorite", "year",
+	"totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"}
 
 var sessionKeys = []string{"sessionId", "gameId", "title", "state", "startedAt", "endedAt", "activeSeconds", "activeMs", "asOf"}
 
@@ -386,6 +414,8 @@ func TestGameAdd(t *testing.T) {
 		wantRaw(t, obj, "playCount", "0")
 		wantRaw(t, obj, "firstPlayedAt", "null")
 		wantRaw(t, obj, "lastPlayedAt", "null")
+		wantRaw(t, obj, "year", "null")
+		wantRaw(t, obj, "status", `"not_played"`)
 		var g ipc.Game
 		resultInto(t, resp, &g)
 		if g.ID < 1 {
@@ -513,12 +543,12 @@ func TestGameAdd(t *testing.T) {
 			if n := len(h.gs.addedGames()); n != 0 {
 				t.Errorf("%s: AddGame calls = %d, want 0", tc.reason, n)
 			}
-			games, err := h.st.Games(t.Context())
+			page, err := h.st.ListGames(t.Context(), store.Query{Filter: domain.FilterSpec{Version: 1}, Sort: domain.SortTitle, Limit: 200})
 			if err != nil {
-				t.Fatalf("store.Games: %v", err)
+				t.Fatalf("store.ListGames: %v", err)
 			}
-			if len(games) != 0 {
-				t.Errorf("%s: %d games stored, want 0", tc.reason, len(games))
+			if len(page.Games) != 0 {
+				t.Errorf("%s: %d games stored, want 0", tc.reason, len(page.Games))
 			}
 		}
 	})
@@ -682,7 +712,7 @@ func TestGameList(t *testing.T) {
 		}
 		resp := h.call(t, ipc.MethodGameList, "")
 		obj := objectOf(t, resp.Result)
-		wantKeys(t, obj, "games")
+		wantKeys(t, obj, "games", "total", "offset")
 		var items []map[string]json.RawMessage
 		if err := json.Unmarshal(obj["games"], &items); err != nil {
 			t.Fatalf("games: %v", err)
@@ -706,19 +736,19 @@ func TestGameList(t *testing.T) {
 		h := newGamesHarness(t, nil)
 		wantRaw(t, objectOf(t, h.call(t, ipc.MethodGameList, "").Result), "games", "[]")
 
-		h.gs.gamesFn = func() ([]store.Game, error) { return nil, nil }
+		h.gs.listFn = func(context.Context, store.Query) (store.Page, error) { return store.Page{}, nil }
 		wantRaw(t, objectOf(t, h.call(t, ipc.MethodGameList, "").Result), "games", "[]")
 	})
 
 	t.Run("GAM-005/a ordem do store é preservada", func(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
-		h.gs.gamesFn = func() ([]store.Game, error) {
-			return []store.Game{
+		h.gs.listFn = func(context.Context, store.Query) (store.Page, error) {
+			return store.Page{Games: []store.Game{
 				{ID: 3, Title: "z", LaunchType: "exe", LaunchTarget: `C:\z.exe`},
 				{ID: 1, Title: "a", LaunchType: "exe", LaunchTarget: `C:\a.exe`},
 				{ID: 2, Title: "m", LaunchType: "exe", LaunchTarget: `C:\m.exe`},
-			}, nil
+			}, Total: 3}, nil
 		}
 		var list ipc.GameListResult
 		resultInto(t, h.call(t, ipc.MethodGameList, ""), &list)
@@ -731,10 +761,239 @@ func TestGameList(t *testing.T) {
 		}
 	})
 
+	t.Run("IPC-042/sem params devolve primeira página de 200 com filtro vazio e ordem title", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		obj := objectOf(t, h.call(t, ipc.MethodGameList, "").Result)
+		wantKeys(t, obj, "games", "total", "offset")
+		wantRaw(t, obj, "offset", "0")
+		qs := h.gs.listQueries()
+		if len(qs) != 1 {
+			t.Fatalf("ListGames calls = %d, want 1", len(qs))
+		}
+		want := store.Query{
+			Filter: domain.FilterSpec{Version: 1, PlayMode: domain.PlayGroupAll, Played: "any"},
+			Sort:   domain.SortTitle,
+			Offset: 0,
+			Limit:  200,
+		}
+		if !reflect.DeepEqual(qs[0], want) {
+			t.Errorf("query = %+v, want %+v", qs[0], want)
+		}
+	})
+
+	t.Run("IPC-042/{} é igual a sem params", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		a := h.call(t, ipc.MethodGameList, "")
+		b := h.call(t, ipc.MethodGameList, "{}")
+		if string(a.Result) != string(b.Result) {
+			t.Errorf("result for {} = %s, want %s", b.Result, a.Result)
+		}
+		qs := h.gs.listQueries()
+		if len(qs) != 2 || !reflect.DeepEqual(qs[0], qs[1]) {
+			t.Errorf("queries = %+v, want two equal queries", qs)
+		}
+	})
+
+	t.Run("IPC-042/filter, sort, offset e limit chegam ao store e o resultado traz games, total e offset", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.gs.listFn = func(context.Context, store.Query) (store.Page, error) {
+			return store.Page{Games: []store.Game{{ID: 9, Title: "Hollow", LaunchType: "exe", LaunchTarget: `C:\h.exe`,
+				PlatformID: 1, Platform: "PC", Status: domain.StatusPlaying}}, Total: 777}, nil
+		}
+		params := `{"filter":{"version":1,"platformIds":[2,1,2],"statuses":["playing","backlog"],"text":"  Hollow  ",` +
+			`"playMode":"single","played":"played","yearFrom":2000,"yearTo":2010,"favorite":true},` +
+			`"sort":"lastPlayed","offset":200,"limit":50}`
+		var list ipc.GameListResult
+		resultInto(t, h.call(t, ipc.MethodGameList, params), &list)
+		if list.Total != 777 || list.Offset != 200 || len(list.Games) != 1 || list.Games[0].ID != 9 {
+			t.Errorf("result = %+v, want total 777, offset 200, game 9", list)
+		}
+		qs := h.gs.listQueries()
+		if len(qs) != 1 {
+			t.Fatalf("ListGames calls = %d, want 1", len(qs))
+		}
+		want := store.Query{
+			Filter: domain.FilterSpec{
+				Version:     1,
+				PlatformIDs: []int64{1, 2},
+				Statuses:    []domain.GameStatus{domain.StatusBacklog, domain.StatusPlaying},
+				Text:        "Hollow",
+				PlayMode:    domain.PlayGroupSingle,
+				Played:      "played",
+				YearFrom:    ptr(2000),
+				YearTo:      ptr(2010),
+				Favorite:    ptr(true),
+			},
+			Sort:   domain.SortLastPlayed,
+			Offset: 200,
+			Limit:  50,
+		}
+		if !reflect.DeepEqual(qs[0], want) {
+			t.Errorf("query = %+v, want %+v", qs[0], want)
+		}
+	})
+
+	t.Run("IPC-042/ListGames tem prazo de 2 s", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.call(t, ipc.MethodGameList, "")
+		dls := h.gs.listDeadlines()
+		if len(dls) != 1 || dls[0].IsZero() {
+			t.Fatalf("ListGames ctx deadlines = %v, want one deadline about 2 s away", dls)
+		}
+		if left := time.Until(dls[0]); left > 2*time.Second || left < time.Second {
+			t.Errorf("ListGames ctx deadline in %v, want about 2 s", left)
+		}
+	})
+
+	t.Run("IPC-042/games vazio sai como [] e não null (LIB-003)", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		obj := objectOf(t, h.call(t, ipc.MethodGameList, "").Result)
+		wantRaw(t, obj, "games", "[]")
+		wantRaw(t, obj, "total", "0")
+
+		h.addGame(t, h.file(t, "game.exe"), "Game")
+		obj = objectOf(t, h.call(t, ipc.MethodGameList, `{"filter":{"version":1,"platformIds":[999]}}`).Result)
+		wantRaw(t, obj, "games", "[]")
+		wantRaw(t, obj, "total", "0")
+		wantRaw(t, obj, "offset", "0")
+	})
+
+	t.Run("IPC-043/limit 1 e 500, offset 0 e sort year são aceitos", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		for _, p := range []string{`{"limit":1}`, `{"limit":500}`, `{"offset":0,"sort":"year"}`} {
+			if resp := h.call(t, ipc.MethodGameList, p); resp.Error != nil {
+				t.Errorf("game.list %s: error %d %q, want a result", p, resp.Error.Code, resp.Error.Message)
+			}
+		}
+		qs := h.gs.listQueries()
+		if len(qs) != 3 {
+			t.Fatalf("ListGames calls = %d, want 3", len(qs))
+		}
+		if qs[0].Limit != 1 || qs[1].Limit != 500 || qs[2].Offset != 0 || qs[2].Sort != domain.SortYear {
+			t.Errorf("queries = %+v, want limits 1 and 500, then offset 0 and sort year", qs)
+		}
+	})
+
+	// IPC-043 and IPC-052: invalid game.list params are -32602 and the store is
+	// not queried. IPC-008: [] is a positional array here, not an empty params.
+	for _, tc := range []struct{ name, params string }{
+		{"IPC-043/sort desconhecido é -32602 sem consultar o store", `{"sort":"nome"}`},
+		{"IPC-043/sort vazio é -32602 sem consultar o store", `{"sort":""}`},
+		{"IPC-043/limit 0 é -32602 sem consultar o store", `{"limit":0}`},
+		{"IPC-043/limit 501 é -32602 sem consultar o store", `{"limit":501}`},
+		{"IPC-043/limit negativo é -32602 sem consultar o store", `{"limit":-1}`},
+		{"IPC-043/limit texto é -32602 sem consultar o store", `{"limit":"10"}`},
+		{"IPC-043/offset -1 é -32602 sem consultar o store", `{"offset":-1}`},
+		{"IPC-043/offset texto é -32602 sem consultar o store", `{"offset":"2"}`},
+		{"IPC-043/offset fracionário é -32602 sem consultar o store", `{"offset":1.5}`},
+		{"IPC-043/filter com version 2 é -32602 sem consultar o store", `{"filter":{"version":2}}`},
+		{"IPC-043/filter sem version é -32602 sem consultar o store", `{"filter":{}}`},
+		{"IPC-043/filter com membro desconhecido é -32602 sem consultar o store", `{"filter":{"version":1,"nope":1}}`},
+		{"IPC-043/statuses fora do conjunto é -32602 sem consultar o store", `{"filter":{"version":1,"statuses":["nope"]}}`},
+		{"IPC-043/array posicional é -32602 sem consultar o store", `[1]`},
+		{"IPC-043/membro desconhecido no topo é -32602 sem consultar o store", `{"a":1}`},
+		{"IPC-008/game.list com array vazio [] é -32602 (params posicionais)", `[]`},
+		{"IPC-052/membro com caixa diferente (Limit) é -32602 sem consultar o store", `{"Limit":10}`},
+		{"IPC-052/platformIds com texto dentro de filter é -32602 sem consultar o store", `{"filter":{"version":1,"platformIds":["1"]}}`},
+		{"IPC-052/statuses com item numérico é -32602 sem consultar o store", `{"filter":{"version":1,"statuses":[1]}}`},
+		{"IPC-052/favorite texto dentro de filter é -32602 sem consultar o store", `{"filter":{"version":1,"favorite":"sim"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			wantError(t, h.call(t, ipc.MethodGameList, tc.params), ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+			if n := len(h.gs.listQueries()); n != 0 {
+				t.Errorf("ListGames calls = %d, want 0", n)
+			}
+		})
+	}
+
+	t.Run("IPC-051/página de 500 jogos de pior caso (título de 200 runas, caminho de 260, plataforma de 100) cabe em 1 048 576 bytes", func(t *testing.T) {
+		t.Parallel()
+		t.Run("sem escape a página tem os 500 jogos dentro do limite", func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.gs.listFn = pagedStore(worstGames(500, strings.Repeat("日", 200), `C:\`+strings.Repeat("a", 257), strings.Repeat("P", 100)))
+			raw := rawListResponse(t, h, `{"limit":500}`)
+			if len(raw) > ipc.MaxMessageSize {
+				t.Errorf("response is %d bytes, want <= %d", len(raw), ipc.MaxMessageSize)
+			}
+			if list := listResultOf(t, raw); len(list.Games) != 500 || list.Total != 500 {
+				t.Errorf("games = %d, total = %d, want 500 and 500", len(list.Games), list.Total)
+			}
+		})
+
+		t.Run("com caracteres que o JSON escapa a página para antes de 1 MiB e não repete nem pula jogos", func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			all := worstGames(500, strings.Repeat("<", 200), `C:\`+strings.Repeat("&", 257), strings.Repeat("<", 100))
+			h.gs.listFn = pagedStore(all)
+			raw := rawListResponse(t, h, `{"limit":500}`)
+			if len(raw) > ipc.MaxMessageSize {
+				t.Fatalf("response is %d bytes, want <= %d", len(raw), ipc.MaxMessageSize)
+			}
+			list := listResultOf(t, raw)
+			n := len(list.Games)
+			if n == 0 || n >= len(all) {
+				t.Fatalf("page has %d games, want some but not all of %d", n, len(all))
+			}
+			if list.Total != int64(len(all)) || list.Offset != 0 {
+				t.Errorf("total = %d, offset = %d, want %d and 0", list.Total, list.Offset, len(all))
+			}
+			// The page stops before the limit: the next game would not fit.
+			next, err := json.Marshal(toIPCGame(all[n]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(raw)+1+len(next) <= ipc.MaxMessageSize {
+				t.Errorf("page has %d games (%d bytes) but game %d (%d bytes) would still fit",
+					n, len(raw), n+1, len(next))
+			}
+			// Walking the pages by the returned count sees every game once, in order.
+			seen := 0
+			for offset := 0; ; {
+				page := listResultOf(t, rawListResponse(t, h, fmt.Sprintf(`{"limit":500,"offset":%d}`, offset)))
+				if len(page.Games) == 0 {
+					break
+				}
+				for _, g := range page.Games {
+					seen++
+					if g.ID != int64(seen) {
+						t.Fatalf("game at position %d has id %d, want %d", seen, g.ID, seen)
+					}
+				}
+				offset += len(page.Games)
+				if seen > len(all) {
+					t.Fatalf("walk returned %d games, want %d", seen, len(all))
+				}
+			}
+			if seen != len(all) {
+				t.Errorf("walk returned %d games, want %d", seen, len(all))
+			}
+		})
+
+		t.Run("conteúdo curto não corta a página de 500", func(t *testing.T) {
+			t.Parallel()
+			h := newGamesHarness(t, nil)
+			h.gs.listFn = pagedStore(worstGames(500, "T", `C:\a.exe`, "PC"))
+			if list := listResultOf(t, rawListResponse(t, h, `{"limit":500}`)); len(list.Games) != 500 {
+				t.Errorf("games = %d, want all 500 when the content is small", len(list.Games))
+			}
+		})
+	})
+
 	t.Run("IPC-023/erro do store devolve -32603", func(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
-		h.gs.gamesFn = func() ([]store.Game, error) { return nil, errors.New("disk I/O error") }
+		h.gs.listFn = func(context.Context, store.Query) (store.Page, error) {
+			return store.Page{}, errors.New("disk I/O error")
+		}
 		wantError(t, h.call(t, ipc.MethodGameList, ""), ipc.CodeInternalError, "Internal error")
 	})
 }
@@ -750,13 +1009,23 @@ func TestToIPCGame(t *testing.T) {
 	}{
 		{
 			"IPC-023/datas zero saem como null",
-			store.Game{ID: 4, Title: "T", LaunchType: "exe", LaunchTarget: `C:\g\t.exe`, WorkingDir: `C:\g`},
-			`{"id":4,"title":"T","path":"C:\\g\\t.exe","totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`,
+			store.Game{ID: 4, Title: "T", PlatformID: 1, Platform: "PC", Status: domain.StatusNotPlayed, LaunchType: "exe", LaunchTarget: `C:\g\t.exe`, WorkingDir: `C:\g`},
+			`{"id":4,"title":"T","platformId":1,"platform":"PC","path":"C:\\g\\t.exe","status":"not_played","favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`,
 		},
 		{
 			"IPC-023/totais e datas do store",
-			store.Game{ID: 5, Title: "U", LaunchType: "exe", LaunchTarget: `C:\u.exe`, TotalPlaySeconds: 3600, PlayCount: 2, FirstPlayedAt: first, LastPlayedAt: last},
-			`{"id":5,"title":"U","path":"C:\\u.exe","totalPlaySeconds":3600,"playCount":2,"firstPlayedAt":"2026-11-01T10:00:00Z","lastPlayedAt":"2026-11-08T22:30:00Z"}`,
+			store.Game{ID: 5, Title: "U", PlatformID: 2, Platform: "PC", Status: domain.StatusPlaying, Favorite: true, ReleaseDate: "2009-05-01", LaunchType: "exe", LaunchTarget: `C:\u.exe`, TotalPlaySeconds: 3600, PlayCount: 2, FirstPlayedAt: first, LastPlayedAt: last},
+			`{"id":5,"title":"U","platformId":2,"platform":"PC","path":"C:\\u.exe","status":"playing","favorite":true,"year":2009,"totalPlaySeconds":3600,"playCount":2,"firstPlayedAt":"2026-11-01T10:00:00Z","lastPlayedAt":"2026-11-08T22:30:00Z"}`,
+		},
+		{
+			"IPC-042/ReleaseDate YYYY-MM dá o ano (DOM-013)",
+			store.Game{ID: 6, Title: "V", PlatformID: 1, Platform: "PC", Status: domain.StatusCompleted, ReleaseDate: "2009-05", LaunchTarget: `C:\v.exe`},
+			`{"id":6,"title":"V","platformId":1,"platform":"PC","path":"C:\\v.exe","status":"completed","favorite":false,"year":2009,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`,
+		},
+		{
+			"IPC-042/ReleaseDate inválida dá year null (DOM-013)",
+			store.Game{ID: 7, Title: "W", PlatformID: 1, Platform: "PC", Status: domain.StatusBacklog, ReleaseDate: "bogus", LaunchTarget: `C:\w.exe`},
+			`{"id":7,"title":"W","platformId":1,"platform":"PC","path":"C:\\w.exe","status":"backlog","favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":null,"lastPlayedAt":null}`,
 		},
 	}
 	for _, tc := range cases {
@@ -1151,6 +1420,9 @@ func TestNewMethodParams(t *testing.T) {
 				{ipc.MethodGameLaunch, `{"gameID":1}`},
 			}
 		}},
+		{"IPC-008/game.list com array vazio [] é -32602 (params posicionais)", func(*testing.T, string) []call {
+			return []call{{ipc.MethodGameList, `[]`}}
+		}},
 		{"IPC-028/game.list e session.current com params não vazios devolvem -32602", func(*testing.T, string) []call {
 			return []call{
 				{ipc.MethodGameList, `{"a":1}`}, {ipc.MethodGameList, `[1]`},
@@ -1184,12 +1456,19 @@ func TestNewMethodParams(t *testing.T) {
 	t.Run("IPC-028/vazios são aceitos", func(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
-		for _, m := range []string{ipc.MethodGameList, ipc.MethodSessionCurrent} {
+		for _, m := range []string{ipc.MethodSessionCurrent} {
 			for _, p := range []string{"", "null", "{}", "[]"} {
 				resp := h.call(t, m, p)
 				if resp.Error != nil {
 					t.Errorf("%s params %q: error %d %q, want a result", m, p, resp.Error.Code, resp.Error.Message)
 				}
+			}
+		}
+		// game.list leaves the no-params methods (IPC-008, IPC-042): "" and {} are the
+		// first page; [] and null are covered by the rejected table and by IPC-008.
+		for _, p := range []string{"", "{}"} {
+			if resp := h.call(t, ipc.MethodGameList, p); resp.Error != nil {
+				t.Errorf("%s params %q: error %d %q, want a result", ipc.MethodGameList, p, resp.Error.Code, resp.Error.Message)
 			}
 		}
 		// Valid named params of the methods with params are accepted too.

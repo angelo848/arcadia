@@ -15,6 +15,22 @@ type Handler func(ctx context.Context, params json.RawMessage) (any, error)
 // nullID is the id used when the request id is absent or unreadable.
 var nullID = json.RawMessage("null")
 
+// keepEmptyArray lists the methods whose [] is a positional params value that
+// reaches the handler (and is rejected there with -32602) instead of meaning
+// "no params" [IPC-008, IPC-042].
+var keepEmptyArray = map[string]bool{MethodGameList: true}
+
+// requestIDKey is the context key of the raw request id (see RequestID).
+type requestIDKey struct{}
+
+// RequestID returns the raw id of the request being handled, as it is written
+// in the response, so a handler can size its result with the envelope included
+// [IPC-051]. It is nil outside Dispatch.
+func RequestID(ctx context.Context) json.RawMessage {
+	id, _ := ctx.Value(requestIDKey{}).(json.RawMessage)
+	return id
+}
+
 // Dispatch validates msg in design order (parse -> batch -> request ->
 // notification -> method -> params), calls the matching handler and returns the
 // encoded response without a trailing '\n'. ok=false means no response is due
@@ -48,7 +64,7 @@ func Dispatch(ctx context.Context, handlers map[string]Handler, msg []byte) (res
 	if !valid || (hasID && !validID(rawID)) {
 		return errorResponse(respID, CodeInvalidRequest, msgInvalidRequest), true
 	}
-	params := normalizeParams(members["params"])
+	params := normalizeParams(members["params"], method)
 
 	// 4. Notification: process (or ignore unknown method), never respond.
 	if !hasID {
@@ -65,7 +81,7 @@ func Dispatch(ctx context.Context, handlers map[string]Handler, msg []byte) (res
 	}
 
 	// 6. Params are validated by the handler; empty ones were normalized to nil.
-	result, err := h(ctx, params)
+	result, err := h(context.WithValue(ctx, requestIDKey{}, respID), params)
 	if err != nil {
 		var rpcErr *Error
 		if errors.As(err, &rpcErr) && rpcErr != nil {
@@ -123,7 +139,8 @@ func firstByte(raw json.RawMessage) byte {
 }
 
 // normalizeParams maps absent, null, [] and {} to nil; other values pass through.
-func normalizeParams(raw json.RawMessage) json.RawMessage {
+// The methods in keepEmptyArray keep [] as it is.
+func normalizeParams(raw json.RawMessage, method string) json.RawMessage {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -132,7 +149,7 @@ func normalizeParams(raw json.RawMessage) json.RawMessage {
 		return nil
 	case '[':
 		var arr []json.RawMessage
-		if json.Unmarshal(raw, &arr) == nil && len(arr) == 0 {
+		if !keepEmptyArray[method] && json.Unmarshal(raw, &arr) == nil && len(arr) == 0 {
 			return nil
 		}
 	case '{':
