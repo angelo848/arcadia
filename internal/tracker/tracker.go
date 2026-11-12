@@ -167,6 +167,7 @@ type Tracker struct {
 	heartbeat timer
 	grace     timer
 	poll      timer
+	adopt     timer     // URI adoption timeout (RUL-003)
 	lastAt    time.Time // latest event instant applied to m
 }
 
@@ -503,6 +504,12 @@ func (t *Tracker) run() {
 			gen := t.poll.gen
 			t.poll = timer{}
 			t.handlePoll(t.monotonic(fired), gen)
+		case fired := <-t.adopt.ch:
+			gen := t.adopt.gen
+			t.adopt = timer{}
+			now := t.monotonic(fired)
+			t.applied(now)
+			t.step(t.work, func() []Effect { return t.m.AdoptTimeout(now, gen) })
 		}
 	}
 }
@@ -566,6 +573,9 @@ func (t *Tracker) publish() {
 // handleLaunch runs the whole launch (Prepare -> StartSession -> Resume) in
 // the owner goroutine, so a concurrent Launch only sees its result [SES-002].
 func (t *Tracker) handleLaunch(spec LaunchSpec) launchResult {
+	if spec.Kind == KindURI {
+		return t.handleLaunchURI(spec)
+	}
 	if t.isShuttingDown() {
 		return launchResult{err: ErrShuttingDown}
 	}
@@ -806,6 +816,8 @@ func (t *Tracker) exec(ctx context.Context, effs []Effect, sid int64) {
 			t.grace = timer{ch: t.clock.After(e.Delay), gen: e.Gen}
 		case EffArmPoll:
 			t.poll = timer{ch: t.clock.After(e.Delay), gen: e.Gen}
+		case EffArmAdopt:
+			t.adopt = timer{ch: t.clock.After(e.Delay), gen: e.Gen}
 		case EffPauseSession:
 			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
 			err := t.store.PauseSession(wctx, store.PauseStart{
@@ -846,4 +858,41 @@ func (t *Tracker) writeFailed(sid int64, err error) {
 	if err != nil {
 		t.log.Error("falha ao gravar a sessão", slog.Int64("session_id", sid), slog.Any("error", err))
 	}
+}
+
+// handleLaunchURI starts a session for a game the shell opens (RUL-003). No job is
+// created: the session stays in Launching until the watcher adopts the game
+// process, or the adoption timeout ends it. Launch returns once the URI is open
+// and the session is recorded.
+func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
+	if t.isShuttingDown() {
+		return launchResult{err: ErrShuttingDown}
+	}
+	if !t.m.Begin(spec.GameID, spec.Title) {
+		return launchResult{err: &SessionActiveError{Session: activeSession(t.m, t.clock.Now())}}
+	}
+	t.publish()
+
+	if err := t.launcher.OpenURI(spec.Exe); err != nil {
+		t.step(t.work, t.m.PrepareFailed)
+		return t.launchFailed(spec, err)
+	}
+	now := t.clock.Now()
+	t.applied(now)
+	var startAt time.Time
+	for _, e := range t.m.Prepared(now) {
+		if e.Kind == EffStartSession {
+			startAt = e.At
+		}
+	}
+	wctx, cancel := context.WithTimeout(t.work, writeTimeout)
+	id, err := t.store.StartSession(wctx, spec.GameID, startAt)
+	cancel()
+	if err != nil {
+		t.step(t.work, t.m.PrepareFailed)
+		return t.launchFailed(spec, err)
+	}
+	t.exec(t.work, t.m.InsertedURI(id), id)
+	t.publish()
+	return launchResult{snap: activeSession(t.m, now)}
 }

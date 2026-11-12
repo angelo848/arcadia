@@ -12,11 +12,21 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/store"
 )
 
-// LaunchSpec describes the game executable to start.
+// LaunchKind says how a session starts.
+type LaunchKind int
+
+// Launch kinds. KindExe is the zero value: an executable launched in a Job Object.
+const (
+	KindExe LaunchKind = iota // exe: created suspended in a Job Object (SES-001)
+	KindURI                   // uri: opened by the shell; the game is adopted later (RUL-003)
+)
+
+// LaunchSpec describes the game to start. For KindURI, Exe holds the URI.
 type LaunchSpec struct {
 	GameID           int64
 	Title, Exe, Args string
 	WorkDir          string // "" => dir(Exe)
+	Kind             LaunchKind
 }
 
 // Launcher creates the game's process tree, suspended and already assigned
@@ -27,6 +37,9 @@ type Launcher interface {
 	// CREATE_SUSPENDED; it closes hProcess and hThread before returning. The
 	// error is a *LaunchError.
 	LaunchDetached(spec LaunchSpec) (pid uint32, err error)
+	// OpenURI asks the shell to open uri; it returns no process handle. The
+	// error is a *LaunchError (RUL-003).
+	OpenURI(uri string) error
 }
 
 // JobEventKind classifies a job notification.

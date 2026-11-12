@@ -38,6 +38,7 @@ const (
 	EffPauseSession
 	EffResumePause
 	EffFeedback
+	EffArmAdopt // arm the URI adoption timeout (RUL-003)
 )
 
 // FeedbackKind identifies the cue for a pause toggle (FBK-001).
@@ -88,6 +89,7 @@ type Machine struct {
 	lastGen  uint64
 	hbGen    uint64
 	graceGen uint64
+	adoptGen uint64 // generation of the URI adoption timeout (RUL-003)
 	pollGen  uint64
 }
 
@@ -478,5 +480,35 @@ func (m *Machine) reset() {
 		heartbeat: m.heartbeat,
 		poll:      m.poll,
 		lastGen:   m.lastGen,
+		adoptGen:  0,
 	}
+}
+
+// InsertedURI records the session of a URI launch (RUL-003). There is no job to
+// resume: the session waits in Launching for its game process, and the adoption
+// timeout is armed.
+func (m *Machine) InsertedURI(id int64) []Effect {
+	if m.state != StateLaunching {
+		return nil
+	}
+	m.sessionID = id
+	m.adoptGen = m.nextGen()
+	return []Effect{{Kind: EffArmAdopt, Gen: m.adoptGen, Delay: domain.SessionAdoptTimeout}}
+}
+
+// AdoptTimeout ends a URI launch whose game process never appeared (RUL-003). The
+// session ends with no active time, so its outcome is discarded. Stale generations
+// and other states are ignored.
+func (m *Machine) AdoptTimeout(now time.Time, gen uint64) []Effect {
+	if m.state != StateLaunching || gen == 0 || gen != m.adoptGen {
+		return nil
+	}
+	effs := []Effect{
+		{Kind: EffEndSession, State: domain.SessionDiscarded, At: now, Active: 0, Reason: domain.EndClientNoLaunch},
+	}
+	n := m.notify(domain.SessionDiscarded, now)
+	n.Session.EndedAt = now
+	effs = append(effs, n)
+	m.reset()
+	return effs
 }

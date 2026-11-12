@@ -1384,3 +1384,6 @@ func TestSessionChangedPause(t *testing.T) {
 		}
 	})
 }
+
+// OpenURI is not used by the wiring tests; it succeeds and records nothing (RUL-003).
+func (l *fakeLauncher) OpenURI(string) error { return nil }

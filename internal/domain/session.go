@@ -41,6 +41,9 @@ const (
 	EndExited        SessionEndReason = "exited"
 	EndAgentShutdown SessionEndReason = "agent-shutdown"
 	EndRecovered     SessionEndReason = "recovered"
+	// EndClientNoLaunch: a URI launch whose game process never appeared (RUL-003). The
+	// session has no active time, so its outcome is discarded.
+	EndClientNoLaunch SessionEndReason = "client-no-launch"
 )
 
 // errInvalidSessionEndReason is returned when a text value is not a known SessionEndReason.
@@ -50,7 +53,7 @@ var errInvalidSessionEndReason = errors.New("invalid session end reason")
 // The match is exact (case-sensitive, no trimming).
 func ParseSessionEndReason(s string) (SessionEndReason, error) {
 	switch r := SessionEndReason(s); r {
-	case EndExited, EndAgentShutdown, EndRecovered:
+	case EndExited, EndAgentShutdown, EndRecovered, EndClientNoLaunch:
 		return r, nil
 	default:
 		return "", fmt.Errorf("parse session end reason %q: %w", s, errInvalidSessionEndReason)
@@ -61,6 +64,9 @@ func ParseSessionEndReason(s string) (SessionEndReason, error) {
 const (
 	// SessionGracePeriod is how long an empty job may stay empty before the session ends.
 	SessionGracePeriod = 15 * time.Second
+
+	// SessionAdoptTimeout is how long a URI launch waits for its game process (RUL-003).
+	SessionAdoptTimeout = 60 * time.Second
 	// MinCountedSession is the minimum active time for a session to count.
 	MinCountedSession = 30 * time.Second
 	// SessionHeartbeatInterval is how often a running session is persisted.

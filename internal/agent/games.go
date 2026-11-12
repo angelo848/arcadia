@@ -28,8 +28,12 @@ const launchHandlerTimeout = 10 * time.Second
 // the tracker's answer.
 const pauseHandlerTimeout = 5 * time.Second
 
-// launchTypeExe is the only launch_type supported in this phase.
-const launchTypeExe = "exe"
+// launchTypeExe starts a game from an executable in a Job Object; launchTypeURI opens
+// a URI through the shell and adopts the game process later (RUL-003).
+const (
+	launchTypeExe = "exe"
+	launchTypeURI = "uri"
+)
 
 // Texts of LaunchFailedData.error produced by the agent itself.
 const (
@@ -198,6 +202,11 @@ func handleGameLaunchUntracked(ctx context.Context, st gameStore, tr sessionTrac
 	if err != nil {
 		return nil, err
 	}
+	// A URI cannot run without a session: it is not an untracked launch (RUL-003).
+	if spec.Kind == tracker.KindURI {
+		return nil, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
+			ipc.LaunchFailedData{Error: launchErrUnsupported})
+	}
 	lctx, cancel := context.WithTimeout(ctx, launchHandlerTimeout)
 	defer cancel()
 	pid, err := tr.LaunchUntracked(lctx, spec)
@@ -233,17 +242,22 @@ func prepareLaunch(ctx context.Context, st gameStore, params json.RawMessage,
 		log.Error("falha ao ler o jogo", "game_id", id, "error", err.Error())
 		return store.Game{}, none, fmt.Errorf("game.launch: %w", err)
 	}
-	if g.LaunchType != launchTypeExe {
-		return store.Game{}, none, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
-			ipc.LaunchFailedData{Error: launchErrUnsupported})
-	}
-	return g, tracker.LaunchSpec{
+	spec := tracker.LaunchSpec{
 		GameID:  g.ID,
 		Title:   g.Title,
 		Exe:     g.LaunchTarget,
 		Args:    g.LaunchArgs,
 		WorkDir: g.WorkingDir,
-	}, nil
+	}
+	switch g.LaunchType {
+	case launchTypeExe:
+	case launchTypeURI:
+		spec.Kind = tracker.KindURI
+	default:
+		return store.Game{}, none, ipc.NewErrorData(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed,
+			ipc.LaunchFailedData{Error: launchErrUnsupported})
+	}
+	return g, spec, nil
 }
 
 // handleSessionPause serves session.pause and session.resume; op is the

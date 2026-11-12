@@ -11,6 +11,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/arcadia-launcher/arcadia/internal/winapi"
 )
 
 // Job object notification codes (winnt.h), delivered as the byte count of a
@@ -392,4 +394,12 @@ func (j *winJob) read() {
 			return
 		}
 	}
+}
+
+// OpenURI opens uri through the shell (RUL-003). Failures are *LaunchError.
+func (winLauncher) OpenURI(uri string) error {
+	if err := winapi.ShellOpen(uri); err != nil {
+		return &LaunchError{Err: err}
+	}
+	return nil
 }

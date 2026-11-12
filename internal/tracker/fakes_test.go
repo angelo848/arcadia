@@ -669,7 +669,9 @@ type fakeLauncher struct {
 	jobs       []*fakeJob
 	prepareErr errPlan
 	detachErr  errPlan
-	resumeErr  error // given to the next job
+	openURIErr error    // returned by OpenURI (RUL-003)
+	uris       []string // URIs given to OpenURI, in order
+	resumeErr  error    // given to the next job
 	gate       chan struct{}
 	entered    chan struct{}
 }
@@ -946,3 +948,21 @@ const (
 	msgRootExited   = "processo inicial do jogo encerrou"
 	msgRecovered    = "sessões abertas recuperadas"
 )
+
+// OpenURI records the URI and returns openURIErr (RUL-003). It never creates a job.
+func (l *fakeLauncher) OpenURI(uri string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.uris = append(l.uris, uri)
+	return l.openURIErr
+}
+
+// urisOpened returns the URIs given to OpenURI, in order (RUL-003).
+func (l *fakeLauncher) urisOpened() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.uris)
+}
+
+// jobCount returns how many jobs the launcher created.
+func (l *fakeLauncher) jobCount() int { return len(l.jobsSnapshot()) }

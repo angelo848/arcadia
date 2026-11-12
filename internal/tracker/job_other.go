@@ -20,3 +20,7 @@ func (unsupportedLauncher) LaunchDetached(LaunchSpec) (uint32, error) {
 func (unsupportedLauncher) Prepare(LaunchSpec) (Job, error) {
 	return nil, &LaunchError{Err: fmt.Errorf("tracker: job objects: %w", errors.ErrUnsupported)}
 }
+
+func (unsupportedLauncher) OpenURI(string) error {
+	return &LaunchError{Err: fmt.Errorf("tracker: shell open: %w", errors.ErrUnsupported)}
+}
