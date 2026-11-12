@@ -26,18 +26,21 @@ type GameDeleteParams struct {
 // required; every other member is a patch: absent leaves the field unchanged,
 // null clears only CompletedAt and Year.
 type GameUpdateParams struct {
-	GameID      int64              `json:"gameId"`
-	Title       Optional[string]   `json:"title"`
-	PlatformID  Optional[int64]    `json:"platformId"`
-	Status      Optional[string]   `json:"status"`
-	Favorite    Optional[bool]     `json:"favorite"`
-	CompletedAt Optional[string]   `json:"completedAt"`
-	Description Optional[string]   `json:"description"`
-	Year        Optional[int]      `json:"year"`
-	Developers  Optional[[]string] `json:"developers"`
-	Publishers  Optional[[]string] `json:"publishers"`
-	Genres      Optional[[]string] `json:"genres"`
-	PlayModes   Optional[[]string] `json:"playModes"`
+	GameID       int64              `json:"gameId"`
+	Title        Optional[string]   `json:"title"`
+	PlatformID   Optional[int64]    `json:"platformId"`
+	Status       Optional[string]   `json:"status"`
+	Favorite     Optional[bool]     `json:"favorite"`
+	CompletedAt  Optional[string]   `json:"completedAt"`
+	Description  Optional[string]   `json:"description"`
+	Year         Optional[int]      `json:"year"`
+	Developers   Optional[[]string] `json:"developers"`
+	Publishers   Optional[[]string] `json:"publishers"`
+	Genres       Optional[[]string] `json:"genres"`
+	PlayModes    Optional[[]string] `json:"playModes"`
+	LaunchType   Optional[string]   `json:"launchType"`
+	LaunchTarget Optional[string]   `json:"launchTarget"`
+	LaunchArgs   Optional[string]   `json:"launchArgs"`
 }
 
 // SessionListParams are the params of session.list. GameID is required.

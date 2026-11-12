@@ -16,6 +16,9 @@ function draft(over: Partial<EditDraft> = {}): EditDraft {
     publishers: ['Team17'],
     genres: ['Metroidvania'],
     playModes: ['single'],
+    launchType: 'exe',
+    launchTarget: 'C:\\Games\\x.exe',
+    launchArgs: '',
     ...over,
   } as EditDraft
 }

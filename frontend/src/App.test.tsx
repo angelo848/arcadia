@@ -169,6 +169,8 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     publishers: [],
     genres: [],
     playModes: [],
+    launchType: 'exe',
+    launchArgs: '',
     ...over,
   }
 }

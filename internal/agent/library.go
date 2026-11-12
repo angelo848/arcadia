@@ -198,6 +198,17 @@ func patchFromParams(p ipc.GameUpdateParams, clock domain.Clock) (store.GamePatc
 	if out.Description, err = field(p.Description, domain.ValidateDescription); err != nil {
 		return store.GamePatch{}, fmt.Errorf("description: %w", err)
 	}
+	// Launch fields (EDT-010). Their combination is checked by the store, which knows the
+	// values the patch keeps.
+	if out.LaunchType, err = field(p.LaunchType, keep[string]); err != nil {
+		return store.GamePatch{}, fmt.Errorf("launchType: %w", err)
+	}
+	if out.LaunchTarget, err = field(p.LaunchTarget, keep[string]); err != nil {
+		return store.GamePatch{}, fmt.Errorf("launchTarget: %w", err)
+	}
+	if out.LaunchArgs, err = field(p.LaunchArgs, keep[string]); err != nil {
+		return store.GamePatch{}, fmt.Errorf("launchArgs: %w", err)
+	}
 	if p.CompletedAt.Present {
 		var c *time.Time
 		if !p.CompletedAt.Null {
@@ -346,6 +357,8 @@ func gameDetailToIPC(d store.GameDetail) ipc.GameDetail {
 		Publishers:  nonNilStrings(d.Publishers),
 		Genres:      nonNilStrings(d.Genres),
 		PlayModes:   nonNilStrings(d.PlayModes),
+		LaunchType:  d.LaunchType,
+		LaunchArgs:  d.LaunchArgs,
 	}
 	if !d.CompletedAt.IsZero() {
 		s := domain.FormatCompletedDate(d.CompletedAt)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -31,6 +32,8 @@ type GamePatch struct {
 	Publishers         *[]string
 	Genres             *[]string
 	PlayModes          *[]domain.PlayMode
+	// Launch fields (EDT-010): the type, the target and the arguments.
+	LaunchType, LaunchTarget, LaunchArgs *string
 }
 
 // UpdateGame applies p to the game of id in one transaction (withTx) and returns
@@ -54,13 +57,16 @@ func (s *Store) UpdateGame(ctx context.Context, id int64, p GamePatch, at time.T
 		}
 		// base holds the columns as they are now; next is base with the patch applied.
 		base := dbgen.UpdateGameFieldsParams{
-			Title:       cur.Title,
-			Description: cur.Description,
-			PlatformID:  cur.PlatformID,
-			Status:      cur.Status,
-			Favorite:    cur.Favorite,
-			CompletedAt: cur.CompletedAt,
-			ReleaseDate: cur.ReleaseDate,
+			Title:        cur.Title,
+			Description:  cur.Description,
+			PlatformID:   cur.PlatformID,
+			Status:       cur.Status,
+			Favorite:     cur.Favorite,
+			CompletedAt:  cur.CompletedAt,
+			ReleaseDate:  cur.ReleaseDate,
+			LaunchType:   cur.LaunchType,
+			LaunchTarget: cur.LaunchTarget,
+			LaunchArgs:   cur.LaunchArgs,
 		}
 		next, err := applyGamePatch(ctx, q, p, base)
 		if err != nil {
@@ -159,6 +165,22 @@ func applyGamePatch(ctx context.Context, q *dbgen.Queries, p GamePatch,
 			}
 			next.ReleaseDate = sql.NullString{String: rd, Valid: true}
 		}
+	}
+	if p.LaunchType != nil || p.LaunchTarget != nil || p.LaunchArgs != nil {
+		lt, target, args := cur.LaunchType, cur.LaunchTarget, cur.LaunchArgs
+		if p.LaunchType != nil {
+			lt = *p.LaunchType
+		}
+		if p.LaunchTarget != nil {
+			target = *p.LaunchTarget
+		}
+		if p.LaunchArgs != nil {
+			args = *p.LaunchArgs
+		}
+		if err := domain.ValidateLaunch(lt, target, args); err != nil {
+			return cur, fmt.Errorf("launch: %w", err)
+		}
+		next.LaunchType, next.LaunchTarget, next.LaunchArgs = lt, strings.TrimSpace(target), args
 	}
 	return next, nil
 }

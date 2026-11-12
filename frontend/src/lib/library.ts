@@ -22,6 +22,8 @@ export type GameView = {
 
 export type GameDetailView = GameView & {
   description: string
+  launchType: string
+  launchArgs: string
   completedAt: string | null
   developers: string[]
   publishers: string[]

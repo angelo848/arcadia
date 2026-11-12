@@ -133,7 +133,7 @@ func TestGameAddShape(t *testing.T) {
 }
 
 // gameDetailKeys are the members GameDetail adds to Game [STO-026, IPC-044].
-var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes"}
+var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes", "launchType", "launchArgs"}
 
 // sessionItemKeys are the members of SessionItem [STO-027, IPC-047].
 var sessionItemKeys = []string{"sessionId", "gameId", "state", "startedAt", "endedAt", "activeSeconds", "endReason"}

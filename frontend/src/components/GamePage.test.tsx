@@ -47,6 +47,8 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     publishers: ['Team17'],
     genres: ['Metroidvania', 'Plataforma'],
     playModes: ['single'],
+    launchType: 'exe',
+    launchArgs: '',
     ...over,
   }
 }

@@ -62,6 +62,9 @@ type GameDetailView struct {
 	Publishers  []string `json:"publishers"`
 	Genres      []string `json:"genres"`
 	PlayModes   []string `json:"playModes"`
+	// LaunchType and LaunchArgs are the launch fields of the game (EDT-010); the target is Path.
+	LaunchType string `json:"launchType"`
+	LaunchArgs string `json:"launchArgs"`
 }
 
 // SessionItemView is a session of a game as listed on the game page. EndedAt and
@@ -148,6 +151,8 @@ func gameDetailView(d ipc.GameDetail) GameDetailView {
 	return GameDetailView{
 		GameView:    gameView(d.Game),
 		Description: d.Description,
+		LaunchType:  d.LaunchType,
+		LaunchArgs:  d.LaunchArgs,
 		CompletedAt: completed,
 		Developers:  nonNilStrings(d.Developers),
 		Publishers:  nonNilStrings(d.Publishers),

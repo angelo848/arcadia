@@ -6,6 +6,15 @@ export type DraftErrors = Partial<Record<keyof EditDraft, string>>
 
 // Limits of UI-040. Lengths count runes (code points), as the server does (EDT-001).
 const titleMaxRunes = 200
+// Longest launch target and arguments, in runes (EDT-010).
+const launchMaxRunes = 2000
+
+// isAbsolutePath accepts a Windows drive path or a UNC path.
+function isAbsolutePath(p: string): boolean {
+  const drive = /^[A-Za-z]:/.test(p) && (p.charAt(2) === '\\' || p.charAt(2) === '/')
+  const unc = p.startsWith('\\\\')
+  return drive || unc
+}
 const descriptionMaxRunes = 10000
 const nameMaxRunes = 100
 const yearMin = 1900
@@ -77,6 +86,19 @@ export function validateDraft(d: EditDraft): DraftErrors {
   const genres = listError(d.genres, 'Gêneros')
   if (genres !== undefined) {
     errors.genres = genres
+  }
+
+  // Launch fields (EDT-010): the server checks them again; these messages come first.
+  const target = d.launchTarget.trim()
+  if (target === "") {
+    errors.launchTarget = "Informe o executável ou a URI."
+  } else if (runeCount(target) > launchMaxRunes) {
+    errors.launchTarget = `Use no máximo ${launchMaxRunes} caracteres.`
+  } else if (d.launchType === "exe" && !isAbsolutePath(target)) {
+    errors.launchTarget = "Use o caminho completo do executável (com a unidade, como C:\\Jogos\\jogo.exe)."
+  }
+  if (runeCount(d.launchArgs) > launchMaxRunes) {
+    errors.launchArgs = `Use no máximo ${launchMaxRunes} caracteres.`
   }
 
   return errors

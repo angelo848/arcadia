@@ -606,3 +606,11 @@ A sessão principal escreve (a spec só os referencia). Numeração a partir de 
    próprio jogo, serializada na goroutine dona do tracker; sem lixeira; confirmação obrigatória na UI.
 3. **0022 — Listagem paginada no IPC:** `game.list` pagina (padrão 200, máximo 500) porque o limite de 1 MiB por mensagem
    não cabe a biblioteca inteira; `total` vem na mesma resposta. Ver IPC-051.
+
+### EDT-010 — Tipo, alvo e argumentos de lançamento (incluído na fase 6.1, 2026-11-12)
+Dado um jogo, quando edito `launchType`, `launchTarget` e `launchArgs` com `game.update`, então os valores vão para
+`launch_type`, `launch_target` e `launch_args` no mesmo patch (EDT-001). `launchType` aceita só `exe` e `uri`; qualquer
+outro valor é -32602. `launchTarget` não pode ser vazio, tem até 2000 caracteres e, para `exe`, é um caminho absoluto.
+`launchArgs` tem até 2000 caracteres e pode ser vazio. Editar esses campos não toca sessões nem tempo (EDT-005, EDT-006).
+O lançamento seguinte usa os valores novos; uma sessão já aberta continua com o alvo que tinha.
+· verificação: manual (UI)

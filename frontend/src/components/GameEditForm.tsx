@@ -30,6 +30,9 @@ type FormValues = {
   publishers: string
   genres: string[]
   playModes: PlayModeName[]
+  launchType: string
+  launchTarget: string
+  launchArgs: string
 }
 
 export type GameEditFormProps = {
@@ -56,6 +59,9 @@ function initialValues(game: GameDetailView): FormValues {
     publishers: game.publishers.join(', '),
     genres: [...game.genres],
     playModes: game.playModes,
+    launchType: game.launchType,
+    launchTarget: game.path,
+    launchArgs: game.launchArgs,
   }
 }
 
@@ -77,6 +83,9 @@ function toDraft(v: FormValues): EditDraft {
     publishers: splitNames(v.publishers),
     genres: v.genres,
     playModes: v.playModes,
+    launchType: v.launchType,
+    launchTarget: v.launchTarget,
+    launchArgs: v.launchArgs,
   }
 }
 
@@ -241,6 +250,43 @@ export function GameEditForm({
           value={values.genres}
           suggestions={genreSuggestions}
           onChange={(next) => set('genres', next)}
+        />
+      </Row>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_1fr]">
+        <Row id={id('launchType')} label="Tipo de execução" message={undefined}>
+          <select
+            id={id('launchType')}
+            value={values.launchType}
+            onChange={(e) => set('launchType', e.target.value)}
+            className={inputClass}
+          >
+            <option value="exe">Executável</option>
+            <option value="uri">URI (Steam, Epic, ...)</option>
+          </select>
+        </Row>
+        <Row
+          id={id('launchTarget')}
+          label={values.launchType === 'uri' ? 'URI' : 'Executável (caminho completo)'}
+          message={errors.launchTarget}
+        >
+          <input
+            id={id('launchTarget')}
+            type="text"
+            value={values.launchTarget}
+            onChange={(e) => set('launchTarget', e.target.value)}
+            className={inputClass}
+          />
+        </Row>
+      </div>
+
+      <Row id={id('launchArgs')} label="Argumentos" hint="Vazio quando o jogo não precisa de argumentos." message={errors.launchArgs}>
+        <input
+          id={id('launchArgs')}
+          type="text"
+          value={values.launchArgs}
+          onChange={(e) => set('launchArgs', e.target.value)}
+          className={inputClass}
         />
       </Row>
 

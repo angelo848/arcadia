@@ -73,20 +73,23 @@ func (q *Queries) GetGame(ctx context.Context, id int64) (Game, error) {
 }
 
 const getGameForUpdate = `-- name: GetGameForUpdate :one
-SELECT id, platform_id, title, description, release_date, status, favorite, completed_at
+SELECT id, platform_id, title, description, release_date, status, favorite, completed_at, launch_type, launch_target, launch_args
 FROM game
 WHERE id = ?
 `
 
 type GetGameForUpdateRow struct {
-	ID          int64
-	PlatformID  int64
-	Title       string
-	Description string
-	ReleaseDate sql.NullString
-	Status      string
-	Favorite    int64
-	CompletedAt sql.NullInt64
+	ID           int64
+	PlatformID   int64
+	Title        string
+	Description  string
+	ReleaseDate  sql.NullString
+	Status       string
+	Favorite     int64
+	CompletedAt  sql.NullInt64
+	LaunchType   string
+	LaunchTarget string
+	LaunchArgs   string
 }
 
 func (q *Queries) GetGameForUpdate(ctx context.Context, id int64) (GetGameForUpdateRow, error) {
@@ -101,6 +104,9 @@ func (q *Queries) GetGameForUpdate(ctx context.Context, id int64) (GetGameForUpd
 		&i.Status,
 		&i.Favorite,
 		&i.CompletedAt,
+		&i.LaunchType,
+		&i.LaunchTarget,
+		&i.LaunchArgs,
 	)
 	return i, err
 }
@@ -280,20 +286,26 @@ SET title = ?1,
     favorite = ?5,
     completed_at = ?6,
     release_date = ?7,
-    updated_at = ?8
-WHERE id = ?9
+    launch_type = ?8,
+    launch_target = ?9,
+    launch_args = ?10,
+    updated_at = ?11
+WHERE id = ?12
 `
 
 type UpdateGameFieldsParams struct {
-	Title       string
-	Description string
-	PlatformID  int64
-	Status      string
-	Favorite    int64
-	CompletedAt sql.NullInt64
-	ReleaseDate sql.NullString
-	UpdatedAt   int64
-	ID          int64
+	Title        string
+	Description  string
+	PlatformID   int64
+	Status       string
+	Favorite     int64
+	CompletedAt  sql.NullInt64
+	ReleaseDate  sql.NullString
+	LaunchType   string
+	LaunchTarget string
+	LaunchArgs   string
+	UpdatedAt    int64
+	ID           int64
 }
 
 func (q *Queries) UpdateGameFields(ctx context.Context, arg UpdateGameFieldsParams) (int64, error) {
@@ -305,6 +317,9 @@ func (q *Queries) UpdateGameFields(ctx context.Context, arg UpdateGameFieldsPara
 		arg.Favorite,
 		arg.CompletedAt,
 		arg.ReleaseDate,
+		arg.LaunchType,
+		arg.LaunchTarget,
+		arg.LaunchArgs,
 		arg.UpdatedAt,
 		arg.ID,
 	)

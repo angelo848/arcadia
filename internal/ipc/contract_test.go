@@ -609,7 +609,7 @@ func TestContract(t *testing.T) {
 		}{
 			{ipc.MethodGameList, ipc.GameListParams{Filter: &domain.FilterSpec{Version: 1}, Sort: libPtr("title"), Offset: libPtr(0), Limit: libPtr(1)},
 				[]string{"filter", "limit", "offset", "sort"}, nil},
-			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "favorite", "gameId", "genres", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
+			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "favorite", "gameId", "genres", "launchArgs", "launchTarget", "launchType", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
 			{ipc.MethodSessionList, ipc.SessionListParams{GameID: 1, Offset: libPtr(0), Limit: libPtr(1)}, []string{"gameId", "limit", "offset"}, []string{"gameId"}},
 			{ipc.MethodPlatformAdd, ipc.PlatformAddParams{Name: "PC", Category: "pc"}, []string{"category", "name"}, []string{"category", "name"}},
 		} {

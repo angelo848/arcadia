@@ -14,6 +14,10 @@ export type EditDraft = {
   publishers: string[]
   genres: string[]
   playModes: PlayModeName[]
+  // Launch fields (EDT-010): exe or uri, the target and the arguments.
+  launchType: string
+  launchTarget: string
+  launchArgs: string
 }
 
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/
@@ -89,6 +93,19 @@ export function diffPatch(original: GameDetailView, draft: EditDraft): Record<st
 
   if (!sameList(draft.playModes, original.playModes)) {
     patch.playModes = draft.playModes
+  }
+
+  if (draft.launchType !== original.launchType) {
+    patch.launchType = draft.launchType
+  }
+
+  const launchTarget = draft.launchTarget.trim()
+  if (launchTarget !== original.path) {
+    patch.launchTarget = launchTarget
+  }
+
+  if (draft.launchArgs !== original.launchArgs) {
+    patch.launchArgs = draft.launchArgs
   }
 
   return patch

@@ -24,6 +24,8 @@ const original: GameDetailView = {
   publishers: ['Team17'],
   genres: ['Metroidvania', 'Plataforma'],
   playModes: ['single'],
+  launchType: 'exe',
+  launchArgs: '',
 }
 
 // draftOf is the untouched draft of original: every field equals the stored value.
@@ -39,6 +41,9 @@ function draftOf(over: Partial<EditDraft> = {}): EditDraft {
     publishers: ['Team17'],
     genres: ['Metroidvania', 'Plataforma'],
     playModes: ['single'],
+    launchType: 'exe',
+    launchTarget: 'C:\\Games\\HK\\hollow_knight.exe',
+    launchArgs: '',
     ...over,
   } as EditDraft
 }

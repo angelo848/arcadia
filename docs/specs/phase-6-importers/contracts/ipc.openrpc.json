@@ -400,6 +400,36 @@
             "uniqueItems": true,
             "maxItems": 5
           }
+        },
+        {
+          "name": "launchType",
+          "required": false,
+          "description": "exe or uri [EDT-010]",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "exe",
+              "uri"
+            ]
+          }
+        },
+        {
+          "name": "launchTarget",
+          "required": false,
+          "description": "Non-empty, at most 2000 runes; an absolute path for exe [EDT-010]",
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        {
+          "name": "launchArgs",
+          "required": false,
+          "description": "At most 2000 runes, may be empty [EDT-010]",
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
         }
       ],
       "result": {
@@ -1170,7 +1200,9 @@
           "developers",
           "publishers",
           "genres",
-          "playModes"
+          "playModes",
+          "launchType",
+          "launchArgs"
         ],
         "properties": {
           "id": {
@@ -1277,6 +1309,19 @@
             "items": {
               "$ref": "#/components/schemas/PlayModeName"
             }
+          },
+          "launchType": {
+            "type": "string",
+            "enum": [
+              "exe",
+              "uri"
+            ],
+            "description": "EDT-010: exe or uri."
+          },
+          "launchArgs": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "EDT-010: launch arguments, may be empty."
           }
         },
         "additionalProperties": false

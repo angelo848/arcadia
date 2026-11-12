@@ -26,7 +26,7 @@ SELECT * FROM game
 WHERE id = ?;
 
 -- name: GetGameForUpdate :one
-SELECT id, platform_id, title, description, release_date, status, favorite, completed_at
+SELECT id, platform_id, title, description, release_date, status, favorite, completed_at, launch_type, launch_target, launch_args
 FROM game
 WHERE id = ?;
 
@@ -39,6 +39,9 @@ SET title = sqlc.arg(title),
     favorite = sqlc.arg(favorite),
     completed_at = sqlc.arg(completed_at),
     release_date = sqlc.arg(release_date),
+    launch_type = sqlc.arg(launch_type),
+    launch_target = sqlc.arg(launch_target),
+    launch_args = sqlc.arg(launch_args),
     updated_at = sqlc.arg(updated_at)
 WHERE id = sqlc.arg(id);
 

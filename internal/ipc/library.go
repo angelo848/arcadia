@@ -21,6 +21,9 @@ type GameDetail struct {
 	Publishers  []string `json:"publishers"`
 	Genres      []string `json:"genres"`
 	PlayModes   []string `json:"playModes"`
+	// LaunchType is exe or uri and LaunchArgs the arguments of the launch (EDT-010).
+	LaunchType string `json:"launchType"`
+	LaunchArgs string `json:"launchArgs"`
 }
 
 // GameDetailResult is the result of game.get and game.update.

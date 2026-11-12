@@ -25,6 +25,8 @@ function game(over: Partial<GameDetailView> = {}): GameDetailView {
     publishers: ['Team17'],
     genres: ['Metroidvania'],
     playModes: ['single'],
+    launchType: 'exe',
+    launchArgs: '',
     ...over,
   }
 }
@@ -160,5 +162,25 @@ describe('GameEditForm', () => {
     fireEvent.click(saveButton())
 
     expect(props.onSave).toHaveBeenCalledWith({ genres: ['Metroidvania', 'Terror'] })
+  })
+
+  it('EDT-010/editar o executável e os argumentos envia só esses campos', () => {
+    const { props } = renderForm()
+
+    fireEvent.change(screen.getByLabelText('Executável (caminho completo)'), {
+      target: { value: 'C:\\Jogos\\novo.exe' },
+    })
+    fireEvent.change(screen.getByLabelText('Argumentos'), { target: { value: '-windowed' } })
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ launchTarget: 'C:\\Jogos\\novo.exe', launchArgs: '-windowed' })
+  })
+
+  it('EDT-010/executável com caminho relativo desabilita Salvar', () => {
+    renderForm()
+
+    fireEvent.change(screen.getByLabelText('Executável (caminho completo)'), { target: { value: 'novo.exe' } })
+
+    expect(saveButton()).toBeDisabled()
   })
 })

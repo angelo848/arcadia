@@ -85,6 +85,8 @@ export namespace main {
 	    publishers: string[];
 	    genres: string[];
 	    playModes: string[];
+	    launchType: string;
+	    launchArgs: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new GameDetailView(source);
@@ -110,6 +112,8 @@ export namespace main {
 	        this.publishers = source["publishers"];
 	        this.genres = source["genres"];
 	        this.playModes = source["playModes"];
+	        this.launchType = source["launchType"];
+	        this.launchArgs = source["launchArgs"];
 	    }
 	}
 	export class GameView {
