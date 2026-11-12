@@ -1,5 +1,19 @@
 export namespace main {
 	
+	export class CatalogItemView {
+	    id: number;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CatalogItemView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
 	export class PlatformView {
 	    id: number;
 	    name: string;
@@ -18,8 +32,8 @@ export namespace main {
 	}
 	export class CatalogView {
 	    platforms: PlatformView[];
-	    genres: string[];
-	    companies: string[];
+	    genres: CatalogItemView[];
+	    companies: CatalogItemView[];
 	    playModes: string[];
 	
 	    static createFrom(source: any = {}) {
@@ -29,8 +43,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.platforms = this.convertValues(source["platforms"], PlatformView);
-	        this.genres = source["genres"];
-	        this.companies = source["companies"];
+	        this.genres = this.convertValues(source["genres"], CatalogItemView);
+	        this.companies = this.convertValues(source["companies"], CatalogItemView);
 	        this.playModes = source["playModes"];
 	    }
 	

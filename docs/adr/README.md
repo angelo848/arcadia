@@ -33,3 +33,6 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0017](0017-modelo-de-pausa.md) | Modelo de pausa da sessão | aceito |
 | [0018](0018-entrada-global-e-feedback-nativo.md) | Entrada global e feedback nativos no agente | aceito |
 | [0019](0019-lancamento-sem-rastrear.md) | Lançamento sem rastrear | aceito |
+| [0020](0020-indice-de-busca-e-filterspec.md) | Índice de busca e `FilterSpec` | aceito |
+| [0021](0021-remocao-de-jogo.md) | Remoção de jogo | aceito |
+| [0022](0022-listagem-paginada-no-ipc.md) | Listagem paginada no IPC | aceito |
