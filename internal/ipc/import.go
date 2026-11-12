@@ -23,7 +23,7 @@ type ImportScanParams struct {
 type ImportCandidate struct {
 	Source        string   `json:"source"`
 	Title         string   `json:"title"`
-	Platform      string   `json:"platform,omitempty"`
+	Platform      string   `json:"platform"`
 	LaunchType    string   `json:"launchType"`
 	LaunchTarget  string   `json:"launchTarget"`
 	InstallDir    string   `json:"installDir"`
