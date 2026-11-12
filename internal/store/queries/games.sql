@@ -13,8 +13,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListGames :many
-SELECT * FROM game
-ORDER BY title COLLATE NOCASE, id;
+SELECT g.id, g.platform_id, p.name AS platform_name, g.title, g.release_date,
+       g.description, g.launch_type, g.launch_target, g.launch_args, g.working_dir,
+       g.favorite, g.status, g.first_played_at, g.last_played_at, g.completed_at,
+       g.total_play_seconds, g.play_count
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+ORDER BY g.title COLLATE NOCASE, g.id;
 
 -- name: GetGame :one
 SELECT * FROM game

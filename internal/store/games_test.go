@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 )
 
@@ -174,10 +175,7 @@ func TestAddGame(t *testing.T) {
 		if g1.ID == g2.ID {
 			t.Errorf("both additions returned ID %d, want distinct ids", g1.ID)
 		}
-		games, err := s.Games(t.Context())
-		if err != nil {
-			t.Fatalf("Games: %v", err)
-		}
+		games := libSearch(t, s, libFilter())
 		if len(games) != 2 {
 			t.Errorf("Games = %+v, want 2 games", games)
 		}
@@ -213,10 +211,7 @@ func TestGames(t *testing.T) {
 				t.Fatalf("precondition: %q got id %d, want %d", title, g.ID, i+1)
 			}
 		}
-		games, err := s.Games(t.Context())
-		if err != nil {
-			t.Fatalf("Games: %v", err)
-		}
+		games := libSearch(t, s, libFilter())
 		type item struct {
 			Title string
 			ID    int64
@@ -234,10 +229,7 @@ func TestGames(t *testing.T) {
 	t.Run("GAM-005/biblioteca vazia devolve slice vazio, não nil", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		games, err := s.Games(t.Context())
-		if err != nil {
-			t.Fatalf("Games: %v", err)
-		}
+		games := libRun(t, s, libQuery(libFilter(), domain.SortTitle)).Games
 		if games == nil || len(games) != 0 {
 			t.Errorf("Games = %#v, want a non-nil empty slice", games)
 		}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/store/dbgen"
 )
 
@@ -26,6 +27,11 @@ type Game struct {
 	Title, LaunchType, LaunchTarget, LaunchArgs, WorkingDir string
 	TotalPlaySeconds, PlayCount                             int64
 	FirstPlayedAt, LastPlayedAt                             time.Time // zero = NULL
+	PlatformID                                              int64
+	Platform                                                string
+	Status                                                  domain.GameStatus // tolerant reader (ADR 0012)
+	Favorite                                                bool
+	ReleaseDate                                             string // "" when NULL
 }
 
 // NewGame describes a game to be added from an executable.
@@ -38,7 +44,7 @@ type NewGame struct {
 // first use, in a single transaction. The same executable may be added more
 // than once; each addition is a distinct game (GAM-001).
 func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
-	var row dbgen.Game
+	var out Game
 	err := s.withTx(ctx, func(tx *sql.Tx, q *dbgen.Queries) error {
 		if err := q.EnsurePCPlatform(ctx); err != nil {
 			return fmt.Errorf("store: ensure PC platform: %w", err)
@@ -48,7 +54,7 @@ func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
 			return fmt.Errorf("store: PC platform id: %w", err)
 		}
 		at := TimeToMillis(g.At)
-		row, err = q.InsertGame(ctx, dbgen.InsertGameParams{
+		row, err := q.InsertGame(ctx, dbgen.InsertGameParams{
 			PlatformID:   platformID,
 			Title:        g.Title,
 			LaunchType:   launchTypeExe,
@@ -64,16 +70,23 @@ func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
 		if err := reindexGame(ctx, tx, row.ID); err != nil {
 			return err
 		}
+		// Read the game back with its platform name, inside the transaction.
+		full, err := q.GetGameRow(ctx, row.ID)
+		if err != nil {
+			return fmt.Errorf("store: read added game %d: %w", row.ID, err)
+		}
+		out = gameFromRow(full)
 		return nil
 	})
 	if err != nil {
 		return Game{}, err
 	}
-	return gameFromRow(row), nil
+	return out, nil
 }
 
 // Games lists every game ordered by title (case-insensitive), then id. The
-// result is never nil.
+// result is never nil. It is kept only for the agent's game.list until the
+// paginated listing replaces it (phase 5, T18); new code uses ListGames.
 func (s *Store) Games(ctx context.Context) ([]Game, error) {
 	rows, err := s.q.ListGames(ctx)
 	if err != nil {
@@ -81,7 +94,7 @@ func (s *Store) Games(ctx context.Context) ([]Game, error) {
 	}
 	out := make([]Game, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, gameFromRow(r))
+		out = append(out, gameFromListRow(r))
 	}
 	return out, nil
 }
@@ -89,17 +102,28 @@ func (s *Store) Games(ctx context.Context) ([]Game, error) {
 // Game returns the game with the given id, or an error wrapping
 // ErrGameNotFound.
 func (s *Store) Game(ctx context.Context, id int64) (Game, error) {
-	row, err := s.q.GetGame(ctx, id)
+	row, err := gameRow(ctx, s.q, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Game{}, fmt.Errorf("store: game %d: %w", id, ErrGameNotFound)
-		}
-		return Game{}, fmt.Errorf("store: get game %d: %w", id, err)
+		return Game{}, err
 	}
 	return gameFromRow(row), nil
 }
 
-func gameFromRow(r dbgen.Game) Game {
+// gameRow reads the joined game row of id with q. A missing id gives an error
+// wrapping ErrGameNotFound.
+func gameRow(ctx context.Context, q *dbgen.Queries, id int64) (dbgen.GetGameRowRow, error) {
+	row, err := q.GetGameRow(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return dbgen.GetGameRowRow{}, fmt.Errorf("store: game %d: %w", id, ErrGameNotFound)
+		}
+		return dbgen.GetGameRowRow{}, fmt.Errorf("store: get game %d: %w", id, err)
+	}
+	return row, nil
+}
+
+// gameFromRow maps the joined game row (GetGameRow) to Game.
+func gameFromRow(r dbgen.GetGameRowRow) Game {
 	return Game{
 		ID:               r.ID,
 		Title:            r.Title,
@@ -111,6 +135,32 @@ func gameFromRow(r dbgen.Game) Game {
 		PlayCount:        r.PlayCount,
 		FirstPlayedAt:    nullMillisToTime(r.FirstPlayedAt),
 		LastPlayedAt:     nullMillisToTime(r.LastPlayedAt),
+		PlatformID:       r.PlatformID,
+		Platform:         r.PlatformName,
+		Status:           domain.GameStatus(r.Status),
+		Favorite:         r.Favorite != 0,
+		ReleaseDate:      r.ReleaseDate.String,
+	}
+}
+
+// gameFromListRow maps a row of ListGames (same columns as GetGameRow) to Game.
+func gameFromListRow(r dbgen.ListGamesRow) Game {
+	return Game{
+		ID:               r.ID,
+		Title:            r.Title,
+		LaunchType:       r.LaunchType,
+		LaunchTarget:     r.LaunchTarget,
+		LaunchArgs:       r.LaunchArgs,
+		WorkingDir:       r.WorkingDir,
+		TotalPlaySeconds: r.TotalPlaySeconds,
+		PlayCount:        r.PlayCount,
+		FirstPlayedAt:    nullMillisToTime(r.FirstPlayedAt),
+		LastPlayedAt:     nullMillisToTime(r.LastPlayedAt),
+		PlatformID:       r.PlatformID,
+		Platform:         r.PlatformName,
+		Status:           domain.GameStatus(r.Status),
+		Favorite:         r.Favorite != 0,
+		ReleaseDate:      r.ReleaseDate.String,
 	}
 }
 

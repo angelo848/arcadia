@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const ensurePCPlatform = `-- name: EnsurePCPlatform :exec
@@ -130,45 +131,62 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (Game, e
 }
 
 const listGames = `-- name: ListGames :many
-SELECT id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at FROM game
-ORDER BY title COLLATE NOCASE, id
+SELECT g.id, g.platform_id, p.name AS platform_name, g.title, g.release_date,
+       g.description, g.launch_type, g.launch_target, g.launch_args, g.working_dir,
+       g.favorite, g.status, g.first_played_at, g.last_played_at, g.completed_at,
+       g.total_play_seconds, g.play_count
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+ORDER BY g.title COLLATE NOCASE, g.id
 `
 
-func (q *Queries) ListGames(ctx context.Context) ([]Game, error) {
+type ListGamesRow struct {
+	ID               int64
+	PlatformID       int64
+	PlatformName     string
+	Title            string
+	ReleaseDate      sql.NullString
+	Description      string
+	LaunchType       string
+	LaunchTarget     string
+	LaunchArgs       string
+	WorkingDir       string
+	Favorite         int64
+	Status           string
+	FirstPlayedAt    sql.NullInt64
+	LastPlayedAt     sql.NullInt64
+	CompletedAt      sql.NullInt64
+	TotalPlaySeconds int64
+	PlayCount        int64
+}
+
+func (q *Queries) ListGames(ctx context.Context) ([]ListGamesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listGames)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Game{}
+	items := []ListGamesRow{}
 	for rows.Next() {
-		var i Game
+		var i ListGamesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlatformID,
+			&i.PlatformName,
 			&i.Title,
-			&i.SortTitle,
 			&i.ReleaseDate,
 			&i.Description,
-			&i.InstallDir,
 			&i.LaunchType,
 			&i.LaunchTarget,
 			&i.LaunchArgs,
 			&i.WorkingDir,
-			&i.Rating,
 			&i.Favorite,
-			&i.Hidden,
 			&i.Status,
 			&i.FirstPlayedAt,
+			&i.LastPlayedAt,
 			&i.CompletedAt,
 			&i.TotalPlaySeconds,
-			&i.LastPlayedAt,
 			&i.PlayCount,
-			&i.HltbMainHours,
-			&i.HltbExtraHours,
-			&i.HltbCompleteHours,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countGames = `-- name: CountGames :one
@@ -18,6 +19,181 @@ func (q *Queries) CountGames(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const gameDeveloperNames = `-- name: GameDeveloperNames :many
+SELECT c.name FROM game_developer gd
+JOIN company c ON c.id = gd.company_id
+WHERE gd.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id
+`
+
+func (q *Queries) GameDeveloperNames(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, gameDeveloperNames, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gameGenreNames = `-- name: GameGenreNames :many
+SELECT c.name FROM game_genre gg
+JOIN genre c ON c.id = gg.genre_id
+WHERE gg.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id
+`
+
+func (q *Queries) GameGenreNames(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, gameGenreNames, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gamePlayModeNames = `-- name: GamePlayModeNames :many
+SELECT m.name FROM game_play_mode gm
+JOIN play_mode m ON m.id = gm.play_mode_id
+WHERE gm.game_id = ?
+ORDER BY m.name COLLATE NOCASE, m.id
+`
+
+func (q *Queries) GamePlayModeNames(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, gamePlayModeNames, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gamePublisherNames = `-- name: GamePublisherNames :many
+SELECT c.name FROM game_publisher gp
+JOIN company c ON c.id = gp.company_id
+WHERE gp.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id
+`
+
+func (q *Queries) GamePublisherNames(ctx context.Context, gameID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, gamePublisherNames, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGameRow = `-- name: GetGameRow :one
+SELECT g.id, g.platform_id, p.name AS platform_name, g.title, g.release_date,
+       g.description, g.launch_type, g.launch_target, g.launch_args, g.working_dir,
+       g.favorite, g.status, g.first_played_at, g.last_played_at, g.completed_at,
+       g.total_play_seconds, g.play_count
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+WHERE g.id = ?
+`
+
+type GetGameRowRow struct {
+	ID               int64
+	PlatformID       int64
+	PlatformName     string
+	Title            string
+	ReleaseDate      sql.NullString
+	Description      string
+	LaunchType       string
+	LaunchTarget     string
+	LaunchArgs       string
+	WorkingDir       string
+	Favorite         int64
+	Status           string
+	FirstPlayedAt    sql.NullInt64
+	LastPlayedAt     sql.NullInt64
+	CompletedAt      sql.NullInt64
+	TotalPlaySeconds int64
+	PlayCount        int64
+}
+
+func (q *Queries) GetGameRow(ctx context.Context, id int64) (GetGameRowRow, error) {
+	row := q.db.QueryRowContext(ctx, getGameRow, id)
+	var i GetGameRowRow
+	err := row.Scan(
+		&i.ID,
+		&i.PlatformID,
+		&i.PlatformName,
+		&i.Title,
+		&i.ReleaseDate,
+		&i.Description,
+		&i.LaunchType,
+		&i.LaunchTarget,
+		&i.LaunchArgs,
+		&i.WorkingDir,
+		&i.Favorite,
+		&i.Status,
+		&i.FirstPlayedAt,
+		&i.LastPlayedAt,
+		&i.CompletedAt,
+		&i.TotalPlaySeconds,
+		&i.PlayCount,
+	)
+	return i, err
 }
 
 const insertPlatform = `-- name: InsertPlatform :one

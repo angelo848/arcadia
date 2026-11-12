@@ -9,3 +9,36 @@ ORDER BY name;
 INSERT INTO platform (name, category)
 VALUES (?, ?)
 RETURNING id;
+
+-- name: GetGameRow :one
+SELECT g.id, g.platform_id, p.name AS platform_name, g.title, g.release_date,
+       g.description, g.launch_type, g.launch_target, g.launch_args, g.working_dir,
+       g.favorite, g.status, g.first_played_at, g.last_played_at, g.completed_at,
+       g.total_play_seconds, g.play_count
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+WHERE g.id = ?;
+
+-- name: GameGenreNames :many
+SELECT c.name FROM game_genre gg
+JOIN genre c ON c.id = gg.genre_id
+WHERE gg.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id;
+
+-- name: GameDeveloperNames :many
+SELECT c.name FROM game_developer gd
+JOIN company c ON c.id = gd.company_id
+WHERE gd.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id;
+
+-- name: GamePublisherNames :many
+SELECT c.name FROM game_publisher gp
+JOIN company c ON c.id = gp.company_id
+WHERE gp.game_id = ?
+ORDER BY c.name COLLATE NOCASE, c.id;
+
+-- name: GamePlayModeNames :many
+SELECT m.name FROM game_play_mode gm
+JOIN play_mode m ON m.id = gm.play_mode_id
+WHERE gm.game_id = ?
+ORDER BY m.name COLLATE NOCASE, m.id;
