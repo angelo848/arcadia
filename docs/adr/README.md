@@ -38,3 +38,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0022](0022-listagem-paginada-no-ipc.md) | Listagem paginada no IPC | aceito |
 | [0023](0023-execucao-como-administrador.md) | Execução de jogos como administrador | aceito |
 | [0024](0024-agente-sempre-como-administrador.md) | Remoção do início automático com o Windows | aceito |
+| [0025](0025-rastreio-por-processo-adotado.md) | Rastreio por processo adotado | proposto |

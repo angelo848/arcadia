@@ -1,0 +1,69 @@
+package ipc
+
+// Import methods (phase 6, contract v0.7.0 [IMP-001]). Scanning only reads; applying
+// writes one game per transaction (IMP-008).
+
+// Import sources accepted by import.scan (IMP-002..IMP-005).
+const (
+	ImportSourceSteam     = "steam"
+	ImportSourceEpic      = "epic"
+	ImportSourceFolder    = "folder"
+	ImportSourceLaunchBox = "launchbox"
+)
+
+// ImportScanParams is the params of import.scan. Path is used by the folder and
+// launchbox sources only.
+type ImportScanParams struct {
+	Source string `json:"source"`
+	Path   string `json:"path,omitempty"`
+}
+
+// ImportCandidate is one game an import source offers. Exists is set by
+// import.scan only (IMP-006); the apply side ignores it.
+type ImportCandidate struct {
+	Source        string   `json:"source"`
+	Title         string   `json:"title"`
+	Platform      string   `json:"platform,omitempty"`
+	LaunchType    string   `json:"launchType"`
+	LaunchTarget  string   `json:"launchTarget"`
+	InstallDir    string   `json:"installDir"`
+	Developers    []string `json:"developers"`
+	Publishers    []string `json:"publishers"`
+	Genres        []string `json:"genres"`
+	Year          *int     `json:"year"`
+	Description   string   `json:"description"`
+	PlayModes     []string `json:"playModes"`
+	PlayedSeconds *int64   `json:"playedSeconds"`
+	LastPlayed    *string  `json:"lastPlayed"`
+	Exists        bool     `json:"exists"`
+}
+
+// ImportScanResult is the result of import.scan: candidates and warnings (IMP-008).
+type ImportScanResult struct {
+	Candidates []ImportCandidate `json:"candidates"`
+	Warnings   []string          `json:"warnings"`
+}
+
+// ImportApplyParams is the params of import.apply (1..500 candidates).
+type ImportApplyParams struct {
+	Candidates []ImportCandidate `json:"candidates"`
+}
+
+// ImportApplied is one game written by import.apply.
+type ImportApplied struct {
+	GameID int64  `json:"gameId"`
+	Title  string `json:"title"`
+}
+
+// ImportSkipped is one candidate that import.apply did not write: "duplicate" (IMP-006)
+// or "failed" (IMP-008).
+type ImportSkipped struct {
+	Title  string `json:"title"`
+	Reason string `json:"reason"`
+}
+
+// ImportApplyResult is the result of import.apply.
+type ImportApplyResult struct {
+	Applied []ImportApplied `json:"applied"`
+	Skipped []ImportSkipped `json:"skipped"`
+}

@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-5-library contract (v0.6.0)
+// contractPath is the source of truth: the phase-6-importers contract (v0.7.0)
 // supersedes phase-4-pause (v0.5.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-5-library", "contracts", "ipc.openrpc.json")
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-6-importers", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-5-library/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-6-importers/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -252,9 +252,9 @@ func jsonFieldNames(t *testing.T, v any) []string {
 	return sortedKeys(m)
 }
 
-// phase5Methods is the complete method set of contract v0.6.0 (notifications
+// phase6Methods is the complete method set of contract v0.6.0 (notifications
 // included) with their x-notification flag.
-var phase5Methods = map[string]bool{
+var phase6Methods = map[string]bool{
 	ipc.MethodPing:                false,
 	ipc.MethodStatus:              false,
 	ipc.MethodHeartbeat:           true,
@@ -273,6 +273,8 @@ var phase5Methods = map[string]bool{
 	ipc.MethodPlatformList:        false,
 	ipc.MethodPlatformAdd:         false,
 	ipc.MethodLibraryCatalog:      false,
+	ipc.MethodImportScan:          false,
+	ipc.MethodImportApply:         false,
 	ipc.MethodSessionChanged:      true,
 }
 
@@ -517,10 +519,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.6.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.7.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.6.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.6.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.7.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.7.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -548,6 +550,8 @@ func TestContract(t *testing.T) {
 			"MethodPlatformList":   ipc.MethodPlatformList,
 			"MethodPlatformAdd":    ipc.MethodPlatformAdd,
 			"MethodLibraryCatalog": ipc.MethodLibraryCatalog,
+			"MethodImportScan":     ipc.MethodImportScan,
+			"MethodImportApply":    ipc.MethodImportApply,
 		}
 		wantLiterals := map[string]string{
 			"MethodPing":                "agent.ping",
@@ -569,6 +573,8 @@ func TestContract(t *testing.T) {
 			"MethodPlatformList":        "platform.list",
 			"MethodPlatformAdd":         "platform.add",
 			"MethodLibraryCatalog":      "library.catalog",
+			"MethodImportScan":          "import.scan",
+			"MethodImportApply":         "import.apply",
 		}
 		for name, got := range literals {
 			if got != wantLiterals[name] {
@@ -583,10 +589,10 @@ func TestContract(t *testing.T) {
 			}
 			got[m.Name] = m.Notification
 		}
-		if g, w := sortedKeys(got), sortedKeys(phase5Methods); !slices.Equal(g, w) {
+		if g, w := sortedKeys(got), sortedKeys(phase6Methods); !slices.Equal(g, w) {
 			t.Fatalf("contract methods = %v, Go constants = %v", g, w)
 		}
-		for name, notif := range phase5Methods {
+		for name, notif := range phase6Methods {
 			if got[name] != notif {
 				t.Errorf("contract %s: x-notification = %v, want %v", name, got[name], notif)
 			}
@@ -953,7 +959,7 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/comentário do pacote aponta para phase-5-library", func(t *testing.T) {
+	t.Run("IPC-041/comentário do pacote aponta para phase-6-importers", func(t *testing.T) {
 		t.Parallel()
 		files, err := filepath.Glob("*.go")
 		if err != nil {
