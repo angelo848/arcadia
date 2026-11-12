@@ -7,8 +7,8 @@ import { formatPlayTime } from '../lib/games'
 // Row metrics in px. The list is one column of rows [UI-030].
 const ROW_HEIGHT = 80
 const OVERSCAN_ROWS = 4
-// The next page is asked for when the last rendered row is past loaded - 40 [UI-036].
-const PREFETCH_AHEAD = 40
+// The next page is asked for when the last rendered row is past loaded - 10 [UI-036].
+const PREFETCH_AHEAD = 10
 
 const buttonClass =
   'shrink-0 rounded px-4 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400'

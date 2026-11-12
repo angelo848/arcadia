@@ -27,7 +27,6 @@ function installFakeBindings(): FakeApp {
     AgentStatus: vi.fn(() => Promise.resolve({})),
     CurrentSession: vi.fn(() => Promise.resolve(null)),
     LaunchGame: vi.fn(() => Promise.resolve({})),
-    LibrarySummary: vi.fn(() => Promise.resolve({})),
     ListGames: vi.fn(() => Promise.resolve([])),
     PickGameExe: vi.fn(() => Promise.resolve({ path: '', title: '' })),
   }

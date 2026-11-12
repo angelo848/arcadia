@@ -147,10 +147,15 @@ function loadedCount(pages: { length: number }[]): number {
 
 // useInfiniteGames pages the library by offset. A change in q is a new key, so the
 // loaded pages are dropped [UI-036]. While a call fails it is retried every 2 s [UI-044].
-export function useInfiniteGames(q: LibraryQuery): UseInfiniteQueryResult<InfiniteData<GameListView>, Error> {
+// enabled is false until the agent status is known, so the first page is not asked for twice (first connect).
+export function useInfiniteGames(
+  q: LibraryQuery,
+  options: { enabled?: boolean } = {},
+): UseInfiniteQueryResult<InfiniteData<GameListView>, Error> {
   return useInfiniteQuery({
     queryKey: libraryKeys.games(q),
     queryFn: ({ pageParam }) => listGames(q, pageParam),
+    enabled: options.enabled ?? true,
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = loadedCount(allPages.map((p) => p.games))

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { LibraryList } from './LibraryList'
 import { LibraryGrid } from './LibraryGrid'
-import type { PendingLaunch } from './GameList'
+import type { PendingLaunch } from '../lib/pendingLaunch'
 import { formatPlayTime, type SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 

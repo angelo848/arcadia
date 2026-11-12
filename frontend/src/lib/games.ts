@@ -1,17 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
-import { libraryGamesKey } from './library'
-
-// GameView mirrors cmd/arcadia GameView (JSON field names).
-export type GameView = {
-  id: number
-  title: string
-  path: string
-  totalPlaySeconds: number
-  playCount: number
-  lastPlayedAt: string
-}
+import { libraryGamesKey, type GameView } from './library'
 
 export type SessionState = 'running' | 'paused' | 'grace' | 'ended' | 'discarded'
 
@@ -34,7 +24,6 @@ export type PickedExe = { path: string; title: string }
 // The bound methods and runtime are reached through window with local types,
 // the same way lib/agent.ts does.
 type WailsApp = {
-  ListGames?: () => Promise<GameView[]>
   CurrentSession?: () => Promise<SessionView | null>
   AddGame?: (path: string, title: string) => Promise<GameView>
   LaunchGame?: (id: number) => Promise<SessionView>
@@ -57,7 +46,6 @@ function wails(): WailsWindow {
   return window as unknown as WailsWindow
 }
 
-export const gamesKey = ['games'] as const
 export const currentSessionKey = ['session', 'current'] as const
 
 const sessionChangedEvent = 'session:changed'
@@ -90,14 +78,6 @@ function binding<K extends keyof WailsApp>(name: K): NonNullable<WailsApp[K]> {
     throw new Error(`wails bindings unavailable: ${name}`)
   }
   return fn as NonNullable<WailsApp[K]>
-}
-
-export async function listGames(): Promise<GameView[]> {
-  try {
-    return await binding('ListGames')()
-  } catch (e) {
-    throw toError(e)
-  }
 }
 
 export async function currentSession(): Promise<SessionView | null> {
@@ -189,17 +169,6 @@ function isSessionView(v: unknown): v is SessionView {
   )
 }
 
-// useGames loads the library. While the call fails it retries every 2 s.
-export function useGames(): UseQueryResult<GameView[], Error> {
-  return useQuery({
-    queryKey: gamesKey,
-    queryFn: listGames,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) => (query.state.status === 'error' ? 2000 : false),
-  })
-}
-
 // useCurrentSession loads the current session once (no polling); later changes
 // arrive through session:changed. A response that arrives after an applied
 // event keeps the cached value instead [UI-018].
@@ -240,7 +209,7 @@ export function useSessionEvents(): void {
         return
       }
       qc.setQueryData<SessionView | null>(currentSessionKey, null)
-      void qc.invalidateQueries({ queryKey: gamesKey })
+      void qc.invalidateQueries({ queryKey: libraryGamesKey })
     })
     return () => {
       if (typeof off === 'function') {
@@ -270,8 +239,11 @@ export function useReloadOnReconnect(connected: boolean): void {
       qc.getQueryCache().find({ queryKey: currentSessionKey, exact: true })?.reset()
     }
     if (!was && connected) {
-      void qc.invalidateQueries({ queryKey: gamesKey })
-      void qc.invalidateQueries({ queryKey: libraryGamesKey })
+      // A list still loading its first page is not reloaded again: the first fetch already answers this connection.
+      void qc.invalidateQueries({
+        queryKey: libraryGamesKey,
+        predicate: (q) => q.state.data !== undefined,
+      })
       void qc.resetQueries({ queryKey: currentSessionKey })
     }
   }, [connected, qc])

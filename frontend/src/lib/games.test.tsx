@@ -7,22 +7,21 @@ import {
   currentSession,
   currentSessionKey,
   formatPlayTime,
-  gamesKey,
   launchGame,
   launchGameUntracked,
-  listGames,
   pauseSession,
   resumeSession,
   sessionEventSeq,
   useCurrentSession,
-  useGames,
   useLaunchGame,
   useLaunchGameUntracked,
   useReloadOnReconnect,
   useSessionEvents,
   useToggleSession,
 } from './games'
-import type { GameView, SessionView } from './games'
+import type { SessionView } from './games'
+import { resetQuery } from './filters'
+import { libraryKeys, useInfiniteGames, type GameListView, type GameView } from './library'
 
 // ---------------------------------------------------------------------------
 // Fakes for window.go.main.App and window.runtime.EventsOn
@@ -35,7 +34,6 @@ type FakeApp = {
   CurrentSession: Fn
   LaunchGame: Fn
   LaunchGameUntracked: Fn
-  LibrarySummary: Fn
   ListGames: Fn
   PauseSession: Fn
   PickGameExe: Fn
@@ -53,8 +51,7 @@ function install() {
     CurrentSession: vi.fn(() => Promise.resolve(null)),
     LaunchGame: vi.fn(() => Promise.resolve(session())),
     LaunchGameUntracked: vi.fn(() => Promise.resolve()),
-    LibrarySummary: vi.fn(() => Promise.resolve({ games: 0, platforms: 0 })),
-    ListGames: vi.fn(() => Promise.resolve([])),
+    ListGames: vi.fn(() => Promise.resolve(listPage([]))),
     PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
     PickGameExe: vi.fn(() => Promise.resolve({ path: '', title: '' })),
     ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
@@ -100,13 +97,26 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+// The library list is the infinite query under libraryKeys.games; its pages are GameListView [UI-036].
+const listKey = libraryKeys.games(resetQuery())
+
+function listPage(games: GameView[]): GameListView {
+  return { games, total: games.length, offset: 0 }
+}
+
 function game(over: Partial<GameView> = {}): GameView {
   return {
     id: 10,
+    platformId: 1,
     title: 'Hollow Knight',
+    platform: 'Windows',
     path: 'C:\\Games\\HK\\hollow_knight.exe',
+    status: 'not_played',
+    favorite: false,
+    year: null,
     totalPlaySeconds: 0,
     playCount: 0,
+    firstPlayedAt: '',
     lastPlayedAt: '',
     ...over,
   }
@@ -202,12 +212,11 @@ describe('bindings', () => {
 
   it('UI-008 rejeição em string vira Error com a mesma mensagem', async () => {
     const msg = 'O agente não está respondendo. Tente de novo.'
-    app.ListGames.mockRejectedValueOnce(msg)
     app.AddGame.mockRejectedValueOnce(msg)
     app.LaunchGame.mockRejectedValueOnce(msg)
     app.CurrentSession.mockRejectedValueOnce(msg)
 
-    for (const p of [listGames(), addGame('C:\\x.exe', 'X'), launchGame(10), currentSession()]) {
+    for (const p of [addGame('C:\\x.exe', 'X'), launchGame(10), currentSession()]) {
       const err = await p.then(
         () => null,
         (e: unknown) => e,
@@ -241,15 +250,15 @@ describe('useSessionEvents', () => {
   for (const state of ['ended', 'discarded'] as const) {
     it(`UI-006 ended e discarded limpam a sessão e invalidam games (${state})`, () => {
       const qc = newClient()
-      qc.setQueryData(gamesKey, [game()])
+      qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
       qc.setQueryData(currentSessionKey, session())
       renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
-      expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+      expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
 
       emit('session:changed', session({ state, endedAt: '2026-11-09T10:30:00.000Z' }))
 
       expect(qc.getQueryData(currentSessionKey)).toBeNull()
-      expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+      expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true)
     })
   }
 
@@ -331,9 +340,9 @@ describe('useCurrentSession', () => {
 
   it('UI-006 foco ou visibilidade da janela não chamam CurrentSession nem ListGames de novo', async () => {
     const qc = newClient()
-    app.ListGames.mockResolvedValue([game()])
+    app.ListGames.mockResolvedValue(listPage([game()]))
     app.CurrentSession.mockResolvedValue(session())
-    const { result } = renderHook(() => ({ games: useGames(), current: useCurrentSession() }), {
+    const { result } = renderHook(() => ({ games: useInfiniteGames(resetQuery()), current: useCurrentSession() }), {
       wrapper: wrapperFor(qc),
     })
     await waitFor(() => expect(result.current.games.isSuccess).toBe(true))
@@ -459,12 +468,12 @@ describe('useLaunchGame', () => {
 describe('useReloadOnReconnect', () => {
   function useAll(connected: boolean) {
     useReloadOnReconnect(connected)
-    return { games: useGames(), current: useCurrentSession() }
+    return { games: useInfiniteGames(resetQuery()), current: useCurrentSession() }
   }
 
   it('UI-009 Desconectado para Conectado recarrega games e a sessão', async () => {
     const qc = newClient()
-    app.ListGames.mockResolvedValue([game()])
+    app.ListGames.mockResolvedValue(listPage([game()]))
     app.CurrentSession.mockResolvedValue(null)
 
     const { result, rerender } = renderHook(({ connected }) => useAll(connected), {
@@ -490,7 +499,7 @@ describe('useReloadOnReconnect', () => {
 
   it('UI-009 sem observadores invalida games e reseta a sessão', () => {
     const qc = newClient()
-    qc.setQueryData(gamesKey, [game()])
+    qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
     qc.setQueryData(currentSessionKey, session())
 
     const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
@@ -499,13 +508,13 @@ describe('useReloadOnReconnect', () => {
     })
     rerender({ connected: true })
 
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true)
     expect(qc.getQueryData(currentSessionKey)).toBeUndefined()
   })
 
   it('UI-016 Conectado para Desconectado já reseta a sessão em cache', () => {
     const qc = newClient()
-    qc.setQueryData(gamesKey, [game()])
+    qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
     qc.setQueryData(currentSessionKey, session({ activeMs: 60000 }))
 
     const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
@@ -526,7 +535,7 @@ describe('useReloadOnReconnect', () => {
     const old = session({ sessionId: 1, activeMs: 60000 })
     const fresh = session({ sessionId: 1, activeMs: 180000 })
     const reload = deferred<SessionView | null>()
-    app.ListGames.mockResolvedValue([game()])
+    app.ListGames.mockResolvedValue(listPage([game()]))
     app.CurrentSession.mockResolvedValueOnce(old).mockReturnValueOnce(reload.promise)
 
     const { result, rerender } = renderHook(({ connected }) => useAll(connected), {
@@ -552,7 +561,7 @@ describe('useReloadOnReconnect', () => {
     const old = session({ state: 'paused', activeMs: 100000 })
     const fresh = session({ state: 'paused', activeMs: 100000 })
     const reload = deferred<SessionView | null>()
-    app.ListGames.mockResolvedValue([game()])
+    app.ListGames.mockResolvedValue(listPage([game()]))
     app.CurrentSession.mockResolvedValueOnce(old).mockReturnValueOnce(reload.promise)
 
     const { result, rerender } = renderHook(({ connected }) => useAll(connected), {
@@ -582,14 +591,14 @@ describe('useReloadOnReconnect', () => {
 describe('sessão paused no cache', () => {
   it('UI-022/session:changed com paused entra no cache como sessão viva, sem recarregar a lista', () => {
     const qc = newClient()
-    qc.setQueryData(gamesKey, [game()])
+    qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
     renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
 
     const paused = session({ state: 'paused', activeMs: 100000 })
     emit('session:changed', paused)
 
     expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
   })
 
   it('UI-022/currentSession devolve a sessão paused no formato recebido', async () => {
@@ -600,39 +609,39 @@ describe('sessão paused no cache', () => {
 
   it('UI-024/running, paused e grace mantêm a lista sem recarga; ended depois de paused a recarrega', () => {
     const qc = newClient()
-    qc.setQueryData(gamesKey, [game()])
+    qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
     renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
 
     emit('session:changed', session({ state: 'running', activeMs: 1000 }))
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
 
     const paused = session({ state: 'paused', activeMs: 1000 })
     emit('session:changed', paused)
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
     expect(qc.getQueryData(currentSessionKey)).toEqual(paused)
 
     emit('session:changed', session({ state: 'grace', activeMs: 1000 }))
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
 
     emit('session:changed', session({ state: 'paused', activeMs: 1000 }))
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
 
     emit('session:changed', session({ state: 'ended', activeMs: 1000, endedAt: '2026-11-09T10:30:00.000Z' }))
     expect(qc.getQueryData(currentSessionKey)).toBeNull()
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true)
   })
 
   for (const state of ['ended', 'discarded'] as const) {
     it(`UI-024/${state} vindo de paused limpa a sessão e invalida games`, () => {
       const qc = newClient()
-      qc.setQueryData(gamesKey, [game()])
+      qc.setQueryData(listKey, { pages: [listPage([game()])], pageParams: [0] })
       qc.setQueryData(currentSessionKey, session({ state: 'paused', activeMs: 100000 }))
       renderHook(() => useSessionEvents(), { wrapper: wrapperFor(qc) })
 
       emit('session:changed', session({ state, activeMs: 100000, endedAt: '2026-11-09T10:30:00.000Z' }))
 
       expect(qc.getQueryData(currentSessionKey)).toBeNull()
-      expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(true)
+      expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true)
     })
   }
 })
@@ -695,12 +704,12 @@ describe('bindings de pausa e lançamento sem contar tempo', () => {
 describe('useLaunchGameUntracked', () => {
   it('UI-020/useLaunchGameUntracked chama LaunchGameUntracked uma vez e não toca no cache de sessão nem recarrega a lista', async () => {
     const qc = newClient()
-    app.ListGames.mockResolvedValue([game()])
+    app.ListGames.mockResolvedValue(listPage([game()]))
     app.CurrentSession.mockResolvedValue(null)
 
     const { result } = renderHook(
       () => ({
-        games: useGames(),
+        games: useInfiniteGames(resetQuery()),
         current: useCurrentSession(),
         launch: useLaunchGameUntracked(),
       }),
@@ -721,7 +730,7 @@ describe('useLaunchGameUntracked', () => {
     expect(app.LaunchGame).not.toHaveBeenCalled()
     expect(app.ListGames).toHaveBeenCalledTimes(gamesCalls)
     expect(app.CurrentSession).toHaveBeenCalledTimes(sessionCalls)
-    expect(qc.getQueryState(gamesKey)?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false)
     expect(qc.getQueryData(currentSessionKey)).toBeNull()
   })
 

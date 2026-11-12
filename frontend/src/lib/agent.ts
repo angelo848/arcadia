@@ -11,14 +11,10 @@ export type AgentStatusView = {
   uptimeSeconds: number
 }
 
-// LibrarySummaryView mirrors cmd/arcadia LibrarySummaryView.
-export type LibrarySummaryView = { games: number; platforms: number }
-
 // The bound methods and runtime are reached through window with local types
 // (same pattern as lib/games.ts), so tests can fake window.go and window.runtime.
 type WailsApp = {
   AgentStatus?: () => Promise<AgentStatusView>
-  LibrarySummary?: () => Promise<LibrarySummaryView>
 }
 
 type WailsRuntime = {
@@ -44,7 +40,6 @@ export const disconnectedStatus: AgentStatusView = {
 }
 
 const agentStatusKey = ['agent', 'status'] as const
-const librarySummaryKey = ['library', 'summary'] as const
 
 // fetchAgentStatus never rejects: missing bindings or a failed call mean "disconnected".
 async function fetchAgentStatus(): Promise<AgentStatusView> {
@@ -56,19 +51,6 @@ async function fetchAgentStatus(): Promise<AgentStatusView> {
     return await fn()
   } catch {
     return disconnectedStatus
-  }
-}
-
-async function fetchLibrarySummary(): Promise<LibrarySummaryView> {
-  const fn = wails().go?.main?.App?.LibrarySummary
-  if (!fn) {
-    throw new Error('wails bindings unavailable: LibrarySummary')
-  }
-  try {
-    return await fn()
-  } catch (e) {
-    // Wails v2 rejects bound calls with a plain string; normalize to Error.
-    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -97,16 +79,5 @@ export function useAgentStatus() {
     queryFn: fetchAgentStatus,
     refetchInterval: 1000,
     retry: false,
-  })
-}
-
-// useLibrarySummary loads the library counters. While the call fails (e.g. the
-// agent is not ready yet, DSK-008) it keeps retrying every 2 s.
-export function useLibrarySummary() {
-  return useQuery({
-    queryKey: librarySummaryKey,
-    queryFn: fetchLibrarySummary,
-    retry: false,
-    refetchInterval: (query) => (query.state.status === 'error' ? 2000 : false),
   })
 }

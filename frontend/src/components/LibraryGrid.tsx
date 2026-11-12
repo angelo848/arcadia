@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { PendingLaunch } from './GameList'
 import { GameCard, liveOf } from './GameCard'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
+import type { PendingLaunch } from '../lib/pendingLaunch'
 
 // Card and grid metrics in px. A row holds as many cards as fit the width.
 const CARD_MIN_WIDTH = 220
@@ -11,8 +11,8 @@ const CARD_HEIGHT = 180
 const GAP = 16
 const ROW_HEIGHT = CARD_HEIGHT + GAP
 const OVERSCAN_ROWS = 2
-// The next page is asked for when the last rendered card is past loaded - 40 [UI-036].
-const PREFETCH_AHEAD = 40
+// The next page is asked for when the last rendered card is past loaded - 10 [UI-036].
+const PREFETCH_AHEAD = 10
 
 // columnsFor returns how many cards fit a row of the given width (at least one).
 function columnsFor(width: number): number {
