@@ -1,6 +1,6 @@
 # Fase 5 — Biblioteca: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário
+- **Status:** aprovado pelo usuário (2026-11-12)
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.6.0,
   substitui a v0.5.0 de [phase-4-pause](../phase-4-pause/contracts/ipc.openrpc.json) como fonte da verdade) ·
   **Tarefas:** [tasks.md](tasks.md) (placeholder; o planner gera depois da aprovação)

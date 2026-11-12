@@ -1,6 +1,6 @@
 # Fase 5 — Biblioteca: design
 
-- **Status:** rascunho, aguardando aprovação do usuário (junto com [requirements.md](requirements.md))
+- **Status:** aprovado junto com [requirements.md](requirements.md) (2026-11-12)
 - Implementa [requirements.md](requirements.md). Base: designs da [fase 4](../phase-4-pause/design.md), da
   [fase 3](../phase-3-tracker/design.md), da [fase 2](../phase-2-skeleton/design.md) e do
   [executável único](../single-exe/design.md); o que não é citado aqui continua como lá.
