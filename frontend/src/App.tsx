@@ -4,6 +4,7 @@ import { AddGameForm } from './components/AddGameForm'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
+import { ImportDialog } from './components/ImportDialog'
 import { ErrorBanner } from './components/ErrorBanner'
 import { FilterPanel } from './components/FilterPanel'
 import { GameEditForm } from './components/GameEditForm'
@@ -164,6 +165,7 @@ export default function App() {
   // Last failed action's message [UI-008, UI-020, UI-028, UI-041] and the exe chosen in the dialog [UI-007].
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<PickedExe | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const session = current.data ?? null
 
@@ -324,6 +326,13 @@ export default function App() {
       <header className="flex items-center justify-between gap-4 border-b border-neutral-800 px-6 py-4">
         <h1 className="text-2xl font-semibold">Arcadia</h1>
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setImporting(true)}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+          >
+            Importar
+          </button>
           {!libraryEmpty && (
             <button
               type="button"
@@ -339,6 +348,12 @@ export default function App() {
       </header>
       {conflict && <AgentConflict />}
       {error !== null && <ErrorBanner message={error} onClose={() => setError(null)} />}
+      {importing && (
+        <ImportDialog
+          onImported={() => void qc.invalidateQueries({ queryKey: libraryGamesKey })}
+          onClose={() => setImporting(false)}
+        />
+      )}
       {picked && (
         <AddGameForm
           key={picked.path}
