@@ -22,6 +22,7 @@ export type GameView = {
 
 export type GameDetailView = GameView & {
   description: string
+  emulatorId: number | null
   launchType: string
   launchArgs: string
   completedAt: string | null
@@ -58,7 +59,7 @@ export type SessionItemView = {
 
 export type SessionListView = { sessions: SessionItemView[]; total: number; offset: number }
 
-export type PlatformView = { id: number; name: string; category: string }
+export type PlatformView = { id: number; name: string; category: string; emulatorId: number | null }
 
 // A genre or a company of the catalog: id is the database id the FilterSpec filters by (FLT-002, FLT-003).
 export type CatalogItemView = { id: number; name: string }

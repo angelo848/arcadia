@@ -9,8 +9,8 @@ import type { CatalogView } from '../lib/library'
 // see the ambiguity notes in the T30 report.
 const catalog: CatalogView = {
   platforms: [
-    { id: 1, name: 'Windows', category: 'PC' },
-    { id: 2, name: 'SNES', category: 'Console' },
+    { id: 1, name: 'Windows', category: 'PC', emulatorId: null },
+    { id: 2, name: 'SNES', category: 'Console', emulatorId: null },
   ],
   // Genres and companies are {id, name} items; the ids are the database ids the
   // FilterSpec filters by (FLT-002, FLT-003), and the option value is that id.

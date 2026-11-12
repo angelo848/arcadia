@@ -3,6 +3,7 @@ import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
 import { playModeLabels, type GameDetailView, type PlayModeName } from '../lib/library'
 import { validateDraft } from '../lib/validation'
+import type { EmulatorView } from '../lib/emulators'
 import { TagInput } from './TagInput'
 
 // The play modes in the order the form shows them (DOM-014).
@@ -33,12 +34,16 @@ type FormValues = {
   launchType: string
   launchTarget: string
   launchArgs: string
+  // Emulator of the game as the select has it: '' is the platform default (EMU-002).
+  emulatorId: string
 }
 
 export type GameEditFormProps = {
   game: GameDetailView
   // genreSuggestions are the names already in the catalog of genres (TAG-001).
   genreSuggestions?: string[]
+  // emulators are the registered emulators, offered for the game's own choice (EMU-002).
+  emulators?: EmulatorView[]
   onSave: (patch: Record<string, unknown>) => void
   onCancel: () => void
   pending: boolean
@@ -46,6 +51,7 @@ export type GameEditFormProps = {
 }
 
 const noSuggestions: string[] = []
+const noEmulators: EmulatorView[] = []
 
 function initialValues(game: GameDetailView): FormValues {
   return {
@@ -62,6 +68,7 @@ function initialValues(game: GameDetailView): FormValues {
     launchType: game.launchType,
     launchTarget: game.path,
     launchArgs: game.launchArgs,
+    emulatorId: game.emulatorId === null ? '' : String(game.emulatorId),
   }
 }
 
@@ -86,6 +93,7 @@ function toDraft(v: FormValues): EditDraft {
     launchType: v.launchType,
     launchTarget: v.launchTarget,
     launchArgs: v.launchArgs,
+    emulatorId: v.emulatorId === '' ? null : Number(v.emulatorId),
   }
 }
 
@@ -99,6 +107,7 @@ const inputClass =
 export function GameEditForm({
   game,
   genreSuggestions = noSuggestions,
+  emulators = noEmulators,
   onSave,
   onCancel,
   pending,
@@ -279,6 +288,22 @@ export function GameEditForm({
           />
         </Row>
       </div>
+
+      <Row id={id('emulatorId')} label="Emulador deste jogo" hint="Padrão: o emulador da plataforma." message={undefined}>
+        <select
+          id={id('emulatorId')}
+          value={values.emulatorId}
+          onChange={(e) => set('emulatorId', e.target.value)}
+          className={inputClass}
+        >
+          <option value="">Padrão da plataforma</option>
+          {emulators.map((em) => (
+            <option key={em.id} value={String(em.id)}>
+              {em.name}
+            </option>
+          ))}
+        </select>
+      </Row>
 
       <Row id={id('launchArgs')} label="Argumentos" hint="Vazio quando o jogo não precisa de argumentos." message={errors.launchArgs}>
         <input

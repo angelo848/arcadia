@@ -56,6 +56,8 @@ type GameListView struct {
 // CompletedAt is YYYY-MM-DD or "". The lists are never nil.
 type GameDetailView struct {
 	GameView
+	// EmulatorID is the game's own emulator, nil to use the platform default (EMU-002).
+	EmulatorID  *int64   `json:"emulatorId"`
 	Description string   `json:"description"`
 	CompletedAt string   `json:"completedAt"`
 	Developers  []string `json:"developers"`
@@ -91,6 +93,8 @@ type PlatformView struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	Category string `json:"category"`
+	// EmulatorID is the default emulator of the platform, nil when none (EMU-002).
+	EmulatorID *int64 `json:"emulatorId"`
 }
 
 // CatalogItemView is a genre or a company of the catalog: the database id the
@@ -153,6 +157,7 @@ func gameDetailView(d ipc.GameDetail) GameDetailView {
 		Description: d.Description,
 		LaunchType:  d.LaunchType,
 		LaunchArgs:  d.LaunchArgs,
+		EmulatorID:  d.EmulatorID,
 		CompletedAt: completed,
 		Developers:  nonNilStrings(d.Developers),
 		Publishers:  nonNilStrings(d.Publishers),
@@ -178,7 +183,7 @@ func sessionItemView(s ipc.SessionItem) SessionItemView {
 }
 
 func platformView(p ipc.Platform) PlatformView {
-	return PlatformView{ID: p.ID, Name: p.Name, Category: p.Category}
+	return PlatformView{ID: p.ID, Name: p.Name, Category: p.Category, EmulatorID: p.EmulatorID}
 }
 
 // filterParam decodes the filter of a query. An empty or null filter is the

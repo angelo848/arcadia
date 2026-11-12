@@ -49,6 +49,7 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     playModes: ['single'],
     launchType: 'exe',
     launchArgs: '',
+    emulatorId: null,
     ...over,
   }
 }

@@ -18,6 +18,8 @@ export type EditDraft = {
   launchType: string
   launchTarget: string
   launchArgs: string
+  // The game's own emulator (EMU-002); null uses the platform default.
+  emulatorId: number | null
 }
 
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/
@@ -106,6 +108,10 @@ export function diffPatch(original: GameDetailView, draft: EditDraft): Record<st
 
   if (draft.launchArgs !== original.launchArgs) {
     patch.launchArgs = draft.launchArgs
+  }
+
+  if (draft.emulatorId !== original.emulatorId) {
+    patch.emulatorId = draft.emulatorId
   }
 
   return patch

@@ -27,6 +27,7 @@ function game(over: Partial<GameDetailView> = {}): GameDetailView {
     playModes: ['single'],
     launchType: 'exe',
     launchArgs: '',
+    emulatorId: null,
     ...over,
   }
 }
@@ -182,5 +183,25 @@ describe('GameEditForm', () => {
     fireEvent.change(screen.getByLabelText('Executável (caminho completo)'), { target: { value: 'novo.exe' } })
 
     expect(saveButton()).toBeDisabled()
+  })
+
+  it('EMU-002/escolher um emulador para o jogo envia emulatorId no patch', () => {
+    const emus = [{ id: 3, name: 'Emu', exePath: 'C:/Emu/e.exe', argsTemplate: '' }]
+    const { props } = renderForm({ emulators: emus })
+
+    fireEvent.change(screen.getByLabelText('Emulador deste jogo'), { target: { value: '3' } })
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ emulatorId: 3 })
+  })
+
+  it('EMU-002/voltar para o padrão da plataforma envia emulatorId nulo', () => {
+    const emus = [{ id: 3, name: 'Emu', exePath: 'C:/Emu/e.exe', argsTemplate: '' }]
+    const { props } = renderForm({ emulators: emus, game: game({ emulatorId: 3 }) })
+
+    fireEvent.change(screen.getByLabelText('Emulador deste jogo'), { target: { value: '' } })
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ emulatorId: null })
   })
 })

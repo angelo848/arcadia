@@ -30,6 +30,22 @@ export function DeleteGame(arg1) {
   return window['go']['main']['App']['DeleteGame'](arg1);
 }
 
+export function EmulatorAdd(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EmulatorAdd'](arg1, arg2, arg3);
+}
+
+export function EmulatorDelete(arg1) {
+  return window['go']['main']['App']['EmulatorDelete'](arg1);
+}
+
+export function EmulatorList() {
+  return window['go']['main']['App']['EmulatorList']();
+}
+
+export function EmulatorUpdate(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['EmulatorUpdate'](arg1, arg2, arg3, arg4);
+}
+
 export function GameSessions(arg1, arg2, arg3) {
   return window['go']['main']['App']['GameSessions'](arg1, arg2, arg3);
 }
@@ -68,6 +84,10 @@ export function PickFolder() {
 
 export function PickGameExe() {
   return window['go']['main']['App']['PickGameExe']();
+}
+
+export function PlatformSetEmulator(arg1, arg2) {
+  return window['go']['main']['App']['PlatformSetEmulator'](arg1, arg2);
 }
 
 export function ResumeSession() {

@@ -145,12 +145,12 @@ function detail(over: Partial<GameDetailView> & { id?: number } = {}): GameDetai
 }
 
 function platformView(over: Partial<PlatformView> = {}): PlatformView {
-  return { id: 2, name: 'Switch', category: 'handheld', ...over }
+  return { id: 2, name: 'Switch', category: 'handheld', emulatorId: null, ...over }
 }
 
 function catalog(over: Partial<CatalogView> = {}): CatalogView {
   return {
-    platforms: [{ id: 1, name: 'PC', category: 'pc' }],
+    platforms: [{ id: 1, name: 'PC', category: 'pc', emulatorId: null }],
     genres: [],
     companies: [],
     playModes: [],

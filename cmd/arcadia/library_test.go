@@ -273,7 +273,7 @@ func TestLibraryReads(t *testing.T) {
 			t.Errorf("game.get params = %s, want {\"gameId\":3}", c.params)
 		}
 		wantJSON(t, got, `{"id":3,"title":"Celeste","platformId":0,"platform":"PC","path":"","status":"completed",`+
-			`"favorite":true,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"",`+
+			`"favorite":true,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"","emulatorId":null,`+
 			`"description":"Platformer","completedAt":"","developers":[],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":""}`)
 
 		done := "2026-11-12"
@@ -289,7 +289,7 @@ func TestLibraryReads(t *testing.T) {
 			t.Fatalf("GetGame(3) with lists err = %v", err)
 		}
 		wantJSON(t, got2, `{"id":3,"title":"Celeste","platformId":0,"platform":"","path":"","status":"",`+
-			`"favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"",`+
+			`"favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"","emulatorId":null,`+
 			`"description":"","completedAt":"2026-11-12","developers":["Maddy Makes Games"],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":""}`)
 	})
 
@@ -496,7 +496,7 @@ func TestLibraryWrites(t *testing.T) {
 			t.Fatalf("Catalog() err = %v", err)
 		}
 		singleCall(t, p, ipc.MethodLibraryCatalog, 5*time.Second)
-		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc"}],"genres":[{"id":5,"name":"RPG"}],`+
+		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc","emulatorId":null}],"genres":[{"id":5,"name":"RPG"}],`+
 			`"companies":[{"id":7,"name":"Team Cherry"}],"playModes":["single"]}`)
 
 		p2 := &gamePinger{results: p.results}
@@ -510,7 +510,7 @@ func TestLibraryWrites(t *testing.T) {
 		if !sameJSON(t, lp["name"], `"Arcade X"`) || !sameJSON(t, lp["category"], `"arcade"`) {
 			t.Errorf("platform.add params = %s, want name \"Arcade X\" and category \"arcade\"", c.params)
 		}
-		wantJSON(t, pl, `{"id":9,"name":"Arcade X","category":"arcade"}`)
+		wantJSON(t, pl, `{"id":9,"name":"Arcade X","category":"arcade","emulatorId":null}`)
 
 		// An empty catalog gives [] in every list, never null.
 		p3 := &gamePinger{results: map[string]any{ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[],"genres":[],"companies":[],"playModes":[]}`)}}

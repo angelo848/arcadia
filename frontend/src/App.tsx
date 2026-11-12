@@ -4,7 +4,9 @@ import { AddGameForm } from './components/AddGameForm'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
+import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
+import { useEmulators, type EmulatorView } from './lib/emulators'
 import { ErrorBanner } from './components/ErrorBanner'
 import { FilterPanel } from './components/FilterPanel'
 import { GameEditForm } from './components/GameEditForm'
@@ -55,6 +57,7 @@ type GameScreenProps = {
   id: number
   current: SessionView | null
   genreSuggestions: string[]
+  emulators: EmulatorView[]
   editing: boolean
   editError: string | null
   savePending: boolean
@@ -75,6 +78,7 @@ function GameScreen({
   id,
   current,
   genreSuggestions,
+  emulators,
   editing,
   editError,
   savePending,
@@ -98,6 +102,7 @@ function GameScreen({
           key={id}
           game={detail.data}
           genreSuggestions={genreSuggestions}
+          emulators={emulators}
           onSave={onSave}
           onCancel={onCancelEdit}
           pending={savePending}
@@ -166,6 +171,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<PickedExe | null>(null)
   const [importing, setImporting] = useState(false)
+  const [emulating, setEmulating] = useState(false)
+  const emulators = useEmulators()
 
   const session = current.data ?? null
 
@@ -328,6 +335,13 @@ export default function App() {
         <div className="flex items-center gap-4">
           <button
             type="button"
+            onClick={() => setEmulating(true)}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+          >
+            Emuladores
+          </button>
+          <button
+            type="button"
             onClick={() => setImporting(true)}
             className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
           >
@@ -348,6 +362,7 @@ export default function App() {
       </header>
       {conflict && <AgentConflict />}
       {error !== null && <ErrorBanner message={error} onClose={() => setError(null)} />}
+      {emulating && <EmulatorsDialog onClose={() => setEmulating(false)} />}
       {importing && (
         <ImportDialog
           onImported={() => void qc.invalidateQueries({ queryKey: libraryGamesKey })}
@@ -375,6 +390,7 @@ export default function App() {
             id={selectedId}
             current={session}
             genreSuggestions={genreNames}
+            emulators={emulators.data ?? []}
             editing={editing}
             editError={editError}
             savePending={update.isPending}

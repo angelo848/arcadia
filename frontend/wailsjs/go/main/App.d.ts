@@ -17,6 +17,14 @@ export function CurrentSession():Promise<main.SessionView>;
 
 export function DeleteGame(arg1:number):Promise<void>;
 
+export function EmulatorAdd(arg1:string,arg2:string,arg3:string):Promise<main.EmulatorView>;
+
+export function EmulatorDelete(arg1:number):Promise<void>;
+
+export function EmulatorList():Promise<main.EmulatorListView>;
+
+export function EmulatorUpdate(arg1:number,arg2:string,arg3:string,arg4:string):Promise<main.EmulatorView>;
+
 export function GameSessions(arg1:number,arg2:number,arg3:number):Promise<main.SessionListView>;
 
 export function GetGame(arg1:number):Promise<main.GameDetailView>;
@@ -36,6 +44,8 @@ export function PauseSession():Promise<main.SessionView>;
 export function PickFolder():Promise<string>;
 
 export function PickGameExe():Promise<main.PickedExe>;
+
+export function PlatformSetEmulator(arg1:number,arg2:number):Promise<main.PlatformView>;
 
 export function ResumeSession():Promise<main.SessionView>;
 

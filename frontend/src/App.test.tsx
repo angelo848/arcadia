@@ -57,7 +57,7 @@ function status(connected: boolean) {
 
 function catalog(over: Partial<CatalogView> = {}): CatalogView {
   return {
-    platforms: [{ id: 1, name: 'Windows', category: 'pc' }],
+    platforms: [{ id: 1, name: 'Windows', category: 'pc', emulatorId: null }],
     genres: [],
     companies: [],
     playModes: [],
@@ -171,6 +171,7 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     playModes: [],
     launchType: 'exe',
     launchArgs: '',
+    emulatorId: null,
     ...over,
   }
 }
@@ -564,8 +565,8 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     app.Catalog.mockResolvedValue(
       catalog({
         platforms: [
-          { id: 1, name: 'Windows', category: 'pc' },
-          { id: 2, name: 'PlayStation 2', category: 'console' },
+          { id: 1, name: 'Windows', category: 'pc', emulatorId: null },
+          { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null },
         ],
       }),
     )

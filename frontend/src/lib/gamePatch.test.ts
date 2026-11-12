@@ -26,6 +26,7 @@ const original: GameDetailView = {
   playModes: ['single'],
   launchType: 'exe',
   launchArgs: '',
+  emulatorId: null,
 }
 
 // draftOf is the untouched draft of original: every field equals the stored value.
@@ -44,6 +45,7 @@ function draftOf(over: Partial<EditDraft> = {}): EditDraft {
     launchType: 'exe',
     launchTarget: 'C:\\Games\\HK\\hollow_knight.exe',
     launchArgs: '',
+    emulatorId: null,
     ...over,
   } as EditDraft
 }
