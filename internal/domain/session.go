@@ -65,6 +65,9 @@ const (
 	// SessionGracePeriod is how long an empty job may stay empty before the session ends.
 	SessionGracePeriod = 15 * time.Second
 
+	// SessionWatchInterval is the snapshot period of the watcher of an adopted process (RUL-002).
+	SessionWatchInterval = 1500 * time.Millisecond
+
 	// SessionAdoptTimeout is how long a URI launch waits for its game process (RUL-003).
 	SessionAdoptTimeout = 60 * time.Second
 	// MinCountedSession is the minimum active time for a session to count.

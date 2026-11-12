@@ -111,6 +111,11 @@ type Config struct {
 	Log      *slog.Logger
 	// Zero => domain defaults; tests may shorten them.
 	Grace, Heartbeat, Poll time.Duration
+	// Processes lists the running processes for URI launches (RUL-002); nil means
+	// no process can be adopted, so such launches end at the adoption timeout.
+	Processes ProcessLister
+	// WatchInterval is the snapshot period of the watcher; zero => domain default.
+	WatchInterval time.Duration
 }
 
 type launchResult struct {
@@ -161,14 +166,16 @@ type Tracker struct {
 	view         Machine         // copy of the machine published by the owner
 
 	// Owned by the run goroutine.
-	m         *Machine
-	job       Job
-	events    <-chan JobEvent
-	heartbeat timer
-	grace     timer
-	poll      timer
-	adopt     timer     // URI adoption timeout (RUL-003)
-	lastAt    time.Time // latest event instant applied to m
+	m          *Machine
+	job        Job
+	events     <-chan JobEvent
+	heartbeat  timer
+	grace      timer
+	poll       timer
+	adopt      timer         // URI adoption timeout (RUL-003)
+	procs      ProcessLister // snapshots for adopted processes (RUL-002); nil = none
+	watchEvery time.Duration // watcher snapshot period
+	lastAt     time.Time     // latest event instant applied to m
 }
 
 // New returns a stopped Tracker; call Start to run it.
@@ -182,6 +189,10 @@ func New(cfg Config) *Tracker {
 	}
 	if poll <= 0 {
 		poll = domain.JobPollInterval
+	}
+	watch := cfg.WatchInterval
+	if watch <= 0 {
+		watch = domain.SessionWatchInterval
 	}
 	notify := cfg.Notify
 	if notify == nil {
@@ -203,6 +214,8 @@ func New(cfg Config) *Tracker {
 		clock:      cfg.Clock,
 		store:      cfg.Store,
 		launcher:   cfg.Launcher,
+		procs:      cfg.Processes,
+		watchEvery: watch,
 		notify:     notify,
 		feedback:   feedback,
 		log:        log,
@@ -655,6 +668,11 @@ func (t *Tracker) handleJobEvent(ev JobEvent) {
 	switch ev.Kind {
 	case EventNewProcess:
 		t.log.Debug("processo novo no job", slog.Uint64("pid", uint64(ev.PID)))
+		if t.m.State() == StateLaunching {
+			// A URI launch: the watcher found the game process (RUL-002).
+			t.step(t.work, func() []Effect { return t.m.Adopted(now) })
+			return
+		}
 		t.step(t.work, func() []Effect { return t.m.ProcessAdded(now) })
 	case EventActiveZero:
 		t.step(t.work, func() []Effect { return t.m.TrackedEmpty(now) })
@@ -873,7 +891,24 @@ func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
 	}
 	t.publish()
 
+	// The watcher takes its baseline before the shell opens the game, so the game
+	// process cannot be part of it (RUL-002). Without a lister nothing is adopted.
+	var job *adoptedJob
+	if t.procs != nil {
+		rules, err := t.trackingRules(spec.GameID)
+		if err != nil {
+			t.step(t.work, t.m.PrepareFailed)
+			return t.launchFailed(spec, err)
+		}
+		aj, err := newAdoptedJob(t.procs, rules, t.clock, t.watchEvery)
+		if err != nil {
+			t.step(t.work, t.m.PrepareFailed)
+			return t.launchFailed(spec, err)
+		}
+		job = aj
+	}
 	if err := t.launcher.OpenURI(spec.Exe); err != nil {
+		closeAdopted(job)
 		t.step(t.work, t.m.PrepareFailed)
 		return t.launchFailed(spec, err)
 	}
@@ -889,10 +924,39 @@ func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
 	id, err := t.store.StartSession(wctx, spec.GameID, startAt)
 	cancel()
 	if err != nil {
+		closeAdopted(job)
 		t.step(t.work, t.m.PrepareFailed)
 		return t.launchFailed(spec, err)
+	}
+	if job != nil {
+		t.job = job
+		t.events = job.Events()
 	}
 	t.exec(t.work, t.m.InsertedURI(id), id)
 	t.publish()
 	return launchResult{snap: activeSession(t.m, now)}
+}
+
+// closeAdopted closes the watcher of a URI launch that failed before its session
+// started. A nil job is a no-op.
+func closeAdopted(job *adoptedJob) {
+	if job != nil {
+		_ = job.Close()
+	}
+}
+
+// trackingRules reads the rules of a game for the watcher (RUL-002), converted to
+// the tracker's own type. A failing read fails the launch.
+func (t *Tracker) trackingRules(gameID int64) ([]Rule, error) {
+	ctx, cancel := context.WithTimeout(t.work, writeTimeout)
+	defer cancel()
+	rs, err := t.store.TrackingRules(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("tracker: read tracking rules: %w", err)
+	}
+	out := make([]Rule, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, Rule{Kind: r.Kind, Value: r.Value})
+	}
+	return out, nil
 }

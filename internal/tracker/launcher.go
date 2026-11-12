@@ -104,4 +104,6 @@ type SessionStore interface {
 	PauseSession(ctx context.Context, p store.PauseStart) error
 	// ResumePause closes the open pause interval [SES-017].
 	ResumePause(ctx context.Context, p store.PauseEnd) error
+	// TrackingRules returns the rules that adopt the processes of a game (RUL-002).
+	TrackingRules(ctx context.Context, gameID int64) ([]store.TrackingRule, error)
 }

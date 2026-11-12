@@ -123,3 +123,37 @@ func (q *Queries) InsertTrackingRule(ctx context.Context, arg InsertTrackingRule
 	_, err := q.db.ExecContext(ctx, insertTrackingRule, arg.GameID, arg.Kind, arg.Value)
 	return err
 }
+
+const listTrackingRules = `-- name: ListTrackingRules :many
+SELECT kind, value FROM tracking_rule
+WHERE game_id = ?
+ORDER BY id
+`
+
+type ListTrackingRulesRow struct {
+	Kind  string
+	Value string
+}
+
+func (q *Queries) ListTrackingRules(ctx context.Context, gameID int64) ([]ListTrackingRulesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTrackingRules, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTrackingRulesRow{}
+	for rows.Next() {
+		var i ListTrackingRulesRow
+		if err := rows.Scan(&i.Kind, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

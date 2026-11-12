@@ -21,3 +21,8 @@ VALUES (?, ?, ?, 0);
 INSERT INTO play_session (game_id, started_at, ended_at, last_seen_at, active_seconds, state, source)
 VALUES (?, ?, ?, ?, ?, 'ended', 'import')
 RETURNING id;
+
+-- name: ListTrackingRules :many
+SELECT kind, value FROM tracking_rule
+WHERE game_id = ?
+ORDER BY id;

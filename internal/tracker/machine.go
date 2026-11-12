@@ -505,10 +505,28 @@ func (m *Machine) AdoptTimeout(now time.Time, gen uint64) []Effect {
 	}
 	effs := []Effect{
 		{Kind: EffEndSession, State: domain.SessionDiscarded, At: now, Active: 0, Reason: domain.EndClientNoLaunch},
+		{Kind: EffCloseJob}, // stops the watcher of the adopted process
 	}
 	n := m.notify(domain.SessionDiscarded, now)
 	n.Session.EndedAt = now
 	effs = append(effs, n)
 	m.reset()
 	return effs
+}
+
+// Adopted moves Launching -> Running when the watcher finds the game process
+// (RUL-002). The session counts from the adoption instant: the time the shell
+// took to start the game is not play time. The timers start as in Resumed.
+func (m *Machine) Adopted(now time.Time) []Effect {
+	if m.state != StateLaunching {
+		return nil
+	}
+	m.state = StateRunning
+	m.runningSince = now
+	m.accumulated = 0
+	return []Effect{
+		m.armHeartbeat(),
+		m.armPoll(),
+		m.notify(domain.SessionRunning, now),
+	}
 }

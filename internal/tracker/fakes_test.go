@@ -361,8 +361,9 @@ func takeGate(mu *sync.Mutex, slot **gate) *gate {
 // fakeStore records every SessionStore call and injects errors. With real set,
 // successful calls are delegated to a real store.
 type fakeStore struct {
-	rec  *recorder
-	real tracker.SessionStore
+	rec   *recorder
+	real  tracker.SessionStore
+	rules []store.TrackingRule // returned by TrackingRules when real is nil
 
 	mu         sync.Mutex
 	nextID     int64
@@ -771,6 +772,9 @@ func (l *fakeLauncher) job(t *testing.T, i int) *fakeJob {
 type envConfig struct {
 	grace, heartbeat, poll time.Duration // zero => domain defaults
 	real                   tracker.SessionStore
+	procs                  tracker.ProcessLister // nil: no adoption (RUL-002)
+	watch                  time.Duration         // watcher period; zero => domain default
+	rules                  []store.TrackingRule  // returned when real is nil
 	noStart                bool
 	// feedback runs inside the Config.Feedback callback, after the call is
 	// recorded (it may block).
@@ -799,7 +803,7 @@ func newEnv(t *testing.T, cfg envConfig) *env {
 	e := &env{
 		clock:    domain.NewFakeClock(baseT),
 		rec:      rec,
-		store:    newFakeStore(rec, cfg.real),
+		store:    withRules(newFakeStore(rec, cfg.real), cfg.rules),
 		launcher: &fakeLauncher{rec: rec},
 		logs:     newLogStore(),
 	}
@@ -814,10 +818,12 @@ func newEnv(t *testing.T, cfg envConfig) *env {
 				cfg.feedback(k)
 			}
 		},
-		Log:       e.logs.logger(),
-		Grace:     cfg.grace,
-		Heartbeat: cfg.heartbeat,
-		Poll:      cfg.poll,
+		Processes:     cfg.procs,
+		WatchInterval: cfg.watch,
+		Log:           e.logs.logger(),
+		Grace:         cfg.grace,
+		Heartbeat:     cfg.heartbeat,
+		Poll:          cfg.poll,
 	})
 	if !cfg.noStart {
 		e.tr.Start()
@@ -966,3 +972,39 @@ func (l *fakeLauncher) urisOpened() []string {
 
 // jobCount returns how many jobs the launcher created.
 func (l *fakeLauncher) jobCount() int { return len(l.jobsSnapshot()) }
+
+// TrackingRules delegates to the real store (RUL-002).
+func (s *fakeStore) TrackingRules(ctx context.Context, gameID int64) ([]store.TrackingRule, error) {
+	if s.real == nil {
+		return s.rules, nil
+	}
+	return s.real.TrackingRules(ctx, gameID)
+}
+
+// withRules sets the rules a fake store returns when it has no real store (RUL-002).
+func withRules(s *fakeStore, rules []store.TrackingRule) *fakeStore {
+	s.rules = rules
+	return s
+}
+
+// fakeLister returns the snapshot a test sets (RUL-002).
+type fakeLister struct {
+	mu    sync.Mutex
+	procs []tracker.ProcInfo
+	err   error
+}
+
+func (l *fakeLister) set(procs ...tracker.ProcInfo) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.procs = procs
+}
+
+func (l *fakeLister) List() ([]tracker.ProcInfo, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.err != nil {
+		return nil, l.err
+	}
+	return slices.Clone(l.procs), nil
+}
