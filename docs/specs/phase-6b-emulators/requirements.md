@@ -1,6 +1,6 @@
 # Fase 6b — Emuladores: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário (decisões de produto abaixo)
+- **Status:** aprovado pelo usuário (2026-11-12). Decisões: sobrescrita por jogo só na página do jogo (recomendação); modelo com {rom} e {dir}; rastreio pelo Job do emulador como um exe.
 - **Base:** [phase-6-importers](../phase-6-importers/requirements.md) (importação do LaunchBox deixa de fora os jogos
   com emulador, com aviso por plataforma) e [phase-5-library](../phase-5-library/requirements.md) (EDT-010: tipo, alvo e
   argumentos editáveis).
@@ -62,8 +62,11 @@ emulador padrão de cada plataforma. Apagar pede confirmação (como DEL-001).
 
 ---
 
-## Perguntas para o usuário
+## Decisões aprovadas
 
-1. Sobrescrita de emulador por jogo: só na página do jogo (recomendado), ou também em lote?
-2. Marcadores do modelo: `{rom}` e `{dir}` (recomendado), ou só `{rom}`?
-3. Confirma que emuladores ficam dentro do rastreio do Job, como um `exe` (recomendado)?
+1. Cada plataforma tem um emulador padrão. Um jogo pode sobrescrever o emulador na página do jogo (não em lote).
+2. O modelo de argumentos aceita `{rom}` e `{dir}`.
+3. O rastreio fica no Job do emulador, como um `exe`.
+
+Consequência para a fase 6: o importador do LaunchBox deixa de excluir jogos com emulador; eles entram como candidatos
+`launch_type = emulator` com a ROM como alvo (EMU-003). O aviso por plataforma sai.
