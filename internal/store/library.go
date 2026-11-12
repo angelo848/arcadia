@@ -245,6 +245,7 @@ func idArgs(ids []int64) []any {
 // modes (STO-026). The lists are never nil.
 type GameDetail struct {
 	Game
+	EmulatorID                     *int64 // the game's own emulator, nil to use the platform default (EMU-002)
 	Description                    string
 	CompletedAt                    time.Time // zero = NULL
 	Developers, Publishers, Genres []string  // never nil; NOCASE order
@@ -278,6 +279,11 @@ func readGameDetail(ctx context.Context, q *dbgen.Queries, id int64) (GameDetail
 	d.Game = gameFromRow(row)
 	d.Description = row.Description
 	d.CompletedAt = nullMillisToTime(row.CompletedAt)
+	if ref, err := q.GameEmulatorRef(ctx, id); err == nil {
+		d.EmulatorID = nullIntPtr(ref.GameEmulatorID)
+	} else {
+		return GameDetail{}, fmt.Errorf("store: emulator of game %d: %w", id, err)
+	}
 	if d.Developers, err = q.GameDeveloperNames(ctx, id); err != nil {
 		return GameDetail{}, fmt.Errorf("store: developers of game %d: %w", id, err)
 	}

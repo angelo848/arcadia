@@ -216,3 +216,44 @@ func nullInt(id *int64) sql.NullInt64 {
 	}
 	return sql.NullInt64{Int64: *id, Valid: true}
 }
+
+// applyEmulator sets the game's own emulator when the patch names one (EMU-002) and
+// reports whether it changed. An unknown emulator is ErrEmulatorNotFound.
+func applyEmulator(ctx context.Context, q *dbgen.Queries, id int64, p GamePatch, at time.Time) (bool, error) {
+	if p.EmulatorID == nil {
+		return false, nil
+	}
+	want := *p.EmulatorID
+	if want != nil {
+		if _, err := q.GetEmulator(ctx, *want); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, ErrEmulatorNotFound
+			}
+			return false, fmt.Errorf("store: read emulator %d: %w", *want, err)
+		}
+	}
+	ref, err := q.GameEmulatorRef(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("store: emulator of game %d: %w", id, err)
+	}
+	cur := ref.GameEmulatorID
+	same := (want == nil && !cur.Valid) || (want != nil && cur.Valid && cur.Int64 == *want)
+	if same {
+		return false, nil
+	}
+	if _, err := q.SetGameEmulator(ctx, dbgen.SetGameEmulatorParams{
+		EmulatorID: nullInt(want), UpdatedAt: TimeToMillis(at), ID: id,
+	}); err != nil {
+		return false, fmt.Errorf("store: set game %d emulator: %w", id, err)
+	}
+	return true, nil
+}
+
+// nullIntPtr maps a nullable column to an optional id.
+func nullIntPtr(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	x := v.Int64
+	return &x
+}

@@ -32,6 +32,8 @@ type GamePatch struct {
 	Publishers         *[]string
 	Genres             *[]string
 	PlayModes          *[]domain.PlayMode
+	// EmulatorID: outer nil leaves the emulator; inner nil clears it (EMU-002).
+	EmulatorID **int64
 	// Launch fields (EDT-010): the type, the target and the arguments.
 	LaunchType, LaunchTarget, LaunchArgs *string
 }
@@ -76,7 +78,11 @@ func (s *Store) UpdateGame(ctx context.Context, id int64, p GamePatch, at time.T
 		if err != nil {
 			return fmt.Errorf("store: update game %d: %w", id, err)
 		}
-		if next != base || linksChanged {
+		emulatorChanged, err := applyEmulator(ctx, q, id, p, at)
+		if err != nil {
+			return fmt.Errorf("store: update game %d: %w", id, err)
+		}
+		if next != base || linksChanged || emulatorChanged {
 			next.ID = id
 			next.UpdatedAt = TimeToMillis(at)
 			n, err := q.UpdateGameFields(ctx, next)

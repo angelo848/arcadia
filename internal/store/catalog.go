@@ -13,9 +13,10 @@ import (
 
 // Platform is a platform of the library (IPC-048, EDT-008).
 type Platform struct {
-	ID       int64
-	Name     string
-	Category domain.PlatformCategory
+	ID         int64
+	Name       string
+	Category   domain.PlatformCategory
+	EmulatorID *int64 // default emulator of the platform, nil when none (EMU-002)
 }
 
 // CatalogItem is a genre or a company of the catalog: its database id, which the
@@ -151,5 +152,5 @@ func companyItems(rows []dbgen.Company) []CatalogItem {
 
 // platformFromModel maps a platform row to Platform.
 func platformFromModel(p dbgen.Platform) Platform {
-	return Platform{ID: p.ID, Name: p.Name, Category: domain.PlatformCategory(p.Category)}
+	return Platform{ID: p.ID, Name: p.Name, Category: domain.PlatformCategory(p.Category), EmulatorID: nullIntPtr(p.EmulatorID)}
 }

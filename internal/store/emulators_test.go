@@ -151,3 +151,37 @@ func TestImportEmulatorGame(t *testing.T) {
 		}
 	})
 }
+
+func TestEmulatorPatch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EMU-002/editar o emulador do jogo pelo patch define e limpa a sobrescrita", func(t *testing.T) {
+		t.Parallel()
+		s := ftsOpen(t)
+		emu, err := s.AddEmulator(t.Context(), "Emu", `C:\Emu\e.exe`, "{rom}")
+		if err != nil {
+			t.Fatalf("AddEmulator: %v", err)
+		}
+		g, err := s.AddGame(t.Context(), NewGame{Title: "Jogo", Exe: `C:\j.exe`, At: importAt})
+		if err != nil {
+			t.Fatalf("AddGame: %v", err)
+		}
+		id := emu.ID
+		ptr := &id
+		if _, err := s.UpdateGame(t.Context(), g.ID, GamePatch{EmulatorID: &ptr}, importAt); err != nil {
+			t.Fatalf("UpdateGame set: %v", err)
+		}
+		d, err := s.GameDetail(t.Context(), g.ID)
+		if err != nil || d.EmulatorID == nil || *d.EmulatorID != emu.ID {
+			t.Fatalf("detail emulator = %v, %v; want %d", d.EmulatorID, err, emu.ID)
+		}
+		var none *int64
+		if _, err := s.UpdateGame(t.Context(), g.ID, GamePatch{EmulatorID: &none}, importAt); err != nil {
+			t.Fatalf("UpdateGame clear: %v", err)
+		}
+		d, err = s.GameDetail(t.Context(), g.ID)
+		if err != nil || d.EmulatorID != nil {
+			t.Errorf("detail emulator after clear = %v, %v; want nil", d.EmulatorID, err)
+		}
+	})
+}
