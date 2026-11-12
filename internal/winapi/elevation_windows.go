@@ -9,7 +9,7 @@ import (
 )
 
 // IsProcessElevated reports whether the process pid runs with an elevated token
-// (ADM-005). It opens the process with PROCESS_QUERY_LIMITED_INFORMATION and its
+// (ADM-006). It opens the process with PROCESS_QUERY_LIMITED_INFORMATION and its
 // token with TOKEN_QUERY, reads TokenElevation and closes both handles.
 func IsProcessElevated(pid uint32) (bool, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)

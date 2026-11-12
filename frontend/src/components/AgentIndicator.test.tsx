@@ -61,4 +61,22 @@ describe('AgentIndicator', () => {
     expect(classes.some((c) => redRe.test(c))).toBe(true)
     expect(classes.some((c) => greenRe.test(c))).toBe(false)
   })
+
+  it('ADM-002/conectado e elevado mostra "Agente com privilégio de administrador"', () => {
+    render(<AgentIndicator status={baseStatus} elevated={true} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Agente com privilégio de administrador')
+  })
+
+  it('ADM-002/conectado sem elevação não mostra o texto de administrador', () => {
+    render(<AgentIndicator status={baseStatus} elevated={false} />)
+
+    expect(screen.getByRole('status')).not.toHaveTextContent('Agente com privilégio de administrador')
+  })
+
+  it('ADM-002/desconectado nunca mostra o texto de administrador', () => {
+    render(<AgentIndicator status={{ ...baseStatus, connected: false }} elevated={true} />)
+
+    expect(screen.getByRole('status')).not.toHaveTextContent('Agente com privilégio de administrador')
+  })
 })

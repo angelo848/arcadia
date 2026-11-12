@@ -15,6 +15,7 @@ export type AgentStatusView = {
 // (same pattern as lib/games.ts), so tests can fake window.go and window.runtime.
 type WailsApp = {
   AgentStatus?: () => Promise<AgentStatusView>
+  AgentElevated?: () => Promise<boolean>
 }
 
 type WailsRuntime = {
@@ -52,6 +53,33 @@ async function fetchAgentStatus(): Promise<AgentStatusView> {
   } catch {
     return disconnectedStatus
   }
+}
+
+// fetchAgentElevated never rejects. A missing binding is "unknown" (null) and raises no
+// warning. A failed check counts as "not elevated", so the UI shows the warning instead of
+// using that agent (ADM-006).
+async function fetchAgentElevated(): Promise<boolean | null> {
+  const fn = wails().go?.main?.App?.AgentElevated
+  if (!fn) {
+    return null
+  }
+  try {
+    return await fn()
+  } catch {
+    return false
+  }
+}
+
+// useAgentElevated asks, once per agent process, whether the connected agent runs
+// with administrator rights (ADM-006). It is disabled while no agent is connected.
+export function useAgentElevated(agent: AgentStatusView) {
+  return useQuery({
+    queryKey: ['agent', 'elevated', agent.pid],
+    queryFn: fetchAgentElevated,
+    enabled: agent.connected,
+    staleTime: Infinity,
+    retry: false,
+  })
 }
 
 // useAgentStatus polls the agent status every 1 s and refetches immediately on

@@ -10,6 +10,10 @@ export function AddPlatform(arg1, arg2) {
   return window['go']['main']['App']['AddPlatform'](arg1, arg2);
 }
 
+export function AgentElevated() {
+  return window['go']['main']['App']['AgentElevated']();
+}
+
 export function AgentStatus() {
   return window['go']['main']['App']['AgentStatus']();
 }

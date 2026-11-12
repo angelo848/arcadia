@@ -7,6 +7,8 @@ export function AddGame(arg1:string,arg2:string):Promise<main.GameView>;
 
 export function AddPlatform(arg1:string,arg2:string):Promise<main.PlatformView>;
 
+export function AgentElevated():Promise<boolean>;
+
 export function AgentStatus():Promise<main.StatusView>;
 
 export function Catalog():Promise<main.CatalogView>;

@@ -62,6 +62,15 @@ Dado o agente caindo, quando a UI o relança (fase 2, AGT-001/AGT-002), então o
 herda a elevação da UI. Dado a UI fechada e o agente rodando, então o agente continua, como antes.
 · verificação: manual
 
+### ADM-006 — Agente antigo sem elevação
+Dado um agente sem elevação já em execução (versão anterior, iniciada antes da remoção do início automático), quando o
+usuário abre a UI como administrador, então a UI mostra o aviso "Já há um agente rodando sem privilégio de administrador.
+Saia dele pela bandeja e abra o Arcadia de novo como administrador." e não usa o agente: lista, sessão e lançamentos
+ficam indisponíveis até que o agente certo esteja rodando. Dado o agente elevado, então o indicador mostra "Agente com
+privilégio de administrador" (ADM-002). Dado que a checagem falha, então a UI trata o agente como não elevado. Esta
+regra estava na versão anterior da spec e foi reincluída aqui; o design (IsProcessElevated) já a previa.
+· verificação: manual
+
 ---
 
 ## TAG — Gêneros como tags

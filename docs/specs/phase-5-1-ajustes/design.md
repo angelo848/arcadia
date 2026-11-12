@@ -5,7 +5,7 @@
   (fim do início automático), ambas aceitas com a aprovação desta spec.
 - **Sem mudança de contrato IPC.** Nenhuma coluna, nenhuma migração, nenhum método novo.
 
-## 1. Elevação (ADM-001, ADM-002, ADM-003, ADM-005)
+## 1. Elevação (ADM-001, ADM-002, ADM-003, ADM-006)
 
 **Manifesto.** `cmd/arcadia/build/windows/wails.exe.manifest` recebe `trustInfo` com
 `<requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>`. Só o `wails build` embute o manifesto;
@@ -14,7 +14,7 @@
 **Agente herda.** A UI (elevada) inicia o agente com `CreateDetached` (já existente), e o filho herda o token. Não há
 `runas`. Os jogos são lançados pelo agente, como hoje: Job Object, pausa e filhos (fases 3 e 4).
 
-**Agente antigo não elevado (ADM-005).** Um agente da versão anterior pode estar rodando sem elevação até o logout.
+**Agente antigo não elevado (ADM-006).** Um agente da versão anterior pode estar rodando sem elevação até o logout.
 A UI, ao conectar, consulta o PID do agente com a própria elevação (que é alta, pois a UI é admin):
 
 ```go
@@ -25,7 +25,7 @@ A UI, ao conectar, consulta o PID do agente com a própria elevação (que é al
 func IsProcessElevated(pid uint32) (bool, error)
 ```
 
-Se `IsProcessElevated(status.pid)` é falso, a UI mostra o aviso de ADM-005 e não usa o agente. Sem mudança de IPC: o PID já
+Se `IsProcessElevated(status.pid)` é falso, a UI mostra o aviso de ADM-006 e não usa o agente. Sem mudança de IPC: o PID já
 vem em `agent.status`. Esta função fica em `internal/winapi` (só Windows) e a UI a chama por um método do
 `cmd/arcadia` (`App.AgentElevated`), que devolve `bool` ao frontend.
 
@@ -74,13 +74,13 @@ texto com vírgula), e `toDraft` passa o array direto. `diffPatch` continua mand
 - Go: `winapi` (`RemoveOwnRunEntry`, `IsProcessElevated`) com testes de Windows que usam uma chave de teste em
   `HKCU\Software\ArcadiaTest` (nunca a chave real); o manifesto é verificado por um teste que lê o XML embutido.
 - Frontend: `TagInput.test.tsx` (TAG-001..004) e `GameEditForm.test.tsx` (TAG-005, troca do campo de texto).
-- Manual: ADM-001 (UAC ao abrir; build dev sem UAC), ADM-005 (aviso com agente antigo), TAG-005 (filtro), UI
+- Manual: ADM-001 (UAC ao abrir; build dev sem UAC), ADM-006 (aviso com agente antigo), TAG-005 (filtro), UI
   de gêneros em edição.
 - `spec-trace.ps1 -Spec docs/specs/phase-5-1-ajustes`, e a trilha de `single-exe` continua OK com AST-002..011 substituídos.
 
 ## 5. Riscos
 
-- **Agente antigo em execução:** só some no logout ou ao sair pela bandeja. ADM-005 cobre o aviso.
+- **Agente antigo em execução:** só some no logout ou ao sair pela bandeja. ADM-006 cobre o aviso.
 - **UAC a cada abertura:** consequência aceita (ADR 0024). Não há como evitar sem tarefa agendada, descartada.
 - **`IsProcessElevated` em processo de outro usuário:** o agente roda na mesma conta, então o acesso é permitido; se
   falhar, a UI trata como "não elevado" e mostra o aviso. Registrado como caso de teste.

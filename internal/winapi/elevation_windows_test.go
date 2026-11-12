@@ -12,10 +12,10 @@ import (
 )
 
 // TestIsProcessElevated checks IsProcessElevated against the token of the test
-// process itself (ADM-005). The expected value is read through another call, so
+// process itself (ADM-006). The expected value is read through another call, so
 // the test does not depend on whether the suite runs elevated.
 func TestIsProcessElevated(t *testing.T) {
-	t.Run("ADM-005/processo atual reporta o mesmo estado do próprio token", func(t *testing.T) {
+	t.Run("ADM-006/processo atual reporta o mesmo estado do próprio token", func(t *testing.T) {
 		t.Parallel()
 		want := windows.GetCurrentProcessToken().IsElevated()
 		got, err := winapi.IsProcessElevated(uint32(os.Getpid()))
@@ -27,7 +27,7 @@ func TestIsProcessElevated(t *testing.T) {
 		}
 	})
 
-	t.Run("ADM-005/PID inexistente retorna erro", func(t *testing.T) {
+	t.Run("ADM-006/PID inexistente retorna erro", func(t *testing.T) {
 		t.Parallel()
 		// Process IDs are multiples of 4; this one does not exist.
 		if got, err := winapi.IsProcessElevated(0xFFFFFFF0); err == nil {

@@ -9,7 +9,15 @@ function displayVersion(version: string): string {
 
 // AgentIndicator shows the agent connection state (UI-001). The version is only
 // rendered while connected, even if a stale value is present.
-export function AgentIndicator({ status }: { status: AgentStatusView }): JSX.Element {
+// elevated is true when the connected agent runs as administrator (ADM-002); it is
+// not shown while disconnected or while the check is still pending.
+export function AgentIndicator({
+  status,
+  elevated,
+}: {
+  status: AgentStatusView
+  elevated?: boolean
+}): JSX.Element {
   if (!status.connected) {
     return (
       <div role="status" data-state="disconnected" className="flex items-center gap-2 text-sm">
@@ -25,6 +33,7 @@ export function AgentIndicator({ status }: { status: AgentStatusView }): JSX.Ele
       {/* Explicit spaces keep the words separated in the text content. */}
       <span className="font-medium text-emerald-400">Conectado</span>{' '}
       <span className="text-neutral-400">{displayVersion(status.version)}</span>
+      {elevated === true && <span className="text-neutral-400">· Agente com privilégio de administrador</span>}
     </div>
   )
 }

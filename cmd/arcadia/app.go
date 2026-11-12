@@ -338,7 +338,7 @@ func probeStatus(ctx context.Context, p pinger, limit <-chan time.Time) (st ipc.
 }
 
 // AgentElevated reports whether the agent the UI is connected to runs with
-// administrator rights (ADM-005). Any failure (no agent, no PID, no access)
+// administrator rights (ADM-006). Any failure (no agent, no PID, no access)
 // reports false, so the UI shows the warning instead of using that agent.
 func (a *App) AgentElevated() bool {
 	st := a.AgentStatus()

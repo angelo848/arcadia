@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AddGameForm } from './components/AddGameForm'
+import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
 import { ErrorBanner } from './components/ErrorBanner'
@@ -14,7 +15,7 @@ import { SearchBox } from './components/SearchBox'
 import { SessionPanel } from './components/SessionPanel'
 import { SortSelect } from './components/SortSelect'
 import { ViewToggle } from './components/ViewToggle'
-import { disconnectedStatus, useAgentStatus } from './lib/agent'
+import { disconnectedStatus, useAgentElevated, useAgentStatus } from './lib/agent'
 import { resetQuery, withSort, withText, type LibraryQuery } from './lib/filters'
 import {
   addGame,
@@ -118,7 +119,12 @@ export default function App() {
   const qc = useQueryClient()
   const status = useAgentStatus()
   const agent = status.data ?? disconnectedStatus
-  const connected = agent.connected
+  // A connected agent without administrator rights is not used (ADM-006): nothing is
+  // read from it and no launch or session change is sent to it. While the check is pending,
+  // the agent counts as usable.
+  const elevation = useAgentElevated(agent)
+  const conflict = agent.connected && elevation.data === false
+  const connected = agent.connected && !conflict
 
   // The facets and the sort are one state; the free text is another, set by the debounced
   // SearchBox. The query sent to the agent is both together [UI-032..UI-035].
@@ -135,7 +141,7 @@ export default function App() {
   const [removing, setRemoving] = useState(false)
 
   // The list waits for the first agent status, so the connect does not reload a page still on its way [UI-009].
-  const games = useInfiniteGames(query, { enabled: status.data !== undefined })
+  const games = useInfiniteGames(query, { enabled: status.data !== undefined && !conflict })
   const catalog = useCatalog()
   const current = useCurrentSession()
   useSessionEvents()
@@ -323,9 +329,10 @@ export default function App() {
               Adicionar jogo
             </button>
           )}
-          <AgentIndicator status={agent} />
+          <AgentIndicator status={agent} elevated={elevation.data ?? undefined} />
         </div>
       </header>
+      {conflict && <AgentConflict />}
       {error !== null && <ErrorBanner message={error} onClose={() => setError(null)} />}
       {picked && (
         <AddGameForm

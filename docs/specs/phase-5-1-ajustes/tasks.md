@@ -29,19 +29,19 @@
   - `ADM-004/valor ilegível é mantido e reportado`.
 - **Dependência:** T02.
 
-## T04 — Detectar agente não elevado (ADM-005)
+## T04 — Detectar agente não elevado (ADM-006)
 - **Arquivos:** `internal/winapi/elevation_windows.go` (`IsProcessElevated(pid uint32) (bool, error)`),
   `cmd/arcadia/app.go` (`App.AgentElevated() (bool, error)` usando o PID de `agent.status`).
 - **Testes:** `internal/winapi/elevation_windows_test.go`:
-  - `ADM-005/processo atual sob o teste reporta o estado real do token`,
-  - `ADM-005/PID inexistente retorna erro`.
+  - `ADM-006/processo atual sob o teste reporta o estado real do token`,
+  - `ADM-006/PID inexistente retorna erro`.
 - **Dependência:** nenhuma.
 
-## T05 — Aviso de agente antigo na UI (ADM-005)
+## T05 — Aviso de agente antigo na UI (ADM-006)
 - **Arquivos:** `frontend/src/lib/agent.ts` (consulta `AgentElevated`), `frontend/src/App.tsx` (mensagem de conflito e
   não usa o agente), `frontend/src/components/AgentIndicator.tsx` (texto "Agente com privilégio de administrador" quando
   elevado — ADM-002).
-- **Testes:** `frontend/src/components/AgentIndicator.test.tsx` — `ADM-005/mostra aviso quando o agente não é elevado`;
+- **Testes:** `frontend/src/components/AgentConflict.test.tsx` — `ADM-006/mostra o aviso de agente sem privilégio de administrador`;
   `ADM-002/mostra "Agente com privilégio de administrador" quando elevado`.
 - **Dependência:** T04.
 
@@ -63,7 +63,7 @@
 - `go build ./...`, `go vet ./...`, `go test ./...` (Windows); `npm test`, `npx tsc --noEmit`, `npm run build`.
 - `wails build -ldflags "-X main.version=0.5.1"` (sem `-clean`).
 - `spec-trace.ps1` para `phase-5-1-ajustes` e `single-exe`.
-- Manual: ADM-001 (inclui build dev sem UAC), ADM-005, TAG-005 (filtro por gênero) — fica para o usuário.
+- Manual: ADM-001 (inclui build dev sem UAC), ADM-006, TAG-005 (filtro por gênero) — fica para o usuário.
 - **Dependência:** T01..T07.
 
 ---
