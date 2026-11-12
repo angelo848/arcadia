@@ -345,7 +345,9 @@ Dado um `ipc.Server` com clientes conectados, quando chamo `Notify(method, param
 notificação; dada uma conexão com a fila de saída cheia, então só ela perde a notificação, com log `Warn`, e as
 outras recebem.
 
-### IPC-030 — Contrato v0.4.0 é a fonte da verdade · alterado em 2026-11-10: substituído por IPC-032 (docs/specs/phase-4-pause)
+### IPC-030 — Contrato v0.4.0 é a fonte da verdade
+
+· alterado em 2026-11-10: substituído por IPC-032 (docs/specs/phase-4-pause).
 Dado `docs/specs/phase-3-tracker/contracts/ipc.openrpc.json`, quando o teste de contrato roda, então a versão é
 `0.4.0`, todos os métodos e notificações dele existem no servidor/`internal/ipc` com os mesmos nomes, os campos
 obrigatórios dos resultados batem com os tipos Go e os códigos de erro batem com as constantes; o comentário do
@@ -534,7 +536,7 @@ A confirmar na aprovação; não geram requisito nem teste.
    não é readotado, e o tempo dali em diante não conta.
 6. **Mensagens do job não são garantidas pelo Windows:** a verificação de 5 s (SES-013) cobre a perda; nesse caso o
    fim é registrado até 5 s depois do real.
-7. **Suspensão/hibernação conta como tempo jogado** até a fase 4.
+7. **Suspensão/hibernação conta como tempo jogado** até a fase 4 (superada pela Limitação 12 da fase 4).
 8. **Cronômetro × tempo gravado:** o cronômetro é uma estimativa da UI. Ele pode estar até ~1 s à frente ou atrás do
    valor do agente (truncamento, latência do IPC e do evento Wails) e, ao entrar em Grace, é substituído pelo
    `activeMs` do agente, podendo recuar um pouco. O tempo gravado é sempre o do agente.

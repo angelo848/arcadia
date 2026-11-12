@@ -24,7 +24,7 @@ atalhos, único escritor do banco e dono das migrações; inicia com o Windows) 
 
 ```
 cmd/arcadia  cmd/fake-game
-internal/{agent,domain,store,tracker,input,ipc,scrapers,importers,winapi,paths,logging}
+internal/{agent,domain,store,tracker,input,feedback,ipc,scrapers,importers,winapi,paths,logging}
 frontend/  scripts/  docs/{adr,specs}
 docs/specs/<feature>/{requirements.md,design.md,tasks.md,contracts/}
 ```

@@ -124,12 +124,12 @@ Para lançamentos via Steam/Epic/URI, o jogo nasce como filho do cliente, não n
 ```
           launch()                primeiro processo do jogo detectado
  Idle ───────────► Launching ───────────────────────────────────► Running ◄──┐
-                       │ timeout sem processo (ex.: 90 s)             │ │     │ resume (atalho)
-                       ▼                                              │ ▼     │
-                    Failed                                 pause      │ Paused┘
-                                                         (atalho/auto)│
-                                     conjunto rastreado vazio         ▼
-                                   ┌──────────────────────────── Grace (10–30 s)
+                       │ falha do lançamento                          │ │     │ retomada (atalho, controle, UI,
+                       ▼                                              │ ▼     │ ou acordar com usuário presente)
+                    Failed                  pausa (atalho, controle, UI, │ Paused┘
+                                            ou suspensão do PC)          │
+                                     conjunto rastreado vazio            ▼
+                                   ┌──────────────────────────── Grace (15 s)
                                    │ novo processo casou → volta Running
                                    ▼
                                  Ended  → grava sessão, atualiza total e "primeira vez jogado"
@@ -137,8 +137,8 @@ Para lançamentos via Steam/Epic/URI, o jogo nasce como filho do cliente, não n
 
 Com só a Camada 1 (fase 3), não existe timeout de Launching: o primeiro processo nasce no Job no próprio
 lançamento, e Launching → Failed só acontece quando o lançamento falha. O timeout de 90 s volta com a Camada 2.
-Paused também não existe ainda (pausa é a fase 4). A tabela completa de transições da fase 3 está em
-[contracts/session-state-machine.md](specs/phase-3-tracker/contracts/session-state-machine.md).
+Paused existe desde a fase 4: pausar não suspende o jogo, só para de contar o tempo. A tabela completa de transições está em
+[contracts/session-state-machine.md](specs/phase-4-pause/contracts/session-state-machine.md).
 
 O período de **Grace** cobre jogos que fecham e relançam (atualizadores, troca de DirectX/Vulkan,
 "restart to apply settings").
