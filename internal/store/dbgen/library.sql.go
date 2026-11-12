@@ -21,6 +21,75 @@ func (q *Queries) CountGames(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const deleteGameDevelopers = `-- name: DeleteGameDevelopers :exec
+DELETE FROM game_developer
+WHERE game_id = ?
+`
+
+func (q *Queries) DeleteGameDevelopers(ctx context.Context, gameID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteGameDevelopers, gameID)
+	return err
+}
+
+const deleteGameGenres = `-- name: DeleteGameGenres :exec
+DELETE FROM game_genre
+WHERE game_id = ?
+`
+
+func (q *Queries) DeleteGameGenres(ctx context.Context, gameID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteGameGenres, gameID)
+	return err
+}
+
+const deleteGamePlayModes = `-- name: DeleteGamePlayModes :exec
+DELETE FROM game_play_mode
+WHERE game_id = ?
+`
+
+func (q *Queries) DeleteGamePlayModes(ctx context.Context, gameID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteGamePlayModes, gameID)
+	return err
+}
+
+const deleteGamePublishers = `-- name: DeleteGamePublishers :exec
+DELETE FROM game_publisher
+WHERE game_id = ?
+`
+
+func (q *Queries) DeleteGamePublishers(ctx context.Context, gameID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteGamePublishers, gameID)
+	return err
+}
+
+const gameDeveloperIDs = `-- name: GameDeveloperIDs :many
+SELECT company_id FROM game_developer
+WHERE game_id = ?
+ORDER BY company_id
+`
+
+func (q *Queries) GameDeveloperIDs(ctx context.Context, gameID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, gameDeveloperIDs, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var company_id int64
+		if err := rows.Scan(&company_id); err != nil {
+			return nil, err
+		}
+		items = append(items, company_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const gameDeveloperNames = `-- name: GameDeveloperNames :many
 SELECT c.name FROM game_developer gd
 JOIN company c ON c.id = gd.company_id
@@ -41,6 +110,35 @@ func (q *Queries) GameDeveloperNames(ctx context.Context, gameID int64) ([]strin
 			return nil, err
 		}
 		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gameGenreIDs = `-- name: GameGenreIDs :many
+SELECT genre_id FROM game_genre
+WHERE game_id = ?
+ORDER BY genre_id
+`
+
+func (q *Queries) GameGenreIDs(ctx context.Context, gameID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, gameGenreIDs, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var genre_id int64
+		if err := rows.Scan(&genre_id); err != nil {
+			return nil, err
+		}
+		items = append(items, genre_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -81,6 +179,35 @@ func (q *Queries) GameGenreNames(ctx context.Context, gameID int64) ([]string, e
 	return items, nil
 }
 
+const gamePlayModeIDs = `-- name: GamePlayModeIDs :many
+SELECT play_mode_id FROM game_play_mode
+WHERE game_id = ?
+ORDER BY play_mode_id
+`
+
+func (q *Queries) GamePlayModeIDs(ctx context.Context, gameID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, gamePlayModeIDs, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var play_mode_id int64
+		if err := rows.Scan(&play_mode_id); err != nil {
+			return nil, err
+		}
+		items = append(items, play_mode_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const gamePlayModeNames = `-- name: GamePlayModeNames :many
 SELECT m.name FROM game_play_mode gm
 JOIN play_mode m ON m.id = gm.play_mode_id
@@ -101,6 +228,35 @@ func (q *Queries) GamePlayModeNames(ctx context.Context, gameID int64) ([]string
 			return nil, err
 		}
 		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gamePublisherIDs = `-- name: GamePublisherIDs :many
+SELECT company_id FROM game_publisher
+WHERE game_id = ?
+ORDER BY company_id
+`
+
+func (q *Queries) GamePublisherIDs(ctx context.Context, gameID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, gamePublisherIDs, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var company_id int64
+		if err := rows.Scan(&company_id); err != nil {
+			return nil, err
+		}
+		items = append(items, company_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -139,6 +295,20 @@ func (q *Queries) GamePublisherNames(ctx context.Context, gameID int64) ([]strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const getCompanyByName = `-- name: GetCompanyByName :one
+SELECT id FROM company
+WHERE name = ? COLLATE NOCASE
+ORDER BY id
+LIMIT 1
+`
+
+func (q *Queries) GetCompanyByName(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getCompanyByName, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getGameRow = `-- name: GetGameRow :one
@@ -196,6 +366,126 @@ func (q *Queries) GetGameRow(ctx context.Context, id int64) (GetGameRowRow, erro
 	return i, err
 }
 
+const getGenreByName = `-- name: GetGenreByName :one
+SELECT id FROM genre
+WHERE name = ? COLLATE NOCASE
+ORDER BY id
+LIMIT 1
+`
+
+func (q *Queries) GetGenreByName(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getGenreByName, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getPlatformByNameNoCase = `-- name: GetPlatformByNameNoCase :one
+SELECT id, name, category, icon, emulator_id FROM platform
+WHERE name = ? COLLATE NOCASE
+ORDER BY id
+LIMIT 1
+`
+
+func (q *Queries) GetPlatformByNameNoCase(ctx context.Context, name string) (Platform, error) {
+	row := q.db.QueryRowContext(ctx, getPlatformByNameNoCase, name)
+	var i Platform
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Category,
+		&i.Icon,
+		&i.EmulatorID,
+	)
+	return i, err
+}
+
+const insertCompany = `-- name: InsertCompany :one
+INSERT INTO company (name)
+VALUES (?)
+RETURNING id
+`
+
+func (q *Queries) InsertCompany(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertCompany, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertGameDeveloper = `-- name: InsertGameDeveloper :exec
+INSERT INTO game_developer (game_id, company_id)
+VALUES (?, ?)
+`
+
+type InsertGameDeveloperParams struct {
+	GameID    int64
+	CompanyID int64
+}
+
+func (q *Queries) InsertGameDeveloper(ctx context.Context, arg InsertGameDeveloperParams) error {
+	_, err := q.db.ExecContext(ctx, insertGameDeveloper, arg.GameID, arg.CompanyID)
+	return err
+}
+
+const insertGameGenre = `-- name: InsertGameGenre :exec
+INSERT INTO game_genre (game_id, genre_id)
+VALUES (?, ?)
+`
+
+type InsertGameGenreParams struct {
+	GameID  int64
+	GenreID int64
+}
+
+func (q *Queries) InsertGameGenre(ctx context.Context, arg InsertGameGenreParams) error {
+	_, err := q.db.ExecContext(ctx, insertGameGenre, arg.GameID, arg.GenreID)
+	return err
+}
+
+const insertGamePlayMode = `-- name: InsertGamePlayMode :exec
+INSERT INTO game_play_mode (game_id, play_mode_id)
+VALUES (?, ?)
+`
+
+type InsertGamePlayModeParams struct {
+	GameID     int64
+	PlayModeID int64
+}
+
+func (q *Queries) InsertGamePlayMode(ctx context.Context, arg InsertGamePlayModeParams) error {
+	_, err := q.db.ExecContext(ctx, insertGamePlayMode, arg.GameID, arg.PlayModeID)
+	return err
+}
+
+const insertGamePublisher = `-- name: InsertGamePublisher :exec
+INSERT INTO game_publisher (game_id, company_id)
+VALUES (?, ?)
+`
+
+type InsertGamePublisherParams struct {
+	GameID    int64
+	CompanyID int64
+}
+
+func (q *Queries) InsertGamePublisher(ctx context.Context, arg InsertGamePublisherParams) error {
+	_, err := q.db.ExecContext(ctx, insertGamePublisher, arg.GameID, arg.CompanyID)
+	return err
+}
+
+const insertGenre = `-- name: InsertGenre :one
+INSERT INTO genre (name)
+VALUES (?)
+RETURNING id
+`
+
+func (q *Queries) InsertGenre(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertGenre, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertPlatform = `-- name: InsertPlatform :one
 INSERT INTO platform (name, category)
 VALUES (?, ?)
@@ -212,6 +502,62 @@ func (q *Queries) InsertPlatform(ctx context.Context, arg InsertPlatformParams) 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const listCompanyNames = `-- name: ListCompanyNames :many
+SELECT name FROM company
+ORDER BY name COLLATE NOCASE, id
+`
+
+func (q *Queries) ListCompanyNames(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listCompanyNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGenreNames = `-- name: ListGenreNames :many
+SELECT name FROM genre
+ORDER BY name COLLATE NOCASE, id
+`
+
+func (q *Queries) ListGenreNames(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listGenreNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPlatforms = `-- name: ListPlatforms :many
@@ -246,4 +592,50 @@ func (q *Queries) ListPlatforms(ctx context.Context) ([]Platform, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const listPlatformsByName = `-- name: ListPlatformsByName :many
+SELECT id, name, category, icon, emulator_id FROM platform
+ORDER BY name COLLATE NOCASE, id
+`
+
+func (q *Queries) ListPlatformsByName(ctx context.Context) ([]Platform, error) {
+	rows, err := q.db.QueryContext(ctx, listPlatformsByName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Platform{}
+	for rows.Next() {
+		var i Platform
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Category,
+			&i.Icon,
+			&i.EmulatorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const playModeIDByName = `-- name: PlayModeIDByName :one
+SELECT id FROM play_mode
+WHERE name = ?
+`
+
+func (q *Queries) PlayModeIDByName(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, playModeIDByName, name)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

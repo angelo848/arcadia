@@ -45,3 +45,11 @@ WHERE id = sqlc.arg(id);
 -- name: PlatformExists :one
 SELECT COUNT(*) FROM platform
 WHERE id = ?;
+
+-- name: HasOpenSession :one
+SELECT COUNT(*) FROM play_session
+WHERE game_id = ? AND ended_at IS NULL;
+
+-- name: DeleteGameRow :execrows
+DELETE FROM game
+WHERE id = ?;

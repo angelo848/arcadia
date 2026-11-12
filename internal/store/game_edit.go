@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -17,8 +18,8 @@ var ErrPlatformNotFound = errors.New("store: platform not found")
 
 // GamePatch is a partial edit of a game (EDT-001..EDT-004). A nil field is not
 // touched. For the nullable fields, a non-nil pointer to nil clears the value
-// (null). The links (Developers, Publishers, Genres, PlayModes) are accepted here
-// but are written by a later task (phase 5, T12).
+// (null). A non-nil link list replaces the links of that kind; an empty list
+// clears them (EDT-004).
 type GamePatch struct {
 	Title, Description *string
 	PlatformID         *int64
@@ -33,15 +34,17 @@ type GamePatch struct {
 }
 
 // UpdateGame applies p to the game of id in one transaction (withTx) and returns
-// the game as GameDetail (decision 3). Every value is validated with the domain
-// rules before anything is written, so a rejected field changes nothing. The row
-// is written only when a column changes, and updated_at becomes at only then
-// (EDT-005); an empty patch returns the game unchanged. Editing does not touch
-// sessions or pauses (EDT-006). An unknown id gives an error wrapping
-// ErrGameNotFound, and an unknown platform gives ErrPlatformNotFound.
+// the game as GameDetail (decision 3). Every field is validated with the domain
+// rules before anything is written, so a rejected field changes nothing. The game
+// row, its links and its search index row change together: the index row is
+// rewritten only when a field or a link changed, and updated_at becomes at only
+// then (EDT-005, FTS-003). Any error rolls back the whole edit, catalog rows
+// created by it included (EDT-007). Editing does not touch sessions or pauses
+// (EDT-006). An unknown id gives an error wrapping ErrGameNotFound, and an unknown
+// platform gives ErrPlatformNotFound.
 func (s *Store) UpdateGame(ctx context.Context, id int64, p GamePatch, at time.Time) (GameDetail, error) {
 	var out GameDetail
-	err := s.withTx(ctx, func(_ *sql.Tx, q *dbgen.Queries) error {
+	err := s.withTx(ctx, func(tx *sql.Tx, q *dbgen.Queries) error {
 		cur, err := q.GetGameForUpdate(ctx, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -63,7 +66,11 @@ func (s *Store) UpdateGame(ctx context.Context, id int64, p GamePatch, at time.T
 		if err != nil {
 			return fmt.Errorf("store: update game %d: %w", id, err)
 		}
-		if next != base {
+		linksChanged, err := applyLinks(ctx, q, id, p)
+		if err != nil {
+			return fmt.Errorf("store: update game %d: %w", id, err)
+		}
+		if next != base || linksChanged {
 			next.ID = id
 			next.UpdatedAt = TimeToMillis(at)
 			n, err := q.UpdateGameFields(ctx, next)
@@ -72,6 +79,10 @@ func (s *Store) UpdateGame(ctx context.Context, id int64, p GamePatch, at time.T
 			}
 			if n == 0 {
 				return fmt.Errorf("store: update game %d: %w", id, ErrGameNotFound)
+			}
+			// The index reads the links too, so it runs after they are written.
+			if err := reindexGame(ctx, tx, id); err != nil {
+				return fmt.Errorf("store: update game %d: %w", id, err)
 			}
 		}
 		out, err = readGameDetail(ctx, q, id)
@@ -149,6 +160,195 @@ func applyGamePatch(ctx context.Context, q *dbgen.Queries, p GamePatch,
 			next.ReleaseDate = sql.NullString{String: rd, Valid: true}
 		}
 	}
-	// The links (developers, publishers, genres, play modes) are written in T12.
 	return next, nil
+}
+
+// applyLinks replaces each link kind that p sets (EDT-004) and reports whether any
+// link changed. A list equal to the stored links writes nothing, so an equal patch
+// is not a change (STO-028). New names are resolved to catalog rows first; the
+// catalog insert happens only in the transaction of the edit.
+func applyLinks(ctx context.Context, q *dbgen.Queries, id int64, p GamePatch) (bool, error) {
+	changed := false
+	if p.Developers != nil {
+		want, err := resolveIDs(ctx, q, *p.Developers, resolveCompany)
+		if err != nil {
+			return false, fmt.Errorf("developers: %w", err)
+		}
+		c, err := syncLinks(want, func() ([]int64, error) { return q.GameDeveloperIDs(ctx, id) },
+			func(ids []int64) error {
+				if err := q.DeleteGameDevelopers(ctx, id); err != nil {
+					return err
+				}
+				for _, cid := range ids {
+					if err := q.InsertGameDeveloper(ctx, dbgen.InsertGameDeveloperParams{GameID: id, CompanyID: cid}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return false, fmt.Errorf("developers: %w", err)
+		}
+		changed = changed || c
+	}
+	if p.Publishers != nil {
+		want, err := resolveIDs(ctx, q, *p.Publishers, resolveCompany)
+		if err != nil {
+			return false, fmt.Errorf("publishers: %w", err)
+		}
+		c, err := syncLinks(want, func() ([]int64, error) { return q.GamePublisherIDs(ctx, id) },
+			func(ids []int64) error {
+				if err := q.DeleteGamePublishers(ctx, id); err != nil {
+					return err
+				}
+				for _, cid := range ids {
+					if err := q.InsertGamePublisher(ctx, dbgen.InsertGamePublisherParams{GameID: id, CompanyID: cid}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return false, fmt.Errorf("publishers: %w", err)
+		}
+		changed = changed || c
+	}
+	if p.Genres != nil {
+		want, err := resolveIDs(ctx, q, *p.Genres, resolveGenre)
+		if err != nil {
+			return false, fmt.Errorf("genres: %w", err)
+		}
+		c, err := syncLinks(want, func() ([]int64, error) { return q.GameGenreIDs(ctx, id) },
+			func(ids []int64) error {
+				if err := q.DeleteGameGenres(ctx, id); err != nil {
+					return err
+				}
+				for _, gid := range ids {
+					if err := q.InsertGameGenre(ctx, dbgen.InsertGameGenreParams{GameID: id, GenreID: gid}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return false, fmt.Errorf("genres: %w", err)
+		}
+		changed = changed || c
+	}
+	if p.PlayModes != nil {
+		want, err := resolvePlayModes(ctx, q, *p.PlayModes)
+		if err != nil {
+			return false, fmt.Errorf("play modes: %w", err)
+		}
+		c, err := syncLinks(want, func() ([]int64, error) { return q.GamePlayModeIDs(ctx, id) },
+			func(ids []int64) error {
+				if err := q.DeleteGamePlayModes(ctx, id); err != nil {
+					return err
+				}
+				for _, mid := range ids {
+					if err := q.InsertGamePlayMode(ctx, dbgen.InsertGamePlayModeParams{GameID: id, PlayModeID: mid}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return false, fmt.Errorf("play modes: %w", err)
+		}
+		changed = changed || c
+	}
+	return changed, nil
+}
+
+// syncLinks compares the wanted link ids (sorted, unique) with the stored ones and,
+// when they differ, calls write with the wanted ids. It reports whether it wrote.
+func syncLinks(want []int64, current func() ([]int64, error), write func([]int64) error) (bool, error) {
+	have, err := current()
+	if err != nil {
+		return false, fmt.Errorf("read links: %w", err)
+	}
+	if slices.Equal(have, want) {
+		return false, nil
+	}
+	if err := write(want); err != nil {
+		return false, fmt.Errorf("write links: %w", err)
+	}
+	return true, nil
+}
+
+// resolveIDs maps each name to its catalog id with resolve and returns the ids
+// sorted and without repetition, so two spellings of one company give one link.
+func resolveIDs(ctx context.Context, q *dbgen.Queries, names []string,
+	resolve func(context.Context, *dbgen.Queries, string) (int64, error)) ([]int64, error) {
+	ids := make([]int64, 0, len(names))
+	for _, n := range names {
+		id, err := resolve(ctx, q, n)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids), nil
+}
+
+// resolvePlayModes maps each play mode to its id, validating it against DOM-014.
+// The result is sorted and without repetition.
+func resolvePlayModes(ctx context.Context, q *dbgen.Queries, modes []domain.PlayMode) ([]int64, error) {
+	ids := make([]int64, 0, len(modes))
+	for _, m := range modes {
+		valid, err := domain.ParsePlayMode(string(m))
+		if err != nil {
+			return nil, err
+		}
+		id, err := q.PlayModeIDByName(ctx, string(valid))
+		if err != nil {
+			return nil, fmt.Errorf("play mode %q: %w", valid, err)
+		}
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids), nil
+}
+
+// resolveCompany returns the id of the company named name, reusing a row that
+// matches without regard to case (the stored spelling wins, EDT-004) and creating
+// the row otherwise. The name is cut as DOM-016 requires.
+func resolveCompany(ctx context.Context, q *dbgen.Queries, name string) (int64, error) {
+	clean, err := domain.NormalizeName(name)
+	if err != nil {
+		return 0, fmt.Errorf("company %q: %w", name, err)
+	}
+	id, err := q.GetCompanyByName(ctx, clean)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("store: find company %q: %w", clean, err)
+	}
+	id, err = q.InsertCompany(ctx, clean)
+	if err != nil {
+		return 0, fmt.Errorf("store: insert company %q: %w", clean, err)
+	}
+	return id, nil
+}
+
+// resolveGenre is resolveCompany for the genre catalog.
+func resolveGenre(ctx context.Context, q *dbgen.Queries, name string) (int64, error) {
+	clean, err := domain.NormalizeName(name)
+	if err != nil {
+		return 0, fmt.Errorf("genre %q: %w", name, err)
+	}
+	id, err := q.GetGenreByName(ctx, clean)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("store: find genre %q: %w", clean, err)
+	}
+	id, err = q.InsertGenre(ctx, clean)
+	if err != nil {
+		return 0, fmt.Errorf("store: insert genre %q: %w", clean, err)
+	}
+	return id, nil
 }

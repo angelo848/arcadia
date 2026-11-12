@@ -10,6 +10,19 @@ import (
 	"database/sql"
 )
 
+const deleteGameRow = `-- name: DeleteGameRow :execrows
+DELETE FROM game
+WHERE id = ?
+`
+
+func (q *Queries) DeleteGameRow(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteGameRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const ensurePCPlatform = `-- name: EnsurePCPlatform :exec
 INSERT INTO platform (name, category)
 VALUES ('PC', 'pc')
@@ -102,6 +115,18 @@ func (q *Queries) GetPlatformIDByName(ctx context.Context, name string) (int64, 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const hasOpenSession = `-- name: HasOpenSession :one
+SELECT COUNT(*) FROM play_session
+WHERE game_id = ? AND ended_at IS NULL
+`
+
+func (q *Queries) HasOpenSession(ctx context.Context, gameID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, hasOpenSession, gameID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const insertGame = `-- name: InsertGame :one
