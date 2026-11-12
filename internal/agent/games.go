@@ -70,9 +70,9 @@ type gameLaunchParams struct {
 }
 
 // gameHandlers returns the handlers of game.add, game.list, game.get,
-// game.update, session.list, game.launch and session.current [IPC-020..IPC-026,
-// IPC-028, IPC-031, IPC-044, IPC-045, IPC-047, AGT-011]. stat is os.Stat in
-// production.
+// game.update, game.delete, session.list, game.launch and session.current
+// [IPC-020..IPC-026, IPC-028, IPC-031, IPC-044, IPC-045, IPC-046, IPC-047,
+// AGT-011]. stat is os.Stat in production.
 func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 	stat func(string) (fs.FileInfo, error), log *slog.Logger) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
@@ -90,6 +90,9 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 		},
 		ipc.MethodGameUpdate: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameUpdate(ctx, st, clock, log, params)
+		},
+		ipc.MethodGameDelete: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handleGameDelete(ctx, st, tr, log, params)
 		},
 		ipc.MethodGameLaunch: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameLaunch(ctx, st, tr, log, params)

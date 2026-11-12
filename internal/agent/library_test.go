@@ -6,12 +6,16 @@ package agent
 // ListGames stub that pages over a fixed slice, and the worst-case games. T19:
 // game.get [IPC-044] and session.list [IPC-047]. T20: game.update [IPC-045,
 // IPC-050, IPC-052] and its EDT-001..EDT-009 mapping, in TestGameUpdate (handler
-// level) and TestGameUpdateNotifications (full agent with two clients).
+// level) and TestGameUpdateNotifications (full agent with two clients). T21:
+// game.delete [IPC-046, IPC-050, DEL-001..DEL-006] in TestGameDelete (handler
+// level, with a deleteTracker that answers WithoutActiveGame) and
+// TestGameDeleteNotifications (full agent with the real tracker).
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,6 +27,7 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/store"
+	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
 
 // rawListResponse dispatches game.list with the raw params ("" = no params
@@ -926,5 +931,380 @@ func TestGameUpdateNotifications(t *testing.T) {
 
 	t.Run("EDT-006/game.update com sessão Paused não muda session.current nem envia session.changed", func(t *testing.T) {
 		checkUpdateKeepsSession(t, true, "paused")
+	})
+}
+
+// deleteCall is one WithoutActiveGame call seen by deleteTracker.
+type deleteCall struct {
+	gameID   int64
+	deadline time.Time // zero = the ctx had no deadline
+}
+
+// deleteTracker is the tracker of game.delete [DEL-002, DEL-003]. Its
+// WithoutActiveGame refuses a game listed in active with
+// *tracker.SessionActiveError without calling fn; any other game runs fn and
+// returns its error. hook, when set, replaces that behaviour. Launches come
+// from the embedded fakeTracker.
+type deleteTracker struct {
+	*fakeTracker
+
+	mu     sync.Mutex
+	active map[int64]domain.SessionSnapshot
+	hook   func(ctx context.Context, gameID int64, fn func() error) error
+	calls  []deleteCall
+}
+
+func (d *deleteTracker) WithoutActiveGame(ctx context.Context, gameID int64, fn func() error) error {
+	dl, _ := ctx.Deadline()
+	d.mu.Lock()
+	d.calls = append(d.calls, deleteCall{gameID: gameID, deadline: dl})
+	snap, busy := d.active[gameID]
+	hook := d.hook
+	d.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, gameID, fn)
+	}
+	if busy {
+		return &tracker.SessionActiveError{Session: snap}
+	}
+	return fn()
+}
+
+// recordedCalls returns the WithoutActiveGame calls so far, in order.
+func (d *deleteTracker) recordedCalls() []deleteCall {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]deleteCall(nil), d.calls...)
+}
+
+// deleteStore is the recording game store whose DeleteGame can fail before it
+// writes anything [DEL-006].
+type deleteStore struct {
+	*recordingGameStore
+	fail error
+}
+
+func (s *deleteStore) DeleteGame(ctx context.Context, id int64) error {
+	if s.fail != nil {
+		return s.fail
+	}
+	return s.recordingGameStore.inner.DeleteGame(ctx, id)
+}
+
+// newDeleteHarness is newGamesHarness whose game.delete goes through a
+// deleteTracker and a deleteStore.
+func newDeleteHarness(t *testing.T) (*gamesHarness, *deleteTracker, *deleteStore) {
+	t.Helper()
+	h := newGamesHarness(t, nil)
+	dt := &deleteTracker{fakeTracker: h.tr, active: map[int64]domain.SessionSnapshot{}}
+	ds := &deleteStore{recordingGameStore: h.gs}
+	h.handlers = gameHandlers(ds, dt, h.clock, os.Stat, slog.New(h.logs))
+	h.need(t, ipc.MethodGameDelete)
+	return h, dt, ds
+}
+
+// deleteGame calls game.delete for gameID [IPC-046].
+func deleteGame(t *testing.T, h *gamesHarness, gameID int64) ipc.Response {
+	t.Helper()
+	return h.call(t, ipc.MethodGameDelete, fmt.Sprintf(`{"gameId":%d}`, gameID))
+}
+
+// deleteOK calls game.delete for gameID, requires success and checks that the
+// result has no member but gameId [IPC-046].
+func deleteOK(t *testing.T, h *gamesHarness, gameID int64) {
+	t.Helper()
+	resp := deleteGame(t, h, gameID)
+	if resp.Error != nil {
+		t.Fatalf("game.delete(%d): error %d %q (data %s)", gameID, resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	obj := objectOf(t, resp.Result)
+	wantKeys(t, obj, "gameId")
+	wantRaw(t, obj, "gameId", fmt.Sprint(gameID))
+}
+
+// wantGameRemoved checks that the store has no game gameID [DEL-001].
+func wantGameRemoved(t *testing.T, h *gamesHarness, gameID int64) {
+	t.Helper()
+	if _, err := h.st.Game(t.Context(), gameID); !errors.Is(err, store.ErrGameNotFound) {
+		t.Errorf("store.Game(%d) after game.delete: %v, want ErrGameNotFound", gameID, err)
+	}
+}
+
+// sessionsRaw returns the session.list result of gameID, so a test can check
+// that no session changed [DEL-002, DEL-003].
+func sessionsRaw(t *testing.T, h *gamesHarness, gameID int64) string {
+	t.Helper()
+	return string(h.call(t, ipc.MethodSessionList, fmt.Sprintf(`{"gameId":%d}`, gameID)).Result)
+}
+
+// wantSessionRef checks a -32002 response whose data is a SessionRef [IPC-046,
+// DEL-002].
+func wantSessionRef(t *testing.T, resp ipc.Response, sessionID, gameID int64, title string) {
+	t.Helper()
+	data := wantError(t, resp, ipc.CodeSessionActive, ipc.MsgSessionActive)
+	wantKeys(t, data, "sessionId", "gameId", "title")
+	wantRaw(t, data, "sessionId", fmt.Sprint(sessionID))
+	wantRaw(t, data, "gameId", fmt.Sprint(gameID))
+	wantRaw(t, data, "title", mustJSON(t, title))
+}
+
+func TestGameDelete(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-046/gameId sem sessão devolve {gameId} e o jogo sai do banco", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		other := h.addGame(t, h.file(t, "other.exe"), "Outro")
+		before := rawGetResponse(t, h, other.ID)
+
+		deleteOK(t, h, g.ID)
+		wantGameRemoved(t, h, g.ID)
+		wantGameUnchanged(t, h, other.ID, before)
+		calls := dt.recordedCalls()
+		if len(calls) != 1 || calls[0].gameID != g.ID {
+			t.Errorf("WithoutActiveGame calls = %+v, want one call for game %d", calls, g.ID)
+		}
+	})
+
+	t.Run("IPC-046/gameId inexistente é -32001 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, _, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		data := wantError(t, deleteGame(t, h, 999), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+		wantRaw(t, data, "gameId", "999")
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-046/gameId 0, texto ou params ausentes são -32602", func(t *testing.T) {
+		t.Parallel()
+		h, _, _ := newDeleteHarness(t)
+		wantEachInvalidParams(t, h, ipc.MethodGameDelete,
+			"", `{}`, `{"gameId":0}`, `{"gameId":-1}`, `{"gameId":"1"}`, `{"gameId":1.5}`, `[1]`)
+	})
+
+	t.Run("IPC-046/game.delete tem prazo de 5 s na espera do WithoutActiveGame", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		deleteOK(t, h, g.ID)
+		calls := dt.recordedCalls()
+		if len(calls) != 1 || calls[0].deadline.IsZero() {
+			t.Fatalf("WithoutActiveGame calls = %+v, want one call with a deadline", calls)
+		}
+		if left := time.Until(calls[0].deadline); left > 5*time.Second || left < 4*time.Second {
+			t.Errorf("WithoutActiveGame ctx deadline in %v, want about 5 s", left)
+		}
+	})
+
+	t.Run("IPC-046/agente encerrando devolve -32603 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		dt.hook = func(context.Context, int64, func() error) error {
+			return fmt.Errorf("tracker: %w", tracker.ErrShuttingDown)
+		}
+		wantError(t, deleteGame(t, h, g.ID), ipc.CodeInternalError, "Internal error")
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-046/prazo vencido antes de a dona pegar o pedido devolve -32603 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		before := rawGetResponse(t, h, g.ID)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		// The deadline passes before the tracker's owner takes the request: fn does not run.
+		dt.hook = func(c context.Context, _ int64, _ func() error) error {
+			cancel()
+			return c.Err()
+		}
+		wantError(t, h.callCtx(t, ctx, ipc.MethodGameDelete, fmt.Sprintf(`{"gameId":%d}`, g.ID)),
+			ipc.CodeInternalError, "Internal error")
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("IPC-046/remoção começada e prazo vencido: o agente espera o resultado e responde sucesso (decisão 7)", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		// The removal starts with the live ctx; the deadline passes while it runs.
+		dt.hook = func(_ context.Context, _ int64, fn func() error) error {
+			err := fn()
+			cancel()
+			return err
+		}
+		resp := h.callCtx(t, ctx, ipc.MethodGameDelete, fmt.Sprintf(`{"gameId":%d}`, g.ID))
+		if resp.Error != nil {
+			t.Fatalf("game.delete with the removal applied: error %d %q (data %s)", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+		}
+		wantKeys(t, objectOf(t, resp.Result), "gameId")
+		wantGameRemoved(t, h, g.ID)
+	})
+
+	t.Run("IPC-046/jogo removido por outro caminho antes da remoção devolve -32001", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		dt.hook = func(c context.Context, gameID int64, fn func() error) error {
+			if err := h.st.DeleteGame(c, gameID); err != nil {
+				t.Errorf("DeleteGame before the handler's removal: %v", err)
+			}
+			return fn()
+		}
+		wantError(t, deleteGame(t, h, g.ID), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+	})
+
+	t.Run("DEL-002/sessão ativa do jogo devolve -32002 com SessionRef (sessionId, gameId, title) e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		ids := h.seedSessions(t, g.ID, seededSession{start: 0, open: true})
+		dt.active[g.ID] = domain.SessionSnapshot{
+			ID: ids[0], GameID: g.ID, Title: g.Title, State: domain.SessionRunning, StartedAt: gamesT0, AsOf: gamesT0,
+		}
+		before := rawGetResponse(t, h, g.ID)
+		sessions := sessionsRaw(t, h, g.ID)
+		wantSessionRef(t, deleteGame(t, h, g.ID), ids[0], g.ID, g.Title)
+		wantGameUnchanged(t, h, g.ID, before)
+		if got := sessionsRaw(t, h, g.ID); got != sessions {
+			t.Errorf("session.list = %s after the refused removal, want %s", got, sessions)
+		}
+	})
+
+	t.Run("DEL-002/lançamento pendente do jogo devolve -32002 com sessionId 0", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		// A tracked launch still being prepared has no session id yet.
+		dt.active[g.ID] = domain.SessionSnapshot{GameID: g.ID, Title: g.Title}
+		before := rawGetResponse(t, h, g.ID)
+		wantSessionRef(t, deleteGame(t, h, g.ID), 0, g.ID, g.Title)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("DEL-002/ErrGameInUse do store vira -32002 com sessionId 0", func(t *testing.T) {
+		t.Parallel()
+		h, _, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		// The tracker knows nothing of the session, so the store's own check refuses the removal.
+		h.seedSessions(t, g.ID, seededSession{start: 0, open: true})
+		before := rawGetResponse(t, h, g.ID)
+		wantSessionRef(t, deleteGame(t, h, g.ID), 0, g.ID, g.Title)
+		wantGameUnchanged(t, h, g.ID, before)
+	})
+
+	t.Run("DEL-003/sessão de outro jogo não impede a remoção e a sessão não muda", func(t *testing.T) {
+		t.Parallel()
+		h, dt, _ := newDeleteHarness(t)
+		a := h.addGame(t, h.file(t, "a.exe"), "Jogo A")
+		b := h.addGame(t, h.file(t, "b.exe"), "Jogo B")
+		ids := h.seedSessions(t, a.ID, seededSession{start: 0, open: true})
+		dt.active[a.ID] = domain.SessionSnapshot{
+			ID: ids[0], GameID: a.ID, Title: a.Title, State: domain.SessionRunning, StartedAt: gamesT0, AsOf: gamesT0,
+		}
+		sessions := sessionsRaw(t, h, a.ID)
+
+		deleteOK(t, h, b.ID)
+		wantGameRemoved(t, h, b.ID)
+		if got := sessionsRaw(t, h, a.ID); got != sessions {
+			t.Errorf("session.list of game A = %s after removing B, want %s", got, sessions)
+		}
+		if _, err := h.st.Game(t.Context(), a.ID); err != nil {
+			t.Errorf("game A after removing B: store.Game: %v, want it kept", err)
+		}
+	})
+
+	t.Run("DEL-004/gameId inexistente é -32001", func(t *testing.T) {
+		t.Parallel()
+		h, _, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		deleteOK(t, h, g.ID)
+		// A game that never existed and one that was just removed both answer -32001.
+		wantError(t, deleteGame(t, h, 999), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+		wantError(t, deleteGame(t, h, g.ID), ipc.CodeGameNotFound, ipc.MsgGameNotFound)
+	})
+
+	t.Run("DEL-005/remoção aceita com processo lançado sem contar tempo ainda aberto; session.current continua null", func(t *testing.T) {
+		t.Parallel()
+		h, _, _ := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		launch := h.call(t, ipc.MethodGameLaunchUntracked, fmt.Sprintf(`{"gameId":%d}`, g.ID))
+		if launch.Error != nil {
+			t.Fatalf("game.launchUntracked: error %d %q", launch.Error.Code, launch.Error.Message)
+		}
+		if n := len(h.tr.untrackedLaunches()); n != 1 {
+			t.Fatalf("untracked launches = %d, want 1", n)
+		}
+		deleteOK(t, h, g.ID)
+		wantGameRemoved(t, h, g.ID)
+		wantRaw(t, objectOf(t, h.call(t, ipc.MethodSessionCurrent, "").Result), "session", "null")
+	})
+
+	t.Run("DEL-006/falha do store no meio da remoção devolve -32603 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h, _, ds := newDeleteHarness(t)
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		h.seedSessions(t, g.ID, seededSession{start: 0, active: 100 * time.Second})
+		before := rawGetResponse(t, h, g.ID)
+		sessions := sessionsRaw(t, h, g.ID)
+		// The store fails before it writes anything; the error text must not reach the client.
+		ds.fail = errors.New("sqlite: database is locked")
+		resp := deleteGame(t, h, g.ID)
+		wantError(t, resp, ipc.CodeInternalError, "Internal error")
+		if strings.Contains(string(resp.Error.Data), "locked") {
+			t.Errorf("error data leaks the store message: %s", resp.Error.Data)
+		}
+		wantGameUnchanged(t, h, g.ID, before)
+		if got := sessionsRaw(t, h, g.ID); got != sessions {
+			t.Errorf("session.list = %s after the failed removal, want %s", got, sessions)
+		}
+	})
+}
+
+// TestGameDeleteNotifications runs game.delete in a full agent with the real
+// tracker and two clients [IPC-050, DEL-005]. It is not parallel: newWiring
+// checks for leaked goroutines.
+func TestGameDeleteNotifications(t *testing.T) {
+	t.Run("IPC-050/game.delete não envia notificação", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+		c1, c2 := w.client(t), w.client(t)
+		id, _ := w.addGame(t, c1, "Hollow Knight")
+		c1.rpcOK(t, ipc.MethodStatus, nil)
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		before1, before2 := countNotifications(c1.snapshotAll()), countNotifications(c2.snapshotAll())
+
+		c1.rpcOK(t, ipc.MethodGameDelete, map[string]int64{"gameId": id})
+		// A round trip on each connection: anything queued before the response has arrived.
+		c1.rpcOK(t, ipc.MethodStatus, nil)
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		if n := countNotifications(c1.snapshotAll()); n != before1 {
+			t.Errorf("client 1 got %d notification(s) after game.delete, want none", n-before1)
+		}
+		if n := countNotifications(c2.snapshotAll()); n != before2 {
+			t.Errorf("client 2 got %d notification(s) after game.delete, want none", n-before2)
+		}
+	})
+
+	t.Run("DEL-005/processo de game.launchUntracked segue vivo com o tracker real e session.current continua null", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+		c := w.client(t)
+		id, _ := w.addGame(t, c, "Hollow Knight")
+		c.rpcOK(t, ipc.MethodGameLaunchUntracked, map[string]int64{"gameId": id})
+		c.rpcOK(t, ipc.MethodGameDelete, map[string]int64{"gameId": id})
+
+		w.fl.mu.Lock()
+		detached := len(w.fl.detached)
+		w.fl.mu.Unlock()
+		if detached != 1 {
+			t.Errorf("detached launches = %d, want 1: the untracked process is not touched by the removal", detached)
+		}
+		cur := c.rpcOK(t, ipc.MethodSessionCurrent, nil).Result
+		wantRaw(t, objectOf(t, cur), "session", "null")
 	})
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/store"
+	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
 
 // gameListTimeout bounds the ListGames call of game.list [IPC-042].
@@ -70,6 +71,91 @@ func handleSessionList(ctx context.Context, st gameStore, log *slog.Logger, para
 		items = append(items, sessionItemToIPC(s))
 	}
 	return ipc.SessionListResult{Sessions: items, Total: page.Total, Offset: offset}, nil
+}
+
+// deleteHandlerTimeout bounds the wait of game.delete for the tracker's owner
+// [IPC-046]. Once the removal has started the handler waits for its result
+// (planner decision 7); the timeout only applies before it starts.
+const deleteHandlerTimeout = 5 * time.Second
+
+// gameDeleter is the store part of game.delete [DEL-001]. The game handlers
+// check for it at run time: the other game tests pass a store without it.
+type gameDeleter interface {
+	DeleteGame(ctx context.Context, id int64) error
+}
+
+// sessionDeleter is the tracker part of game.delete [DEL-002, DEL-003]. It is
+// checked at run time for the same reason as gameDeleter.
+type sessionDeleter interface {
+	WithoutActiveGame(ctx context.Context, gameID int64, fn func() error) error
+}
+
+// handleGameDelete removes a game that has no open session [IPC-046, IPC-050,
+// DEL-001..DEL-006]. The removal runs in the tracker's owner through
+// WithoutActiveGame, so a launch or a session of this game cannot start meanwhile.
+// A game with an open session, a launch in progress or a session refused by the
+// store is -32002; an unknown game is -32001; shutdown, a deadline before the
+// start and store failures are -32603 with nothing changed. No notification is
+// sent for a library write [IPC-050].
+func handleGameDelete(ctx context.Context, st gameStore, tr sessionTracker, log *slog.Logger,
+	params json.RawMessage) (any, error) {
+	var p ipc.GameDeleteParams
+	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
+		return nil, rpcErr
+	}
+	if p.GameID < 1 {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	ds, okStore := st.(gameDeleter)
+	sd, okTracker := tr.(sessionDeleter)
+	if !okStore || !okTracker {
+		return nil, fmt.Errorf("game.delete: store or tracker without removal support")
+	}
+
+	g, err := st.Game(ctx, p.GameID)
+	if err != nil {
+		if errors.Is(err, store.ErrGameNotFound) {
+			return nil, ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound,
+				ipc.GameNotFoundData{GameID: p.GameID})
+		}
+		log.Error("falha ao ler o jogo", "game_id", p.GameID, "error", err.Error())
+		return nil, fmt.Errorf("game.delete: %w", err)
+	}
+
+	dctx, cancel := context.WithTimeout(ctx, deleteHandlerTimeout)
+	defer cancel()
+	err = sd.WithoutActiveGame(dctx, p.GameID, func() error {
+		return ds.DeleteGame(dctx, p.GameID)
+	})
+	if err == nil {
+		return ipc.GameDeletedResult{GameID: p.GameID}, nil
+	}
+
+	var active *tracker.SessionActiveError
+	if errors.As(err, &active) {
+		return nil, ipc.NewErrorData(ipc.CodeSessionActive, ipc.MsgSessionActive, ipc.SessionRef{
+			SessionID: active.Session.ID,
+			GameID:    active.Session.GameID,
+			Title:     active.Session.Title,
+		})
+	}
+	if errors.Is(err, store.ErrGameInUse) {
+		return nil, ipc.NewErrorData(ipc.CodeSessionActive, ipc.MsgSessionActive, ipc.SessionRef{
+			SessionID: 0,
+			GameID:    p.GameID,
+			Title:     g.Title,
+		})
+	}
+	if errors.Is(err, store.ErrGameNotFound) {
+		return nil, ipc.NewErrorData(ipc.CodeGameNotFound, ipc.MsgGameNotFound,
+			ipc.GameNotFoundData{GameID: p.GameID})
+	}
+	if errors.Is(err, tracker.ErrShuttingDown) {
+		log.Debug("agente encerrando", "method", "game.delete")
+	} else {
+		log.Error("falha ao remover o jogo", "game_id", p.GameID, "error", err.Error())
+	}
+	return nil, fmt.Errorf("game.delete: %w", err)
 }
 
 // updateHandlerTimeout bounds the UpdateGame call of game.update [IPC-045].
