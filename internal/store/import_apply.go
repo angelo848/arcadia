@@ -59,7 +59,7 @@ func (s *Store) ApplyImport(ctx context.Context, g ImportGame, at time.Time) (in
 	if g.LaunchTarget == "" {
 		return 0, fmt.Errorf("store: import %q: empty launch target", title)
 	}
-	if g.LaunchType != launchTypeExe && g.LaunchType != launchTypeURI {
+	if g.LaunchType != launchTypeExe && g.LaunchType != launchTypeURI && g.LaunchType != launchTypeEmulator {
 		return 0, fmt.Errorf("store: import %q: launch type %q", title, g.LaunchType)
 	}
 	var id int64

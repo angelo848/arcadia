@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 )
@@ -85,7 +83,6 @@ func (launchBoxSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 	}
 
 	skipped := 0
-	emulated := map[string]int{} // platform name -> games left out for their emulator
 	for _, name := range files {
 		if err := ctx.Err(); err != nil {
 			return res, err
@@ -103,10 +100,6 @@ func (launchBoxSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 		fallback := strings.TrimSuffix(name, filepath.Ext(name))
 		for _, g := range lib.Games {
 			platform := platformOf(g, fallback)
-			if strings.TrimSpace(g.Emulator) != "" {
-				emulated[platform]++
-				continue
-			}
 			c, ok := launchBoxCandidate(g, platform)
 			if !ok {
 				skipped++
@@ -117,11 +110,6 @@ func (launchBoxSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 	}
 	if skipped > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("LaunchBox: %d jogo(s) sem título ou caminho ignorado(s)", skipped))
-	}
-	for _, p := range slices.Sorted(maps.Keys(emulated)) {
-		res.Warnings = append(res.Warnings, fmt.Sprintf(
-			"LaunchBox: %d jogo(s) de %s usam emulador; o suporte a emulador fica para a fase 6b e não foram listados",
-			emulated[p], p))
 	}
 	return res, nil
 }
@@ -148,7 +136,10 @@ func launchBoxCandidate(g lbGame, platform string) (Candidate, bool) {
 		return Candidate{}, false
 	}
 	launch := LaunchExe
-	if strings.Contains(target, "://") {
+	switch {
+	case strings.TrimSpace(g.Emulator) != "":
+		launch = LaunchEmulator // the ROM is the target; the emulator is chosen per platform or game (EMU-003)
+	case strings.Contains(target, "://"):
 		launch = LaunchURI
 	}
 	c := Candidate{

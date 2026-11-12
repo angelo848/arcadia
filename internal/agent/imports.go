@@ -209,7 +209,7 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	if err != nil {
 		return store.ImportGame{}, fmt.Errorf("title: %w", err)
 	}
-	if c.LaunchType != "exe" && c.LaunchType != "uri" {
+	if c.LaunchType != "exe" && c.LaunchType != "uri" && c.LaunchType != "emulator" {
 		return store.ImportGame{}, fmt.Errorf("launch type %q", c.LaunchType)
 	}
 	platformName := c.Platform

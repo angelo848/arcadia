@@ -16,8 +16,9 @@ const (
 	// LaunchBox "Windows" platform (design §9).
 	PlatformPC = "PC"
 
-	LaunchURI = "uri"
-	LaunchExe = "exe"
+	LaunchURI      = "uri"
+	LaunchEmulator = "emulator" // the ROM runs in an emulator of its platform or game (EMU-003)
+	LaunchExe      = "exe"
 )
 
 // ScanInput carries the folder a source reads from. Steam and Epic find their

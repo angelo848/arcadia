@@ -165,22 +165,19 @@ func TestLaunchBoxScan(t *testing.T) {
 		}
 	})
 
-	t.Run("IMP-005/jogos que usam emulador ficam de fora com aviso por plataforma", func(t *testing.T) {
+	t.Run("EMU-003/jogos que usam emulador são candidatos de tipo emulator com a ROM como alvo", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "Nintendo 64.xml"), `<LaunchBox><Game><Title>Mario</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/roms/m.z64</ApplicationPath><Emulator>Project64</Emulator></Game><Game><Title>Zelda</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/roms/z.z64</ApplicationPath><Emulator>Project64</Emulator></Game></LaunchBox>`)
+		writeFile(t, filepath.Join(dir, "Nintendo 64.xml"), `<LaunchBox><Game><Title>Mario</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/roms/m.z64</ApplicationPath><Emulator>Project64</Emulator></Game></LaunchBox>`)
 		res := scanLaunchBox(t, dir)
-		if len(res.Candidates) != 0 {
-			t.Errorf("emulated games listed: %+v", res.Candidates)
+		m := byTitle(t, res, "Mario")
+		if m.LaunchType != importers.LaunchEmulator || m.LaunchTarget != "C:/roms/m.z64" || m.Platform != "Nintendo 64" {
+			t.Errorf("candidate = %+v, want an emulator candidate with the ROM as target", m)
 		}
-		found := false
 		for _, w := range res.Warnings {
-			if strings.Contains(w, "2 jogo(s) de Nintendo 64 usam emulador") {
-				found = true
+			if strings.Contains(w, "emulador") {
+				t.Errorf("emulator warning left: %s", w)
 			}
-		}
-		if !found {
-			t.Errorf("warnings = %v, want the emulator count for Nintendo 64", res.Warnings)
 		}
 	})
 

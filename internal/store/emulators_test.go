@@ -128,3 +128,26 @@ func TestEmulators(t *testing.T) {
 		}
 	})
 }
+
+func TestImportEmulatorGame(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EMU-003/jogo de emulador importado grava launch emulator sem regra de exe", func(t *testing.T) {
+		t.Parallel()
+		s := ftsOpen(t)
+		pc := importPC(t, s)
+		id, err := s.ApplyImport(t.Context(), ImportGame{
+			PlatformID: pc, Title: "Mario", LaunchType: launchTypeEmulator,
+			LaunchTarget: `D:\Roms\mario.z64`,
+		}, importAt)
+		if err != nil {
+			t.Fatalf("ApplyImport: %v", err)
+		}
+		if n := count(t, s, `SELECT COUNT(*) FROM game WHERE id = ? AND launch_type = 'emulator'`, id); n != 1 {
+			t.Errorf("game is not an emulator game")
+		}
+		if n := count(t, s, `SELECT COUNT(*) FROM tracking_rule WHERE game_id = ? AND kind = 'exe_path'`, id); n != 0 {
+			t.Errorf("exe_path rule for an emulator game: %d", n)
+		}
+	})
+}

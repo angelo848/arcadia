@@ -12,6 +12,9 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/store/dbgen"
 )
 
+// launchTypeEmulator is the launch_type of a game run by an emulator (EMU-003, EMU-004).
+const launchTypeEmulator = "emulator"
+
 // Emulator errors (EMU-001, EMU-002, EMU-005).
 var (
 	ErrEmulatorNotFound  = errors.New("store: emulator not found")
