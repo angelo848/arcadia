@@ -28,6 +28,13 @@ const (
 	msgUnexpectedFailure = "Erro inesperado. Veja o log."
 )
 
+// ADM-003: a game that needs more elevation than the agent has fails with
+// ERROR_ELEVATION_REQUIRED (740). The text tells the user what to do.
+const (
+	winErrorElevationRequired = 740
+	msgElevationRequired      = "Não foi possível iniciar o jogo: o Arcadia precisa estar como administrador. Feche-o e abra de novo com a elevação."
+)
+
 // msgRemoveSessionActive is the DSK-018 text of a game.delete refused with -32002
 // (open session). It never names the game.
 const msgRemoveSessionActive = "Não é possível remover: o jogo está em uma sessão ativa. Feche a sessão antes de remover."
@@ -59,6 +66,9 @@ func userError(err error, log *slog.Logger) error {
 			return errors.New(msgSessionActive)
 		case ipc.CodeLaunchFailed:
 			var d ipc.LaunchFailedData
+			if decodeData(rpcErr.Data, &d) && d.WinError != nil && *d.WinError == winErrorElevationRequired {
+				return errors.New(msgElevationRequired)
+			}
 			if decodeData(rpcErr.Data, &d) && d.Error != "" {
 				return fmt.Errorf(msgLaunchFailedFmt, d.Error)
 			}

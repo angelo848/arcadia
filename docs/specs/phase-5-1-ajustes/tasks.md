@@ -43,6 +43,7 @@
   elevado — ADM-002).
 - **Testes:** `frontend/src/components/AgentConflict.test.tsx` — `ADM-006/mostra o aviso de agente sem privilégio de administrador`;
   `ADM-002/mostra "Agente com privilégio de administrador" quando elevado`.
+- **ADM-003 (mensagem do erro 740):** `cmd/arcadia/errors.go` (`userError`, código 740 em `winError`); testes `TestElevationRequired` (`ADM-003/...`).
 - **Dependência:** T04.
 
 ## T06 — Componente de tags (TAG-001..TAG-004)
@@ -63,7 +64,7 @@
 - `go build ./...`, `go vet ./...`, `go test ./...` (Windows); `npm test`, `npx tsc --noEmit`, `npm run build`.
 - `wails build -ldflags "-X main.version=0.5.1"` (sem `-clean`).
 - `spec-trace.ps1` para `phase-5-1-ajustes` e `single-exe`.
-- Manual: ADM-001 (inclui build dev sem UAC), ADM-006, TAG-005 (filtro por gênero) — fica para o usuário.
+- Manual: ADM-001 (inclui build dev sem UAC), ADM-005 (relançamento pela UI herda a elevação), ADM-006, TAG-005 (filtro por gênero) — fica para o usuário.
 - **Dependência:** T01..T07.
 
 ---

@@ -347,3 +347,19 @@ func TestDeleteMessage(t *testing.T) {
 		}
 	})
 }
+
+// TestElevationRequired covers ADM-003: a launch that fails with
+// ERROR_ELEVATION_REQUIRED (740) tells the user to run the Arcadia as administrator.
+func TestElevationRequired(t *testing.T) {
+	t.Run("ADM-003/erro 740 pede que o Arcadia rode como administrador", func(t *testing.T) {
+		raw := `{"error":"tracker: create process: requires elevation","winError":740}`
+		wantText(t, rawDataErr(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed, raw),
+			"Não foi possível iniciar o jogo: o Arcadia precisa estar como administrador. Feche-o e abra de novo com a elevação.")
+	})
+
+	t.Run("ADM-003/outro winError mantém a mensagem comum com o detalhe", func(t *testing.T) {
+		raw := `{"error":"tracker: create process: not found","winError":2}`
+		wantText(t, rawDataErr(ipc.CodeLaunchFailed, ipc.MsgLaunchFailed, raw),
+			"Não foi possível iniciar o jogo: tracker: create process: not found")
+	})
+}
