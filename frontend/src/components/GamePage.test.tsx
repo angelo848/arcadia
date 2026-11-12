@@ -221,4 +221,20 @@ describe('GamePage', () => {
     expect(props.onRemove).toHaveBeenCalledTimes(1)
     expect(props.onEdit).not.toHaveBeenCalled()
   })
+  it('RUL-005/página mostra rastreio por processo quando a sessão do jogo é adotada', async () => {
+    const adopted: SessionView = {
+      sessionId: 3,
+      gameId: 10,
+      title: 'Counter-Strike 2',
+      state: 'running',
+      startedAt: '2026-11-12T10:00:00.000Z',
+      endedAt: '',
+      activeSeconds: 0,
+      activeMs: 0,
+      asOf: '2026-11-12T10:00:00.000Z',
+      tracking: 'process',
+    }
+    renderPage({ current: adopted })
+    expect(await screen.findByText(/Rastreio por processo/)).toBeInTheDocument()
+  })
 })

@@ -16,6 +16,8 @@ export type SessionView = {
   activeSeconds: number
   activeMs: number
   asOf: string
+  // job or process (RUL-005); optional for fixtures that predate it.
+  tracking?: 'job' | 'process'
 }
 
 // PickedExe mirrors cmd/arcadia PickedExe; an empty path means the dialog was cancelled.

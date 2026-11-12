@@ -67,6 +67,9 @@ export function GamePage(props: GamePageProps): JSX.Element {
           Voltar
         </button>
         {marking}
+        {sessionHere !== null && current?.tracking === 'process' && (
+          <span className="text-sm text-neutral-400">Rastreio por processo: pausa e processos filhos não entram no tempo</span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
