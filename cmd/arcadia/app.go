@@ -71,6 +71,8 @@ type platform struct {
 	showWindow func(ctx context.Context)
 	// openFile shows the open-file dialog; "" means cancelled (DSK-012).
 	openFile func(ctx context.Context, title string, filters []fileFilter) (string, error)
+	// openDir shows the folder dialog; "" means cancelled (IMP-004, IMP-005).
+	openDir func(ctx context.Context, title string) (string, error)
 }
 
 // App is the Wails-bound application. Its exported methods are the frontend

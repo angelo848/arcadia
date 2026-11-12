@@ -33,5 +33,8 @@ func defaultPlatform() platform {
 		openFile: func(context.Context, string, []fileFilter) (string, error) {
 			return "", errUnsupported
 		},
+		openDir: func(context.Context, string) (string, error) {
+			return "", errUnsupported
+		},
 	}
 }

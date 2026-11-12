@@ -48,6 +48,8 @@ type SessionView struct {
 	ActiveSeconds int64  `json:"activeSeconds"`
 	ActiveMs      int64  `json:"activeMs"`
 	AsOf          string `json:"asOf"` // RFC 3339 UTC with ms
+	// Tracking is "job" or "process": the UI says so for adopted games (RUL-005).
+	Tracking string `json:"tracking"`
 }
 
 // PickedExe is the result of PickGameExe; the zero value means cancelled.
@@ -80,6 +82,7 @@ func sessionView(s ipc.Session) (SessionView, error) {
 		ActiveSeconds: s.ActiveSeconds,
 		ActiveMs:      s.ActiveMs,
 		AsOf:          s.AsOf.UTC().Format(viewAsOfLayout),
+		Tracking:      s.Tracking,
 	}, nil
 }
 

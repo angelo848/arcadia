@@ -21,6 +21,10 @@ export function GameSessions(arg1:number,arg2:number,arg3:number):Promise<main.S
 
 export function GetGame(arg1:number):Promise<main.GameDetailView>;
 
+export function ImportApply(arg1:Array<main.ImportCandidateView>):Promise<main.ImportApplyView>;
+
+export function ImportScan(arg1:string,arg2:string):Promise<main.ImportScanView>;
+
 export function LaunchGame(arg1:number):Promise<main.SessionView>;
 
 export function LaunchGameUntracked(arg1:number):Promise<void>;
@@ -28,6 +32,8 @@ export function LaunchGameUntracked(arg1:number):Promise<void>;
 export function ListGames(arg1:main.LibraryQuery):Promise<main.GameListView>;
 
 export function PauseSession():Promise<main.SessionView>;
+
+export function PickFolder():Promise<string>;
 
 export function PickGameExe():Promise<main.PickedExe>;
 

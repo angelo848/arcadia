@@ -38,6 +38,14 @@ export function GetGame(arg1) {
   return window['go']['main']['App']['GetGame'](arg1);
 }
 
+export function ImportApply(arg1) {
+  return window['go']['main']['App']['ImportApply'](arg1);
+}
+
+export function ImportScan(arg1, arg2) {
+  return window['go']['main']['App']['ImportScan'](arg1, arg2);
+}
+
 export function LaunchGame(arg1) {
   return window['go']['main']['App']['LaunchGame'](arg1);
 }
@@ -52,6 +60,10 @@ export function ListGames(arg1) {
 
 export function PauseSession() {
   return window['go']['main']['App']['PauseSession']();
+}
+
+export function PickFolder() {
+  return window['go']['main']['App']['PickFolder']();
 }
 
 export function PickGameExe() {

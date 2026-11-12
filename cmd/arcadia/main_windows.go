@@ -147,6 +147,13 @@ func defaultPlatform() platform {
 			}
 			return path, nil
 		},
+		openDir: func(ctx context.Context, title string) (string, error) {
+			path, err := wailsruntime.OpenDirectoryDialog(ctx, wailsruntime.OpenDialogOptions{Title: title})
+			if err != nil {
+				return "", fmt.Errorf("desktop: open directory dialog: %w", err)
+			}
+			return path, nil
+		},
 	}
 }
 
