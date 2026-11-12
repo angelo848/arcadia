@@ -46,6 +46,9 @@ type gameStore interface {
 	GameSessions(ctx context.Context, gameID int64, offset, limit int) (store.SessionPage, error)
 	UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error)
 	DeleteGame(ctx context.Context, id int64) error
+	Platforms(ctx context.Context) ([]store.Platform, error)
+	AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error)
+	Catalog(ctx context.Context) (store.Catalog, error)
 }
 
 // sessionTracker is the part of *tracker.Tracker used by the game handlers.
@@ -72,15 +75,25 @@ type gameLaunchParams struct {
 }
 
 // gameHandlers returns the handlers of game.add, game.list, game.get,
-// game.update, game.delete, session.list, game.launch and session.current
-// [IPC-020..IPC-026, IPC-028, IPC-031, IPC-044, IPC-045, IPC-046, IPC-047,
-// AGT-011]. stat is os.Stat in production.
+// game.update, game.delete, session.list, platform.list, platform.add,
+// library.catalog, game.launch and session.current [IPC-020..IPC-026, IPC-028,
+// IPC-031, IPC-044, IPC-045, IPC-046, IPC-047, IPC-048, IPC-049, AGT-011].
+// stat is os.Stat in production.
 func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 	stat func(string) (fs.FileInfo, error), log *slog.Logger) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
 		ipc.MethodGameAdd: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameAdd(ctx, st, clock, stat, log, params)
 		},
+		ipc.MethodPlatformList: ipc.NoParams(func(ctx context.Context) (any, error) {
+			return handlePlatformList(ctx, st, log)
+		}),
+		ipc.MethodPlatformAdd: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return handlePlatformAdd(ctx, st, log, params)
+		},
+		ipc.MethodLibraryCatalog: ipc.NoParams(func(ctx context.Context) (any, error) {
+			return handleLibraryCatalog(ctx, st, log)
+		}),
 		ipc.MethodGameList: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameList(ctx, st, log, params)
 		},

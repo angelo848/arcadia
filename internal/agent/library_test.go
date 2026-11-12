@@ -9,7 +9,10 @@ package agent
 // level) and TestGameUpdateNotifications (full agent with two clients). T21:
 // game.delete [IPC-046, IPC-050, DEL-001..DEL-006] in TestGameDelete (handler
 // level, with a deleteTracker that answers WithoutActiveGame) and
-// TestGameDeleteNotifications (full agent with the real tracker).
+// TestGameDeleteNotifications (full agent with the real tracker). T22: platform.list,
+// platform.add and library.catalog [IPC-048, IPC-049, IPC-050, EDT-008, EDT-009] in
+// TestPlatformAndCatalog (handler level) and TestPlatformAndCatalogNotifications
+// (full agent with two clients).
 
 import (
 	"bytes"
@@ -19,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -147,6 +151,20 @@ func (s *recordingGameStore) GameSessions(ctx context.Context, gameID int64, off
 // UpdateGame forwards to the real store. T20 adds it to gameStore.
 func (s *recordingGameStore) UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error) {
 	return s.inner.UpdateGame(ctx, id, p, at)
+}
+
+// Platforms, AddPlatform and Catalog forward to the real store. T22 adds them to
+// gameStore [IPC-048, IPC-049].
+func (s *recordingGameStore) Platforms(ctx context.Context) ([]store.Platform, error) {
+	return s.inner.Platforms(ctx)
+}
+
+func (s *recordingGameStore) AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error) {
+	return s.inner.AddPlatform(ctx, name, category)
+}
+
+func (s *recordingGameStore) Catalog(ctx context.Context) (store.Catalog, error) {
+	return s.inner.Catalog(ctx)
 }
 
 // seededSession describes a session written through the store: it starts at
@@ -1306,5 +1324,253 @@ func TestGameDeleteNotifications(t *testing.T) {
 		}
 		cur := c.rpcOK(t, ipc.MethodSessionCurrent, nil).Result
 		wantRaw(t, objectOf(t, cur), "session", "null")
+	})
+}
+
+// --- T22: platform.list, platform.add and library.catalog ---
+
+// platformsRaw returns the platforms member of platform.list as sent, so a test
+// can check that nothing changed [IPC-048].
+func platformsRaw(t *testing.T, h *gamesHarness) string {
+	t.Helper()
+	resp := h.call(t, ipc.MethodPlatformList, "")
+	if resp.Error != nil {
+		t.Fatalf("platform.list: error %d %q (data %s)", resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	return string(objectOf(t, resp.Result)["platforms"])
+}
+
+// platformList decodes the platforms of platform.list [IPC-048].
+func platformList(t *testing.T, h *gamesHarness) []ipc.Platform {
+	t.Helper()
+	var out ipc.PlatformListResult
+	resultInto(t, h.call(t, ipc.MethodPlatformList, ""), &out)
+	return out.Platforms
+}
+
+// platformAddOK calls platform.add with name and category, requires success,
+// checks that the result has exactly the member platform with id, name and
+// category, and returns the platform [IPC-048, EDT-008].
+func platformAddOK(t *testing.T, h *gamesHarness, name, category string) ipc.Platform {
+	t.Helper()
+	resp := h.call(t, ipc.MethodPlatformAdd, mustJSON(t, map[string]string{"name": name, "category": category}))
+	if resp.Error != nil {
+		t.Fatalf("platform.add(%q, %q): error %d %q (data %s)", name, category, resp.Error.Code, resp.Error.Message, resp.Error.Data)
+	}
+	top := objectOf(t, resp.Result)
+	wantKeys(t, top, "platform")
+	wantKeys(t, objectOf(t, top["platform"]), "id", "name", "category")
+	var out ipc.PlatformAddResult
+	resultInto(t, resp, &out)
+	return out.Platform
+}
+
+func TestPlatformAndCatalog(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IPC-048/platform.list devolve platforms em ordem de nome", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodPlatformList)
+		// An empty database gives [] and not null [IPC-048].
+		if raw := platformsRaw(t, h); raw != "[]" {
+			t.Errorf("platforms of an empty database = %s, want []", raw)
+		}
+		added := []struct {
+			name     string
+			category domain.PlatformCategory
+		}{
+			{"Switch", domain.CategoryConsole},
+			{"amiga", domain.CategoryPC},
+			{"Atari 2600", domain.CategoryConsole},
+			{"PC", domain.CategoryPC},
+		}
+		for _, p := range added {
+			if _, err := h.st.AddPlatform(t.Context(), p.name, p.category); err != nil {
+				t.Fatalf("AddPlatform(%q): %v", p.name, err)
+			}
+		}
+
+		// Order by name without case: "amiga" < "Atari 2600" < "PC" < "Switch" (binary order would put "amiga" last).
+		var items []map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(platformsRaw(t, h)), &items); err != nil {
+			t.Fatalf("platforms: %v", err)
+		}
+		var names []string
+		for _, it := range items {
+			wantKeys(t, it, "id", "name", "category")
+			var name string
+			if err := json.Unmarshal(it["name"], &name); err != nil {
+				t.Fatalf("name: %v", err)
+			}
+			names = append(names, name)
+		}
+		if want := []string{"amiga", "Atari 2600", "PC", "Switch"}; fmt.Sprint(names) != fmt.Sprint(want) {
+			t.Errorf("platform names = %v, want %v", names, want)
+		}
+		categories := map[string]string{"Switch": "console", "amiga": "pc", "Atari 2600": "console", "PC": "pc"}
+		for _, p := range platformList(t, h) {
+			if p.ID < 1 || p.Category != categories[p.Name] {
+				t.Errorf("platform %+v, want id >= 1 and category %q", p, categories[p.Name])
+			}
+		}
+	})
+
+	t.Run("IPC-048/platform.add com nome existente em outra grafia devolve a existente", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodPlatformAdd)
+		sw, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
+		if err != nil {
+			t.Fatalf("AddPlatform: %v", err)
+		}
+		before := platformsRaw(t, h)
+
+		got := platformAddOK(t, h, "switch", "pc")
+		if got.ID != sw.ID || got.Name != "Switch" || got.Category != "console" {
+			t.Errorf("platform.add(switch, pc) = %+v, want the existing platform %d Switch console (category ignored)", got, sw.ID)
+		}
+		if after := platformsRaw(t, h); after != before {
+			t.Errorf("platforms after the add = %s, want %s: no platform is created", after, before)
+		}
+	})
+
+	t.Run("IPC-048/platform.add com nome novo devolve a plataforma criada", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodPlatformAdd)
+
+		// The name is trimmed (DOM-016) and the category is kept (DOM-015).
+		got := platformAddOK(t, h, "  Amiga 1200  ", "arcade")
+		if got.ID < 1 || got.Name != "Amiga 1200" || got.Category != "arcade" {
+			t.Errorf("platform.add = %+v, want a new platform Amiga 1200 arcade", got)
+		}
+		if list := platformList(t, h); len(list) != 1 || list[0].ID != got.ID {
+			t.Errorf("platform.list after the add = %+v, want the new platform only", list)
+		}
+
+		// 100 runes is the largest accepted name (DOM-015, DOM-016).
+		long := platformAddOK(t, h, strings.Repeat("é", domain.MaxNameRunes), "handheld")
+		if n := len([]rune(long.Name)); n != domain.MaxNameRunes || long.Category != "handheld" {
+			t.Errorf("platform.add with a %d-rune name: %d runes, category %q", domain.MaxNameRunes, n, long.Category)
+		}
+	})
+
+	t.Run("EDT-008/nome vazio ou categoria inválida é -32602 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodPlatformAdd)
+		if _, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole); err != nil {
+			t.Fatalf("AddPlatform: %v", err)
+		}
+		before := platformsRaw(t, h)
+		tooLong := strings.Repeat("é", domain.MaxNameRunes+1)
+		wantEachInvalidParams(t, h, ipc.MethodPlatformAdd,
+			`{"name":"","category":"pc"}`,
+			`{"name":"   ","category":"pc"}`,
+			`{"name":"`+tooLong+`","category":"pc"}`,
+			`{"name":"Amiga","category":""}`,
+			`{"name":"Amiga","category":"Console"}`,
+			`{"name":"Amiga","category":"laptop"}`,
+		)
+		if after := platformsRaw(t, h); after != before {
+			t.Errorf("platforms after the refused adds = %s, want %s", after, before)
+		}
+	})
+
+	t.Run("EDT-009/params de platform.add: membro desconhecido, falta de membro, tipo errado ou posicional é -32602 e nada muda", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodPlatformAdd)
+		before := platformsRaw(t, h)
+		wantEachInvalidParams(t, h, ipc.MethodPlatformAdd,
+			"", `{}`, `{"name":"Amiga"}`, `{"category":"pc"}`,
+			`{"name":"Amiga","category":"pc","extra":1}`,
+			`{"name":5,"category":"pc"}`,
+			`{"Name":"Amiga","category":"pc"}`,
+			`["Amiga","pc"]`,
+		)
+		if after := platformsRaw(t, h); after != before {
+			t.Errorf("platforms after the refused adds = %s, want %s", after, before)
+		}
+	})
+
+	t.Run("IPC-049/platform.list e library.catalog aceitam params ausentes, null, [] ou {} e recusam membro ou array com -32602", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		for _, m := range []string{ipc.MethodPlatformList, ipc.MethodLibraryCatalog} {
+			h.need(t, m)
+			for _, p := range []string{"", "null", "[]", "{}"} {
+				if resp := h.call(t, m, p); resp.Error != nil {
+					t.Errorf("%s with params %q: error %d %q, want success", m, p, resp.Error.Code, resp.Error.Message)
+				}
+			}
+		}
+		wantEachInvalidParams(t, h, ipc.MethodPlatformList, `{"x":1}`, `[1]`)
+		wantEachInvalidParams(t, h, ipc.MethodLibraryCatalog, `{"x":1}`, `[1]`)
+	})
+
+	t.Run("IPC-049/library.catalog devolve listas não nulas e exatamente os cinco playModes", func(t *testing.T) {
+		t.Parallel()
+		h := newGamesHarness(t, nil)
+		h.need(t, ipc.MethodLibraryCatalog)
+
+		// An empty database: every list is [] and not null [IPC-049, STO-030].
+		empty := objectOf(t, h.call(t, ipc.MethodLibraryCatalog, "").Result)
+		wantKeys(t, empty, "platforms", "genres", "companies", "playModes")
+		wantRaw(t, empty, "platforms", "[]")
+		wantRaw(t, empty, "genres", "[]")
+		wantRaw(t, empty, "companies", "[]")
+
+		// A game with links, so the catalog has names to sort: companies and genres
+		// are in name order without case.
+		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
+		developers := []string{"team cherry", "Ace"}
+		genres := []string{"roguelike", "Action", "adventure"}
+		if _, err := h.st.UpdateGame(t.Context(), g.ID, store.GamePatch{
+			Developers: &developers, Genres: &genres,
+		}, gamesT0); err != nil {
+			t.Fatalf("UpdateGame: %v", err)
+		}
+
+		cat := objectOf(t, h.call(t, ipc.MethodLibraryCatalog, "").Result)
+		wantKeys(t, cat, "platforms", "genres", "companies", "playModes")
+		// The platforms of the catalog are the ones of platform.list [IPC-048, IPC-049].
+		wantRaw(t, cat, "platforms", platformsRaw(t, h))
+		wantRaw(t, cat, "genres", `["Action","adventure","roguelike"]`)
+		wantRaw(t, cat, "companies", `["Ace","team cherry"]`)
+
+		var modes []string
+		if err := json.Unmarshal(cat["playModes"], &modes); err != nil {
+			t.Fatalf("playModes: %v", err)
+		}
+		sort.Strings(modes)
+		want := []string{"coop_local", "coop_online", "multi_local", "multi_online", "single"}
+		if fmt.Sprint(modes) != fmt.Sprint(want) {
+			t.Errorf("playModes = %v, want exactly the five names of DOM-014 %v", modes, want)
+		}
+	})
+}
+
+// TestPlatformAndCatalogNotifications runs platform.add in a full agent with two
+// clients [IPC-050]. It is not parallel: newWiring checks for leaked goroutines.
+func TestPlatformAndCatalogNotifications(t *testing.T) {
+	t.Run("IPC-050/platform.add não envia notificação", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+		c1, c2 := w.client(t), w.client(t)
+		before1, before2 := countNotifications(c1.snapshotAll()), countNotifications(c2.snapshotAll())
+
+		// One new platform and one existing in another spelling [IPC-048, EDT-008].
+		c1.rpcOK(t, ipc.MethodPlatformAdd, map[string]string{"name": "Switch", "category": "console"})
+		c1.rpcOK(t, ipc.MethodPlatformAdd, map[string]string{"name": "switch", "category": "pc"})
+		// A round trip on each connection: anything queued before the response has arrived.
+		c1.rpcOK(t, ipc.MethodStatus, nil)
+		c2.rpcOK(t, ipc.MethodStatus, nil)
+		if n := countNotifications(c1.snapshotAll()); n != before1 {
+			t.Errorf("client 1 got %d notification(s) after platform.add, want none", n-before1)
+		}
+		if n := countNotifications(c2.snapshotAll()); n != before2 {
+			t.Errorf("client 2 got %d notification(s) after platform.add, want none", n-before2)
+		}
 	})
 }

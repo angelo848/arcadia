@@ -486,6 +486,86 @@ func fitGamesPage(id json.RawMessage, games []ipc.Game, total int64, offset int)
 	return games, nil
 }
 
+// handlePlatformList serves platform.list: every platform in name order without
+// regard to case [IPC-048]. The params are checked by the caller (ipc.NoParams).
+// The result is never nil.
+func handlePlatformList(ctx context.Context, st gameStore, log *slog.Logger) (any, error) {
+	ps, err := st.Platforms(ctx)
+	if err != nil {
+		log.Error("falha ao listar as plataformas", "error", err.Error())
+		return nil, fmt.Errorf("platform.list: %w", err)
+	}
+	return ipc.PlatformListResult{Platforms: toIPCPlatforms(ps)}, nil
+}
+
+// handlePlatformAdd serves platform.add: it returns the platform with the name
+// without regard to case, or creates it with the category [IPC-048, EDT-008].
+// The name is checked with DOM-016 and the category with DOM-015; anything
+// invalid, or params that are absent, positional or not exactly
+// {name, category}, is -32602 and nothing is written. No notification is sent
+// for a library write [IPC-050].
+func handlePlatformAdd(ctx context.Context, st gameStore, log *slog.Logger, params json.RawMessage) (any, error) {
+	if params == nil {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	var p ipc.PlatformAddParams
+	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
+		return nil, rpcErr
+	}
+	name, err := domain.NormalizeName(p.Name)
+	if err != nil {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	category, err := domain.ParsePlatformCategory(p.Category)
+	if err != nil {
+		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	pl, err := st.AddPlatform(ctx, name, category)
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidField) {
+			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		}
+		log.Error("falha ao adicionar a plataforma", "name", name, "error", err.Error())
+		return nil, fmt.Errorf("platform.add: %w", err)
+	}
+	return ipc.PlatformAddResult{Platform: toIPCPlatform(pl)}, nil
+}
+
+// handleLibraryCatalog serves library.catalog: the platforms, the genre and
+// company names and the five play modes of DOM-014 [IPC-049, STO-030]. Every
+// list is never nil. The params are checked by the caller (ipc.NoParams).
+func handleLibraryCatalog(ctx context.Context, st gameStore, log *slog.Logger) (any, error) {
+	cat, err := st.Catalog(ctx)
+	if err != nil {
+		log.Error("falha ao ler o catálogo", "error", err.Error())
+		return nil, fmt.Errorf("library.catalog: %w", err)
+	}
+	modes := make([]string, 0, len(cat.PlayModes))
+	for _, m := range cat.PlayModes {
+		modes = append(modes, string(m))
+	}
+	return ipc.Catalog{
+		Platforms: toIPCPlatforms(cat.Platforms),
+		Genres:    nonNilStrings(cat.Genres),
+		Companies: nonNilStrings(cat.Companies),
+		PlayModes: modes,
+	}, nil
+}
+
+// toIPCPlatform converts a store platform to its wire form [IPC-048].
+func toIPCPlatform(p store.Platform) ipc.Platform {
+	return ipc.Platform{ID: p.ID, Name: p.Name, Category: string(p.Category)}
+}
+
+// toIPCPlatforms converts a list of platforms; the result is never nil.
+func toIPCPlatforms(ps []store.Platform) []ipc.Platform {
+	out := make([]ipc.Platform, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, toIPCPlatform(p))
+	}
+	return out
+}
+
 // responseSize is the length of the encoded response with the given id and
 // result, as ipc.Dispatch writes it (without the trailing '\n').
 func responseSize(id json.RawMessage, result []byte) (int, error) {
