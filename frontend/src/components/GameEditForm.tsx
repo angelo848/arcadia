@@ -3,6 +3,7 @@ import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
 import { playModeLabels, type GameDetailView, type PlayModeName } from '../lib/library'
 import { validateDraft } from '../lib/validation'
+import { TagInput } from './TagInput'
 
 // The play modes in the order the form shows them (DOM-014).
 const playModeOrder: PlayModeName[] = ['single', 'multi_local', 'multi_online', 'coop_local', 'coop_online']
@@ -16,7 +17,8 @@ const statusOptions: Array<{ value: GameStatus; label: string }> = [
   { value: 'backlog', label: 'Na fila' },
 ]
 
-// FormValues keeps the names as the text typed (comma separated); toDraft turns them into arrays.
+// FormValues keeps developers and publishers as the text typed (comma separated); toDraft turns
+// them into arrays. Genres are already a list of tags (TAG-001).
 type FormValues = {
   title: string
   description: string
@@ -26,17 +28,21 @@ type FormValues = {
   favorite: boolean
   developers: string
   publishers: string
-  genres: string
+  genres: string[]
   playModes: PlayModeName[]
 }
 
 export type GameEditFormProps = {
   game: GameDetailView
+  // genreSuggestions are the names already in the catalog of genres (TAG-001).
+  genreSuggestions?: string[]
   onSave: (patch: Record<string, unknown>) => void
   onCancel: () => void
   pending: boolean
   error: string | null
 }
+
+const noSuggestions: string[] = []
 
 function initialValues(game: GameDetailView): FormValues {
   return {
@@ -48,7 +54,7 @@ function initialValues(game: GameDetailView): FormValues {
     favorite: game.favorite,
     developers: game.developers.join(', '),
     publishers: game.publishers.join(', '),
-    genres: game.genres.join(', '),
+    genres: [...game.genres],
     playModes: game.playModes,
   }
 }
@@ -69,7 +75,7 @@ function toDraft(v: FormValues): EditDraft {
     favorite: v.favorite,
     developers: splitNames(v.developers),
     publishers: splitNames(v.publishers),
-    genres: splitNames(v.genres),
+    genres: v.genres,
     playModes: v.playModes,
   }
 }
@@ -81,7 +87,14 @@ const inputClass =
 // draft and sends only the changed fields through onSave (UI-039). "Salvar" is disabled while
 // the request is pending or while the draft has a validation error (UI-040). The parent makes
 // the call and shows the error.
-export function GameEditForm({ game, onSave, onCancel, pending, error }: GameEditFormProps): JSX.Element {
+export function GameEditForm({
+  game,
+  genreSuggestions = noSuggestions,
+  onSave,
+  onCancel,
+  pending,
+  error,
+}: GameEditFormProps): JSX.Element {
   const [values, setValues] = useState<FormValues>(() => initialValues(game))
   const idPrefix = useId()
   const draft = toDraft(values)
@@ -222,13 +235,12 @@ export function GameEditForm({ game, onSave, onCancel, pending, error }: GameEdi
         />
       </Row>
 
-      <Row id={id('genres')} label="Gêneros" hint="Separe os nomes por vírgula." message={errors.genres}>
-        <input
+      <Row id={id('genres')} label="Gêneros" hint="Escolha um gênero cadastrado ou digite um novo." message={errors.genres}>
+        <TagInput
           id={id('genres')}
-          type="text"
           value={values.genres}
-          onChange={(e) => set('genres', e.target.value)}
-          className={inputClass}
+          suggestions={genreSuggestions}
+          onChange={(next) => set('genres', next)}
         />
       </Row>
 

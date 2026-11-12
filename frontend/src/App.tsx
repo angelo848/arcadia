@@ -53,6 +53,7 @@ function hasFacets(q: LibraryQuery): boolean {
 type GameScreenProps = {
   id: number
   current: SessionView | null
+  genreSuggestions: string[]
   editing: boolean
   editError: string | null
   savePending: boolean
@@ -72,6 +73,7 @@ type GameScreenProps = {
 function GameScreen({
   id,
   current,
+  genreSuggestions,
   editing,
   editError,
   savePending,
@@ -94,6 +96,7 @@ function GameScreen({
         <GameEditForm
           key={id}
           game={detail.data}
+          genreSuggestions={genreSuggestions}
           onSave={onSave}
           onCancel={onCancelEdit}
           pending={savePending}
@@ -143,6 +146,8 @@ export default function App() {
   // The list waits for the first agent status, so the connect does not reload a page still on its way [UI-009].
   const games = useInfiniteGames(query, { enabled: status.data !== undefined && !conflict })
   const catalog = useCatalog()
+  // The genre names of the catalog, offered as tags in the edit form (TAG-001).
+  const genreNames = useMemo(() => catalog.data?.genres.map((g) => g.name) ?? [], [catalog.data])
   const current = useCurrentSession()
   useSessionEvents()
   useReloadOnReconnect(connected)
@@ -354,6 +359,7 @@ export default function App() {
             key={selectedId}
             id={selectedId}
             current={session}
+            genreSuggestions={genreNames}
             editing={editing}
             editError={editError}
             savePending={update.isPending}

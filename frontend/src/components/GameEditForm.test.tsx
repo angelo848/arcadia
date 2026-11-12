@@ -138,4 +138,27 @@ describe('GameEditForm', () => {
       unmount()
     }
   })
+
+  it('TAG-005/salvar envia genres como array e só quando mudou', () => {
+    const { props } = renderForm({ genreSuggestions: ['Metroidvania', 'Ação'] })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover Metroidvania' }))
+    const input = screen.getByLabelText('Gêneros')
+    fireEvent.change(input, { target: { value: 'ação' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ genres: ['Ação'] })
+  })
+
+  it('TAG-002/gênero novo entra no patch com a grafia digitada', () => {
+    const { props } = renderForm({ genreSuggestions: ['Metroidvania'] })
+
+    const input = screen.getByLabelText('Gêneros')
+    fireEvent.change(input, { target: { value: 'Terror' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.click(saveButton())
+
+    expect(props.onSave).toHaveBeenCalledWith({ genres: ['Metroidvania', 'Terror'] })
+  })
 })
