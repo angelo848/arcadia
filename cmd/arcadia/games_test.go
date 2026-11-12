@@ -494,3 +494,196 @@ func TestSessionView(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// T21 (docs/specs/phase-4-pause/tasks.md): the LaunchGameUntracked, PauseSession
+// and ResumeSession bindings (DSK-013, DSK-015).
+//
+// Assumptions beyond tasks.md (the implementer must follow them):
+//   - The bindings emit no Wails event: platform.emit must not be called (the
+//     session:changed event comes from the agent notification, DSK-014).
+//   - LaunchGameUntracked calls game.launchUntracked with {gameId} and a 12 s
+//     deadline, and returns only an error. PauseSession and ResumeSession call
+//     session.pause and session.resume with a 5 s deadline and return the
+//     SessionView of the SessionResult.
+//   - Errors pass through userError (callAgent), so the texts are those of
+//     DSK-011 and DSK-015.
+
+// gameEmitLog records the names of the Wails events emitted through platform.emit.
+type gameEmitLog struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (e *gameEmitLog) emit(_ context.Context, event string, _ any) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.events = append(e.events, event)
+}
+
+func (e *gameEmitLog) recorded() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.events...)
+}
+
+// newBindingApp returns an App with p as the agent client and em as the emitter.
+func newBindingApp(p pinger, em *gameEmitLog) *App {
+	return &App{
+		client:   p,
+		log:      discardLog(),
+		wailsCtx: context.WithValue(context.Background(), ctxKey{}, "wails"),
+		platform: platform{emit: em.emit},
+	}
+}
+
+func TestLaunchGameUntracked(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-013/chama game.launchUntracked com {gameId: id} e prazo de 12 s, devolve sucesso sem valor e não emite session:changed", func(t *testing.T) {
+		t.Parallel()
+		p := &gamePinger{results: map[string]any{ipc.MethodGameLaunchUntracked: ipc.LaunchedProcess{PID: 77}}}
+		em := &gameEmitLog{}
+		a := newBindingApp(p, em)
+
+		if err := a.LaunchGameUntracked(3); err != nil {
+			t.Fatalf("LaunchGameUntracked(3) err = %v, want nil", err)
+		}
+		c := singleCall(t, p, ipc.MethodGameLaunchUntracked, 12*time.Second)
+		var lp map[string]any
+		if err := json.Unmarshal(c.params, &lp); err != nil {
+			t.Fatalf("game.launchUntracked params %s: %v", c.params, err)
+		}
+		if len(lp) != 1 || lp["gameId"] != float64(3) {
+			t.Errorf("game.launchUntracked params = %s, want {\"gameId\":3}", c.params)
+		}
+		if got := em.recorded(); len(got) != 0 {
+			t.Errorf("events emitted = %v, want none (session:changed comes from the agent)", got)
+		}
+	})
+
+	t.Run("DSK-013/-32002 vira Já há um jogo em andamento: «title». Feche-o antes de iniciar outro.", func(t *testing.T) {
+		t.Parallel()
+		p := &gamePinger{errs: map[string]error{ipc.MethodGameLaunchUntracked: sessionActiveErr("Hollow Knight")}}
+		a := newBindingApp(p, &gameEmitLog{})
+
+		err := a.LaunchGameUntracked(3)
+
+		const want = "Já há um jogo em andamento: Hollow Knight. Feche-o antes de iniciar outro."
+		if err == nil || err.Error() != want {
+			t.Errorf("LaunchGameUntracked err = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("DSK-013/-32003 vira Não foi possível iniciar o jogo: «error»", func(t *testing.T) {
+		t.Parallel()
+		p := &gamePinger{errs: map[string]error{ipc.MethodGameLaunchUntracked: launchFailedErr("Acesso negado. (740)")}}
+		a := newBindingApp(p, &gameEmitLog{})
+
+		err := a.LaunchGameUntracked(3)
+
+		const want = "Não foi possível iniciar o jogo: Acesso negado. (740)"
+		if err == nil || err.Error() != want {
+			t.Errorf("LaunchGameUntracked err = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("DSK-013/-32001 vira Jogo não encontrado. Atualize a lista.", func(t *testing.T) {
+		t.Parallel()
+		p := &gamePinger{errs: map[string]error{ipc.MethodGameLaunchUntracked: gameNotFoundErr()}}
+		a := newBindingApp(p, &gameEmitLog{})
+
+		err := a.LaunchGameUntracked(3)
+
+		if err == nil || err.Error() != txtGameNotFound {
+			t.Errorf("LaunchGameUntracked err = %v, want %q", err, txtGameNotFound)
+		}
+	})
+}
+
+func TestPauseResumeSession(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-015/PauseSession chama session.pause (5 s) e devolve a SessionView; ResumeSession chama session.resume", func(t *testing.T) {
+		t.Parallel()
+		paused := sampleSession()
+		paused.State = string(domain.SessionPaused)
+		running := sampleSession()
+
+		pp := &gamePinger{results: map[string]any{ipc.MethodSessionPause: ipc.SessionResult{Session: paused}}}
+		a := newBindingApp(pp, &gameEmitLog{})
+		got, err := a.PauseSession()
+		if err != nil {
+			t.Fatalf("PauseSession() err = %v", err)
+		}
+		wantSessionView(t, got, paused)
+		if got.State != "paused" {
+			t.Errorf("PauseSession().State = %q, want %q", got.State, "paused")
+		}
+		singleCall(t, pp, ipc.MethodSessionPause, 5*time.Second)
+
+		rp := &gamePinger{results: map[string]any{ipc.MethodSessionResume: ipc.SessionResult{Session: running}}}
+		a.client = rp
+		got, err = a.ResumeSession()
+		if err != nil {
+			t.Fatalf("ResumeSession() err = %v", err)
+		}
+		wantSessionView(t, got, running)
+		if got.State != "running" {
+			t.Errorf("ResumeSession().State = %q, want %q", got.State, "running")
+		}
+		singleCall(t, rp, ipc.MethodSessionResume, 5*time.Second)
+	})
+
+	t.Run("DSK-015/os bindings não emitem evento por conta própria", func(t *testing.T) {
+		t.Parallel()
+		s := sampleSession()
+		s.State = string(domain.SessionPaused)
+		p := &gamePinger{results: map[string]any{
+			ipc.MethodSessionPause:  ipc.SessionResult{Session: s},
+			ipc.MethodSessionResume: ipc.SessionResult{Session: s},
+		}}
+		em := &gameEmitLog{}
+		a := newBindingApp(p, em)
+
+		if _, err := a.PauseSession(); err != nil {
+			t.Fatalf("PauseSession() err = %v", err)
+		}
+		if _, err := a.ResumeSession(); err != nil {
+			t.Fatalf("ResumeSession() err = %v", err)
+		}
+		if got := em.recorded(); len(got) != 0 {
+			t.Errorf("events emitted = %v, want none (session:changed comes from the agent)", got)
+		}
+	})
+
+	t.Run("DSK-015/-32005 reason no-session chega à UI como Não há jogo em andamento para pausar.", func(t *testing.T) {
+		t.Parallel()
+		p := &gamePinger{errs: map[string]error{ipc.MethodSessionPause: notPausableErr(ipc.ReasonNoSession)}}
+		a := newBindingApp(p, &gameEmitLog{})
+
+		_, err := a.PauseSession()
+
+		if err == nil || err.Error() != txtNothingToPause {
+			t.Errorf("PauseSession err = %v, want %q", err, txtNothingToPause)
+		}
+	})
+
+	t.Run("DSK-015/estado desconhecido na resposta é erro inesperado", func(t *testing.T) {
+		t.Parallel()
+		s := sampleSession()
+		s.State = "bogus"
+		p := &gamePinger{results: map[string]any{
+			ipc.MethodSessionPause:  ipc.SessionResult{Session: s},
+			ipc.MethodSessionResume: ipc.SessionResult{Session: s},
+		}}
+		a := newBindingApp(p, &gameEmitLog{})
+
+		if _, err := a.PauseSession(); err == nil || err.Error() != txtUnexpected {
+			t.Errorf("PauseSession err = %v, want %q", err, txtUnexpected)
+		}
+		if _, err := a.ResumeSession(); err == nil || err.Error() != txtUnexpected {
+			t.Errorf("ResumeSession err = %v, want %q", err, txtUnexpected)
+		}
+	})
+}

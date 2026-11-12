@@ -18,6 +18,10 @@ const (
 	listGamesTimeout = 2 * time.Second
 	// launchGameTimeout bounds each LaunchGame call (above the handler's 10 s).
 	launchGameTimeout = 12 * time.Second
+	// launchUntrackedTimeout bounds each LaunchGameUntracked call (DSK-013).
+	launchUntrackedTimeout = 12 * time.Second
+	// pauseSessionTimeout bounds each PauseSession and ResumeSession call (DSK-015).
+	pauseSessionTimeout = 5 * time.Second
 	// currentSessionTimeout bounds each CurrentSession binding call.
 	currentSessionTimeout = 2 * time.Second
 	// sessionChangedEvent is the Wails event that forwards session.changed (DSK-010).
@@ -183,9 +187,45 @@ func (a *App) LaunchGame(id int64) (SessionView, error) {
 	if err := a.callAgent(ipc.MethodGameLaunch, launchGameTimeout, ipc.GameLaunchParams{GameID: id}, &s); err != nil {
 		return SessionView{}, err
 	}
+	return a.convertSession(ipc.MethodGameLaunch, s)
+}
+
+// LaunchGameUntracked calls game.launchUntracked (12 s timeout, DSK-013). The
+// game runs without time tracking. It returns no value and emits no event:
+// session:changed, if any, comes from the agent notification (DSK-014).
+func (a *App) LaunchGameUntracked(id int64) error {
+	var res ipc.LaunchedProcess
+	return a.callAgent(ipc.MethodGameLaunchUntracked, launchUntrackedTimeout,
+		ipc.GameLaunchUntrackedParams{GameID: id}, &res)
+}
+
+// PauseSession calls session.pause (5 s timeout, DSK-015) and returns the
+// session measured by the agent. It emits no event.
+func (a *App) PauseSession() (SessionView, error) {
+	return a.sessionControl(ipc.MethodSessionPause)
+}
+
+// ResumeSession calls session.resume (5 s timeout, DSK-015) and returns the
+// session measured by the agent. It emits no event.
+func (a *App) ResumeSession() (SessionView, error) {
+	return a.sessionControl(ipc.MethodSessionResume)
+}
+
+// sessionControl calls a session.pause or session.resume method.
+func (a *App) sessionControl(method string) (SessionView, error) {
+	var res ipc.SessionResult
+	if err := a.callAgent(method, pauseSessionTimeout, nil, &res); err != nil {
+		return SessionView{}, err
+	}
+	return a.convertSession(method, res.Session)
+}
+
+// convertSession converts the session of a method result; an unknown state is
+// an unexpected failure.
+func (a *App) convertSession(method string, s ipc.Session) (SessionView, error) {
 	v, err := sessionView(s)
 	if err != nil {
-		return SessionView{}, userError(fmt.Errorf("desktop: %s: %w", ipc.MethodGameLaunch, err), a.logger())
+		return SessionView{}, userError(fmt.Errorf("desktop: %s: %w", method, err), a.logger())
 	}
 	return v, nil
 }

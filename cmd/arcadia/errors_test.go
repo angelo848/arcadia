@@ -234,3 +234,57 @@ func TestUserError(t *testing.T) {
 		}
 	})
 }
+
+// T21 (docs/specs/phase-4-pause/tasks.md): DSK-015 adds -32005 (session not
+// pausable) to the DSK-011 table.
+//
+// Assumptions beyond tasks.md (the implementer must follow them):
+//   - userError reads Data as SessionNotPausableData (-32005); a missing or
+//     invalid data member, or an unknown reason, gives the generic pause text.
+//   - The log level of -32005 is not fixed by the spec and is not checked.
+const (
+	txtNothingToPause   = "Não há jogo em andamento para pausar."
+	txtGraceNoPause     = "O jogo está encerrando. Não dá para pausar agora."
+	txtPauseUnavailable = "Não foi possível pausar agora."
+)
+
+// notPausableErr is an -32005 error whose data carries reason.
+func notPausableErr(reason string) error {
+	return ipc.NewErrorData(ipc.CodeSessionNotPausable, ipc.MsgSessionNotPausable,
+		ipc.SessionNotPausableData{Reason: reason})
+}
+
+func TestUserErrorNotPausable(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-015/-32005 reason no-session → Não há jogo em andamento para pausar.", func(t *testing.T) {
+		t.Parallel()
+		wantText(t, notPausableErr(ipc.ReasonNoSession), txtNothingToPause)
+		wantText(t, fmt.Errorf("desktop: session.pause: %w", notPausableErr(ipc.ReasonNoSession)), txtNothingToPause)
+	})
+
+	t.Run("DSK-015/-32005 reason grace → O jogo está encerrando. Não dá para pausar agora.", func(t *testing.T) {
+		t.Parallel()
+		wantText(t, notPausableErr(ipc.ReasonGrace), txtGraceNoPause)
+	})
+
+	t.Run("DSK-015/-32005 sem data ou motivo desconhecido → Não foi possível pausar agora.", func(t *testing.T) {
+		t.Parallel()
+		for _, raw := range []string{"", `"x"`, `null`, `{}`, `{"reason":7}`} {
+			wantText(t, rawDataErr(ipc.CodeSessionNotPausable, ipc.MsgSessionNotPausable, raw), txtPauseUnavailable)
+		}
+		wantText(t, notPausableErr("weird"), txtPauseUnavailable)
+		wantText(t, notPausableErr(""), txtPauseUnavailable)
+	})
+
+	t.Run("DSK-015/as demais mensagens de DSK-011 continuam", func(t *testing.T) {
+		t.Parallel()
+		wantText(t, gameNotFoundErr(), txtGameNotFound)
+		wantText(t, sessionActiveErr("Celeste"), fmt.Sprintf(sessionActiveFmt, "Celeste"))
+		wantText(t, launchFailedErr("boom"), "Não foi possível iniciar o jogo: boom")
+		wantText(t, invalidExeErr(ipc.ReasonNotExe), txtNotExe)
+		wantText(t, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams), txtInvalidData)
+		wantText(t, ipc.ErrConnectionLost, txtNotResponding)
+		wantText(t, errors.New("boom"), txtUnexpected)
+	})
+}

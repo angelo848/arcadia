@@ -1458,6 +1458,136 @@ func sessionChangedNote(t *testing.T, s ipc.Session) ipc.Notification {
 	return ipc.Notification{Method: ipc.MethodSessionChanged, Params: raw}
 }
 
+// ---------------------------------------------------------------------------
+// T21 (docs/specs/phase-4-pause/tasks.md): session.changed with state paused is
+// forwarded like the other states, and CurrentSession returns it in the same
+// format (DSK-014).
+//
+// Assumptions beyond tasks.md (the implementer must follow them):
+//   - The paused session goes through the same sessionView conversion: the
+//     emitted SessionView and the CurrentSession view are equal values.
+
+// pausedSessionFixture is sampleSession in the paused state, with activeMs
+// frozen at 130.5 s (it does not depend on asOf).
+func pausedSessionFixture() ipc.Session {
+	s := sampleSession()
+	s.State = string(domain.SessionPaused)
+	s.ActiveSeconds = 130
+	s.ActiveMs = 130500
+	s.AsOf = ipc.MilliTime{Time: gameT0.Add(130500 * time.Millisecond)}
+	return s
+}
+
+func TestSupervisorPaused(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DSK-014/session.changed com state paused emite session:changed com state paused, activeSeconds, activeMs, asOf e endedAt vazio", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		s := pausedSessionFixture()
+		h.client.send(t, sessionChangedNote(t, s))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 1 {
+			t.Fatalf("emitted %d events, want 1: %#v", len(got), got)
+		}
+		if got[0].event != sessionChangedEvent {
+			t.Errorf("event = %q, want %q", got[0].event, sessionChangedEvent)
+		}
+		v, ok := got[0].data.(SessionView)
+		if !ok {
+			t.Fatalf("event data = %#v, want a SessionView", got[0].data)
+		}
+		if v.State != "paused" {
+			t.Errorf("State = %q, want %q", v.State, "paused")
+		}
+		if v.EndedAt != "" {
+			t.Errorf("EndedAt = %q, want empty string for a paused session", v.EndedAt)
+		}
+		if v.ActiveSeconds != 130 || v.ActiveMs != 130500 {
+			t.Errorf("ActiveSeconds/ActiveMs = %d/%d, want 130/130500", v.ActiveSeconds, v.ActiveMs)
+		}
+		if want := s.AsOf.UTC().Format(asOfLayout); v.AsOf != want {
+			t.Errorf("AsOf = %q, want %q", v.AsOf, want)
+		}
+		wantSessionView(t, v, s)
+		if n := h.logs.countLevel(slog.LevelWarn); n != 0 {
+			t.Errorf("Warn records = %d, want 0; log:\n%s", n, h.logs.dump())
+		}
+	})
+
+	t.Run("DSK-014/CurrentSession devolve a sessão pausada no mesmo formato", func(t *testing.T) {
+		t.Parallel()
+		s := pausedSessionFixture()
+		p := &gamePinger{results: map[string]any{ipc.MethodSessionCurrent: ipc.SessionCurrentResult{Session: &s}}}
+		a := &App{client: p, log: discardLog()}
+
+		cur, err := a.CurrentSession()
+
+		if err != nil {
+			t.Fatalf("CurrentSession() err = %v", err)
+		}
+		if cur == nil {
+			t.Fatalf("CurrentSession() = nil, want the paused session")
+		}
+		wantSessionView(t, *cur, s)
+		if cur.State != "paused" || cur.EndedAt != "" {
+			t.Errorf("CurrentSession() state/endedAt = %q/%q, want paused/\"\"", cur.State, cur.EndedAt)
+		}
+		singleCall(t, p, ipc.MethodSessionCurrent, 2*time.Second)
+
+		// The same session pushed by session.changed gives the same view.
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+		h.client.send(t, sessionChangedNote(t, s))
+		h.client.finishNotes()
+		h.waitDone(t)
+		got := collectEmits(h)
+		if len(got) != 1 {
+			t.Fatalf("emitted %d events, want 1: %#v", len(got), got)
+		}
+		v, ok := got[0].data.(SessionView)
+		if !ok {
+			t.Fatalf("event data = %#v, want a SessionView", got[0].data)
+		}
+		if v != *cur {
+			t.Errorf("session:changed view = %+v, CurrentSession view = %+v; want the same format and values", v, *cur)
+		}
+	})
+
+	t.Run("DSK-014/estado desconhecido é registrado em Warn e não é repassado", func(t *testing.T) {
+		t.Parallel()
+		// "Paused" and "pausado" are not the state "paused" (case-sensitive, DOM-010).
+		for _, st := range []string{"Paused", "pausado"} {
+			t.Run(st, func(t *testing.T) {
+				t.Parallel()
+				h := newSupHarness(t, supOptions{})
+				h.start(t)
+				h.connectOK(t)
+
+				s := pausedSessionFixture()
+				s.State = st
+				h.client.send(t, sessionChangedNote(t, s))
+				h.client.finishNotes()
+				h.waitDone(t)
+
+				if got := collectEmits(h); len(got) != 0 {
+					t.Errorf("emitted %#v for state %q, want nothing", got, st)
+				}
+				if n := len(h.logs.find(0, slog.LevelWarn, msgSessionChangedInvalid)); n != 1 {
+					t.Errorf("%q logged %d times, want 1; log:\n%s", msgSessionChangedInvalid, n, h.logs.dump())
+				}
+			})
+		}
+	})
+}
+
 // collectEmits closes the harness emit channel (run must have returned) and
 // returns what was emitted.
 func collectEmits(h *supHarness) []supEmit {

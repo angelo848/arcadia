@@ -18,6 +18,10 @@ export function LaunchGame(arg1) {
   return window['go']['main']['App']['LaunchGame'](arg1);
 }
 
+export function LaunchGameUntracked(arg1) {
+  return window['go']['main']['App']['LaunchGameUntracked'](arg1);
+}
+
 export function LibrarySummary() {
   return window['go']['main']['App']['LibrarySummary']();
 }
@@ -26,6 +30,14 @@ export function ListGames() {
   return window['go']['main']['App']['ListGames']();
 }
 
+export function PauseSession() {
+  return window['go']['main']['App']['PauseSession']();
+}
+
 export function PickGameExe() {
   return window['go']['main']['App']['PickGameExe']();
+}
+
+export function ResumeSession() {
+  return window['go']['main']['App']['ResumeSession']();
 }

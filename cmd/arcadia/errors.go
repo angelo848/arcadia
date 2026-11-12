@@ -28,6 +28,13 @@ const (
 	msgUnexpectedFailure = "Erro inesperado. Veja o log."
 )
 
+// DSK-015 texts for -32005 (session not pausable).
+const (
+	msgNothingToPause   = "Não há jogo em andamento para pausar."
+	msgGraceNoPause     = "O jogo está encerrando. Não dá para pausar agora."
+	msgPauseUnavailable = "Não foi possível pausar agora."
+)
+
 // userError converts a binding error into the Portuguese text of DSK-011.
 // Errors other than -32002..-32004 and connection errors are logged at Error.
 func userError(err error, log *slog.Logger) error {
@@ -67,6 +74,19 @@ func userError(err error, log *slog.Logger) error {
 			default:
 				return errors.New(msgInvalidData)
 			}
+		case ipc.CodeSessionNotPausable:
+			// Expected state of the session, not a failure: logged at Debug only.
+			log.Debug("sessão não pausável", "error", err.Error())
+			var d ipc.SessionNotPausableData
+			if decodeData(rpcErr.Data, &d) {
+				switch d.Reason {
+				case ipc.ReasonNoSession:
+					return errors.New(msgNothingToPause)
+				case ipc.ReasonGrace:
+					return errors.New(msgGraceNoPause)
+				}
+			}
+			return errors.New(msgPauseUnavailable)
 		case ipc.CodeGameNotFound:
 			logBindingError(log, err)
 			return errors.New(msgGameNotFound)

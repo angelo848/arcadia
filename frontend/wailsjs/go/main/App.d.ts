@@ -10,8 +10,14 @@ export function CurrentSession():Promise<main.SessionView>;
 
 export function LaunchGame(arg1:number):Promise<main.SessionView>;
 
+export function LaunchGameUntracked(arg1:number):Promise<void>;
+
 export function LibrarySummary():Promise<main.LibrarySummaryView>;
 
 export function ListGames():Promise<Array<main.GameView>>;
 
+export function PauseSession():Promise<main.SessionView>;
+
 export function PickGameExe():Promise<main.PickedExe>;
+
+export function ResumeSession():Promise<main.SessionView>;
