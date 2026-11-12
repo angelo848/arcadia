@@ -203,12 +203,14 @@ export function useGameSessions(id: number): UseInfiniteQueryResult<InfiniteData
   })
 }
 
-export function useCatalog(): UseQueryResult<CatalogView, Error> {
+// staleTime lets a caller skip the refetch on mount; writes still reload the catalog [UI-042].
+export function useCatalog(opts: { staleTime?: number } = {}): UseQueryResult<CatalogView, Error> {
   return useQuery({
     queryKey: libraryKeys.catalog,
     queryFn: catalog,
     retry: false,
     refetchOnWindowFocus: false,
+    staleTime: opts.staleTime,
   })
 }
 

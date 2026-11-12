@@ -2,7 +2,7 @@ import type { JSX, ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import type { SessionView } from '../lib/games'
 import { formatPlayTime } from '../lib/games'
-import { useGame } from '../lib/library'
+import { useCatalog, useGame } from '../lib/library'
 import { playModeLabels } from '../lib/library'
 import { formatLocalDateTime, formatUtcDate } from '../lib/formatDate'
 import { SessionsList } from './SessionsList'
@@ -32,6 +32,9 @@ export type GamePageProps = {
 export function GamePage(props: GamePageProps): JSX.Element {
   const { id, current, onBack, onEdit, onRemove } = props
   const q = useGame(id)
+  // The catalog gives the platform defaults of the emulators (EMU-002, EMU-003). Opening a page
+  // does not refetch it: writes and the Emuladores dialog reload it when it changes.
+  const catalog = useCatalog({ staleTime: Infinity })
 
   if (q.isError) {
     return (
@@ -53,6 +56,10 @@ export function GamePage(props: GamePageProps): JSX.Element {
 
   // Only a session of this game marks the page; a live session shows its state [UI-006].
   const sessionHere = current !== null && current.gameId === g.id ? current.state : null
+  // A game run by an emulator with no emulator of its own nor a platform default (EMU-003).
+  // Until the catalog answers, no notice is shown.
+  const platformDefault = catalog.data?.platforms.find((p) => p.id === g.platformId)?.emulatorId ?? null
+  const noEmulator = g.launchType === 'emulator' && g.emulatorId === null && platformDefault === null
   const marking =
     sessionHere === 'running' || sessionHere === 'grace' ? (
       <span className="text-sm font-medium text-emerald-400">Em execução</span>
@@ -70,6 +77,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
         {sessionHere !== null && current?.tracking === 'process' && (
           <span className="text-sm text-neutral-400">Rastreio por processo: pausa e processos filhos não entram no tempo</span>
         )}
+        {noEmulator && <span className="text-sm text-amber-400">Sem emulador configurado: escolha um padrão em Emuladores ou neste jogo.</span>}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
