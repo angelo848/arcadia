@@ -1,6 +1,6 @@
 # Fase 5.1 — Ajustes da biblioteca: requisitos
 
-- **Status:** rascunho, aguardando aprovação do usuário (decisões registradas abaixo)
+- **Status:** aprovado pelo usuário (requisitos em 2026-11-12); implementado nas tarefas T01..T08 e testado manualmente pelo usuário (2026-11-12)
 - **Base:** [phase-5-library](../phase-5-library/requirements.md) (implementada),
   [phase-3-tracker](../phase-3-tracker/requirements.md) (limitação 4: jogos que exigem administrador) e
   [single-exe](../single-exe/requirements.md) (início com o Windows, AST-002..AST-011, substituídos aqui).

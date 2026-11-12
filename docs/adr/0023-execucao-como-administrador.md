@@ -1,6 +1,6 @@
 # 0023 — Execução como administrador
 
-- **Status:** proposto (aguarda aprovação do usuário junto com a spec [phase-5-1-ajustes](../specs/phase-5-1-ajustes/requirements.md))
+- **Status:** aceito (aprovado com a spec [phase-5-1-ajustes](../specs/phase-5-1-ajustes/requirements.md), testado em 2026-11-12)
 - **Data:** 2026-11-12
 
 ## Contexto

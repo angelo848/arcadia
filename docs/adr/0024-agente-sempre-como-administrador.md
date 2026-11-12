@@ -1,6 +1,6 @@
 # 0024 — Remoção do início automático com o Windows
 
-- **Status:** proposto (aguarda aprovação do usuário junto com a spec [phase-5-1-ajustes](../specs/phase-5-1-ajustes/requirements.md)).
+- **Status:** aceito (aprovado com a spec [phase-5-1-ajustes](../specs/phase-5-1-ajustes/requirements.md), testado em 2026-11-12).
   Substitui a parte de início com o Windows da [ADR 0014](0014-executavel-unico-dois-processos.md) e a área AST-002..AST-011 de [single-exe](../specs/single-exe/requirements.md).
 - **Data:** 2026-11-12
 
