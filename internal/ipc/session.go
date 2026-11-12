@@ -52,10 +52,20 @@ func SessionFromSnapshot(s domain.SessionSnapshot) Session {
 		ActiveSeconds: ms / 1000,
 		ActiveMs:      ms,
 		AsOf:          MilliTime{Time: s.AsOf.UTC()},
+		Tracking:      trackingName(s.Tracking),
 	}
 	if !s.EndedAt.IsZero() {
 		ended := s.EndedAt.UTC()
 		out.EndedAt = &ended
 	}
 	return out
+}
+
+// trackingName returns the wire name of a tracking mode; a session without one is a
+// job session, as before the watcher existed (RUL-005).
+func trackingName(m domain.TrackingMode) string {
+	if m == "" {
+		return string(domain.TrackJob)
+	}
+	return string(m)
 }

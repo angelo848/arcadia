@@ -22,11 +22,13 @@ var ErrNotOwned = errors.New("tracker: adopted process is not owned by the agent
 // the baseline and are never the game (RUL-002). Close stops the watcher and waits
 // for it; the event channel is closed by the watcher on the way out.
 type adoptedJob struct {
-	lister   ProcessLister
-	rules    []Rule
-	clock    domain.Clock
-	interval time.Duration
-	baseline map[uint32]bool
+	lister    ProcessLister
+	rules     []Rule
+	clock     domain.Clock
+	interval  time.Duration
+	baseline  map[uint32]bool
+	steam     func() (running, present bool) // Steam signal of the app, nil = none (STM-001)
+	steamSeen bool                           // Steam reported the app running at least once
 
 	out       chan JobEvent
 	stop      chan struct{}
@@ -40,7 +42,8 @@ type adoptedJob struct {
 
 // newAdoptedJob takes the baseline snapshot and starts the watcher. A failing
 // baseline is an error: without it, processes from before the launch could match.
-func newAdoptedJob(lister ProcessLister, rules []Rule, clock domain.Clock, interval time.Duration) (*adoptedJob, error) {
+func newAdoptedJob(lister ProcessLister, rules []Rule, clock domain.Clock, interval time.Duration,
+	steam func() (running, present bool)) (*adoptedJob, error) {
 	procs, err := lister.List()
 	if err != nil {
 		return nil, fmt.Errorf("tracker: baseline snapshot: %w", err)
@@ -55,6 +58,7 @@ func newAdoptedJob(lister ProcessLister, rules []Rule, clock domain.Clock, inter
 		clock:    clock,
 		interval: interval,
 		baseline: base,
+		steam:    steam,
 		out:      make(chan JobEvent, 16),
 		stop:     make(chan struct{}),
 		live:     map[uint32]bool{},
@@ -87,6 +91,7 @@ func (j *adoptedJob) scan() bool {
 	if err != nil {
 		return true // a failed snapshot changes nothing; the next one will tell
 	}
+	stopped := j.steamStopped()
 	now := map[uint32]bool{}
 	for _, p := range procs {
 		if !j.baseline[p.PID] && matchesAny(p, j.rules) {
@@ -98,6 +103,11 @@ func (j *adoptedJob) scan() bool {
 	prev := j.live
 	j.live = now
 	var events []JobEvent
+	// The Steam stop comes first: it moves the session to a zero grace before the
+	// exits can arm the 15 s grace of ActiveZero (STM-001).
+	if stopped {
+		events = append(events, JobEvent{Kind: EventSteamStopped})
+	}
 	for _, pid := range slices.Sorted(maps.Keys(now)) {
 		if !prev[pid] {
 			if j.root == 0 {
@@ -155,4 +165,26 @@ func (j *adoptedJob) Close() error {
 	j.closeOnce.Do(func() { close(j.stop) })
 	j.wg.Wait()
 	return nil
+}
+
+// steamStopped reports whether Steam went from running to stopped for the app
+// (STM-001). A missing key or an error is no signal; the first running reading only
+// arms the detection, so an app that Steam never ran does not count as stopped.
+func (j *adoptedJob) steamStopped() bool {
+	if j.steam == nil {
+		return false
+	}
+	running, present := j.steam()
+	if !present {
+		return false
+	}
+	if running {
+		j.steamSeen = true
+		return false
+	}
+	if j.steamSeen {
+		j.steamSeen = false
+		return true
+	}
+	return false
 }

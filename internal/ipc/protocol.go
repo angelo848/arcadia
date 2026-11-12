@@ -218,6 +218,8 @@ type Session struct {
 	ActiveSeconds int64      `json:"activeSeconds"`
 	ActiveMs      int64      `json:"activeMs"`
 	AsOf          MilliTime  `json:"asOf"`
+	// Tracking is "job" or "process" (RUL-005); "process" sessions have no Job Object.
+	Tracking string `json:"tracking"`
 }
 
 // GameAddParams are the params of game.add (client-side encoding).

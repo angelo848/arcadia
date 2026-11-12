@@ -90,6 +90,7 @@ type Machine struct {
 	hbGen    uint64
 	graceGen uint64
 	adoptGen uint64 // generation of the URI adoption timeout (RUL-003)
+	adopted  bool   // the game process was adopted by the watcher (RUL-005)
 	pollGen  uint64
 }
 
@@ -445,6 +446,7 @@ func (m *Machine) snapshot(st domain.SessionState, now time.Time) domain.Session
 		StartedAt: m.startedAt,
 		Active:    m.activeAt(now),
 		AsOf:      now,
+		Tracking:  m.tracking(),
 	}
 }
 
@@ -521,6 +523,7 @@ func (m *Machine) Adopted(now time.Time) []Effect {
 	if m.state != StateLaunching {
 		return nil
 	}
+	m.adopted = true
 	m.state = StateRunning
 	m.runningSince = now
 	m.accumulated = 0
@@ -528,5 +531,32 @@ func (m *Machine) Adopted(now time.Time) []Effect {
 		m.armHeartbeat(),
 		m.armPoll(),
 		m.notify(domain.SessionRunning, now),
+	}
+}
+
+// tracking reports the tracking mode of the session in progress (RUL-005).
+func (m *Machine) tracking() domain.TrackingMode {
+	if m.adopted {
+		return domain.TrackProcess
+	}
+	return domain.TrackJob
+}
+
+// SteamStopped ends the grace of an adopted session at once when Steam reports the
+// app as no longer running (STM-001): the grace timer is armed with no delay, so the
+// session ends on the next turn of the loop instead of after SessionGracePeriod.
+func (m *Machine) SteamStopped(now time.Time) []Effect {
+	if m.state != StateRunning {
+		return nil
+	}
+	m.accumulated += elapsed(m.runningSince, now)
+	m.state = StateGrace
+	m.graceSince = now
+	m.hbGen = 0
+	m.graceGen = m.nextGen()
+	return []Effect{
+		{Kind: EffUpdateSession, State: domain.SessionGrace, At: now, Active: m.accumulated},
+		{Kind: EffArmGrace, Gen: m.graceGen, Delay: 0},
+		m.notify(domain.SessionGrace, now),
 	}
 }

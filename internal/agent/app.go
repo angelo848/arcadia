@@ -209,8 +209,9 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		Feedback: func(k tracker.FeedbackKind) {
 			coord.Send(feedback.Event(k))
 		},
-		Log:       log,
-		Processes: defaultProcessLister(),
+		Log:          log,
+		Processes:    defaultProcessLister(),
+		SteamRunning: defaultSteamRunning(),
 	})
 	tr.Start()
 	// closeTracker stops the tracker and feedback on a failed startup (no session is open

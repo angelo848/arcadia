@@ -13,6 +13,9 @@ type winProcesses struct{}
 // defaultProcessLister returns the process snapshot source of this machine.
 func defaultProcessLister() tracker.ProcessLister { return winProcesses{} }
 
+// defaultSteamRunning returns the Steam Running reader of this machine (STM-001).
+func defaultSteamRunning() func(appID string) (bool, bool, error) { return winapi.SteamRunning }
+
 // List returns the running processes with their image paths.
 func (winProcesses) List() ([]tracker.ProcInfo, error) {
 	procs, err := winapi.ListProcesses()

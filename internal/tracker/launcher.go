@@ -50,6 +50,7 @@ const (
 	EventNewProcess JobEventKind = iota + 1
 	EventExitProcess
 	EventActiveZero
+	EventSteamStopped // Steam reports the app stopped after adoption (STM-001)
 )
 
 // JobEvent is a notification from the job's completion port.

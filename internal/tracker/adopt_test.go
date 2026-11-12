@@ -60,6 +60,9 @@ func TestTrackerAdoption(t *testing.T) {
 		if cur, ok := e.tr.Current(); !ok || cur.State != domain.SessionRunning {
 			t.Errorf("Current = %+v, %v; want a running session", cur, ok)
 		}
+		if got := trackingOf(e); got != domain.TrackProcess {
+			t.Errorf("tracking = %q, want process for an adopted session (RUL-005)", got)
+		}
 	})
 
 	t.Run("RUL-002/processo que já existia antes do lançamento não é o jogo", func(t *testing.T) {

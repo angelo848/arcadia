@@ -1344,7 +1344,8 @@
           "endedAt",
           "activeSeconds",
           "activeMs",
-          "asOf"
+          "asOf",
+          "tracking"
         ],
         "description": "Snapshot of a live session. activeMs and asOf come from the same agent clock reading [IPC-031]. A live display anchors on activeMs and advances it with the client's own monotonic clock in running only [UI-014, UI-022]. Display-only: the recorded time is the agent's.",
         "properties": {
@@ -1400,6 +1401,14 @@
             "type": "string",
             "format": "date-time",
             "description": "RFC 3339 UTC with three fraction digits [IPC-031]"
+          },
+          "tracking": {
+            "type": "string",
+            "enum": [
+              "job",
+              "process"
+            ],
+            "description": "job: process tree in a Job Object; process: game process adopted by the watcher, no Job Object (RUL-005)."
           }
         },
         "additionalProperties": false

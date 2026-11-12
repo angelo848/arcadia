@@ -415,7 +415,7 @@ func wantRaw(t *testing.T, obj map[string]json.RawMessage, key, want string) {
 var gameKeys = []string{"id", "title", "platformId", "platform", "path", "status", "favorite", "year",
 	"totalPlaySeconds", "playCount", "firstPlayedAt", "lastPlayedAt"}
 
-var sessionKeys = []string{"sessionId", "gameId", "title", "state", "startedAt", "endedAt", "activeSeconds", "activeMs", "asOf"}
+var sessionKeys = []string{"sessionId", "gameId", "title", "state", "startedAt", "endedAt", "activeSeconds", "activeMs", "asOf", "tracking"}
 
 func TestGameAdd(t *testing.T) {
 	t.Parallel()

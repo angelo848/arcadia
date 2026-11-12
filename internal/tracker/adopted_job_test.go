@@ -53,7 +53,7 @@ func TestAdoptedJob(t *testing.T) {
 	t.Run("RUL-005/Terminate não mata processo que o agente não iniciou", func(t *testing.T) {
 		t.Parallel()
 		clock := domain.NewFakeClock(time.Date(2026, time.November, 12, 18, 0, 0, 0, time.UTC))
-		j, err := newAdoptedJob(&internalLister{}, []Rule{{Kind: RuleExeName, Value: "g.exe"}}, clock, time.Second)
+		j, err := newAdoptedJob(&internalLister{}, []Rule{{Kind: RuleExeName, Value: "g.exe"}}, clock, time.Second, nil)
 		if err != nil {
 			t.Fatalf("newAdoptedJob: %v", err)
 		}
@@ -69,7 +69,7 @@ func TestAdoptedJob(t *testing.T) {
 	t.Run("RUL-002/Close para o watcher, fecha o canal de eventos e é idempotente", func(t *testing.T) {
 		t.Parallel()
 		clock := domain.NewFakeClock(time.Date(2026, time.November, 12, 18, 0, 0, 0, time.UTC))
-		j, err := newAdoptedJob(&internalLister{}, nil, clock, time.Second)
+		j, err := newAdoptedJob(&internalLister{}, nil, clock, time.Second, nil)
 		if err != nil {
 			t.Fatalf("newAdoptedJob: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestAdoptedJob(t *testing.T) {
 	t.Run("RUL-002/baseline com erro não cria o job", func(t *testing.T) {
 		t.Parallel()
 		clock := domain.NewFakeClock(time.Date(2026, time.November, 12, 18, 0, 0, 0, time.UTC))
-		_, err := newAdoptedJob(&failingLister{}, nil, clock, time.Second)
+		_, err := newAdoptedJob(&failingLister{}, nil, clock, time.Second, nil)
 		if err == nil {
 			t.Error("newAdoptedJob with a failing baseline returned nil error")
 		}

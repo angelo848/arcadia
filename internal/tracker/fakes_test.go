@@ -772,9 +772,10 @@ func (l *fakeLauncher) job(t *testing.T, i int) *fakeJob {
 type envConfig struct {
 	grace, heartbeat, poll time.Duration // zero => domain defaults
 	real                   tracker.SessionStore
-	procs                  tracker.ProcessLister // nil: no adoption (RUL-002)
-	watch                  time.Duration         // watcher period; zero => domain default
-	rules                  []store.TrackingRule  // returned when real is nil
+	procs                  tracker.ProcessLister                  // nil: no adoption (RUL-002)
+	steam                  func(appID string) (bool, bool, error) // Steam signal (STM-001); nil = none
+	watch                  time.Duration                          // watcher period; zero => domain default
+	rules                  []store.TrackingRule                   // returned when real is nil
 	noStart                bool
 	// feedback runs inside the Config.Feedback callback, after the call is
 	// recorded (it may block).
@@ -819,6 +820,7 @@ func newEnv(t *testing.T, cfg envConfig) *env {
 			}
 		},
 		Processes:     cfg.procs,
+		SteamRunning:  cfg.steam,
 		WatchInterval: cfg.watch,
 		Log:           e.logs.logger(),
 		Grace:         cfg.grace,

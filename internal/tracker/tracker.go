@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -116,6 +117,8 @@ type Config struct {
 	Processes ProcessLister
 	// WatchInterval is the snapshot period of the watcher; zero => domain default.
 	WatchInterval time.Duration
+	// SteamRunning reads the Running signal of a Steam app (STM-001); nil = no signal.
+	SteamRunning func(appID string) (running, present bool, err error)
 }
 
 type launchResult struct {
@@ -166,16 +169,17 @@ type Tracker struct {
 	view         Machine         // copy of the machine published by the owner
 
 	// Owned by the run goroutine.
-	m          *Machine
-	job        Job
-	events     <-chan JobEvent
-	heartbeat  timer
-	grace      timer
-	poll       timer
-	adopt      timer         // URI adoption timeout (RUL-003)
-	procs      ProcessLister // snapshots for adopted processes (RUL-002); nil = none
-	watchEvery time.Duration // watcher snapshot period
-	lastAt     time.Time     // latest event instant applied to m
+	m            *Machine
+	job          Job
+	events       <-chan JobEvent
+	heartbeat    timer
+	grace        timer
+	poll         timer
+	adopt        timer                                                 // URI adoption timeout (RUL-003)
+	procs        ProcessLister                                         // snapshots for adopted processes (RUL-002); nil = none
+	steamRunning func(appID string) (running, present bool, err error) // STM-001 signal reader; nil = none
+	watchEvery   time.Duration                                         // watcher snapshot period
+	lastAt       time.Time                                             // latest event instant applied to m
 }
 
 // New returns a stopped Tracker; call Start to run it.
@@ -209,22 +213,23 @@ func New(cfg Config) *Tracker {
 	m := NewMachine(grace, hb, poll)
 	work, cancelWork := context.WithCancel(context.Background())
 	return &Tracker{
-		work:       work,
-		cancelWork: cancelWork,
-		clock:      cfg.Clock,
-		store:      cfg.Store,
-		launcher:   cfg.Launcher,
-		procs:      cfg.Processes,
-		watchEvery: watch,
-		notify:     notify,
-		feedback:   feedback,
-		log:        log,
-		launchCh:   make(chan launchReq),
-		ctrlCh:     make(chan ctrlReq, 16),
-		stop:       make(chan struct{}),
-		done:       make(chan struct{}),
-		m:          m,
-		view:       *m,
+		work:         work,
+		cancelWork:   cancelWork,
+		clock:        cfg.Clock,
+		store:        cfg.Store,
+		launcher:     cfg.Launcher,
+		procs:        cfg.Processes,
+		steamRunning: cfg.SteamRunning,
+		watchEvery:   watch,
+		notify:       notify,
+		feedback:     feedback,
+		log:          log,
+		launchCh:     make(chan launchReq),
+		ctrlCh:       make(chan ctrlReq, 16),
+		stop:         make(chan struct{}),
+		done:         make(chan struct{}),
+		m:            m,
+		view:         *m,
 	}
 }
 
@@ -676,6 +681,8 @@ func (t *Tracker) handleJobEvent(ev JobEvent) {
 		t.step(t.work, func() []Effect { return t.m.ProcessAdded(now) })
 	case EventActiveZero:
 		t.step(t.work, func() []Effect { return t.m.TrackedEmpty(now) })
+	case EventSteamStopped:
+		t.step(t.work, func() []Effect { return t.m.SteamStopped(now) })
 	case EventExitProcess:
 		if !ev.Root {
 			t.log.Debug("processo do job encerrou", slog.Uint64("pid", uint64(ev.PID)))
@@ -900,7 +907,7 @@ func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
 			t.step(t.work, t.m.PrepareFailed)
 			return t.launchFailed(spec, err)
 		}
-		aj, err := newAdoptedJob(t.procs, rules, t.clock, t.watchEvery)
+		aj, err := newAdoptedJob(t.procs, rules, t.clock, t.watchEvery, t.steamSignal(spec.Exe))
 		if err != nil {
 			t.step(t.work, t.m.PrepareFailed)
 			return t.launchFailed(spec, err)
@@ -959,4 +966,24 @@ func (t *Tracker) trackingRules(gameID int64) ([]Rule, error) {
 		out = append(out, Rule{Kind: r.Kind, Value: r.Value})
 	}
 	return out, nil
+}
+
+// steamAppIDPrefix starts the URIs of Steam games (ARCHITECTURE §7).
+const steamAppIDPrefix = "steam://rungameid/"
+
+// steamSignal returns the Running reader of the Steam app behind uri, or nil when
+// the URI is not a Steam game or no reader is configured (STM-001). A read error
+// is no signal: the watcher then relies on the processes alone.
+func (t *Tracker) steamSignal(uri string) func() (running, present bool) {
+	appID, ok := strings.CutPrefix(uri, steamAppIDPrefix)
+	if !ok || appID == "" || t.steamRunning == nil {
+		return nil
+	}
+	return func() (bool, bool) {
+		running, present, err := t.steamRunning(appID)
+		if err != nil {
+			return false, false
+		}
+		return running, present
+	}
 }

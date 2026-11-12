@@ -92,8 +92,19 @@ type SessionSnapshot struct {
 	ID, GameID int64
 	Title      string
 	State      SessionState
+	Tracking   TrackingMode // job, or process for an adopted game (RUL-005)
 	StartedAt  time.Time
 	EndedAt    time.Time     // zero while running/grace
 	Active     time.Duration // measured at AsOf
 	AsOf       time.Time
 }
+
+// TrackingMode says how a session is tracked: "job" for a process tree in a Job
+// Object, "process" for a game process adopted by the watcher (RUL-005).
+type TrackingMode string
+
+// Tracking modes.
+const (
+	TrackJob     TrackingMode = "job"
+	TrackProcess TrackingMode = "process"
+)
