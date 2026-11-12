@@ -18,6 +18,7 @@ type WailsApp = {
   EmulatorUpdate?: (id: number, name: string, exePath: string, argsTemplate: string) => Promise<EmulatorView>
   EmulatorDelete?: (id: number) => Promise<void>
   PlatformSetEmulator?: (platformId: number, emulatorId: number) => Promise<PlatformView>
+  PickEmulatorExe?: () => Promise<string>
 }
 
 type WailsWindow = { go?: { main?: { App?: WailsApp } } }
@@ -55,6 +56,30 @@ export function updateEmulator(id: number, name: string, exePath: string, argsTe
 
 export function deleteEmulator(id: number): Promise<void> {
   return call<void>('EmulatorDelete', [id])
+}
+
+// pickEmulatorExe opens the Explorer dialog for the emulator executable; "" means cancelled (EMU-006).
+export function pickEmulatorExe(): Promise<string> {
+  return call<string>('PickEmulatorExe', [])
+}
+
+// appendMarker adds a marker at the end of the template, after a space when there is text (EMU-001).
+export function appendMarker(template: string, marker: string): string {
+  const t = template.trimEnd()
+  return t === '' ? marker : `${t} ${marker}`
+}
+
+// commandSample is the command line the emulator will run, with the markers replaced by
+// placeholder paths, as LaunchBox shows it (EMU-004). The ROM is quoted as the launch quotes it.
+export function commandSample(exePath: string, template: string): string {
+  const exe = exePath.trim().split(/[\\/]/).pop() || 'emulador.exe'
+  const args = template
+    .trim()
+    .split('{rom}')
+    .join('"CAMINHO\\COMPLETO\\PARA\\ARQUIVO\\ROM"')
+    .split('{dir}')
+    .join('"CAMINHO\\PARA\\PASTA"')
+  return args === '' ? exe : `${exe} ${args}`
 }
 
 // setPlatformEmulator sets the default emulator of a platform; null clears it (EMU-002).

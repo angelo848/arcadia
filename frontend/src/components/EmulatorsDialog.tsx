@@ -6,7 +6,10 @@ import {
   deleteEmulator,
   emulatorKey,
   emulatorMarkers,
+  appendMarker,
+  commandSample,
   isAbsoluteWindowsPath,
+  pickEmulatorExe,
   setPlatformEmulator,
   unknownMarkers,
   updateEmulator,
@@ -97,6 +100,18 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
     }
   }
 
+  // pickExe opens the Explorer dialog and fills the executable of the draft (EMU-006).
+  async function pickExe() {
+    try {
+      const p = await pickEmulatorExe()
+      if (p !== '') {
+        setDraft((prev) => (prev === null ? prev : { ...prev, exePath: p }))
+      }
+    } catch (e) {
+      setError(messageOf(e))
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
       <div
@@ -162,7 +177,13 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
             Novo emulador
           </button>
         ) : (
-          <EmulatorForm draft={draft} onChange={setDraft} onSave={() => void save()} onCancel={() => setDraft(null)} />
+          <EmulatorForm
+            draft={draft}
+            onChange={setDraft}
+            onPick={() => void pickExe()}
+            onSave={() => void save()}
+            onCancel={() => setDraft(null)}
+          />
         )}
 
         <section className="flex flex-col gap-2 border-t border-neutral-800 pt-4">
@@ -193,11 +214,13 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
 function EmulatorForm({
   draft,
   onChange,
+  onPick,
   onSave,
   onCancel,
 }: {
   draft: Draft
   onChange: (d: Draft) => void
+  onPick: () => void
   onSave: () => void
   onCancel: () => void
 }): JSX.Element {
@@ -214,23 +237,52 @@ function EmulatorForm({
         Nome
         <input className={inputClass} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} />
       </label>
-      <label className="flex flex-col gap-1 text-sm text-neutral-300">
-        Executável (caminho completo)
-        <input
-          className={inputClass}
-          value={draft.exePath}
-          onChange={(e) => onChange({ ...draft, exePath: e.target.value })}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm text-neutral-300" htmlFor={`${idPrefix}-args`}>
-        Argumentos (use {'{rom}'} para o jogo e {'{dir}'} para a pasta dele)
+      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+        <label htmlFor={`${idPrefix}-exe`}>Caminho do aplicativo (executável do emulador)</label>
+        <div className="flex gap-2">
+          <input
+            id={`${idPrefix}-exe`}
+            className={`${inputClass} min-w-0 flex-1`}
+            value={draft.exePath}
+            onChange={(e) => onChange({ ...draft, exePath: e.target.value })}
+          />
+          <button
+            type="button"
+            onClick={onPick}
+            className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+          >
+            Procurar...
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+        <label htmlFor={`${idPrefix}-args`}>Parâmetros de linha de comando padrão</label>
         <input
           id={`${idPrefix}-args`}
           className={inputClass}
           value={draft.argsTemplate}
           onChange={(e) => onChange({ ...draft, argsTemplate: e.target.value })}
         />
-      </label>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="text-xs text-neutral-500">Adicionar:</span>
+          {emulatorMarkers.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange({ ...draft, argsTemplate: appendMarker(draft.argsTemplate, m) })}
+              className="rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-700"
+            >
+              {m === '{rom}' ? 'Jogo ({rom})' : 'Pasta do jogo ({dir})'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+        <span>Amostra de comando</span>
+        <code className="break-all rounded bg-neutral-950 px-3 py-1.5 text-neutral-200">
+          {commandSample(draft.exePath, draft.argsTemplate)}
+        </code>
+      </div>
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="rounded px-4 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800">
           Cancelar
