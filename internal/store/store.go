@@ -17,8 +17,8 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/store/dbgen"
 )
 
-// SchemaVersion is the last migration embedded in the binary.
-const SchemaVersion int64 = 4
+// SchemaVersion is the last migration embedded in the binary (5: game_fts rebuild, STO-024).
+const SchemaVersion int64 = 5
 
 // ErrSchemaMismatch is returned when the database schema version differs from
 // SchemaVersion (or the database does not exist) and migration is disabled.
@@ -138,6 +138,12 @@ func (s *Store) Queries() *dbgen.Queries { return s.q }
 // commits when fn returns nil and rolls back otherwise, including when fn
 // panics (the panic keeps propagating after the rollback).
 func (s *Store) Tx(ctx context.Context, fn func(q *dbgen.Queries) error) error {
+	return s.withTx(ctx, func(_ *sql.Tx, q *dbgen.Queries) error { return fn(q) })
+}
+
+// withTx is Tx with the raw *sql.Tx also passed to fn, for code that needs both
+// the generated queries and plain SQL (the FTS index, fts.go) in one transaction.
+func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx, q *dbgen.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store: begin tx: %w", err)
@@ -146,7 +152,7 @@ func (s *Store) Tx(ctx context.Context, fn func(q *dbgen.Queries) error) error {
 	// this returns sql.ErrTxDone, which is expected and ignored.
 	defer func() { _ = tx.Rollback() }()
 
-	if err := fn(s.q.WithTx(tx)); err != nil {
+	if err := fn(tx, s.q.WithTx(tx)); err != nil {
 		// ErrTxDone means the transaction is already finished (e.g. ctx was
 		// cancelled and database/sql rolled it back); not a rollback failure.
 		if rerr := tx.Rollback(); rerr != nil && !errors.Is(rerr, sql.ErrTxDone) {

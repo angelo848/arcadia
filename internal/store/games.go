@@ -39,7 +39,7 @@ type NewGame struct {
 // than once; each addition is a distinct game (GAM-001).
 func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
 	var row dbgen.Game
-	err := s.Tx(ctx, func(q *dbgen.Queries) error {
+	err := s.withTx(ctx, func(tx *sql.Tx, q *dbgen.Queries) error {
 		if err := q.EnsurePCPlatform(ctx); err != nil {
 			return fmt.Errorf("store: ensure PC platform: %w", err)
 		}
@@ -60,6 +60,9 @@ func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
 		})
 		if err != nil {
 			return fmt.Errorf("store: insert game: %w", err)
+		}
+		if err := reindexGame(ctx, tx, row.ID); err != nil {
+			return err
 		}
 		return nil
 	})

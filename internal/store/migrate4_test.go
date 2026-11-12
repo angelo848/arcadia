@@ -95,7 +95,7 @@ func migratedWithSession(t *testing.T) (*store.Store, int64) {
 func TestMigration4(t *testing.T) {
 	t.Parallel()
 
-	t.Run("STO-018/banco novo tem pause_interval_open_uidx e goose na versão 4", func(t *testing.T) {
+	t.Run("STO-018/banco novo tem pause_interval_open_uidx e goose na versão atual", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
 		db := s.DB()
@@ -119,17 +119,17 @@ func TestMigration4(t *testing.T) {
 		if !strings.Contains(norm, "where resumed_at is null") {
 			t.Errorf("%s DDL = %q, want a partial index WHERE resumed_at IS NULL", pauseOpenIndex, ddl)
 		}
-		requireGooseVersion(t, s, 4)
+		requireGooseVersion(t, s, store.SchemaVersion)
 	})
 
-	t.Run("STO-018/banco v3 com jogo, sessão e pausa fechada migra para 4 mantendo os dados", func(t *testing.T) {
+	t.Run("STO-018/banco v3 com jogo, sessão e pausa fechada migra mantendo os dados", func(t *testing.T) {
 		t.Parallel()
 		path, gameID, sessionID := versionThreeFile(t)
 
 		s := openStore(t, path, true)
 		db := s.DB()
 		ctx := t.Context()
-		requireGooseVersion(t, s, 4)
+		requireGooseVersion(t, s, store.SchemaVersion)
 
 		var n int64
 		if err := db.QueryRowContext(ctx,
@@ -226,8 +226,9 @@ func TestMigration4(t *testing.T) {
 		if err != nil {
 			t.Fatalf("goose.NewProvider: %v", err)
 		}
-		if _, err := provider.Up(ctx); err != nil {
-			t.Fatalf("goose Up: %v", err)
+		// Only up to version 4: migration 5 (STO-024) would otherwise be the one Down reverts.
+		if _, err := provider.UpTo(ctx, 4); err != nil {
+			t.Fatalf("goose UpTo(4): %v", err)
 		}
 		res, err := db.ExecContext(ctx, `INSERT INTO platform (name, category) VALUES ('PC', 'pc')`)
 		if err != nil {
@@ -261,10 +262,22 @@ func TestMigration4(t *testing.T) {
 		}
 	})
 
-	t.Run("STO-018/SchemaVersion é 4", func(t *testing.T) {
+	t.Run("STO-024/a migração 4 continua embutida", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 4 {
-			t.Errorf("store.SchemaVersion = %d, want 4", store.SchemaVersion)
+		db := openRaw(t, dbPath(t))
+		defer db.Close()
+		provider, err := goose.NewProvider(goose.DialectSQLite3, db, os.DirFS("migrations"))
+		if err != nil {
+			t.Fatalf("goose.NewProvider: %v", err)
+		}
+		found := false
+		for _, src := range provider.ListSources() {
+			if src.Version == 4 {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("migration 4 is not in the provider sources")
 		}
 	})
 }
