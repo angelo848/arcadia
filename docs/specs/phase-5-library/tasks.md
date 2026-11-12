@@ -4,6 +4,16 @@
 - **Spec:** [requirements.md](requirements.md) · [design.md](design.md) · [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.6.0)
 - **ADRs:** 0004, 0009, 0010, 0011, 0012, 0015, 0019; propostos e a escrever pela sessão principal: 0020 (índice de busca e `FilterSpec`, antes da T05), 0021 (remoção de jogo, antes da T13), 0022 (listagem paginada, antes da T18).
 
+## Decisões do usuário (2026-11-12)
+
+- **Problema 1 (limite de 1 MiB):** paginação por orçamento de bytes. A página para antes de passar de 1 MiB, qualquer
+  que seja o conteúdo; a T18 ganha esse critério no teste de pior caso.
+- **Problema 2 (remoção com prazo vencido):** depois que a remoção começa, o agente espera o resultado real e responde
+  sucesso se foi aplicada (decisão 7 do planner confirmada).
+- **Dependência nova:** `@tanstack/react-virtual` aprovada (T25).
+- **Decisão 9 / Problema 6:** `LibrarySummary`, `useLibrarySummary`, `LibraryEmpty` e `libraryGate` saem; DSK-008 vira
+  substituído pelas leituras novas.
+
 ## Decisões do planner (a confirmar na aprovação)
 
 1. **`Store.Tx` pública fica como está; helper interno `withTx`.** `Tx` só entrega `*dbgen.Queries`, e o FTS (`reindexGame`, `deleteGameIndex`) e o SQL dinâmico do filtro precisam de `*sql.Tx`. A T05 adiciona `func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx, q *dbgen.Queries) error) error`, e `Tx` passa a delegar para ele.
