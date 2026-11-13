@@ -10,6 +10,7 @@ const (
 	SourceSteam     = "steam"
 	SourceEpic      = "epic"
 	SourceFile      = "file"
+	SourceFolder    = "folder"
 	SourceLaunchBox = "launchbox"
 
 	// PlatformPC is the platform of Steam, Epic and file games, and of the

@@ -8,6 +8,7 @@ const (
 	ImportSourceSteam     = "steam"
 	ImportSourceEpic      = "epic"
 	ImportSourceFile      = "file"
+	ImportSourceFolder    = "folder"
 	ImportSourceLaunchBox = "launchbox"
 )
 

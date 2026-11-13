@@ -91,7 +91,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   async function apply() {
     const chosen = checkable
       .filter(({ i }) => checked.has(i))
-      .map(({ c }) => ({ ...c, platform: c.platform || (source === 'file' ? platform.trim() : c.platform) }))
+      .map(({ c }) => ({ ...c, platform: c.platform || (source === 'file' || source === 'folder' ? platform.trim() : c.platform) }))
     setBusy(true)
     setError(null)
     try {
@@ -249,7 +249,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           </ul>
         )}
 
-        {candidates !== null && source === 'file' && (
+        {candidates !== null && (source === 'file' || source === 'folder') && (
           <div className="flex items-center gap-2 text-sm text-neutral-300">
             <label htmlFor={platformId}>Plataforma do arquivo</label>
             <input

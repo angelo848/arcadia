@@ -39,6 +39,7 @@ func importSourceSet() map[string]importers.Source {
 		ipc.ImportSourceSteam:     importers.Steam(),
 		ipc.ImportSourceEpic:      importers.Epic(),
 		ipc.ImportSourceFile:      importers.File(),
+		ipc.ImportSourceFolder:    importers.Folder(),
 		ipc.ImportSourceLaunchBox: importers.LaunchBox(),
 	}
 }
@@ -74,7 +75,7 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 	}
 	input := importers.ScanInput{Path: p.Path}
 	switch p.Source {
-	case ipc.ImportSourceFile, ipc.ImportSourceLaunchBox:
+	case ipc.ImportSourceFile, ipc.ImportSourceFolder, ipc.ImportSourceLaunchBox:
 		if !filepath.IsAbs(p.Path) {
 			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 		}
@@ -215,7 +216,7 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	}
 	platformName := c.Platform
 	if platformName == "" {
-		if c.Source == ipc.ImportSourceFile {
+		if c.Source == ipc.ImportSourceFile || c.Source == ipc.ImportSourceFolder {
 			return store.ImportGame{}, errors.New("file candidate without platform")
 		}
 		platformName = importers.PlatformPC

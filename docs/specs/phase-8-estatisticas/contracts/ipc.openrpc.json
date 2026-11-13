@@ -2328,10 +2328,11 @@
         "enum": [
           "steam",
           "epic",
+          "file",
           "folder",
           "launchbox"
         ],
-        "description": "Import origin (IMP-002..IMP-005)."
+        "description": "Import origin (IMP-002..IMP-005; file and folder are IMP-004)."
       },
       "ImportCandidate": {
         "type": "object",

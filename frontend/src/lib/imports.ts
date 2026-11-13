@@ -1,7 +1,7 @@
 // Import calls (phase 6, IMP-001..IMP-010). The bound methods are reached through
 // window with local types, like lib/games.ts, so tests can fake window.go.
 
-export type ImportSource = 'steam' | 'epic' | 'file' | 'launchbox'
+export type ImportSource = 'steam' | 'epic' | 'file' | 'folder' | 'launchbox'
 
 // ImportCandidate mirrors cmd/arcadia ImportCandidateView (JSON names of contract v0.7.0).
 export type ImportCandidate = {
@@ -88,12 +88,13 @@ export const sourceLabels: Record<ImportSource, string> = {
   steam: 'Steam',
   epic: 'Epic Games',
   file: 'Arquivo',
+  folder: 'Pasta de jogos',
   launchbox: 'LaunchBox',
 }
 
 // needsPath tells whether a source reads a folder chosen by the user (IMP-004, IMP-005).
 export function needsPath(source: ImportSource): boolean {
-  return source === 'file' || source === 'launchbox'
+  return source === 'file' || source === 'folder' || source === 'launchbox'
 }
 
 // skipReasonLabels names the reasons of ImportApplyResult.skipped.
