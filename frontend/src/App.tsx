@@ -5,6 +5,7 @@ import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
 import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
+import { StatsPage } from './components/StatsPage'
 import { useEmulators, type EmulatorView } from './lib/emulators'
 import { useCovers } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
@@ -166,6 +167,8 @@ export default function App() {
   const [importing, setImporting] = useState(false)
   const [emulating, setEmulating] = useState(false)
   const [keying, setKeying] = useState(false)
+  // The statistics page replaces the library while it is open (phase 8).
+  const [showingStats, setShowingStats] = useState(false)
   const emulators = useEmulators()
 
   const session = current.data ?? null
@@ -300,6 +303,13 @@ export default function App() {
         <div className="flex items-center gap-4">
           <button
             type="button"
+            onClick={() => setShowingStats(true)}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+          >
+            Estatísticas
+          </button>
+          <button
+            type="button"
             onClick={() => setKeying(true)}
             className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
           >
@@ -338,7 +348,15 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {selectedId !== null ? (
+        {selectedId === null && showingStats ? (
+          <StatsPage
+            onOpenGame={(id) => {
+              setShowingStats(false)
+              openGame(id)
+            }}
+            onBack={() => setShowingStats(false)}
+          />
+        ) : selectedId !== null ? (
           <GameScreen
             key={selectedId}
             id={selectedId}

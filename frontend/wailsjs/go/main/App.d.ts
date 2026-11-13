@@ -67,4 +67,8 @@ export function ScrapeApply(arg1:number,arg2:string,arg3:string,arg4:boolean):Pr
 
 export function ScrapeSearch(arg1:number,arg2:string):Promise<main.ScrapeSearchView>;
 
+export function StatsSummary(arg1:string):Promise<main.StatsSummaryView>;
+
+export function StatsWeekly(arg1:number):Promise<main.StatsWeeklyView>;
+
 export function UpdateGame(arg1:number,arg2:jsontext.Value):Promise<main.GameDetailView>;

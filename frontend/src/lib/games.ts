@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { libraryGamesKey } from './library'
+import { statsKey } from './stats'
 
 export type SessionState = 'running' | 'paused' | 'grace' | 'ended' | 'discarded'
 
@@ -201,6 +202,7 @@ export function useSessionEvents(): void {
       }
       qc.setQueryData<SessionView | null>(currentSessionKey, null)
       void qc.invalidateQueries({ queryKey: libraryGamesKey })
+      void qc.invalidateQueries({ queryKey: statsKey })
     })
     return () => {
       if (typeof off === 'function') {

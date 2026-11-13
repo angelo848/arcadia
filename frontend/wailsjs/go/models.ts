@@ -630,6 +630,130 @@ export namespace main {
 	        this.tracking = source["tracking"];
 	    }
 	}
+	export class StatsGameView {
+	    gameId: number;
+	    title: string;
+	    platform: string;
+	    sessions: number;
+	    activeSeconds: number;
+	    importedSeconds: number;
+	    lastPlayedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsGameView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.gameId = source["gameId"];
+	        this.title = source["title"];
+	        this.platform = source["platform"];
+	        this.sessions = source["sessions"];
+	        this.activeSeconds = source["activeSeconds"];
+	        this.importedSeconds = source["importedSeconds"];
+	        this.lastPlayedAt = source["lastPlayedAt"];
+	    }
+	}
+	export class StatsPlatformView {
+	    platformId: number;
+	    name: string;
+	    activeSeconds: number;
+	    importedSeconds: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsPlatformView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platformId = source["platformId"];
+	        this.name = source["name"];
+	        this.activeSeconds = source["activeSeconds"];
+	        this.importedSeconds = source["importedSeconds"];
+	    }
+	}
+	export class StatsSummaryView {
+	    games: StatsGameView[];
+	    platforms: StatsPlatformView[];
+	    totalSeconds: number;
+	    importedSeconds: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsSummaryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.games = this.convertValues(source["games"], StatsGameView);
+	        this.platforms = this.convertValues(source["platforms"], StatsPlatformView);
+	        this.totalSeconds = source["totalSeconds"];
+	        this.importedSeconds = source["importedSeconds"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class StatsWeekView {
+	    start: string;
+	    seconds: number;
+	    current: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsWeekView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.start = source["start"];
+	        this.seconds = source["seconds"];
+	        this.current = source["current"];
+	    }
+	}
+	export class StatsWeeklyView {
+	    weeks: StatsWeekView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsWeeklyView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.weeks = this.convertValues(source["weeks"], StatsWeekView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StatusView {
 	    connected: boolean;
 	    version: string;

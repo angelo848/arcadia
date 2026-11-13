@@ -130,6 +130,14 @@ export function ScrapeSearch(arg1, arg2) {
   return window['go']['main']['App']['ScrapeSearch'](arg1, arg2);
 }
 
+export function StatsSummary(arg1) {
+  return window['go']['main']['App']['StatsSummary'](arg1);
+}
+
+export function StatsWeekly(arg1) {
+  return window['go']['main']['App']['StatsWeekly'](arg1);
+}
+
 export function UpdateGame(arg1, arg2) {
   return window['go']['main']['App']['UpdateGame'](arg1, arg2);
 }
