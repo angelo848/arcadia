@@ -51,6 +51,8 @@ export function PickFile():Promise<string>;
 
 export function PickFolder():Promise<string>;
 
+export function PickGameExecutable():Promise<string>;
+
 export function PlatformSetEmulator(arg1:number,arg2:number):Promise<main.PlatformView>;
 
 export function ProviderDeleteKey(arg1:string):Promise<main.ProviderKeyView>;

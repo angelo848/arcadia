@@ -98,6 +98,10 @@ export function PickFolder() {
   return window['go']['main']['App']['PickFolder']();
 }
 
+export function PickGameExecutable() {
+  return window['go']['main']['App']['PickGameExecutable']();
+}
+
 export function PlatformSetEmulator(arg1, arg2) {
   return window['go']['main']['App']['PlatformSetEmulator'](arg1, arg2);
 }

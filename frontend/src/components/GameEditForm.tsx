@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
+import { pickGameExecutable } from '../lib/games'
 import { playModeLabels, type GameDetailView, type PlayModeName } from '../lib/library'
 import { validateDraft } from '../lib/validation'
 import type { EmulatorView } from '../lib/emulators'
@@ -115,6 +116,7 @@ export function GameEditForm({
 }: GameEditFormProps): JSX.Element {
   const [values, setValues] = useState<FormValues>(() => initialValues(game))
   const idPrefix = useId()
+  const [pickError, setPickError] = useState<string | null>(null)
   const draft = toDraft(values)
   const errors = validateDraft(draft)
   const canSave = !pending && Object.keys(errors).length === 0
@@ -129,6 +131,19 @@ export function GameEditForm({
       const next = checked ? [...others, mode] : others
       return { ...prev, playModes: playModeOrder.filter((m) => next.includes(m)) }
     })
+  }
+
+  // pickExecutable opens the Explorer dialog for the executable; the path goes into the field (EDT-010).
+  async function pickExecutable() {
+    setPickError(null)
+    try {
+      const p = await pickGameExecutable()
+      if (p !== '') {
+        set('launchTarget', p)
+      }
+    } catch (e) {
+      setPickError(e instanceof Error ? e.message : 'Não foi possível abrir o seletor de arquivos.')
+    }
   }
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -277,15 +292,26 @@ export function GameEditForm({
         <Row
           id={id('launchTarget')}
           label={values.launchType === 'uri' ? 'URI' : 'Executável (caminho completo)'}
-          message={errors.launchTarget}
+          message={errors.launchTarget ?? pickError ?? undefined}
         >
-          <input
-            id={id('launchTarget')}
-            type="text"
-            value={values.launchTarget}
-            onChange={(e) => set('launchTarget', e.target.value)}
-            className={inputClass}
-          />
+          <div className="flex gap-2">
+            <input
+              id={id('launchTarget')}
+              type="text"
+              value={values.launchTarget}
+              onChange={(e) => set('launchTarget', e.target.value)}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+            {values.launchType !== 'uri' && (
+              <button
+                type="button"
+                onClick={() => void pickExecutable()}
+                className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+              >
+                Procurar...
+              </button>
+            )}
+          </div>
         </Row>
       </div>
 

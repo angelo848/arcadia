@@ -278,3 +278,17 @@ type MetadataProvider interface {
 3. ~~Local da biblioteca~~ → portátil, `data/` ao lado do exe, com override ([ADR 0006](adr/0006-biblioteca-portatil.md)).
 4. ~~Atalhos padrão de pausa~~ → `Ctrl+Alt+P` no teclado e `Select + Y` (1 s) no controle, fixos na fase 4 ([ADR 0018](adr/0018-entrada-global-e-feedback-nativo.md)).
 5. ~~Agente iniciando com o Windows~~ → removido; o agente sobe sempre como administrador ([ADR 0023](adr/0023-execucao-como-administrador.md), [ADR 0024](adr/0024-agente-sempre-como-administrador.md)).
+
+---
+
+## 11. Convenções de interface
+
+- **Caminhos de arquivo e de pasta sempre têm seletor do Explorer.** Todo campo que recebe um arquivo ou uma pasta
+  (executável do jogo, executável do emulador, pasta do LaunchBox, arquivo avulso na importação) oferece o botão
+  "Procurar..." que abre o diálogo nativo (`OpenFileDialog` / `OpenDirectoryDialog`). O campo de texto continua
+  visível para colar ou corrigir o caminho, mas não é a única forma de preencher.
+- O seletor só preenche o caminho; quem grava é o formulário, pelo caminho normal de salvar (validações e
+  permissões do agente valem igual).
+- Um campo que não é arquivo nem pasta (por exemplo, uma URI de Steam ou Epic) não tem seletor.
+- O diálogo nativo é um binding do desktop, com filtro adequado ao campo (`*.exe` para executáveis, todos os arquivos
+  para arquivos avulsos e ROMs). Cancelar devolve vazio e não muda o campo.

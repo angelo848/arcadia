@@ -24,6 +24,7 @@ export type SessionView = {
 // the same way lib/agent.ts does.
 type WailsApp = {
   CurrentSession?: () => Promise<SessionView | null>
+  PickGameExecutable?: () => Promise<string>
   LaunchGame?: (id: number) => Promise<SessionView>
   LaunchGameUntracked?: (id: number) => Promise<void>
   PauseSession?: () => Promise<SessionView>
@@ -75,6 +76,15 @@ function binding<K extends keyof WailsApp>(name: K): NonNullable<WailsApp[K]> {
     throw new Error(`wails bindings unavailable: ${name}`)
   }
   return fn as NonNullable<WailsApp[K]>
+}
+
+// pickGameExecutable opens the Explorer dialog for the executable of a game; "" means cancelled (EDT-010).
+export async function pickGameExecutable(): Promise<string> {
+  try {
+    return await binding('PickGameExecutable')()
+  } catch (e) {
+    throw toError(e)
+  }
 }
 
 export async function currentSession(): Promise<SessionView | null> {
