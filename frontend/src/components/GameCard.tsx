@@ -33,6 +33,7 @@ export function liveOf(current: SessionView | null, gameId: number): LiveMark {
 // [UI-021].
 export function GameCard({
   game,
+  coverUrl,
   live,
   busy,
   onOpen,
@@ -40,6 +41,8 @@ export function GameCard({
   onPlayUntracked,
 }: {
   game: GameView
+  // coverUrl is the cover thumbnail of the game, when it has one (MID-006).
+  coverUrl?: string
   live: LiveMark
   busy: BusyMode
   onOpen: (id: number) => void
@@ -52,6 +55,7 @@ export function GameCard({
 
   return (
     <article className="flex h-full flex-col justify-between gap-3 rounded-lg bg-neutral-900 p-4">
+      {coverUrl && <img src={coverUrl} alt="" className="h-36 w-full rounded object-cover" />}
       <div
         role="link"
         tabIndex={0}

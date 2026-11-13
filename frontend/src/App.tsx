@@ -6,6 +6,8 @@ import { DeleteDialog } from './components/DeleteDialog'
 import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
 import { useEmulators, type EmulatorView } from './lib/emulators'
+import { useCovers } from './lib/metadata'
+import { ProviderKeysDialog } from './components/ProviderKeysDialog'
 import { ErrorBanner } from './components/ErrorBanner'
 import { FilterPanel } from './components/FilterPanel'
 import { GameEditForm } from './components/GameEditForm'
@@ -163,12 +165,15 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [emulating, setEmulating] = useState(false)
+  const [keying, setKeying] = useState(false)
   const emulators = useEmulators()
 
   const session = current.data ?? null
 
   const rows = useMemo(() => games.data?.pages.flatMap((p) => p.games) ?? [], [games.data])
   const total = games.data?.pages.at(-1)?.total
+  // The cover of each loaded game, for the grid (MID-006).
+  const covers = useCovers(useMemo(() => rows.map((g) => g.id), [rows]))
   const loaded = games.data !== undefined
   const filtered = hasFacets(query)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = games
@@ -295,6 +300,13 @@ export default function App() {
         <div className="flex items-center gap-4">
           <button
             type="button"
+            onClick={() => setKeying(true)}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+          >
+            Provedores
+          </button>
+          <button
+            type="button"
             onClick={() => setEmulating(true)}
             className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
           >
@@ -313,6 +325,7 @@ export default function App() {
       {conflict && <AgentConflict />}
       {error !== null && <ErrorBanner message={error} onClose={() => setError(null)} />}
       {emulating && <EmulatorsDialog onClose={() => setEmulating(false)} />}
+      {keying && <ProviderKeysDialog onClose={() => setKeying(false)} />}
       {importing && (
         <ImportDialog
           onImported={() => void qc.invalidateQueries({ queryKey: libraryGamesKey })}
@@ -373,6 +386,7 @@ export default function App() {
                   <LibraryGrid
                     key={queryKey}
                     games={rows}
+                    covers={covers}
                     total={total}
                     current={session}
                     pending={pending}

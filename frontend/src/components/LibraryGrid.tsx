@@ -25,6 +25,7 @@ function columnsFor(width: number): number {
 // loaded - 40, onNeedMore is called once for this set of loaded games [UI-036].
 export function LibraryGrid({
   games,
+  covers,
   total,
   current,
   pending,
@@ -34,6 +35,8 @@ export function LibraryGrid({
   onPlayUntracked,
 }: {
   games: GameView[]
+  // covers maps a game id to its cover thumbnail URL (MID-006); a game without one shows none.
+  covers?: Record<number, string>
   total: number
   current: SessionView | null
   pending: PendingLaunch
@@ -130,6 +133,7 @@ export function LibraryGrid({
                   key={g.id}
                   game={g}
                   live={liveOf(current, g.id)}
+                  coverUrl={covers?.[g.id]}
                   busy={pending !== null && pending.id === g.id ? pending.mode : null}
                   onOpen={onOpen}
                   onPlay={onPlay}

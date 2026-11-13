@@ -1,4 +1,4 @@
-import type { JSX, ReactNode } from 'react'
+import { useState, type JSX, type ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import type { SessionView } from '../lib/games'
 import { formatPlayTime } from '../lib/games'
@@ -6,6 +6,8 @@ import { useCatalog, useGame } from '../lib/library'
 import { playModeLabels } from '../lib/library'
 import { formatLocalDateTime, formatUtcDate } from '../lib/formatDate'
 import { SessionsList } from './SessionsList'
+import { MetadataDialog } from './MetadataDialog'
+import { useMedia, type MediaItemView } from '../lib/metadata'
 
 // Labels match the library filter (FilterPanel) and the play mode names of the contract.
 const statusLabels: Record<GameStatus, string> = {
@@ -35,6 +37,9 @@ export function GamePage(props: GamePageProps): JSX.Element {
   // The catalog gives the platform defaults of the emulators (EMU-002, EMU-003). Opening a page
   // does not refetch it: writes and the Emuladores dialog reload it when it changes.
   const catalog = useCatalog({ staleTime: Infinity })
+  // The images of the game and the metadata search dialog (MID-004, MID-006).
+  const media = useMedia(id)
+  const [searching, setSearching] = useState(false)
 
   if (q.isError) {
     return (
@@ -79,6 +84,13 @@ export function GamePage(props: GamePageProps): JSX.Element {
         )}
         {noEmulator && <span className="text-sm text-amber-400">Sem emulador configurado: escolha um padrão em Emuladores ou neste jogo.</span>}
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearching(true)}
+            className="rounded px-3 py-1 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+          >
+            Buscar mídia
+          </button>
           <button
             type="button"
             onClick={() => onEdit?.()}
@@ -139,12 +151,42 @@ export function GamePage(props: GamePageProps): JSX.Element {
         ) : null}
       </dl>
 
+      <MediaSection items={media.data ?? []} />
+
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-medium text-neutral-200">Sessões</h2>
         <SessionsList gameId={g.id} current={null} />
       </section>
+      {searching && <MetadataDialog gameId={g.id} onClose={() => setSearching(false)} />}
     </article>
   )
+}
+
+// MediaSection shows the images of the game: the cover first, then the rest (MID-006). Nothing is
+// shown when the game has no image yet.
+function MediaSection({ items }: { items: MediaItemView[] }): JSX.Element | null {
+  if (items.length === 0) {
+    return null
+  }
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-lg font-medium text-neutral-200">Imagens</h2>
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {items.map((m) => (
+          <li key={m.id} className="flex flex-col gap-1">
+            <img src={m.url} alt="" loading="lazy" className="w-full rounded object-cover" />
+            <span className="text-xs text-neutral-400">{mediaKindLabels[m.kind]}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+const mediaKindLabels: Record<MediaItemView['kind'], string> = {
+  cover: 'Capa',
+  screenshot: 'Screenshot',
+  title: 'Tela de título',
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }): JSX.Element {
