@@ -52,3 +52,18 @@ describe('GameEditForm executable picker (EDT-010)', () => {
     expect(screen.queryByRole('button', { name: 'Procurar...' })).toBeNull()
   })
 })
+
+describe('GameEditForm emulator target (ROM)', () => {
+  beforeEach(() => pickMock.mockReset())
+
+  it('EDT-010/tipo emulador mostra o seletor de ROM com qualquer arquivo', async () => {
+    pickMock.mockResolvedValue('D:\Roms\SNES\Zelda.sfc')
+    renderForm(game({ launchType: 'emulator', path: 'D:\Roms\SNES\old.sfc' }))
+    expect(screen.getByLabelText('Arquivo do jogo (ROM, caminho completo)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Procurar...' }))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Arquivo do jogo (ROM, caminho completo)')).toHaveValue('D:\Roms\SNES\Zelda.sfc'),
+    )
+  })
+})

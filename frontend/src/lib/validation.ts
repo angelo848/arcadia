@@ -94,7 +94,7 @@ export function validateDraft(d: EditDraft): DraftErrors {
     errors.launchTarget = "Informe o executável ou a URI."
   } else if (runeCount(target) > launchMaxRunes) {
     errors.launchTarget = `Use no máximo ${launchMaxRunes} caracteres.`
-  } else if (d.launchType === "exe" && !isAbsolutePath(target)) {
+  } else if ((d.launchType === "exe" || d.launchType === "emulator") && !isAbsolutePath(target)) {
     errors.launchTarget = "Use o caminho completo do executável (com a unidade, como C:\\Jogos\\jogo.exe)."
   }
   if (runeCount(d.launchArgs) > launchMaxRunes) {

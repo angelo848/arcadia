@@ -10,7 +10,7 @@ import (
 func TestPickGameExecutable(t *testing.T) {
 	t.Parallel()
 
-	t.Run("EDT-010/diálogo de executável do jogo com filtro *.exe", func(t *testing.T) {
+	t.Run("EDT-010/diálogo do alvo do jogo aceita qualquer arquivo (*.*)", func(t *testing.T) {
 		t.Parallel()
 		calls := make(chan openFileCall, 1)
 		a := &App{log: discardLog(), wailsCtx: context.Background(),
@@ -23,7 +23,7 @@ func TestPickGameExecutable(t *testing.T) {
 			t.Fatalf("PickGameExecutable() = %q, %v", got, err)
 		}
 		c := <-calls
-		if c.title != pickGameTitle || len(c.filters) != 1 || c.filters[0].Pattern != "*.exe" {
+		if c.title != pickGameTitle || len(c.filters) != 1 || c.filters[0].Pattern != "*.*" {
 			t.Errorf("dialog = %q / %+v", c.title, c.filters)
 		}
 	})

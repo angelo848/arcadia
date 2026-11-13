@@ -286,12 +286,12 @@ export function GameEditForm({
             className={inputClass}
           >
             <option value="exe">Executável</option>
-            <option value="uri">URI (Steam, Epic, ...)</option>
+            <option value="emulator">Emulador (ROM)</option>\n            <option value="uri">URI (Steam, Epic, ...)</option>
           </select>
         </Row>
         <Row
           id={id('launchTarget')}
-          label={values.launchType === 'uri' ? 'URI' : 'Executável (caminho completo)'}
+          label={values.launchType === 'uri' ? 'URI' : values.launchType === 'emulator' ? 'Arquivo do jogo (ROM, caminho completo)' : 'Executável (caminho completo)'}
           message={errors.launchTarget ?? pickError ?? undefined}
         >
           <div className="flex gap-2">
