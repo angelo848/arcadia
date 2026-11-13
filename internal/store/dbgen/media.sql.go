@@ -33,6 +33,29 @@ func (q *Queries) DeleteMediaJob(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getMediaJob = `-- name: GetMediaJob :one
+SELECT id, game_id, kind, provider, source_url, state, attempts, last_error, created_at
+FROM media_job
+WHERE id = ?
+`
+
+func (q *Queries) GetMediaJob(ctx context.Context, id int64) (MediaJob, error) {
+	row := q.db.QueryRowContext(ctx, getMediaJob, id)
+	var i MediaJob
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Kind,
+		&i.Provider,
+		&i.SourceUrl,
+		&i.State,
+		&i.Attempts,
+		&i.LastError,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertMedia = `-- name: InsertMedia :one
 INSERT INTO media (game_id, kind, provider, source_url, hash, path, thumb_path, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -64,6 +87,40 @@ func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (int64
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertMediaIgnore = `-- name: InsertMediaIgnore :execrows
+INSERT INTO media (game_id, kind, provider, source_url, hash, path, thumb_path, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (game_id, hash) DO NOTHING
+`
+
+type InsertMediaIgnoreParams struct {
+	GameID    int64
+	Kind      string
+	Provider  string
+	SourceUrl string
+	Hash      string
+	Path      string
+	ThumbPath string
+	CreatedAt int64
+}
+
+func (q *Queries) InsertMediaIgnore(ctx context.Context, arg InsertMediaIgnoreParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertMediaIgnore,
+		arg.GameID,
+		arg.Kind,
+		arg.Provider,
+		arg.SourceUrl,
+		arg.Hash,
+		arg.Path,
+		arg.ThumbPath,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const insertMediaJob = `-- name: InsertMediaJob :one
@@ -173,6 +230,18 @@ func (q *Queries) ListMediaJobsByState(ctx context.Context, state string) ([]Med
 		return nil, err
 	}
 	return items, nil
+}
+
+const resetRunningMediaJobs = `-- name: ResetRunningMediaJobs :execrows
+UPDATE media_job SET state = 'pending' WHERE state = 'running'
+`
+
+func (q *Queries) ResetRunningMediaJobs(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, resetRunningMediaJobs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setMediaJobState = `-- name: SetMediaJobState :execrows

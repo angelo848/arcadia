@@ -32,3 +32,16 @@ WHERE id = ?;
 
 -- name: DeleteMediaJob :execrows
 DELETE FROM media_job WHERE id = ?;
+
+-- name: InsertMediaIgnore :execrows
+INSERT INTO media (game_id, kind, provider, source_url, hash, path, thumb_path, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (game_id, hash) DO NOTHING;
+
+-- name: ResetRunningMediaJobs :execrows
+UPDATE media_job SET state = 'pending' WHERE state = 'running';
+
+-- name: GetMediaJob :one
+SELECT id, game_id, kind, provider, source_url, state, attempts, last_error, created_at
+FROM media_job
+WHERE id = ?;
