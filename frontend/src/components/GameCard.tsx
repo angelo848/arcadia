@@ -81,6 +81,7 @@ export function GameCard({
           type="button"
           disabled={blocked}
           data-bigbox-play
+          data-bigbox-item
           onClick={() => onPlay(game.id)}
           className={`${buttonClass} bg-emerald-600 hover:bg-emerald-500`}
         >
@@ -89,6 +90,7 @@ export function GameCard({
         <button
           type="button"
           disabled={blocked}
+          data-bigbox-item
           onClick={() => onPlayUntracked(game.id)}
           className={`${buttonClass} bg-neutral-800 text-neutral-100 hover:bg-neutral-700`}
         >

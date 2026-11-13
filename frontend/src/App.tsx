@@ -172,16 +172,30 @@ export default function App() {
   const [showingStats, setShowingStats] = useState(false)
   // Big Box: the library in full screen, driven by the gamepad or the keyboard (phase 8).
   const [bigBox, setBigBox] = useState(false)
-  const leaveBigBox = useCallback(() => {
-    exitBigBox()
+  const leaveBigBox = () => {
+    void exitBigBox()
     setBigBox(false)
-  }, [])
-  useBigBoxNav({ enabled: bigBox && selectedId === null && !showingStats, onExit: leaveBigBox })
+  }
+  // B (or Esc) goes back one page; on the library it leaves the Big Box (BIG-002).
+  const bigBoxBack = () => {
+    if (selectedId !== null) {
+      closeGame()
+    } else if (showingStats) {
+      setShowingStats(false)
+    } else {
+      leaveBigBox()
+    }
+  }
+  useBigBoxNav({
+    enabled: bigBox,
+    pageKey: `${selectedId ?? 'library'}|${showingStats ? 'stats' : ''}`,
+    onBack: bigBoxBack,
+  })
   useEffect(() => {
     const onF11 = (e: KeyboardEvent) => {
       if (e.key === 'F11') {
         e.preventDefault()
-        enterBigBox()
+        void enterBigBox()
         setBigBox(true)
       }
     }

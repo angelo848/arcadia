@@ -60,12 +60,12 @@ Verificação: teste de componente com evento simulado; revisão de que não há
 
 ### BIG-001 — Entrar e sair da tela cheia
 Dado a biblioteca, quando escolho "Big Box" (botão ou atalho), então a janela vai para tela cheia com a grade de capas
-em fonte grande. Quando aperto B ou Esc, então volto à biblioteca normal na mesma posição.
+em fonte grande. Quando aperto B ou Esc na biblioteca, então saio do Big Box, na mesma posição. Dentro de uma página (jogo ou estatísticas), B ou Esc voltam à página anterior (BIG-002).
 Verificação: teste de componente; teste manual na TV.
 
 ### BIG-002 — Navegação por controle
 Dado o Big Box com a janela em foco, quando aperto as setas ou o direcional do controle, então o foco se move pela
-grade, com a capa do foco destacada. A tecla A (ou Enter) abre a página do jogo; Y (ou Shift+Enter) inicia o jogo.
+grade, com a capa do foco destacada. O foco passa por todos os itens da página (capa, Jogar, Sem contar tempo, botões de volta e ação). A (ou Enter) ativa o item focado; Y (ou Shift+Enter) inicia o jogo do cartão focado. B (ou Esc) volta uma página, e na biblioteca sai do Big Box. Ao trocar de página, o foco vai para o primeiro item dela.
 Verificação: teste de componente com eventos de teclado simulados; teste manual com controle real.
 
 ### BIG-003 — Sem depender do mouse

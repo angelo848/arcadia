@@ -29,7 +29,7 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
   return (
     <section className="flex flex-col gap-6 px-6 py-4">
       <div className="flex flex-wrap items-center gap-4">
-        <button type="button" onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
+        <button type="button" data-bigbox-item onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
           Voltar
         </button>
         <h1 className="text-xl font-semibold text-neutral-100">Estatísticas</h1>
@@ -111,7 +111,7 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
         <ul className="flex flex-col divide-y divide-neutral-800">
           {(summary.data?.games ?? []).map((g) => (
             <li key={g.gameId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-              <button type="button" onClick={() => onOpenGame(g.gameId)} className="text-left text-neutral-100 hover:underline">
+              <button type="button" data-bigbox-item onClick={() => onOpenGame(g.gameId)} className="text-left text-neutral-100 hover:underline">
                 {g.title}
               </button>
               <span className="text-neutral-400">{g.platform}</span>

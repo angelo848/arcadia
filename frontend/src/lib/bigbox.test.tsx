@@ -32,15 +32,18 @@ describe('pickNext (BIG-002)', () => {
 
 // Board renders focusable cards with a play button, the way the library grid does.
 function Board({ onExit }: { onExit: () => void }) {
-  useBigBoxNav({ enabled: true, onExit })
+  useBigBoxNav({ enabled: true, pageKey: 'library', onBack: onExit })
   return (
     <div>
       {[1, 2, 3].map((n) => (
-        <div key={n} data-bigbox-item tabIndex={0} data-testid={`item-${n}`} onClick={() => (window as unknown as { opened?: number }).opened = n}>
+        <article key={n}>
+          <div data-bigbox-item tabIndex={0} data-testid={`item-${n}`} onClick={() => (window as unknown as { opened?: number }).opened = n}>
+            Jogo {n}
+          </div>
           <button type="button" data-bigbox-play onClick={() => ((window as unknown as { played?: number }).played = n)}>
             Jogar {n}
           </button>
-        </div>
+        </article>
       ))}
     </div>
   )
@@ -69,8 +72,14 @@ describe('useBigBoxNav (BIG-002, BIG-003)', () => {
     render(<Board onExit={vi.fn()} />)
     fireEvent.keyDown(window, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(bigBoxItems()[1])
-    fireEvent.keyDown(window, { key: 'Enter' })
+    // Enter is the browser's own activation of the focused element.
+    fireEvent.click(document.activeElement as HTMLElement)
     expect((window as unknown as { opened?: number }).opened).toBe(2)
+  })
+
+  it('BIG-002/o foco começa no primeiro item de cada página', () => {
+    render(<Board onExit={vi.fn()} />)
+    expect(document.activeElement).toBe(bigBoxItems()[0])
   })
 
   it('BIG-002/Shift+Enter inicia o jogo focado pelo botão Jogar', () => {

@@ -44,7 +44,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
   if (q.isError) {
     return (
       <section className="px-6 py-4">
-        <button type="button" onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
+        <button type="button" data-bigbox-item onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
           Voltar
         </button>
         <p role="alert" className="mt-4 text-sm text-red-400">
@@ -75,7 +75,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
   return (
     <article className="flex flex-col gap-4 px-6 py-4">
       <div className="flex items-center gap-4">
-        <button type="button" onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
+        <button type="button" data-bigbox-item onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
           Voltar
         </button>
         {marking}
@@ -86,6 +86,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
+            data-bigbox-item
             onClick={() => setSearching(true)}
             className="rounded px-3 py-1 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
           >
@@ -93,6 +94,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
           </button>
           <button
             type="button"
+            data-bigbox-item
             onClick={() => onEdit?.()}
             className="rounded px-3 py-1 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
           >
@@ -100,6 +102,7 @@ export function GamePage(props: GamePageProps): JSX.Element {
           </button>
           <button
             type="button"
+            data-bigbox-item
             onClick={() => onRemove?.()}
             className="rounded px-3 py-1 text-sm font-medium text-red-400 hover:bg-neutral-800"
           >

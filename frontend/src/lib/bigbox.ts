@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { WindowFullscreen, WindowUnfullscreen } from '../../wailsjs/runtime/runtime'
+import { WindowFullscreen, WindowIsFullscreen, WindowUnfullscreen } from '../../wailsjs/runtime/runtime'
 
 // Big Box (phase 8, BIG-001..BIG-004): the library in full screen, driven by the gamepad or the keyboard.
 
@@ -24,10 +24,8 @@ export function pickNext(items: Box[], current: number, dir: Direction): number 
     if (i === current) {
       return
     }
-    const x = it.x + it.w / 2
-    const y = it.y + it.h / 2
-    const dx = x - cx
-    const dy = y - cy
+    const dx = it.x + it.w / 2 - cx
+    const dy = it.y + it.h / 2 - cy
     // Distance along the direction of movement, and across it.
     const along = dir === 'left' ? -dx : dir === 'right' ? dx : dir === 'up' ? -dy : dy
     if (along <= 0) {
@@ -43,119 +41,131 @@ export function pickNext(items: Box[], current: number, dir: Direction): number 
   return best
 }
 
-// enterBigBox puts the window in full screen (BIG-001). Outside the desktop shell (tests, browser) the
-// call does nothing, so the page still works.
-export function enterBigBox(): void {
+// enterBigBox puts the window in full screen (BIG-001). It asks the window first, so a window that is
+// already full screen is not toggled back. Outside the desktop shell (tests, browser) it does nothing.
+export async function enterBigBox(): Promise<void> {
   try {
-    WindowFullscreen()
+    if (!(await WindowIsFullscreen())) {
+      WindowFullscreen()
+    }
   } catch {
     // no window runtime: nothing to change
   }
 }
 
-// exitBigBox leaves full screen (BIG-001).
-export function exitBigBox(): void {
+// exitBigBox leaves full screen (BIG-001), only when the window is in full screen.
+export async function exitBigBox(): Promise<void> {
   try {
-    WindowUnfullscreen()
+    if (await WindowIsFullscreen()) {
+      WindowUnfullscreen()
+    }
   } catch {
     // no window runtime: nothing to change
   }
 }
 
-// bigBoxItems returns the focusable items of the Big Box, in reading order.
+// bigBoxItems returns the focusable items of the current page, in reading order.
 export function bigBoxItems(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>('[data-bigbox-item]'))
 }
 
-// useBigBoxNav reads the keyboard and the gamepad while the Big Box is on: the directions move the focus,
-// A (or Enter) opens the focused game, Y (or Shift+Enter) starts it, B (or Esc) leaves the Big Box (BIG-002,
-// BIG-003). Gamepad buttons follow the standard mapping of the Gamepad API.
-export function useBigBoxNav({ enabled, onExit }: { enabled: boolean; onExit: () => void }): void {
-  const exitRef = useRef(onExit)
-  exitRef.current = onExit
+// focusedIndex is the index of the item that has the focus, or -1.
+function focusedIndex(items: HTMLElement[]): number {
+  return items.indexOf(document.activeElement as HTMLElement)
+}
+
+// playButtonOf finds the "Jogar" button of the card that holds the item, if any (BIG-002).
+function playButtonOf(item: HTMLElement | undefined): HTMLElement | null {
+  return item?.closest('article')?.querySelector<HTMLElement>('[data-bigbox-play]') ?? null
+}
+
+// useBigBoxNav drives the Big Box with the keyboard and the gamepad (BIG-002, BIG-003). The directions
+// move the focus between the items of the page; A (or Enter) activates the focused item; Y (or Shift+Enter)
+// starts the game of the focused card; B (or Esc) goes back one page, and on the library it leaves the
+// Big Box. Gamepad buttons follow the standard mapping of the Gamepad API. Each page (pageKey) starts with
+// the focus on its first item.
+export function useBigBoxNav({ enabled, pageKey, onBack }: { enabled: boolean; pageKey: string; onBack: () => void }): void {
+  const backRef = useRef(onBack)
+  backRef.current = onBack
+
+  // A new page: the focus goes to its first item, once the page is in the DOM.
+  useEffect(() => {
+    if (enabled) {
+      bigBoxItems()[0]?.focus()
+      bigBoxItems()[0]?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [enabled, pageKey])
 
   useEffect(() => {
     if (!enabled) {
       return undefined
     }
-    let current = 0
-    const focusAt = (i: number) => {
+    const move = (dir: Direction) => {
       const items = bigBoxItems()
       if (items.length === 0) {
         return
       }
-      current = Math.min(Math.max(i, 0), items.length - 1)
-      items[current].focus()
-      items[current].scrollIntoView?.({ block: "nearest" })
-    }
-    const boxes = (): Box[] =>
-      bigBoxItems().map((el) => {
+      const current = Math.max(focusedIndex(items), 0)
+      const boxes: Box[] = items.map((el) => {
         const r = el.getBoundingClientRect()
         return { x: r.left, y: r.top, w: r.width, h: r.height }
       })
-    const move = (dir: Direction) => {
-      const items = bigBoxItems()
-      const focused = items.indexOf(document.activeElement as HTMLElement)
-      if (focused >= 0) {
-        current = focused
-      }
-      focusAt(pickNext(boxes(), current, dir))
+      const next = items[pickNext(boxes, current, dir)]
+      next.focus()
+      next.scrollIntoView?.({ block: 'nearest' })
     }
-    const open = () => {
+    const activate = () => {
       const items = bigBoxItems()
-      items[current]?.click()
+      const i = focusedIndex(items)
+      if (i >= 0) {
+        items[i].click()
+      }
     }
     const play = () => {
       const items = bigBoxItems()
-      const btn = items[current]?.querySelector<HTMLElement>('[data-bigbox-play]')
-      btn?.click()
-    }
-    const press = (action: 'up' | 'down' | 'left' | 'right' | 'open' | 'play' | 'exit') => {
-      switch (action) {
-        case 'up':
-        case 'down':
-        case 'left':
-        case 'right':
-          move(action)
-          return
-        case 'open':
-          open()
-          return
-        case 'play':
-          play()
-          return
-        case 'exit':
-          exitRef.current()
-      }
+      const i = focusedIndex(items)
+      playButtonOf(i >= 0 ? items[i] : undefined)?.click()
     }
 
     const onKey = (e: KeyboardEvent) => {
-      const map: Record<string, Parameters<typeof press>[0] | undefined> = {
-        ArrowUp: 'up',
-        ArrowDown: 'down',
-        ArrowLeft: 'left',
-        ArrowRight: 'right',
-        Escape: 'exit',
-      }
-      if (e.key === 'Enter') {
-        press(e.shiftKey ? 'play' : 'open')
-      } else if (map[e.key]) {
-        press(map[e.key] as Parameters<typeof press>[0])
-      } else {
-        return
+      switch (e.key) {
+        case 'ArrowUp':
+          move('up')
+          break
+        case 'ArrowDown':
+          move('down')
+          break
+        case 'ArrowLeft':
+          move('left')
+          break
+        case 'ArrowRight':
+          move('right')
+          break
+        case 'Escape':
+          backRef.current()
+          break
+        case 'Enter':
+          // Enter on the focused item is the browser's own activation; Shift+Enter starts the game.
+          if (!e.shiftKey) {
+            return
+          }
+          play()
+          break
+        default:
+          return
       }
       e.preventDefault()
     }
 
     // Standard gamepad mapping: 0 = A, 1 = B, 3 = Y, 12..15 = the directional pad.
-    const buttonActions: Array<[number, Parameters<typeof press>[0]]> = [
-      [12, 'up'],
-      [13, 'down'],
-      [14, 'left'],
-      [15, 'right'],
-      [0, 'open'],
-      [3, 'play'],
-      [1, 'exit'],
+    const buttonActions: Array<[number, () => void]> = [
+      [12, () => move('up')],
+      [13, () => move('down')],
+      [14, () => move('left')],
+      [15, () => move('right')],
+      [0, activate],
+      [3, play],
+      [1, () => backRef.current()],
     ]
     const previous = new Map<number, boolean>()
     let frame = 0
@@ -166,7 +176,7 @@ export function useBigBoxNav({ enabled, onExit }: { enabled: boolean; onExit: ()
         for (const [button, action] of buttonActions) {
           const down = pad.buttons[button]?.pressed === true
           if (down && !previous.get(button)) {
-            press(action)
+            action()
           }
           previous.set(button, down)
         }
@@ -175,7 +185,7 @@ export function useBigBoxNav({ enabled, onExit }: { enabled: boolean; onExit: ()
         const ay = pad.axes[1] ?? 0
         const stick = Math.abs(ax) > Math.abs(ay) ? (ax > 0.6 ? 'right' : ax < -0.6 ? 'left' : null) : ay > 0.6 ? 'down' : ay < -0.6 ? 'up' : null
         if (stick && !previous.get(-1)) {
-          press(stick)
+          move(stick)
         }
         previous.set(-1, stick !== null)
       }
@@ -184,7 +194,6 @@ export function useBigBoxNav({ enabled, onExit }: { enabled: boolean; onExit: ()
 
     window.addEventListener('keydown', onKey)
     frame = requestAnimationFrame(poll)
-    focusAt(0)
     return () => {
       window.removeEventListener('keydown', onKey)
       cancelAnimationFrame(frame)
