@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-7-midia/contracts/ipc.openrpc.json (v0.9.0, which supersedes
-// the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
+// docs/specs/phase-8-estatisticas/contracts/ipc.openrpc.json (v0.10.0, which supersedes
+// the phase-7-midia v0.9.0, the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
 // the phase-4-pause v0.5.0, phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0
 // contracts kept in their specs as history).
 package ipc

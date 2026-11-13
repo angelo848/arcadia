@@ -17,10 +17,10 @@ import (
 
 // contractPath is the source of truth: the phase-7-midia contract (v0.9.0)
 // supersedes phase-4-pause (v0.5.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-7-midia", "contracts", "ipc.openrpc.json")
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-8-estatisticas", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-7-midia/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-8-estatisticas/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -289,6 +289,8 @@ var phase6Methods = map[string]bool{
 	ipc.MethodMediaList:           false,
 	ipc.MethodMediaQueue:          false,
 	ipc.MethodMediaCancel:         false,
+	ipc.MethodStatsSummary:        false,
+	ipc.MethodStatsWeekly:         false,
 }
 
 func TestContract(t *testing.T) {
@@ -535,10 +537,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.9.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.10.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.9.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.9.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.10.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.10.0\"", contractPath, c.Info.Version)
 		}
 	})
 
