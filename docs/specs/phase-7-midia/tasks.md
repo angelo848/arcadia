@@ -45,3 +45,46 @@ design em [design.md](design.md).
 - **Limites de API:** cada provedor tem regras próprias; o limite de taxa é configurável por provedor.
 - **Caminho LaunchBox (T09):** depende do XML real; se o campo não existir no arquivo do usuário, T09 é adiada.
 - **Manual (T12):** chaves reais de IGDB e SteamGridDB, busca em jogo real, queda de rede no meio do download.
+
+---
+
+## Cobertura por tarefa (para o rastreio)
+
+## T01 — Migração 00007 e queries de mídia e fila
+Requisitos: MID-003, MID-004, MID-005. Testes: `MID-004/migração 7`, `MID-004/o mesmo hash`, `MID-005/apagar o jogo`.
+
+## T02 — Matching de título
+Requisitos: MID-002. Testes: `MID-002/normaliza`, `MID-002/similaridade`, `MID-002/plataforma e ano`.
+
+## T03 — Provedores de metadata e mídia
+Requisitos: MID-002, MID-003, MID-008, MID-009. Testes: `MID-002/IGDB`, `MID-002/SteamGridDB`, `MID-002/Steam Store`, `MID-008/429`.
+
+## T04 — Chaves no Credential Manager
+Requisitos: MID-001. Testes: `MID-001/chave gravada`, `MID-001/status`, `MID-001/Credential Manager`.
+
+## T05 — Aplicação de metadados com merge
+Requisitos: MID-003. Testes: `MID-003/campo vazio`, `MID-003/campo do usuário`, `MID-003/substituir`.
+
+## T06 — Download, hash e miniatura
+Requisitos: MID-004. Testes: `MID-004/grava em data/media`, `MID-004/mesma imagem`, `MID-004/20 MB`, `MID-004/miniatura 320 px`.
+
+## T07 — Fila em background
+Requisitos: MID-005, MID-008. Testes: `MID-005/retomado`, `MID-005/dois downloads`, `MID-005/cancelado`, `MID-008/três tentativas`.
+
+## T08 — Contrato 0.9.0 e handlers IPC
+Requisitos: MID-001, MID-002, MID-003, MID-004, MID-005, MID-006. Testes: `MID-001/status não devolve a chave`, `MID-002/candidatos`, `MID-003/apply`, `MID-004/media.list`, `MID-005/media.queue`.
+
+## T09 — Importação LaunchBox com imagens
+Requisitos: MID-010. Bloqueada: aguarda a confirmação da pasta de imagens do LaunchBox.
+
+## T10 — Bindings Wails e camada lib
+Requisitos: MID-001, MID-002, MID-004, MID-005, MID-006. Testes: `MID-001/setKey`, `MID-002/search`, `MID-005/cancelar`, `MID-004/media.list`, `MID-006/URLs`.
+
+## T11 — UI de chaves, candidatos e mídia
+Requisitos: MID-001, MID-002, MID-006. Testes: `MID-001/salvar`, `MID-002/mostra os candidatos`, `MID-003/aplicar`, `MID-006/capa`.
+
+## T12 — Verificação
+Requisitos: todos. Verificação: `go test`, `vitest`, build, `spec-trace` e checagens manuais.
+
+## T13 — Vídeo (adiado para fase posterior)
+Requisitos: MID-007. Não entra nesta fase: o vídeo foi adiado por decisão do usuário.

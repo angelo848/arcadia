@@ -33,7 +33,7 @@ Formato: IDs `ÁREA-NNN`, critérios Dado/Quando/Então. Área nova: **MID**.
 Dado que o usuário informa a chave de um provedor, quando salvo, então ela é guardada no Credential Manager sob um
 nome por provedor, e a UI mostra só "cadastrada" ou "não cadastrada". Dado que a chave não existe, então o provedor
 fica indisponível com a mensagem "Cadastre a chave em Configurações" e nenhuma chamada é feita.
-Verificação: teste com o Credential Manager substituído por fake; teste de que a chave não aparece em log.
+Verificação: teste com o Credential Manager trocado por fake; teste de que a chave não aparece em log.
 
 ### MID-002 — Busca e matching
 Dado um jogo com título, plataforma e ano, quando busco no provedor, então recebo candidatos normalizados (sem ™, ®,
@@ -67,6 +67,7 @@ com o tamanho de tela do aplicativo. Sem mídia, a grade e a página funcionam c
 Verificação: teste de componente (Vitest) com imagens de exemplo; teste manual na grade real.
 
 ### MID-007 — Vídeo (adiado para fase posterior)
+Substituído por uma fase posterior: o vídeo ficou fora desta fase por decisão do usuário (2026-11-12).
 Dado que o usuário pede o vídeo de um jogo, quando confirma, então o arquivo é baixado para `data\media\<id>\` com aviso
 de tamanho antes do download. Nenhum vídeo toca sozinho.
 Verificação: teste de confirmação na UI; teste de download com HTTP local.
