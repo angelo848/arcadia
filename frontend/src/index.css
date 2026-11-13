@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+/* Big Box (phase 8): the library in full screen, with large text. */
+.big-box {
+  font-size: 1.25rem;
+}

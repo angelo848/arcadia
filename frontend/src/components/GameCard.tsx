@@ -58,6 +58,7 @@ export function GameCard({
       {coverUrl && <img src={coverUrl} alt="" className="h-36 w-full rounded object-cover" />}
       <div
         role="link"
+        data-bigbox-item
         tabIndex={0}
         onClick={() => onOpen(game.id)}
         onKeyDown={(e) => {
@@ -79,6 +80,7 @@ export function GameCard({
         <button
           type="button"
           disabled={blocked}
+          data-bigbox-play
           onClick={() => onPlay(game.id)}
           className={`${buttonClass} bg-emerald-600 hover:bg-emerald-500`}
         >

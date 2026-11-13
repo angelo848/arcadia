@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
@@ -6,6 +6,7 @@ import { DeleteDialog } from './components/DeleteDialog'
 import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
 import { StatsPage } from './components/StatsPage'
+import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
 import { useEmulators, type EmulatorView } from './lib/emulators'
 import { useCovers } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
@@ -169,6 +170,24 @@ export default function App() {
   const [keying, setKeying] = useState(false)
   // The statistics page replaces the library while it is open (phase 8).
   const [showingStats, setShowingStats] = useState(false)
+  // Big Box: the library in full screen, driven by the gamepad or the keyboard (phase 8).
+  const [bigBox, setBigBox] = useState(false)
+  const leaveBigBox = useCallback(() => {
+    exitBigBox()
+    setBigBox(false)
+  }, [])
+  useBigBoxNav({ enabled: bigBox && selectedId === null && !showingStats, onExit: leaveBigBox })
+  useEffect(() => {
+    const onF11 = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        enterBigBox()
+        setBigBox(true)
+      }
+    }
+    window.addEventListener('keydown', onF11)
+    return () => window.removeEventListener('keydown', onF11)
+  }, [])
   const emulators = useEmulators()
 
   const session = current.data ?? null
@@ -297,7 +316,16 @@ export default function App() {
   // The empty library has its add button in LibraryStates; the header keeps it otherwise.
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100">
+    <main className={`flex h-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100${bigBox ? ' big-box' : ''}`}>
+      {bigBox && (
+        <button
+          type="button"
+          onClick={leaveBigBox}
+          className="fixed right-4 top-4 z-30 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+        >
+          Sair do Big Box (Esc)
+        </button>
+      )}
       <header className="flex items-center justify-between gap-4 border-b border-neutral-800 px-6 py-4">
         <h1 className="text-2xl font-semibold">Arcadia</h1>
         <div className="flex items-center gap-4">
