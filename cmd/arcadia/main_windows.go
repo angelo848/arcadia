@@ -17,6 +17,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -86,7 +87,7 @@ func runUI(args []string) int {
 		Title:       "Arcadia",
 		Width:       1024,
 		Height:      768,
-		AssetServer: &assetserver.Options{Assets: assets},
+		AssetServer: &assetserver.Options{Assets: assets, Handler: http.HandlerFunc(app.serveMedia)},
 		OnStartup:   app.startup,
 		OnShutdown:  app.shutdown,
 		Bind:        []any{app},

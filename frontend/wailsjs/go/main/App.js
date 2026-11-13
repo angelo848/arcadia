@@ -70,6 +70,18 @@ export function ListGames(arg1) {
   return window['go']['main']['App']['ListGames'](arg1);
 }
 
+export function MediaCancel(arg1) {
+  return window['go']['main']['App']['MediaCancel'](arg1);
+}
+
+export function MediaList(arg1) {
+  return window['go']['main']['App']['MediaList'](arg1);
+}
+
+export function MediaQueue(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['MediaQueue'](arg1, arg2, arg3, arg4);
+}
+
 export function PauseSession() {
   return window['go']['main']['App']['PauseSession']();
 }
@@ -90,8 +102,28 @@ export function PlatformSetEmulator(arg1, arg2) {
   return window['go']['main']['App']['PlatformSetEmulator'](arg1, arg2);
 }
 
+export function ProviderDeleteKey(arg1) {
+  return window['go']['main']['App']['ProviderDeleteKey'](arg1);
+}
+
+export function ProviderKeyStatus(arg1) {
+  return window['go']['main']['App']['ProviderKeyStatus'](arg1);
+}
+
+export function ProviderSetKey(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ProviderSetKey'](arg1, arg2, arg3);
+}
+
 export function ResumeSession() {
   return window['go']['main']['App']['ResumeSession']();
+}
+
+export function ScrapeApply(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ScrapeApply'](arg1, arg2, arg3, arg4);
+}
+
+export function ScrapeSearch(arg1, arg2) {
+  return window['go']['main']['App']['ScrapeSearch'](arg1, arg2);
 }
 
 export function UpdateGame(arg1, arg2) {

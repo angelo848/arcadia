@@ -26,6 +26,10 @@ const (
 	msgInvalidData       = "Dados inválidos."
 	msgAgentNotResponds  = "O agente não está respondendo. Tente de novo."
 	msgUnexpectedFailure = "Erro inesperado. Veja o log."
+	// Metadata and media (phase 7, contract v0.9.0).
+	msgProviderNoKey       = "A chave deste provedor não está cadastrada. Cadastre-a nas configurações de provedores."
+	msgProviderUnavailable = "O provedor não respondeu agora. Tente de novo."
+	msgMediaJobNotFound    = "Esse download já não está na fila."
 )
 
 // ADM-003: a game that needs more elevation than the agent has fails with
@@ -104,6 +108,12 @@ func userError(err error, log *slog.Logger) error {
 		case ipc.CodeGameNotFound:
 			logBindingError(log, err)
 			return errors.New(msgGameNotFound)
+		case ipc.CodeProviderNoKey:
+			return errors.New(msgProviderNoKey)
+		case ipc.CodeProviderUnavailable:
+			return errors.New(msgProviderUnavailable)
+		case ipc.CodeMediaJobNotFound:
+			return errors.New(msgMediaJobNotFound)
 		case ipc.CodeInvalidParams:
 			logBindingError(log, err)
 			return errors.New(msgInvalidData)

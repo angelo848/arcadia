@@ -389,7 +389,159 @@ export namespace main {
 	        this.limit = source["limit"];
 	    }
 	}
+	export class MediaItemView {
+	    id: number;
+	    kind: string;
+	    provider: string;
+	    path: string;
+	    thumbPath: string;
+	    url: string;
+	    thumbUrl: string;
 	
+	    static createFrom(source: any = {}) {
+	        return new MediaItemView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.provider = source["provider"];
+	        this.path = source["path"];
+	        this.thumbPath = source["thumbPath"];
+	        this.url = source["url"];
+	        this.thumbUrl = source["thumbUrl"];
+	    }
+	}
+	export class MediaListView {
+	    media: MediaItemView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MediaListView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.media = this.convertValues(source["media"], MediaItemView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class ProviderKeyView {
+	    provider: string;
+	    configured: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderKeyView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.configured = source["configured"];
+	    }
+	}
+	export class ScrapeApplyView {
+	    game: GameDetailView;
+	    queued: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScrapeApplyView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.game = this.convertValues(source["game"], GameDetailView);
+	        this.queued = source["queued"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ScrapeCandidateView {
+	    providerId: string;
+	    title: string;
+	    platform: string;
+	    year: number;
+	    score: number;
+	    accepted: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScrapeCandidateView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerId = source["providerId"];
+	        this.title = source["title"];
+	        this.platform = source["platform"];
+	        this.year = source["year"];
+	        this.score = source["score"];
+	        this.accepted = source["accepted"];
+	    }
+	}
+	export class ScrapeSearchView {
+	    candidates: ScrapeCandidateView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ScrapeSearchView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.candidates = this.convertValues(source["candidates"], ScrapeCandidateView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SessionItemView {
 	    sessionId: number;
 	    gameId: number;

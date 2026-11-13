@@ -90,6 +90,7 @@ type App struct {
 	cancel    context.CancelFunc
 	stopped   bool
 	wailsCtx  context.Context // set by startup; never nil once set
+	dataRoot  string          // the data folder, set by startup; media is served from its media folder (phase 7)
 	sup       *supervisor     // nil until startup
 
 	wg sync.WaitGroup // supervisor goroutine
@@ -145,6 +146,7 @@ func (a *App) startup(wailsCtx context.Context) {
 		slog.Error("falha ao resolver a pasta de dados", "error", err.Error())
 		return
 	}
+	a.dataRoot = p.Root // a.mu is held above
 	log, closer, err := setupLogging(p)
 	if err != nil {
 		slog.Error("falha ao abrir o log da UI", "error", err.Error())
