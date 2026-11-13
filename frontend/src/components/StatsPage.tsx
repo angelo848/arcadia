@@ -27,7 +27,7 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
   const weekly = useStatsWeekly(weeksShown)
 
   return (
-    <section className="flex flex-col gap-6 px-6 py-4">
+    <section className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-4">
       <div className="flex flex-wrap items-center gap-4">
         <button type="button" data-bigbox-item onClick={onBack} className="text-sm text-neutral-300 hover:text-neutral-100">
           Voltar
