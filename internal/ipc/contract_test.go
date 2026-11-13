@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-6b-emulators contract (v0.8.0)
+// contractPath is the source of truth: the phase-7-midia contract (v0.9.0)
 // supersedes phase-4-pause (v0.5.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-6b-emulators", "contracts", "ipc.openrpc.json")
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-7-midia", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-6b-emulators/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-7-midia/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -281,6 +281,14 @@ var phase6Methods = map[string]bool{
 	ipc.MethodEmulatorDelete:      false,
 	ipc.MethodPlatformSetEmulator: false,
 	ipc.MethodSessionChanged:      true,
+	ipc.MethodProviderKeyStatus:   false,
+	ipc.MethodProviderSetKey:      false,
+	ipc.MethodProviderDeleteKey:   false,
+	ipc.MethodScrapeSearch:        false,
+	ipc.MethodScrapeApply:         false,
+	ipc.MethodMediaList:           false,
+	ipc.MethodMediaQueue:          false,
+	ipc.MethodMediaCancel:         false,
 }
 
 func TestContract(t *testing.T) {
@@ -405,11 +413,14 @@ func TestContract(t *testing.T) {
 			"InvalidParams":  ipc.CodeInvalidParams,
 			"InternalError":  ipc.CodeInternalError,
 			// Application codes (v0.4.0) and -32005 added in v0.5.0 [IPC-032].
-			"GameNotFound":       ipc.CodeGameNotFound,
-			"SessionActive":      ipc.CodeSessionActive,
-			"LaunchFailed":       ipc.CodeLaunchFailed,
-			"InvalidExecutable":  ipc.CodeInvalidExecutable,
-			"SessionNotPausable": ipc.CodeSessionNotPausable,
+			"GameNotFound":        ipc.CodeGameNotFound,
+			"SessionActive":       ipc.CodeSessionActive,
+			"LaunchFailed":        ipc.CodeLaunchFailed,
+			"InvalidExecutable":   ipc.CodeInvalidExecutable,
+			"SessionNotPausable":  ipc.CodeSessionNotPausable,
+			"ProviderNoKey":       ipc.CodeProviderNoKey,
+			"ProviderUnavailable": ipc.CodeProviderUnavailable,
+			"MediaJobNotFound":    ipc.CodeMediaJobNotFound,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)
@@ -524,10 +535,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.8.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.9.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.8.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.8.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.9.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.9.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -863,16 +874,19 @@ func TestContract(t *testing.T) {
 	t.Run("IPC-041/códigos de erro batem com as constantes", func(t *testing.T) {
 		t.Parallel()
 		want := map[string]int{
-			"ParseError":         ipc.CodeParseError,
-			"InvalidRequest":     ipc.CodeInvalidRequest,
-			"MethodNotFound":     ipc.CodeMethodNotFound,
-			"InvalidParams":      ipc.CodeInvalidParams,
-			"InternalError":      ipc.CodeInternalError,
-			"GameNotFound":       ipc.CodeGameNotFound,
-			"SessionActive":      ipc.CodeSessionActive,
-			"LaunchFailed":       ipc.CodeLaunchFailed,
-			"InvalidExecutable":  ipc.CodeInvalidExecutable,
-			"SessionNotPausable": ipc.CodeSessionNotPausable,
+			"ParseError":          ipc.CodeParseError,
+			"InvalidRequest":      ipc.CodeInvalidRequest,
+			"MethodNotFound":      ipc.CodeMethodNotFound,
+			"InvalidParams":       ipc.CodeInvalidParams,
+			"InternalError":       ipc.CodeInternalError,
+			"GameNotFound":        ipc.CodeGameNotFound,
+			"SessionActive":       ipc.CodeSessionActive,
+			"LaunchFailed":        ipc.CodeLaunchFailed,
+			"InvalidExecutable":   ipc.CodeInvalidExecutable,
+			"SessionNotPausable":  ipc.CodeSessionNotPausable,
+			"ProviderNoKey":       ipc.CodeProviderNoKey,
+			"ProviderUnavailable": ipc.CodeProviderUnavailable,
+			"MediaJobNotFound":    ipc.CodeMediaJobNotFound,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)

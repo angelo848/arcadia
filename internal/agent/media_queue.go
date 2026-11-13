@@ -17,7 +17,7 @@ const (
 	mediaConcurrency = 2
 	mediaMaxAttempts = 3
 	mediaRetryDelay  = 30 * time.Second
-	mediaPoll        = time.Second
+	mediaHTTPTimeout = 60 * time.Second // one download, including the image body
 )
 
 // mediaQueueStore is what the queue needs from the store.
@@ -91,11 +91,14 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 	defer wg.Wait()
 	for {
 		q.dispatch(ctx, sem, &wg)
+		// The loop wakes for new work (Notify), for a finished download that frees a slot, and for
+		// the next retry. A timer exists only while a retry is pending, so an idle queue holds no
+		// waiter on the clock.
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-q.wake:
-		case <-q.clock.After(mediaPoll):
+		case <-q.retryTimer():
 		}
 	}
 }
@@ -130,6 +133,7 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 		}
 		jobCtx, cancel := context.WithCancel(ctx)
 		q.mu.Lock()
+		delete(q.retryAt, job.ID) // the attempt is starting: its retry time is spent
 		q.cancels[job.ID] = cancel
 		q.mu.Unlock()
 		wg.Add(1)
@@ -181,6 +185,7 @@ func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFu
 		q.retryAt[job.ID] = q.clock.Now().Add(mediaRetryDelay)
 		q.mu.Unlock()
 		q.setState(writeCtx, job.ID, store.JobPending, attempts, err.Error())
+		q.Notify() // the retry is scheduled: the loop arms its timer
 	}
 }
 
@@ -188,4 +193,23 @@ func (q *mediaQueue) setState(ctx context.Context, id int64, state string, attem
 	if err := q.st.SetMediaJobState(ctx, id, state, attempts, lastErr); err != nil {
 		q.log.Error("fila de mídia: gravar estado", "job", id, "error", err.Error())
 	}
+}
+
+// retryTimer returns a channel that fires when the earliest future retry is due, or nil when no
+// retry is pending (a nil channel never fires in a select). A retry already due is started by
+// dispatch, not by a timer.
+func (q *mediaQueue) retryTimer() <-chan time.Time {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.clock.Now()
+	var first time.Time
+	for _, due := range q.retryAt {
+		if due.After(now) && (first.IsZero() || due.Before(first)) {
+			first = due
+		}
+	}
+	if first.IsZero() {
+		return nil
+	}
+	return q.clock.After(first.Sub(now))
 }

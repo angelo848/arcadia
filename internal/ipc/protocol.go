@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-6b-emulators/contracts/ipc.openrpc.json (v0.8.0, which supersedes
-// the phase-5-library v0.6.0 contract,
+// docs/specs/phase-7-midia/contracts/ipc.openrpc.json (v0.9.0, which supersedes
+// the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
 // the phase-4-pause v0.5.0, phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0
 // contracts kept in their specs as history).
 package ipc
@@ -73,15 +73,25 @@ const (
 	CodeLaunchFailed       = -32003
 	CodeInvalidExecutable  = -32004
 	CodeSessionNotPausable = -32005
+
+	// Metadata and media codes (phase 7, contract v0.9.0).
+	CodeProviderNoKey       = -32010
+	CodeProviderUnavailable = -32011
+	CodeMediaJobNotFound    = -32012
 )
 
 // Application error messages, exactly as in the contract's components.errors.
 const (
-	MsgGameNotFound       = "Game not found"
-	MsgSessionActive      = "Session already active"
-	MsgLaunchFailed       = "Launch failed"
-	MsgInvalidExecutable  = "Invalid executable"
-	MsgSessionNotPausable = "Session not pausable"
+	MsgGameNotFound        = "Game not found"
+	MsgSessionActive       = "Session already active"
+	MsgLaunchFailed        = "Launch failed"
+	MsgInvalidExecutable   = "Invalid executable"
+	MsgSessionNotPausable  = "Session not pausable"
+	MsgProviderNoKey       = "Provider key not registered"
+	MsgProviderUnavailable = "Provider unavailable"
+	MsgMediaJobNotFound    = "Media job not found"
+	// MsgInternalError is the message of CodeInternalError, for handlers outside this package.
+	MsgInternalError = msgInternalError
 	// MsgInvalidParams is the exported alias of msgInvalidParams.
 	MsgInvalidParams = msgInvalidParams
 )

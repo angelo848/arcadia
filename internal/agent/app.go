@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,7 +20,9 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/logging"
+	"github.com/arcadia-launcher/arcadia/internal/media"
 	"github.com/arcadia-launcher/arcadia/internal/paths"
+	"github.com/arcadia-launcher/arcadia/internal/scrapers"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
@@ -118,7 +122,9 @@ type instance struct {
 	// ended with an error not caused by Close or by ctx (EXE-026).
 	ipcFailed chan struct{}
 
-	wg sync.WaitGroup // the server.Serve goroutine
+	wg sync.WaitGroup // the server.Serve and the media queue goroutines
+	// stopQueue ends the media queue; Shutdown calls it after the IPC server closes (phase 7).
+	stopQueue context.CancelFunc
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -250,6 +256,21 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
 	maps.Copy(handlers, emulatorHandlers(st, log))
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), log))
+	// Metadata and media (phase 7): the keys live in the Credential Manager and the images in
+	// data\media. The queue runs in its own goroutine, below, and is waited for at shutdown.
+	httpClient := &http.Client{Timeout: mediaHTTPTimeout}
+	mediaRoot := filepath.Join(p.Root, "media")
+	keys := scrapers.NewKeys(credentialStore{})
+	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log)
+	maps.Copy(handlers, scrapeHandlers(&scrapeService{
+		st:        st,
+		keys:      keys,
+		providers: newProviderFactory(keys, httpClient, clock),
+		queue:     queue,
+		mediaRoot: mediaRoot,
+		clock:     clock,
+		log:       log,
+	}))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)
 
@@ -293,6 +314,16 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		drainTimeout: shutdownDrainTimeout,
 		ipcFailed:    make(chan struct{}),
 	}
+
+	queueCtx, stopQueue := context.WithCancel(ctx)
+	a.stopQueue = stopQueue
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		if err := queue.Run(queueCtx); err != nil {
+			log.Error("fila de mídia encerrada com erro", "error", err.Error())
+		}
+	}()
 
 	a.wg.Add(1)
 	go func() {
@@ -387,6 +418,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		if err := a.server.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close ipc server: %w", err))
 		}
+		a.stopQueue()
 		a.wg.Wait()
 		a.notifier.set(nil)
 		// After the server (no request can reach the tracker) and before the
