@@ -60,6 +60,29 @@ func (s *Store) Fetch(ctx context.Context, gameID int64, url string) (Stored, bo
 	if err != nil {
 		return Stored{}, false, err
 	}
+	return s.save(gameID, data)
+}
+
+// Import copies an image file already on this computer, such as one of the LaunchBox folders, into
+// the media folder of the game (MID-010). It goes through the same checks as Fetch: the size limit,
+// the content (JPEG or PNG), the hash and the thumbnail.
+func (s *Store) Import(_ context.Context, gameID int64, src string) (Stored, bool, error) {
+	info, err := os.Stat(src)
+	if err != nil {
+		return Stored{}, false, fmt.Errorf("media: arquivo de origem: %w", err)
+	}
+	if info.Size() > MaxImageBytes {
+		return Stored{}, false, fmt.Errorf("media: imagem maior que 20 MB")
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return Stored{}, false, fmt.Errorf("media: ler arquivo: %w", err)
+	}
+	return s.save(gameID, data)
+}
+
+// save writes the image of a game: the file named by the hash of its content, and its thumbnail.
+func (s *Store) save(gameID int64, data []byte) (Stored, bool, error) {
 	ext, err := extOf(data)
 	if err != nil {
 		return Stored{}, false, err

@@ -13,7 +13,7 @@ export const providerLabels: Record<ProviderId, string> = {
 }
 
 // The kinds of image a provider can offer (MID-004).
-export type MediaKind = 'cover' | 'screenshot' | 'title'
+export type MediaKind = 'cover' | 'screenshot' | 'title' | 'banner' | 'background' | 'select'
 
 // ProviderKeyView says whether a key is registered; the key itself is never shown (MID-001).
 export type ProviderKeyView = { provider: KeyProviderId; configured: boolean }

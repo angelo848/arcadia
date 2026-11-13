@@ -95,7 +95,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
     setBusy(true)
     setError(null)
     try {
-      const res = await applyImport(chosen)
+      const res = await applyImport(chosen, source === 'launchbox' ? path : '')
       setResult(res)
       setChecked(new Set())
       if (res.applied.length > 0) {

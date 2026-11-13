@@ -93,12 +93,18 @@ Verificação: revisão de documentação (manual).
 ---
 
 ### MID-010 — Mídias do LaunchBox
-Dado a pasta de mídia do LaunchBox referenciada pelo XML de cada plataforma, quando a importação roda e o jogo é novo ou
-ainda não tem capa, então as imagens de capa e screenshot são copiadas para `data\media\<id>\` (com hash e miniatura,
-como MID-004), sem consultar provedor. O caminho original não é guardado como dependência. Dado que a imagem não existe,
-então o candidato segue sem mídia e um aviso é listado.
-Verificação: fixture do XML com referência de imagem; teste de cópia com arquivo temporário. Os caminhos de imagem
-exatos são confirmados no XML real (como IMP-005).
+Estrutura real (confirmada na pasta do usuário): `<LaunchBox>\Images\<plataforma>\<tipo>\[<região>\]<título>-NN.<ext>`,
+onde `<plataforma>` é o nome da plataforma do XML (`Windows` para PC). Tipos lidos e tipo de mídia gravado:
+`Banner` → `banner`; `Fanart - Background` → `background`; `Screenshot - Game Title` → `title`;
+`Screenshot - Gameplay` → `screenshot`; `Screenshot - Game Select` → `select`. As subpastas de região
+(`North America`, `United States`, `World`, ...) são lidas como um só tipo, sem separar por região.
+Nome do arquivo: o título com `: ` trocado por `_ ` e `'` trocado por `_` (ex.: `Black Myth: Wukong` →
+`Black Myth_ Wukong-01.jpg`; `Assassin's Creed Mirage` → `Assassin_s Creed Mirage-01.jpg`). Aceitos: `.jpg`, `.jpeg`, `.png`.
+Dado a importação de um candidato do LaunchBox, quando a pasta do LaunchBox é conhecida, então até 5 imagens por tipo são
+copiadas para `data\media\<id>\` (com hash e miniatura, como MID-004), com `provider = launchbox`, sem consultar provedor.
+Dado que a pasta de imagens não existe ou não há arquivo do jogo, então o candidato segue sem mídia, sem erro.
+Verificação: teste com árvore temporária (incluindo subpasta de região e título com `:` e `'`); verificação manual
+contra a pasta real do usuário.
 
 ## Fora de escopo
 

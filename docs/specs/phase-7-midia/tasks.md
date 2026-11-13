@@ -75,7 +75,8 @@ Requisitos: MID-005, MID-008. Testes: `MID-005/retomado`, `MID-005/dois download
 Requisitos: MID-001, MID-002, MID-003, MID-004, MID-005, MID-006. Testes: `MID-001/status não devolve a chave`, `MID-002/candidatos`, `MID-003/apply`, `MID-004/media.list`, `MID-005/media.queue`.
 
 ## T09 — Importação LaunchBox com imagens
-Requisitos: MID-010. Bloqueada: aguarda a confirmação da pasta de imagens do LaunchBox.
+Requisitos: MID-010. Feita: estrutura confirmada na pasta real (`Images\Windows\<tipo>\[região]\<título>-NN.ext`);
+testes com árvore temporária e verificação contra a pasta real (`ARCADIA_LAUNCHBOX_ROOT`).
 
 ## T10 — Bindings Wails e camada lib
 Requisitos: MID-001, MID-002, MID-004, MID-005, MID-006. Testes: `MID-001/setKey`, `MID-002/search`, `MID-005/cancelar`, `MID-004/media.list`, `MID-006/URLs`.

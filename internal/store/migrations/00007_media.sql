@@ -6,7 +6,7 @@
 CREATE TABLE media (
   id         INTEGER PRIMARY KEY,
   game_id    INTEGER NOT NULL REFERENCES game (id) ON DELETE CASCADE,
-  kind       TEXT    NOT NULL CHECK (kind IN ('cover', 'screenshot', 'title')),
+  kind       TEXT    NOT NULL CHECK (kind IN ('cover', 'screenshot', 'title', 'banner', 'background', 'select')),
   provider   TEXT    NOT NULL,
   source_url TEXT    NOT NULL DEFAULT '',
   hash       TEXT    NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE media (
 CREATE TABLE media_job (
   id         INTEGER PRIMARY KEY,
   game_id    INTEGER NOT NULL REFERENCES game (id) ON DELETE CASCADE,
-  kind       TEXT    NOT NULL CHECK (kind IN ('cover', 'screenshot', 'title')),
+  kind       TEXT    NOT NULL CHECK (kind IN ('cover', 'screenshot', 'title', 'banner', 'background', 'select')),
   provider   TEXT    NOT NULL,
   source_url TEXT    NOT NULL,
   state      TEXT    NOT NULL CHECK (state IN ('pending', 'running', 'done', 'failed')),

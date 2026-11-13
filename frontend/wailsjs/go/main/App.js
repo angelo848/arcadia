@@ -50,8 +50,8 @@ export function GetGame(arg1) {
   return window['go']['main']['App']['GetGame'](arg1);
 }
 
-export function ImportApply(arg1) {
-  return window['go']['main']['App']['ImportApply'](arg1);
+export function ImportApply(arg1, arg2) {
+  return window['go']['main']['App']['ImportApply'](arg1, arg2);
 }
 
 export function ImportScan(arg1, arg2) {

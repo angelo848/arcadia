@@ -1376,7 +1376,10 @@
               "enum": [
                 "cover",
                 "screenshot",
-                "title"
+                "title",
+                "banner",
+                "background",
+                "select"
               ]
             }
           }
@@ -2437,6 +2440,11 @@
             "items": {
               "$ref": "#/components/schemas/ImportCandidate"
             }
+          },
+          "launchboxPath": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Folder DataPlatforms of LaunchBox, the one the scan read. When set, the images of the LaunchBox candidates are copied (MID-010)."
           }
         }
       },
@@ -2701,7 +2709,10 @@
             "enum": [
               "cover",
               "screenshot",
-              "title"
+              "title",
+              "banner",
+              "background",
+              "select"
             ]
           },
           "provider": {

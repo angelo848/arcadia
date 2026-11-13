@@ -45,13 +45,13 @@ func importSourceSet() map[string]importers.Source {
 
 // importHandlers returns the handlers of import.scan and import.apply (IMP-001).
 func importHandlers(st importStore, loc importLocations, clock domain.Clock,
-	sources map[string]importers.Source, log *slog.Logger) map[string]ipc.Handler {
+	sources map[string]importers.Source, imgs importImages, log *slog.Logger) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
 		ipc.MethodImportScan: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleImportScan(ctx, st, loc, sources, log, params)
 		},
 		ipc.MethodImportApply: func(ctx context.Context, params json.RawMessage) (any, error) {
-			return handleImportApply(ctx, st, clock, log, params)
+			return handleImportApply(ctx, st, clock, imgs, log, params)
 		},
 	}
 }
@@ -164,7 +164,7 @@ func toIPCCandidate(c importers.Candidate, exists bool) ipc.ImportCandidate {
 // skipped and the others go on. Nothing is launched and no tracked session is
 // created (IMP-009).
 func handleImportApply(ctx context.Context, st importStore, clock domain.Clock,
-	log *slog.Logger, params json.RawMessage) (any, error) {
+	imgs importImages, log *slog.Logger, params json.RawMessage) (any, error) {
 	if params == nil {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
@@ -197,6 +197,7 @@ func handleImportApply(ctx context.Context, st importStore, clock domain.Clock,
 			out.Skipped = append(out.Skipped, ipc.ImportSkipped{Title: c.Title, Reason: "failed"})
 		default:
 			out.Applied = append(out.Applied, ipc.ImportApplied{GameID: id, Title: g.Title})
+			copyLaunchBoxImages(ctx, imgs, log, p.LaunchBoxPath, c, id)
 		}
 	}
 	return out, nil

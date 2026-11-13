@@ -34,7 +34,7 @@ export type ImportApplyResult = {
 
 type WailsApp = {
   ImportScan?: (source: string, path: string) => Promise<ImportScanResult>
-  ImportApply?: (candidates: ImportCandidate[]) => Promise<ImportApplyResult>
+  ImportApply?: (candidates: ImportCandidate[], launchboxPath: string) => Promise<ImportApplyResult>
   PickFile?: () => Promise<string>
   PickFolder?: () => Promise<string>
 }
@@ -56,12 +56,13 @@ export async function scanImport(source: ImportSource, path: string): Promise<Im
 }
 
 // applyImport writes the selected candidates (IMP-001).
-export async function applyImport(candidates: ImportCandidate[]): Promise<ImportApplyResult> {
+// launchboxPath is the Data\Platforms folder of the LaunchBox scan, "" for the other sources (MID-010).
+export async function applyImport(candidates: ImportCandidate[], launchboxPath = ''): Promise<ImportApplyResult> {
   const fn = app().ImportApply
   if (!fn) {
     throw new Error('ImportApply indisponível')
   }
-  return fn(candidates)
+  return fn(candidates, launchboxPath)
 }
 
 // pickFile opens the single-file dialog of the file source; "" means cancelled (IMP-004).

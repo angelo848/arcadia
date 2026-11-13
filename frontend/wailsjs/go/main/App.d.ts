@@ -27,7 +27,7 @@ export function GameSessions(arg1:number,arg2:number,arg3:number):Promise<main.S
 
 export function GetGame(arg1:number):Promise<main.GameDetailView>;
 
-export function ImportApply(arg1:Array<main.ImportCandidateView>):Promise<main.ImportApplyView>;
+export function ImportApply(arg1:Array<main.ImportCandidateView>,arg2:string):Promise<main.ImportApplyView>;
 
 export function ImportScan(arg1:string,arg2:string):Promise<main.ImportScanView>;
 

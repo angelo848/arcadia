@@ -114,7 +114,7 @@ func TestImportHandlers(t *testing.T) {
 		sources := map[string]importers.Source{
 			ipc.ImportSourceSteam: fakeImportSource{id: "steam", res: importers.Result{Candidates: []importers.Candidate{steamCandidate}}},
 		}
-		h := importHandlers(st, fakeLocations{}, testClock(), sources, quietLog())[ipc.MethodImportScan]
+		h := importHandlers(st, fakeLocations{}, testClock(), sources, nil, quietLog())[ipc.MethodImportScan]
 		if _, err := h(context.Background(), rawParams(t, map[string]string{"source": "steam"})); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
@@ -126,7 +126,7 @@ func TestImportHandlers(t *testing.T) {
 	t.Run("IMP-001/apply grava só os selecionados", func(t *testing.T) {
 		t.Parallel()
 		st := newFakeImportStore()
-		h := importHandlers(st, fakeLocations{}, testClock(), nil, quietLog())[ipc.MethodImportApply]
+		h := importHandlers(st, fakeLocations{}, testClock(), nil, nil, quietLog())[ipc.MethodImportApply]
 		params := ipc.ImportApplyParams{Candidates: []ipc.ImportCandidate{
 			toIPCCandidate(steamCandidate, false),
 		}}
@@ -147,7 +147,7 @@ func TestImportHandlers(t *testing.T) {
 		sources := map[string]importers.Source{
 			ipc.ImportSourceSteam: fakeImportSource{id: "steam", res: importers.Result{Candidates: []importers.Candidate{steamCandidate}}},
 		}
-		h := importHandlers(st, fakeLocations{}, testClock(), sources, quietLog())[ipc.MethodImportScan]
+		h := importHandlers(st, fakeLocations{}, testClock(), sources, nil, quietLog())[ipc.MethodImportScan]
 		out, err := h(context.Background(), rawParams(t, map[string]string{"source": "steam"}))
 		if err != nil {
 			t.Fatalf("scan: %v", err)
@@ -165,7 +165,7 @@ func TestImportHandlers(t *testing.T) {
 			ipc.ImportSourceSteam: fakeImportSource{id: "steam", err: errors.New("boom")},
 			ipc.ImportSourceFile:  fakeImportSource{id: "file", res: importers.Result{Candidates: []importers.Candidate{folderCandidate}}},
 		}
-		h := importHandlers(st, fakeLocations{}, testClock(), sources, quietLog())[ipc.MethodImportScan]
+		h := importHandlers(st, fakeLocations{}, testClock(), sources, nil, quietLog())[ipc.MethodImportScan]
 		out, err := h(context.Background(), rawParams(t, map[string]string{"source": "steam"}))
 		if err != nil {
 			t.Fatalf("scan of a failing source must not be an error: %v", err)
@@ -186,7 +186,7 @@ func TestImportHandlers(t *testing.T) {
 		t.Parallel()
 		st := newFakeImportStore()
 		st.failTitle = "Quebra"
-		h := importHandlers(st, fakeLocations{}, testClock(), nil, quietLog())[ipc.MethodImportApply]
+		h := importHandlers(st, fakeLocations{}, testClock(), nil, nil, quietLog())[ipc.MethodImportApply]
 		bad := importers.Candidate{Source: importers.SourceFile, Title: "Quebra", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\q.exe`}
 		good := importers.Candidate{Source: importers.SourceFile, Title: "Bom", Platform: "PC", LaunchType: importers.LaunchExe, LaunchTarget: `C:\b.exe`}
 		out, err := h(context.Background(), rawParams(t, ipc.ImportApplyParams{Candidates: []ipc.ImportCandidate{
@@ -208,7 +208,7 @@ func TestImportHandlers(t *testing.T) {
 		t.Parallel()
 		st := newFakeImportStore()
 		st.targets[importers.LaunchURI+"|steam://rungameid/730"] = true
-		h := importHandlers(st, fakeLocations{}, testClock(), nil, quietLog())[ipc.MethodImportApply]
+		h := importHandlers(st, fakeLocations{}, testClock(), nil, nil, quietLog())[ipc.MethodImportApply]
 		out, err := h(context.Background(), rawParams(t, ipc.ImportApplyParams{Candidates: []ipc.ImportCandidate{toIPCCandidate(steamCandidate, false)}}))
 		if err != nil {
 			t.Fatalf("apply: %v", err)
@@ -222,8 +222,8 @@ func TestImportHandlers(t *testing.T) {
 	t.Run("IMP-001/entradas inválidas são -32602", func(t *testing.T) {
 		t.Parallel()
 		st := newFakeImportStore()
-		scan := importHandlers(st, fakeLocations{}, testClock(), importSourceSet(), quietLog())[ipc.MethodImportScan]
-		apply := importHandlers(st, fakeLocations{}, testClock(), nil, quietLog())[ipc.MethodImportApply]
+		scan := importHandlers(st, fakeLocations{}, testClock(), importSourceSet(), nil, quietLog())[ipc.MethodImportScan]
+		apply := importHandlers(st, fakeLocations{}, testClock(), nil, nil, quietLog())[ipc.MethodImportApply]
 		cases := []struct {
 			name string
 			err  error

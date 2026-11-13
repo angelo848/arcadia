@@ -47,6 +47,9 @@ type ImportScanResult struct {
 // ImportApplyParams is the params of import.apply (1..500 candidates).
 type ImportApplyParams struct {
 	Candidates []ImportCandidate `json:"candidates"`
+	// LaunchBoxPath is the Data\Platforms folder the LaunchBox scan read; when set, the images of the
+	// LaunchBox candidates are copied (MID-010). Omitted when no LaunchBox folder was used.
+	LaunchBoxPath string `json:"launchboxPath,omitempty"`
 }
 
 // ImportApplied is one game written by import.apply.

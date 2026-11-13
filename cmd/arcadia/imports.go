@@ -78,8 +78,10 @@ func (a *App) ImportScan(source, path string) (ImportScanView, error) {
 
 // ImportApply writes the candidates the user selected [IMP-001]. The agent skips
 // the duplicates and the failing ones and reports them.
-func (a *App) ImportApply(candidates []ImportCandidateView) (ImportApplyView, error) {
-	params := ipc.ImportApplyParams{Candidates: make([]ipc.ImportCandidate, 0, len(candidates))}
+// ImportApply writes the candidates. launchboxPath is the Data\Platforms folder the LaunchBox scan
+// read ("" when none): its images are copied for the LaunchBox candidates (MID-010).
+func (a *App) ImportApply(candidates []ImportCandidateView, launchboxPath string) (ImportApplyView, error) {
+	params := ipc.ImportApplyParams{Candidates: make([]ipc.ImportCandidate, 0, len(candidates)), LaunchBoxPath: launchboxPath}
 	for _, c := range candidates {
 		params.Candidates = append(params.Candidates, importCandidateWire(c))
 	}

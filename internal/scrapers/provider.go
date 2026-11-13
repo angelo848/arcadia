@@ -17,6 +17,9 @@ const (
 	KindCover      = "cover"
 	KindScreenshot = "screenshot"
 	KindTitle      = "title"
+	KindBanner     = "banner"
+	KindBackground = "background"
+	KindSelect     = "select"
 )
 
 // ErrNoKey is returned, without any request, when a provider needs a key the user has not

@@ -187,6 +187,9 @@ const mediaKindLabels: Record<MediaItemView['kind'], string> = {
   cover: 'Capa',
   screenshot: 'Screenshot',
   title: 'Tela de título',
+  banner: 'Banner',
+  background: 'Fundo',
+  select: 'Tela de seleção',
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }): JSX.Element {

@@ -255,13 +255,14 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	handlers := ipc.AgentHandlers(info, clock)
 	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
 	maps.Copy(handlers, emulatorHandlers(st, log))
-	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), log))
 	// Metadata and media (phase 7): the keys live in the Credential Manager and the images in
 	// data\media. The queue runs in its own goroutine, below, and is waited for at shutdown.
 	httpClient := &http.Client{Timeout: mediaHTTPTimeout}
 	mediaRoot := filepath.Join(p.Root, "media")
 	keys := scrapers.NewKeys(credentialStore{})
 	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log)
+	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
+	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	maps.Copy(handlers, scrapeHandlers(&scrapeService{
 		st:        st,
 		keys:      keys,
