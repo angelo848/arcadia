@@ -137,7 +137,7 @@ func TestMigrate5(t *testing.T) {
 	t.Run("STO-024/banco novo fica na versão 5 e game_fts existe", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 6)
+		requireGooseVersion(t, s, 7)
 
 		if n := countRows(t, s.DB(),
 			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'game_fts'`); n != 1 {
@@ -160,7 +160,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 6)
+		requireGooseVersion(t, s, 7)
 		for _, title := range titles {
 			got := matchRowids(t, s.DB(), `"`+title+`"`)
 			if !slices.Equal(got, []int64{ids[title]}) {
@@ -187,7 +187,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 6)
+		requireGooseVersion(t, s, 7)
 		for _, match := range []string{"Cherry", "Devolver", "Metroidvania"} {
 			got := matchRowids(t, s.DB(), match)
 			if !slices.Equal(got, []int64{gameID}) {
@@ -213,7 +213,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 6)
+		requireGooseVersion(t, s, 7)
 		for i, q := range libraryDumpQueries {
 			after := dumpRows(t, s.DB(), q)
 			if !slices.Equal(after, before[i]) {
@@ -224,14 +224,14 @@ func TestMigrate5(t *testing.T) {
 
 	t.Run("STO-024/SchemaVersion é 5 e a versão do goose é 5", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 6 {
-			t.Errorf("store.SchemaVersion = %d, want 6", store.SchemaVersion)
+		if store.SchemaVersion != 7 {
+			t.Errorf("store.SchemaVersion = %d, want 7", store.SchemaVersion)
 		}
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 6)
+		requireGooseVersion(t, s, 7)
 		if v := countRows(t, s.DB(),
-			`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`); v != 6 {
-			t.Errorf("goose_db_version max applied version = %d, want 6", v)
+			`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`); v != 7 {
+			t.Errorf("goose_db_version max applied version = %d, want 7", v)
 		}
 	})
 

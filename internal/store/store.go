@@ -18,7 +18,7 @@ import (
 )
 
 // SchemaVersion is the last migration embedded in the binary (6: emulators, EMU-001).
-const SchemaVersion int64 = 6
+const SchemaVersion int64 = 7
 
 // ErrSchemaMismatch is returned when the database schema version differs from
 // SchemaVersion (or the database does not exist) and migration is disabled.

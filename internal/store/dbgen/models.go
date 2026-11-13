@@ -109,6 +109,30 @@ type MediaAsset struct {
 	IsPrimary int64
 }
 
+type MediaJob struct {
+	ID        int64
+	GameID    int64
+	Kind      string
+	Provider  string
+	SourceUrl string
+	State     string
+	Attempts  int64
+	LastError string
+	CreatedAt int64
+}
+
+type Medium struct {
+	ID        int64
+	GameID    int64
+	Kind      string
+	Provider  string
+	SourceUrl string
+	Hash      string
+	Path      string
+	ThumbPath string
+	CreatedAt int64
+}
+
 type PauseInterval struct {
 	ID        int64
 	SessionID int64
