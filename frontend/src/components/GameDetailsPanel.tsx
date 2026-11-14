@@ -131,14 +131,14 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
 
         <MediaCarousel items={media.data} resetKey={g.id} />
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             data-bigbox-item
             data-bigbox-play
             disabled={busy}
             onClick={() => onPlay(g.id)}
-            className="rounded bg-play px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
+            className="w-full min-h-12 rounded text-lg font-bold bg-play hover:bg-play-hover text-on-accent disabled:opacity-50"
           >
             {playLabel}
           </button>
@@ -147,10 +147,11 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
             data-bigbox-item
             disabled={busy}
             onClick={() => onPlayUntracked(g.id)}
-            className={`${secondary} disabled:opacity-50`}
+            className="w-full min-h-10 rounded text-base bg-raised hover:bg-hover border border-play text-fg disabled:opacity-50"
           >
             {untrackedLabel}
           </button>
+          <div className="flex flex-wrap items-center gap-2">
           <button type="button" data-bigbox-item onClick={() => onEdit()} className={secondary}>
             Editar
           </button>
@@ -160,6 +161,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           <button type="button" data-bigbox-item onClick={() => onRemove()} className={`${secondary} text-danger`}>
             Remover
           </button>
+          </div>
         </div>
 
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">

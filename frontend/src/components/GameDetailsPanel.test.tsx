@@ -264,6 +264,66 @@ describe('GameDetailsPanel', () => {
     expect(document.querySelector('[data-bigbox-play]')).toHaveTextContent('Jogar')
   })
 
+  async function buttonsAfterCarousel(): Promise<HTMLButtonElement[]> {
+    await loaded()
+    const region = await screen.findByRole('region', { name: 'Imagens' })
+    return Array.from(document.querySelectorAll('button')).filter(
+      (b) => !region.contains(b) && precedes(region, b),
+    )
+  }
+
+  const classesOf = (el: Element) => Array.from(el.classList)
+
+  it('AJU-006/"Jogar" é o primeiro botão depois do carrossel, com w-full, min-h-12, text-lg, font-bold, bg-play, hover:bg-play-hover e text-on-accent', async () => {
+    install({ media: [media(1, 'cover')] })
+    renderPanel()
+    const buttons = await buttonsAfterCarousel()
+
+    expect(buttons[0]).toHaveTextContent('Jogar')
+    expect(buttons[0]).toHaveAccessibleName('Jogar')
+    expect(classesOf(buttons[0])).toEqual(
+      expect.arrayContaining(['w-full', 'min-h-12', 'text-lg', 'font-bold', 'bg-play', 'hover:bg-play-hover', 'text-on-accent']),
+    )
+    expect(buttons[0]).toHaveAttribute('data-bigbox-play')
+    expect(buttons[0]).toHaveAttribute('data-bigbox-item')
+  })
+
+  it('AJU-006/com pendência continua "Iniciando…" e desativado', async () => {
+    install({ media: [media(1, 'cover')] })
+    renderPanel({ pending: { id: 10, mode: 'tracked' } })
+    const buttons = await buttonsAfterCarousel()
+
+    expect(buttons[0]).toHaveTextContent('Iniciando…')
+    expect(buttons[0]).toBeDisabled()
+  })
+
+  it('AJU-007/"Jogar sem contar tempo" vem logo depois, com w-full, min-h-10, text-base, bg-raised, hover:bg-hover, border border-play e text-fg', async () => {
+    install({ media: [media(1, 'cover')] })
+    renderPanel()
+    const buttons = await buttonsAfterCarousel()
+
+    expect(buttons[1]).toHaveTextContent('Jogar sem contar tempo')
+    expect(classesOf(buttons[1])).toEqual(
+      expect.arrayContaining(['w-full', 'min-h-10', 'text-base', 'bg-raised', 'hover:bg-hover', 'border', 'border-play', 'text-fg']),
+    )
+  })
+
+  it('AJU-007/Editar, Buscar metadados e Remover vêm depois, numa linha, sem w-full', async () => {
+    install({ media: [media(1, 'cover')] })
+    renderPanel()
+    const buttons = await buttonsAfterCarousel()
+
+    const names = ['Editar', 'Buscar metadados', 'Remover']
+    const rest = names.map((n) => screen.getByRole('button', { name: n }))
+    for (const b of rest) {
+      expect(precedes(buttons[1], b)).toBe(true)
+      expect(classesOf(b)).not.toContain('w-full')
+    }
+    expect(rest[0].parentElement).toBe(rest[1].parentElement)
+    expect(rest[1].parentElement).toBe(rest[2].parentElement)
+    expect(rest[0].parentElement).not.toBe(buttons[1].parentElement)
+  })
+
   it('UIX-027/pendência de G desativa os dois e o acionado mostra "Iniciando…"', async () => {
     install()
     const { props } = renderPanel({ pending: { id: 10, mode: 'untracked' } })
