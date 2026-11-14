@@ -65,7 +65,7 @@ func (epicSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 		c := Candidate{
 			Source:       SourceEpic,
 			Title:        strings.TrimSpace(it.DisplayName),
-			Platform:     PlatformPC,
+			Platform:     PlatformWindows,
 			LaunchType:   LaunchURI,
 			LaunchTarget: "com.epicgames.launcher://apps/" + it.AppName + "?action=launch&silent=true",
 			InstallDir:   it.InstallLocation,

@@ -51,7 +51,7 @@ func TestLaunchBoxImageImport(t *testing.T) {
 		rec := &recImages{}
 		lbPath := filepath.Join("C:", "LB", "Data", "Platforms")
 		lb := ipc.ImportCandidate{Source: ipc.ImportSourceLaunchBox, Title: "Starfield", Platform: "Windows"}
-		steam := ipc.ImportCandidate{Source: ipc.ImportSourceSteam, Title: "Starfield", Platform: "PC"}
+		steam := ipc.ImportCandidate{Source: ipc.ImportSourceSteam, Title: "Starfield", Platform: "Windows"}
 
 		copyLaunchBoxImages(context.Background(), rec, quiet, lbPath, lb, 1)
 		copyLaunchBoxImages(context.Background(), rec, quiet, lbPath, steam, 2)
@@ -60,6 +60,42 @@ func TestLaunchBoxImageImport(t *testing.T) {
 
 		if len(rec.calls) != 1 || rec.calls[0] != filepath.Join("C:", "LB", "Windows", "Starfield") {
 			t.Errorf("copies = %v, want only the LaunchBox candidate with a folder", rec.calls)
+		}
+	})
+
+	t.Run("PLT-028/copyLaunchBoxImages lê Images\\Windows\\... para um jogo Windows (apply do LaunchBox)", func(t *testing.T) {
+		t.Parallel()
+		lb := t.TempDir()
+		img := filepath.Join(lb, "Images", "Windows", "Screenshot - Gameplay")
+		if err := os.MkdirAll(img, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(img, "Starfield-01.png"), pngFixture(t), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "library.db"), store.OpenOptions{Migrate: true})
+		if err != nil {
+			t.Fatalf("store.Open: %v", err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		imp := imageImporter{files: media.New(filepath.Join(t.TempDir(), "media"), nil), st: st, clock: domain.NewFakeClock(time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)), log: quiet}
+		h := importHandlers(st, fakeLocations{}, testClock(), nil, imp, quiet)[ipc.MethodImportApply]
+		cand := ipc.ImportCandidate{Source: ipc.ImportSourceLaunchBox, Title: "Starfield", Platform: "Windows",
+			LaunchType: "exe", LaunchTarget: `C:\s.exe`, Developers: []string{}, Publishers: []string{}, Genres: []string{}, PlayModes: []string{}}
+		out, err := h(t.Context(), rawParams(t, ipc.ImportApplyParams{
+			Candidates:    []ipc.ImportCandidate{cand},
+			LaunchBoxPath: filepath.Join(lb, "Data", "Platforms"),
+		}))
+		if err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		res := out.(ipc.ImportApplyResult)
+		if len(res.Applied) != 1 {
+			t.Fatalf("result = %+v, want 1 applied", res)
+		}
+		rows, err := st.ListMedia(t.Context(), res.Applied[0].GameID)
+		if err != nil || len(rows) != 1 || rows[0].Provider != "launchbox" {
+			t.Errorf("media = %+v, %v; want one launchbox image from Images\\Windows", rows, err)
 		}
 	})
 

@@ -65,9 +65,12 @@ func TestIGDB(t *testing.T) {
 		})
 		p := scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: "cid", Secret: "sec", APIBase: srv.URL + "/v4", TokenURL: srv.URL + "/oauth2/token", HTTP: srv.Client()})
 
-		cands, err := p.Search(context.Background(), scrapers.Query{Title: "Celeste", Platform: "PC", Year: 2018})
+		cands, err := p.Search(context.Background(), scrapers.Query{Title: "Celeste", Platform: "Windows", Year: 2018})
 		if err != nil || len(cands) != 1 || cands[0].ProviderID != "7" || cands[0].Title != "Celeste" || cands[0].Year != 2018 {
 			t.Fatalf("Search = %+v, %v", cands, err)
+		}
+		if cands[0].Platform != "Windows" {
+			t.Errorf("PLT-031/IGDB com plataforma PC (Microsoft Windows) devolve Windows: platform = %q", cands[0].Platform)
 		}
 		meta, err := p.Details(context.Background(), "7")
 		if err != nil {
@@ -80,6 +83,27 @@ func TestIGDB(t *testing.T) {
 		media, err := p.Media(context.Background(), "7")
 		if err != nil || len(media) != 1 || media[0].Kind != "screenshot" || !strings.HasSuffix(media[0].URL, "/abc.jpg") {
 			t.Errorf("Media = %+v, %v", media, err)
+		}
+	})
+
+	t.Run("PLT-031/IGDB com plataforma PC (Microsoft Windows) devolve Windows", func(t *testing.T) {
+		t.Parallel()
+		srv, _ := newServer(t, map[string]func(http.ResponseWriter, *http.Request){
+			"POST /oauth2/token": jsonAnswer(`{"access_token":"tok","expires_in":3600}`),
+			"POST /v4/games": jsonAnswer(`[` +
+				`{"id":1,"name":"Celeste","platforms":[{"name":"Nintendo Switch"},{"name":"PC (Microsoft Windows)"}]},` +
+				`{"id":2,"name":"Celeste Console","platforms":[{"name":"Nintendo Switch"}]}]`),
+		})
+		p := scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: "cid", Secret: "sec", APIBase: srv.URL + "/v4", TokenURL: srv.URL + "/oauth2/token", HTTP: srv.Client()})
+		cands, err := p.Search(context.Background(), scrapers.Query{Title: "Celeste"})
+		if err != nil || len(cands) != 2 {
+			t.Fatalf("Search = %+v, %v", cands, err)
+		}
+		if cands[0].Platform != "Windows" {
+			t.Errorf("platform = %q, want Windows", cands[0].Platform)
+		}
+		if cands[1].Platform == "Windows" || cands[1].Platform == "PC" {
+			t.Errorf("candidate without Windows got platform %q", cands[1].Platform)
 		}
 	})
 
@@ -181,6 +205,18 @@ func TestSteamGridDB(t *testing.T) {
 func TestSteamStore(t *testing.T) {
 	t.Parallel()
 
+	t.Run("PLT-031/Steam Store devolve Windows", func(t *testing.T) {
+		t.Parallel()
+		srv, _ := newServer(t, map[string]func(http.ResponseWriter, *http.Request){
+			"GET /api/storesearch/": jsonAnswer(`{"total":1,"items":[{"id":504230,"name":"Celeste"}]}`),
+		})
+		p := scrapers.NewSteamStore(scrapers.SteamConfig{APIBase: srv.URL, HTTP: srv.Client()})
+		cands, err := p.Search(context.Background(), scrapers.Query{Title: "Celeste"})
+		if err != nil || len(cands) != 1 || cands[0].Platform != "Windows" {
+			t.Errorf("Search = %+v, %v; want platform Windows", cands, err)
+		}
+	})
+
 	t.Run("MID-002/busca e detalhes sem chave", func(t *testing.T) {
 		t.Parallel()
 		srv, _ := newServer(t, map[string]func(http.ResponseWriter, *http.Request){
@@ -192,7 +228,7 @@ func TestSteamStore(t *testing.T) {
 		p := scrapers.NewSteamStore(scrapers.SteamConfig{APIBase: srv.URL, HTTP: srv.Client()})
 
 		cands, err := p.Search(context.Background(), scrapers.Query{Title: "Celeste"})
-		if err != nil || len(cands) != 1 || cands[0].ProviderID != "504230" || cands[0].Platform != "PC" {
+		if err != nil || len(cands) != 1 || cands[0].ProviderID != "504230" || cands[0].Platform != "Windows" {
 			t.Fatalf("Search = %+v, %v", cands, err)
 		}
 		meta, err := p.Details(context.Background(), "504230")

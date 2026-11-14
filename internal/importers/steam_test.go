@@ -45,7 +45,7 @@ func scanSteam(t *testing.T, root string) importers.Result {
 func TestSteamScan(t *testing.T) {
 	t.Parallel()
 
-	t.Run("IMP-002/lê appmanifest e devolve candidato com appid, nome, pasta e uri", func(t *testing.T) {
+	t.Run("IMP-002/PLT-026/Steam e Epic geram candidato com plataforma Windows: lê appmanifest e devolve candidato com appid, nome, pasta e uri", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFile(t, filepath.Join(root, "steamapps", "libraryfolders.vdf"), `"libraryfolders"
@@ -67,7 +67,7 @@ func TestSteamScan(t *testing.T) {
 			t.Fatalf("candidates = %d, want 1 (%+v)", len(res.Candidates), res)
 		}
 		c := res.Candidates[0]
-		if c.Title != "Counter-Strike 2" || c.Source != importers.SourceSteam || c.Platform != importers.PlatformPC {
+		if c.Title != "Counter-Strike 2" || c.Source != importers.SourceSteam || c.Platform != importers.PlatformWindows {
 			t.Errorf("candidate = %+v", c)
 		}
 		if c.LaunchType != importers.LaunchURI || c.LaunchTarget != "steam://rungameid/730" {

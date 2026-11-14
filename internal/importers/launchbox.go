@@ -21,9 +21,6 @@ func LaunchBox() Source { return launchBoxSource{} }
 
 func (launchBoxSource) ID() string { return SourceLaunchBox }
 
-// launchBoxWindows is the name LaunchBox gives the PC platform; it maps to PC.
-const launchBoxWindows = "Windows"
-
 // lbLibrary is the root of a LaunchBox platform file.
 type lbLibrary struct {
 	Games []lbGame `xml:"Game"`
@@ -115,14 +112,11 @@ func (launchBoxSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 }
 
 // platformOf returns the platform of a game: its own Platform field, or the name of
-// its file when the field is empty. The LaunchBox "Windows" platform is PC.
+// its file when the field is empty.
 func platformOf(g lbGame, fallback string) string {
 	name := strings.TrimSpace(g.Platform)
 	if name == "" {
 		name = fallback
-	}
-	if name == launchBoxWindows {
-		return PlatformPC
 	}
 	return name
 }

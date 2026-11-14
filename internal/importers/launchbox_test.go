@@ -56,7 +56,7 @@ func TestLaunchBoxScan(t *testing.T) {
 			t.Fatalf("candidates = %d, want 3", len(res.Candidates))
 		}
 		gta := byTitle(t, res, "Grand Theft Auto V Enhanced")
-		if gta.Platform != importers.PlatformPC || gta.Source != importers.SourceLaunchBox {
+		if gta.Platform != importers.PlatformWindows || gta.Source != importers.SourceLaunchBox {
 			t.Errorf("platform/source = %q/%q", gta.Platform, gta.Source)
 		}
 		if !slices.Equal(gta.Developers, []string{"Rockstar North"}) || !slices.Equal(gta.Publishers, []string{"Rockstar Games"}) {
@@ -160,8 +160,27 @@ func TestLaunchBoxScan(t *testing.T) {
 		if ps2.Platform != "Sony Playstation 2" {
 			t.Errorf("platform = %q, want Sony Playstation 2", ps2.Platform)
 		}
-		if byTitle(t, res, "Counter-Strike 2").Platform != importers.PlatformPC {
-			t.Errorf("Windows games must stay PC")
+		if byTitle(t, res, "Counter-Strike 2").Platform != importers.PlatformWindows {
+			t.Errorf("Windows games must stay Windows")
+		}
+	})
+
+	t.Run("PLT-028/LaunchBox mantém a plataforma Windows do XML", func(t *testing.T) {
+		t.Parallel()
+		if importers.PlatformWindows != "Windows" {
+			t.Fatalf("PlatformWindows = %q, want Windows", importers.PlatformWindows)
+		}
+		res := scanLaunchBox(t, lbFixture(t))
+		for _, c := range res.Candidates {
+			if c.Platform != "Windows" {
+				t.Errorf("%s: platform = %q, want Windows (no translation to PC)", c.Title, c.Platform)
+			}
+		}
+		// Platform field empty: the file name is the platform, also Windows.
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "Windows.xml"), `<LaunchBox><Game><Title>Sem campo</Title><ApplicationPath>C:\a.exe</ApplicationPath></Game></LaunchBox>`)
+		if got := byTitle(t, scanLaunchBox(t, dir), "Sem campo").Platform; got != "Windows" {
+			t.Errorf("platform from file name = %q, want Windows", got)
 		}
 	})
 

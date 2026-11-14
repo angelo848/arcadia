@@ -131,7 +131,7 @@ func (p *IGDB) Search(ctx context.Context, q Query) ([]Candidate, error) {
 		c := Candidate{Provider: igdbName, ProviderID: strconv.FormatInt(r.ID, 10), Title: r.Name, Year: unixYear(r.FirstReleaseDate)}
 		for _, pl := range r.Platforms {
 			if strings.Contains(pl.Name, "Windows") {
-				c.Platform = "PC"
+				c.Platform = "Windows"
 				break
 			}
 		}

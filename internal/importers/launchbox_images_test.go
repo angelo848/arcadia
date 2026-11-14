@@ -97,6 +97,39 @@ func TestLaunchBoxImages(t *testing.T) {
 		}
 	})
 
+	t.Run("PLT-028/copyLaunchBoxImages lê Images\\Windows\\... para um jogo Windows", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		plats := filepath.Join(root, "Data", "Platforms")
+		if err := os.MkdirAll(plats, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		xml := `<LaunchBox>` +
+			`<Game><Title>Starfield</Title><Platform>Windows</Platform><ApplicationPath>C:\g\s.exe</ApplicationPath></Game>` +
+			`<Game><Title>Mario</Title><Platform>Nintendo 64</Platform><ApplicationPath>C:/r/m.z64</ApplicationPath><Emulator>P64</Emulator></Game>` +
+			`</LaunchBox>`
+		if err := os.WriteFile(filepath.Join(plats, "Windows.xml"), []byte(xml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		touchImage(t, root, "Images", "Windows", "Screenshot - Gameplay", "Starfield-01.jpg")
+		touchImage(t, root, "Images", "Nintendo 64", "Banner", "Mario-01.jpg")
+
+		res, err := LaunchBox().Scan(t.Context(), ScanInput{Path: plats})
+		if err != nil || len(res.Candidates) != 2 {
+			t.Fatalf("Scan = %+v, %v; want 2 candidates", res, err)
+		}
+		for _, c := range res.Candidates {
+			// The folder searched is the platform name of the XML, for any platform.
+			got := LaunchBoxImages(root, c.Platform, c.Title)
+			if len(got) != 1 {
+				t.Errorf("%s (%s): %d images, want 1", c.Title, c.Platform, len(got))
+			}
+		}
+		if res.Candidates[0].Platform != "Windows" && res.Candidates[1].Platform != "Windows" {
+			t.Errorf("no candidate with platform Windows: %+v", res.Candidates)
+		}
+	})
+
 	t.Run("MID-010/nome com separador de pasta é recusado", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

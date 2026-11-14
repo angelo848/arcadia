@@ -132,7 +132,7 @@ func steamCandidate(path, steamapps, appID string) (*Candidate, string) {
 	c := &Candidate{
 		Source:       SourceSteam,
 		Title:        strings.TrimSpace(name),
-		Platform:     PlatformPC,
+		Platform:     PlatformWindows,
 		LaunchType:   LaunchURI,
 		LaunchTarget: "steam://rungameid/" + appID,
 	}

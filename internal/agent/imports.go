@@ -23,6 +23,8 @@ type importStore interface {
 	PlatformIDByName(ctx context.Context, name string) (int64, bool, error)
 	ImportDuplicate(ctx context.Context, launchType, launchTarget, title string, platformID int64) (bool, error)
 	EnsurePlatformID(ctx context.Context, name string, category domain.PlatformCategory) (int64, error)
+	EnsureWindowsPlatformID(ctx context.Context) (int64, error)
+	WindowsPlatformID(ctx context.Context) (int64, bool, error)
 	ApplyImport(ctx context.Context, g store.ImportGame, at time.Time) (int64, error)
 }
 
@@ -121,7 +123,16 @@ func locationOrEmpty(f func() (string, error)) string {
 // target, and by title on the PC platform when that platform exists (IMP-006).
 func candidateExists(ctx context.Context, st importStore, c importers.Candidate) (bool, error) {
 	var platformID int64
-	if c.Platform != "" {
+	switch {
+	case c.Source == importers.SourceSteam || c.Source == importers.SourceEpic:
+		id, ok, err := st.WindowsPlatformID(ctx)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			platformID = id
+		}
+	case c.Platform != "":
 		id, ok, err := st.PlatformIDByName(ctx, c.Platform)
 		if err != nil {
 			return false, err
@@ -214,16 +225,22 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	if c.LaunchType != "exe" && c.LaunchType != "uri" && c.LaunchType != "emulator" {
 		return store.ImportGame{}, fmt.Errorf("launch type %q", c.LaunchType)
 	}
+	isFile := c.Source == ipc.ImportSourceFile || c.Source == ipc.ImportSourceFolder
+	if c.Platform == "" && isFile {
+		return store.ImportGame{}, errors.New("file candidate without platform")
+	}
+	useWindows := c.Source == ipc.ImportSourceSteam || c.Source == ipc.ImportSourceEpic || c.Platform == ""
 	platformName := c.Platform
-	if platformName == "" {
-		if c.Source == ipc.ImportSourceFile || c.Source == ipc.ImportSourceFolder {
-			return store.ImportGame{}, errors.New("file candidate without platform")
-		}
-		platformName = importers.PlatformPC
+	if useWindows {
+		platformName = importers.PlatformWindows
 	}
 	platformID, ok := platforms[platformName]
 	if !ok {
-		platformID, err = st.EnsurePlatformID(ctx, platformName, platformCategoryFor(c.Source, platformName))
+		if useWindows {
+			platformID, err = st.EnsureWindowsPlatformID(ctx)
+		} else {
+			platformID, err = st.EnsurePlatformID(ctx, platformName, platformCategoryFor(c.Source, platformName))
+		}
 		if err != nil {
 			return store.ImportGame{}, fmt.Errorf("platform %q: %w", platformName, err)
 		}
@@ -260,10 +277,13 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	return g, nil
 }
 
-// platformCategoryFor returns the category of a platform created by an import: PC for
-// PC games, and console for the other LaunchBox platforms (DOM-015).
+// platformCategoryFor returns the category of a platform created by an import: the
+// seed category when the name is a seed platform, else console for LaunchBox and pc.
 func platformCategoryFor(source, name string) domain.PlatformCategory {
-	if source == ipc.ImportSourceLaunchBox && name != importers.PlatformPC {
+	if seed, ok := domain.SeedByName(name); ok {
+		return seed.Category
+	}
+	if source == ipc.ImportSourceLaunchBox {
 		return domain.PlatformCategory("console")
 	}
 	return domain.PlatformCategory("pc")

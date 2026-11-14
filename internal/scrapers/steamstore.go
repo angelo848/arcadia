@@ -56,7 +56,7 @@ func (p *SteamStore) Search(ctx context.Context, q Query) ([]Candidate, error) {
 			Provider:   p.ID(),
 			ProviderID: strconv.FormatInt(it.ID, 10),
 			Title:      it.Name,
-			Platform:   "PC",
+			Platform:   "Windows",
 		})
 	}
 	return cands, nil

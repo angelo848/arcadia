@@ -13,9 +13,8 @@ const (
 	SourceFolder    = "folder"
 	SourceLaunchBox = "launchbox"
 
-	// PlatformPC is the platform of Steam, Epic and file games, and of the
-	// LaunchBox "Windows" platform (design §9).
-	PlatformPC = "PC"
+	// PlatformWindows is the platform of Steam and Epic games (seed key "windows").
+	PlatformWindows = "Windows"
 
 	LaunchURI      = "uri"
 	LaunchEmulator = "emulator" // the ROM runs in an emulator of its platform or game (EMU-003)

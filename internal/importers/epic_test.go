@@ -12,7 +12,7 @@ import (
 func TestEpicScan(t *testing.T) {
 	t.Parallel()
 
-	t.Run("IMP-003/item vira candidato com uri de lançamento silencioso", func(t *testing.T) {
+	t.Run("IMP-003/PLT-026/Steam e Epic geram candidato com plataforma Windows: item vira candidato com uri de lançamento silencioso", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		writeFile(t, filepath.Join(dir, "GTA.item"), `{"AppName":"8769e24080ea413b8ebca3f1b8c50951","DisplayName":"Grand Theft Auto V Enhanced","InstallLocation":"D:\\Games\\GTA V"}`)
@@ -25,7 +25,7 @@ func TestEpicScan(t *testing.T) {
 			t.Fatalf("candidates = %d, want 1", len(res.Candidates))
 		}
 		c := res.Candidates[0]
-		if c.Title != "Grand Theft Auto V Enhanced" || c.Platform != importers.PlatformPC || c.Source != importers.SourceEpic {
+		if c.Title != "Grand Theft Auto V Enhanced" || c.Platform != importers.PlatformWindows || c.Source != importers.SourceEpic {
 			t.Errorf("candidate = %+v", c)
 		}
 		want := "com.epicgames.launcher://apps/8769e24080ea413b8ebca3f1b8c50951?action=launch&silent=true"
