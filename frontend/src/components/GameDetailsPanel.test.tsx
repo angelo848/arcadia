@@ -1,0 +1,439 @@
+import type { ReactNode } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { GameDetailsPanel } from './GameDetailsPanel'
+import type { SessionView } from '../lib/games'
+import { gameNotFoundMessage } from '../lib/library'
+import type { CatalogView, GameDetailView, PlatformView, SessionItemView, SessionListView } from '../lib/library'
+import type { MediaItemView } from '../lib/metadata'
+import { platformIconSrc } from '../lib/platforms'
+
+type Props = Parameters<typeof GameDetailsPanel>[0]
+
+const platformWin: PlatformView = {
+  id: 1,
+  name: 'Windows',
+  category: 'pc',
+  emulatorId: null,
+  seedKey: 'windows',
+  iconUrl: '',
+  gameCount: 3,
+}
+
+type Fakes = {
+  GetGame: ReturnType<typeof vi.fn>
+  GameSessions: ReturnType<typeof vi.fn>
+  Catalog: ReturnType<typeof vi.fn>
+  MediaList: ReturnType<typeof vi.fn>
+}
+
+let app: Fakes
+
+type InstallOpts = {
+  detail?: GameDetailView | ((id: number) => Promise<GameDetailView>)
+  platforms?: PlatformView[]
+  media?: MediaItemView[]
+  sessions?: SessionItemView[]
+}
+
+function install(opts: InstallOpts = {}): Fakes {
+  const d = opts.detail ?? detail()
+  const all = opts.sessions ?? []
+  const catalog: CatalogView = { platforms: opts.platforms ?? [platformWin], genres: [], companies: [], playModes: [] }
+  app = {
+    GetGame: vi.fn((id: number) => (typeof d === 'function' ? d(id) : Promise.resolve(d))),
+    GameSessions: vi.fn(
+      (_id: number, offset: number, limit: number): Promise<SessionListView> =>
+        Promise.resolve({ sessions: all.slice(offset, offset + limit), total: all.length, offset }),
+    ),
+    Catalog: vi.fn(() => Promise.resolve(catalog)),
+    MediaList: vi.fn(() => Promise.resolve({ media: opts.media ?? [] })),
+  }
+  ;(window as unknown as { go?: unknown }).go = { main: { App: app } }
+  return app
+}
+
+function detail(over: Partial<GameDetailView> = {}): GameDetailView {
+  return {
+    id: 10,
+    platformId: 1,
+    title: 'Hollow Knight',
+    platform: 'Windows',
+    path: 'C:\\Games\\HK\\hollow_knight.exe',
+    status: 'playing',
+    favorite: true,
+    year: 2017,
+    totalPlaySeconds: 3900,
+    playCount: 4,
+    firstPlayedAt: '',
+    lastPlayedAt: '',
+    description: 'Um metroidvania difícil.',
+    completedAt: null,
+    developers: ['Team Cherry'],
+    publishers: ['Team17'],
+    genres: ['Metroidvania', 'Plataforma'],
+    playModes: ['single'],
+    launchType: 'exe',
+    launchArgs: '',
+    emulatorId: null,
+    ...over,
+  }
+}
+
+function sessionView(over: Partial<SessionView> = {}): SessionView {
+  return {
+    sessionId: 1,
+    gameId: 10,
+    title: 'Hollow Knight',
+    state: 'running',
+    startedAt: '2026-11-09T10:00:00.000Z',
+    endedAt: '',
+    activeSeconds: 252,
+    activeMs: 252400,
+    asOf: '2026-11-09T10:04:12.400Z',
+    ...over,
+  }
+}
+
+function sessionItem(id: number): SessionItemView {
+  return {
+    sessionId: id,
+    gameId: 10,
+    state: 'ended',
+    startedAt: '2026-11-09T10:00:00.000Z',
+    endedAt: '2026-11-09T11:00:00.000Z',
+    activeSeconds: 3600,
+    endReason: 'exited',
+  }
+}
+
+function media(id: number, kind: MediaItemView['kind']): MediaItemView {
+  return {
+    id,
+    kind,
+    provider: 'igdb',
+    path: `p${id}`,
+    thumbPath: `t${id}`,
+    url: `/media/${id}.jpg`,
+    thumbUrl: `/media/${id}-t.jpg`,
+  }
+}
+
+function newClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+}
+
+function wrapperFor(qc: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  }
+}
+
+function makeProps(over: Partial<Props> = {}): Props {
+  return {
+    gameId: 10,
+    current: null,
+    pending: null,
+    onPlay: vi.fn(),
+    onPlayUntracked: vi.fn(),
+    onEdit: vi.fn(),
+    onSearchMetadata: vi.fn(),
+    onRemove: vi.fn(),
+    onSelectionEvent: vi.fn(),
+    ...over,
+  }
+}
+
+function renderPanel(over: Partial<Props> = {}) {
+  const props = makeProps(over)
+  const Wrapper = wrapperFor(newClient())
+  const utils = render(<GameDetailsPanel {...props} />, { wrapper: Wrapper })
+  return { ...utils, props }
+}
+
+async function loaded(): Promise<void> {
+  await screen.findByRole('heading', { level: 2, name: 'Hollow Knight' })
+}
+
+function expectLocalDate(text: string, iso: string) {
+  const d = new Date(iso)
+  expect(text).toContain(String(d.getFullYear()))
+  expect(text).toMatch(new RegExp(`(^|\\D)0?${d.getDate()}(\\D|$)`))
+}
+
+function precedes(a: Node, b: Node): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+}
+
+async function settle() {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
+
+afterEach(() => {
+  delete (window as unknown as { go?: unknown }).go
+})
+
+describe('GameDetailsPanel', () => {
+  it('UIX-025/cabeçalho com título, ícone e nome da plataforma', async () => {
+    install()
+    renderPanel()
+    const title = await screen.findByRole('heading', { level: 2, name: 'Hollow Knight' })
+
+    expect(await screen.findByText('Windows')).toBeInTheDocument()
+    const icon = Array.from(document.querySelectorAll('img')).find((i) => i.getAttribute('src') === platformIconSrc(platformWin))
+    expect(icon).toBeDefined()
+    expect(icon).toHaveAttribute('alt', '')
+    expect(precedes(title, icon as Element) || precedes(icon as Element, title)).toBe(true)
+  })
+
+  it('UIX-025/sessão running ou grace do jogo mostra "Em execução"; paused mostra "Pausado"; sessão de outro jogo, nada', async () => {
+    const cases: Array<[SessionView['state'], string]> = [
+      ['running', 'Em execução'],
+      ['grace', 'Em execução'],
+      ['paused', 'Pausado'],
+    ]
+    for (const [state, label] of cases) {
+      install()
+      const { unmount } = renderPanel({ current: sessionView({ state }) })
+      await loaded()
+      expect(screen.getByText(label), state).toBeInTheDocument()
+      unmount()
+    }
+
+    install()
+    renderPanel({ current: sessionView({ gameId: 99, state: 'running' }) })
+    await loaded()
+    expect(screen.queryByText('Em execução')).toBeNull()
+    expect(screen.queryByText('Pausado')).toBeNull()
+  })
+
+  it('UIX-025/sessão por processo adotado mostra o aviso de rastreio por processo', async () => {
+    install()
+    renderPanel({ current: sessionView({ tracking: 'process' }) })
+    expect(await screen.findByText(/Rastreio por processo/)).toBeInTheDocument()
+  })
+
+  it('UIX-025/jogo de emulador sem emulador próprio nem padrão mostra o aviso de EMU-003; com padrão, não', async () => {
+    install({ detail: detail({ launchType: 'emulator', emulatorId: null }) })
+    const { unmount } = renderPanel()
+    expect(await screen.findByText(/Sem emulador configurado/)).toBeInTheDocument()
+    unmount()
+
+    install({
+      detail: detail({ launchType: 'emulator', emulatorId: null }),
+      platforms: [{ ...platformWin, emulatorId: 5 }],
+    })
+    renderPanel()
+    await loaded()
+    await waitFor(() => expect(app.Catalog).toHaveBeenCalled())
+    await settle()
+    expect(screen.queryByText(/Sem emulador configurado/)).toBeNull()
+  })
+
+  it('UIX-026/carrossel com as imagens de MediaList do jogo', async () => {
+    install({ media: [media(1, 'screenshot'), media(2, 'cover')] })
+    renderPanel()
+    await loaded()
+
+    const region = await screen.findByRole('region', { name: 'Imagens' })
+    await waitFor(() => expect(app.MediaList).toHaveBeenCalledWith(10))
+    // The cover comes first in the carousel.
+    await waitFor(() => expect(region.querySelector('img')).toHaveAttribute('src', '/media/2.jpg'))
+    expect(within(region).getByText(/1 de 2/)).toBeInTheDocument()
+  })
+
+  it('UIX-027/Jogar chama onPlay(G) uma vez e Jogar sem contar tempo chama onPlayUntracked(G) uma vez', async () => {
+    install()
+    const { props } = renderPanel()
+    await loaded()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jogar' }))
+    expect(props.onPlay).toHaveBeenCalledTimes(1)
+    expect(props.onPlay).toHaveBeenCalledWith(10)
+    expect(props.onPlayUntracked).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jogar sem contar tempo' }))
+    expect(props.onPlayUntracked).toHaveBeenCalledTimes(1)
+    expect(props.onPlayUntracked).toHaveBeenCalledWith(10)
+    expect(props.onPlay).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[data-bigbox-play]')).toHaveTextContent('Jogar')
+  })
+
+  it('UIX-027/pendência de G desativa os dois e o acionado mostra "Iniciando…"', async () => {
+    install()
+    const { props } = renderPanel({ pending: { id: 10, mode: 'untracked' } })
+    await loaded()
+
+    const untracked = screen.getByText('Iniciando…').closest('button') as HTMLButtonElement
+    expect(untracked).toHaveTextContent('Iniciando…')
+    expect(untracked).toBeDisabled()
+    const play = screen.getByRole('button', { name: 'Jogar' })
+    expect(play).toBeDisabled()
+    expect(screen.getAllByText('Iniciando…')).toHaveLength(1)
+    fireEvent.click(play)
+    fireEvent.click(untracked)
+    expect(props.onPlay).not.toHaveBeenCalled()
+    expect(props.onPlayUntracked).not.toHaveBeenCalled()
+  })
+
+  it('UIX-027/pendência de outro jogo deixa os botões de G ativos', async () => {
+    install()
+    renderPanel({ pending: { id: 99, mode: 'tracked' } })
+    await loaded()
+
+    expect(screen.getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Jogar sem contar tempo' })).toBeEnabled()
+    expect(screen.queryByText('Iniciando…')).toBeNull()
+  })
+
+  it('UIX-028/tempo total, primeira e última vez (ou "Nunca") e "Concluído em" em UTC, como vêm de GetGame', async () => {
+    install()
+    const { unmount } = renderPanel()
+    await loaded()
+    expect(screen.getByText('1 h 05 min')).toBeInTheDocument()
+    expect(screen.getAllByText('Nunca')).toHaveLength(2)
+    unmount()
+
+    const first = '2026-11-01T10:00:00.000Z'
+    const last = '2026-11-09T10:00:00.000Z'
+    install({ detail: detail({ firstPlayedAt: first, lastPlayedAt: last, completedAt: '2026-11-12' }) })
+    renderPanel()
+    await loaded()
+    expect(screen.queryByText('Nunca')).toBeNull()
+    const text = document.body.textContent ?? ''
+    expectLocalDate(text, first)
+    expectLocalDate(text, last)
+    expect(screen.getByText(/2026-11-12/)).toBeInTheDocument()
+  })
+
+  it('UIX-029/status, favorito, gêneros, modos, desenvolvedora, editora, ano e descrição inteira; "—" para vazios', async () => {
+    const long = 'Descrição longa. '.repeat(60).trim()
+    install({ detail: detail({ description: long }) })
+    const { unmount } = renderPanel()
+    await loaded()
+
+    expect(screen.getByText('Jogando')).toBeInTheDocument()
+    expect(screen.getByText(/favorito/i)).toBeInTheDocument()
+    expect(screen.getByText('Metroidvania')).toBeInTheDocument()
+    expect(screen.getByText('Plataforma')).toBeInTheDocument()
+    expect(screen.getByText('Um jogador')).toBeInTheDocument()
+    expect(screen.getByText('Team Cherry')).toBeInTheDocument()
+    expect(screen.getByText('Team17')).toBeInTheDocument()
+    expect(screen.getByText('2017')).toBeInTheDocument()
+    expect(screen.getByText(long)).toBeInTheDocument()
+    unmount()
+
+    install({
+      detail: detail({ genres: [], playModes: [], developers: [], publishers: [], year: null, description: '' }),
+    })
+    renderPanel()
+    await loaded()
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('UIX-030/seção Sessões com as sessões do jogo e "Carregar mais"', async () => {
+    install({ sessions: Array.from({ length: 60 }, (_, i) => sessionItem(i + 1)) })
+    renderPanel()
+    await loaded()
+
+    expect(screen.getByRole('heading', { name: 'Sessões' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Carregar mais' })
+    expect(app.GameSessions).toHaveBeenNthCalledWith(1, 10, 0, 50)
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }))
+    await waitFor(() => expect(app.GameSessions).toHaveBeenCalledTimes(2))
+  })
+
+  it('UIX-035/sem resposta mostra "Carregando jogo…" e nada do jogo anterior', async () => {
+    install({
+      detail: (id) =>
+        id === 10 ? Promise.resolve(detail()) : new Promise<GameDetailView>(() => {}),
+    })
+    const props = makeProps()
+    const Wrapper = wrapperFor(newClient())
+    const { rerender } = render(<GameDetailsPanel {...props} />, { wrapper: Wrapper })
+    await loaded()
+
+    rerender(<GameDetailsPanel {...props} gameId={11} />)
+    expect(await screen.findByText('Carregando jogo…')).toBeInTheDocument()
+    expect(screen.queryByText('Hollow Knight')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Jogar' })).toBeNull()
+  })
+
+  it('UIX-035/erro diferente de -32001 mostra role=alert e "Tentar de novo", que relê GetGame e emite retry', async () => {
+    const message = 'O agente não está respondendo. Tente de novo.'
+    install({ detail: () => Promise.reject(new Error(message)) })
+    const { props } = renderPanel()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(message)
+    expect(props.onSelectionEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'readError', gameId: 10 }))
+    expect(props.onSelectionEvent).not.toHaveBeenCalledWith({ type: 'readMissing', gameId: 10 })
+    const calls = app.GetGame.mock.calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(props.onSelectionEvent).toHaveBeenCalledWith({ type: 'retry' })
+    await waitFor(() => expect(app.GetGame.mock.calls.length).toBeGreaterThan(calls))
+  })
+
+  it('UIX-023/-32001 emite readMissing(G)', async () => {
+    install({ detail: () => Promise.reject(gameNotFoundMessage) })
+    const { props } = renderPanel()
+
+    await waitFor(() => expect(props.onSelectionEvent).toHaveBeenCalledWith({ type: 'readMissing', gameId: 10 }))
+    expect(props.onSelectionEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'readError' }))
+  })
+
+  it('UIX-035/leitura ok emite readOk(G)', async () => {
+    install()
+    const { props } = renderPanel()
+    await loaded()
+
+    expect(props.onSelectionEvent).toHaveBeenCalledWith({ type: 'readOk', gameId: 10 })
+  })
+
+  it('UIX-036/trocar gameId volta o scrollTop do painel a 0', async () => {
+    install({
+      detail: (id) => Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Celeste' })),
+    })
+    const props = makeProps()
+    const Wrapper = wrapperFor(newClient())
+    const { container, rerender } = render(<GameDetailsPanel {...props} />, { wrapper: Wrapper })
+    await loaded()
+
+    // The root is the element that scrolls; jsdom does not lay out, so scrollTop is faked.
+    const root = container.firstElementChild as HTMLElement
+    let top = 120
+    Object.defineProperty(root, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v
+      },
+    })
+    expect(root.className).toContain('overflow-y-auto')
+
+    rerender(<GameDetailsPanel {...props} gameId={11} />)
+    expect(container.firstElementChild).toBe(root)
+    expect(top).toBe(0)
+  })
+
+  it('UIX-025/Editar, Buscar metadados e Remover chamam os callbacks uma vez', async () => {
+    install()
+    const { props } = renderPanel()
+    await loaded()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(props.onEdit).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar metadados' }))
+    expect(props.onSearchMetadata).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    expect(props.onRemove).toHaveBeenCalledTimes(1)
+    expect(props.onEdit).toHaveBeenCalledTimes(1)
+    expect(props.onPlay).not.toHaveBeenCalled()
+  })
+})
