@@ -7,7 +7,7 @@ import { playModeLabels } from '../lib/library'
 import { formatLocalDateTime, formatUtcDate } from '../lib/formatDate'
 import { SessionsList } from './SessionsList'
 import { MetadataDialog } from './MetadataDialog'
-import { useMedia, type MediaItemView } from '../lib/metadata'
+import { mediaKindLabels, useMedia, type MediaItemView } from '../lib/metadata'
 
 // Labels match the library filter (FilterPanel) and the play mode names of the contract.
 const statusLabels: Record<GameStatus, string> = {
@@ -184,15 +184,6 @@ function MediaSection({ items }: { items: MediaItemView[] }): JSX.Element | null
       </ul>
     </section>
   )
-}
-
-const mediaKindLabels: Record<MediaItemView['kind'], string> = {
-  cover: 'Capa',
-  screenshot: 'Screenshot',
-  title: 'Tela de título',
-  banner: 'Banner',
-  background: 'Fundo',
-  select: 'Tela de seleção',
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }): JSX.Element {

@@ -42,6 +42,20 @@ export type MediaItemView = {
   thumbUrl: string
 }
 
+export const mediaKindLabels: Record<MediaKind, string> = {
+  cover: 'Capa',
+  screenshot: 'Screenshot',
+  title: 'Tela de título',
+  banner: 'Banner',
+  background: 'Fundo',
+  select: 'Tela de seleção',
+}
+
+// orderMedia puts the covers first and keeps the order of the rest [UIX-026]; it does not mutate.
+export function orderMedia(items: MediaItemView[]): MediaItemView[] {
+  return [...items.filter((m) => m.kind === 'cover'), ...items.filter((m) => m.kind !== 'cover')]
+}
+
 // The matching threshold of MID-002: a candidate at or above it is applied without asking.
 export const acceptedScore = 0.8
 
