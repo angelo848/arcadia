@@ -83,10 +83,8 @@ func runUI(args []string) int {
 	}
 
 	app := NewApp(cfg)
-	err = wails.Run(&options.App{
+	appOptions := &options.App{
 		Title:       "Arcadia",
-		Width:       1024,
-		Height:      768,
 		AssetServer: &assetserver.Options{Assets: assets, Handler: http.HandlerFunc(app.serveMedia)},
 		OnStartup:   app.startup,
 		OnShutdown:  app.shutdown,
@@ -97,7 +95,9 @@ func runUI(args []string) int {
 			UniqueId:               singleInstanceID,
 			OnSecondInstanceLaunch: app.onSecondInstance,
 		},
-	})
+	}
+	applyWindowOptions(appOptions)
+	err = wails.Run(appOptions)
 	if err != nil {
 		boot.Error("falha ao executar a UI", "error", err.Error())
 		return 1
