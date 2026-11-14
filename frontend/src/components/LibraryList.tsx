@@ -207,6 +207,7 @@ export function LibraryList({
               aria-selected={selected}
               data-game-id={g.id}
               data-bigbox-item
+              data-bigbox-card
               tabIndex={tabbable ? 0 : -1}
               onClick={() => onSelect(g.id)}
               onDoubleClick={() => onLaunch(g.id)}

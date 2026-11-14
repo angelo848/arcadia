@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
@@ -189,8 +189,43 @@ export default function App() {
     void exitBigBox()
     setBigBox(false)
   }
-  // B (or Esc) goes back one page; on the library it leaves the Big Box (BIG-002).
+  // The game whose "Jogar" gets the focus once the panel shows it (A on a card, a choice in the
+  // statistics) [UIX-044, UIX-045].
+  const pendingPlayFocus = useRef<number | null>(null)
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+  const focusPlayOf = (gameId: number): boolean => {
+    const s = selectionRef.current
+    if (s.kind !== 'shown' || s.gameId !== gameId) {
+      return false
+    }
+    const btn = document.querySelector<HTMLElement>('aside [data-bigbox-play]')
+    btn?.focus()
+    return btn !== null
+  }
+  const wantPlayFocus = (gameId: number) => {
+    pendingPlayFocus.current = focusPlayOf(gameId) ? null : gameId
+  }
+  useEffect(() => {
+    const id = pendingPlayFocus.current
+    if (id !== null && selection.kind === 'shown' && selection.gameId === id && focusPlayOf(id)) {
+      pendingPlayFocus.current = null
+    }
+  })
+  // B (or Esc): from the panel back to the card of the game in focus; from the statistics back to
+  // the library; on the library it leaves the Big Box [UIX-044].
   const bigBoxBack = () => {
+    const inPanel = document.activeElement?.closest('aside') != null
+    if (inPanel && !showingStats) {
+      const target =
+        (focusedId !== null
+          ? document.querySelector<HTMLElement>(`[role="option"][data-game-id="${focusedId}"]`)
+          : null) ?? document.querySelector<HTMLElement>('[role="listbox"][aria-label="Jogos"]')
+      if (target) {
+        target.focus()
+        return
+      }
+    }
     if (showingStats) {
       setShowingStats(false)
     } else {
@@ -201,6 +236,8 @@ export default function App() {
     enabled: bigBox,
     pageKey: showingStats ? 'stats' : 'library',
     onBack: bigBoxBack,
+    onPlay: (id) => play(id),
+    onOpenCard: wantPlayFocus,
   })
   useEffect(() => {
     const onF11 = (e: KeyboardEvent) => {
@@ -379,6 +416,9 @@ export default function App() {
           <StatsPage
             onOpenGame={(id) => {
               setShowingStats(false)
+              if (bigBox) {
+                wantPlayFocus(id)
+              }
               select(id)
             }}
             onBack={() => setShowingStats(false)}

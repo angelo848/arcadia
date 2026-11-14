@@ -51,14 +51,14 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
       {current && (
         <div className="flex items-center justify-between gap-2 text-sm text-muted">
           {n > 1 && (
-            <button type="button" className={btn} aria-label="Imagem anterior" onClick={() => move(-1)}>
+            <button type="button" data-bigbox-item className={btn} aria-label="Imagem anterior" onClick={() => move(-1)}>
               ‹
             </button>
           )}
           <span>{mediaKindLabels[current.kind]}</span>
           <span aria-live="polite">{`${Math.min(index, n - 1) + 1} de ${n}`}</span>
           {n > 1 && (
-            <button type="button" className={btn} aria-label="Próxima imagem" onClick={() => move(1)}>
+            <button type="button" data-bigbox-item className={btn} aria-label="Próxima imagem" onClick={() => move(1)}>
               ›
             </button>
           )}

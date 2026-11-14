@@ -75,6 +75,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
         </p>
         <button
           type="button"
+          data-bigbox-item
           onClick={() => {
             emitRef.current({ type: 'retry' })
             void q.refetch()

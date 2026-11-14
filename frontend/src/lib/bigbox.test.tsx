@@ -1,151 +1,251 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
-import { bigBoxItems, enterBigBox, exitBigBox, gridNext, pickNext, useBigBoxNav, type Box } from './bigbox'
+import { bigBoxItems, cardGrid, enterBigBox, exitBigBox, gridNext, nextFocus, pickNext, useBigBoxNav, type Box } from './bigbox'
 
 // A 2 x 2 grid of boxes: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right.
-const grid: Box[] = [
+const boxes: Box[] = [
   { x: 0, y: 0, w: 100, h: 100 },
   { x: 120, y: 0, w: 100, h: 100 },
   { x: 0, y: 120, w: 100, h: 100 },
   { x: 120, y: 120, w: 100, h: 100 },
 ]
 
-describe('pickNext (pages without cards)', () => {
-  it('BIG-002/move o foco na direção pedida e fica quando não há item', () => {
-    expect(pickNext(grid, 0, 'right')).toBe(1)
-    expect(pickNext(grid, 0, 'down')).toBe(2)
-    expect(pickNext(grid, 3, 'left')).toBe(2)
-    expect(pickNext(grid, 0, 'left')).toBe(0)
-    expect(pickNext(grid, 0, 'up')).toBe(0)
+describe('pickNext (itens fora da grade)', () => {
+  it('UIX-044/move o foco na direção pedida e fica quando não há item', () => {
+    expect(pickNext(boxes, 0, 'right')).toBe(1)
+    expect(pickNext(boxes, 0, 'down')).toBe(2)
+    expect(pickNext(boxes, 3, 'left')).toBe(2)
+    expect(pickNext(boxes, 0, 'left')).toBe(0)
+    expect(pickNext(boxes, 0, 'up')).toBe(0)
   })
 })
 
-// Board renders three game cards like the library: a title, "Jogar" and "Sem contar tempo", in a
-// 2-column grid (card 0 and 1 in the first row, card 2 below card 0).
-function Board({ onBack }: { onBack: () => void }) {
-  useBigBoxNav({ enabled: true, pageKey: 'library', onBack })
+// jsdom has no layout: every element with data-x / data-y reports that position (100 x 30).
+function placeByData() {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const left = Number(this.dataset.x ?? 0)
+    const top = Number(this.dataset.y ?? 0)
+    return { left, top, right: left + 100, bottom: top + 30, width: 100, height: 30, x: left, y: top, toJSON: () => ({}) } as DOMRect
+  })
+}
+
+function el(x: number, y: number, attrs: Record<string, string> = {}): HTMLElement {
+  const e = document.createElement('div')
+  e.dataset.x = String(x)
+  e.dataset.y = String(y)
+  e.tabIndex = 0
+  e.setAttribute('data-bigbox-item', '')
+  for (const [k, v] of Object.entries(attrs)) {
+    e.setAttribute(k, v)
+  }
+  document.body.appendChild(e)
+  return e
+}
+
+function card(x: number, y: number, id = 1): HTMLElement {
+  return el(x, y, { 'data-bigbox-card': '', 'data-game-id': String(id) })
+}
+
+describe('cardGrid e gridNext (um item por cartão)', () => {
+  beforeEach(() => {
+    placeByData()
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  it('UIX-044/cardGrid agrupa por [data-bigbox-card]: linhas pelo topo, colunas pela esquerda, um item por cartão', () => {
+    const left = el(0, 0)
+    const c3 = card(0, 100, 3)
+    const c2 = card(200, 0, 2)
+    const c1 = card(100, 0, 1)
+    const grid = cardGrid([left, c3, c2, c1])
+    expect(grid).not.toBeNull()
+    expect(grid?.map((row) => row.map((c) => c.items))).toEqual([[[c1], [c2]], [[c3]]])
+  })
+
+  it('UIX-044/cardGrid devolve null quando a página não tem cartões', () => {
+    expect(cardGrid([el(0, 0), el(0, 50)])).toBeNull()
+    expect(cardGrid([])).toBeNull()
+  })
+
+  it('UIX-044/gridNext move cartão a cartão e cruza a linha pela mesma coluna', () => {
+    const a = card(100, 0, 1)
+    const b = card(200, 0, 2)
+    const c = card(100, 100, 3)
+    const grid = [[{ items: [a] }, { items: [b] }], [{ items: [c] }]]
+    expect(gridNext(grid, a, 'right')).toBe(b)
+    expect(gridNext(grid, b, 'left')).toBe(a)
+    expect(gridNext(grid, a, 'down')).toBe(c)
+    expect(gridNext(grid, c, 'up')).toBe(a)
+    expect(gridNext(grid, b, 'down')).toBe(c) // the column clamps to the shorter row
+  })
+
+  it('UIX-044/gridNext devolve null nas quatro bordas da grade', () => {
+    const a = card(100, 0, 1)
+    const b = card(200, 0, 2)
+    const c = card(100, 100, 3)
+    const grid = [[{ items: [a] }, { items: [b] }], [{ items: [c] }]]
+    expect(gridNext(grid, a, 'left')).toBeNull()
+    expect(gridNext(grid, a, 'up')).toBeNull()
+    expect(gridNext(grid, b, 'right')).toBeNull()
+    expect(gridNext(grid, b, 'up')).toBeNull()
+    expect(gridNext(grid, c, 'down')).toBeNull()
+    expect(gridNext(grid, c, 'left')).toBeNull()
+    expect(gridNext(grid, c, 'right')).toBeNull()
+  })
+
+  it('UIX-044/nextFocus: direita na borda vai ao painel, esquerda na borda vai à coluna esquerda', () => {
+    const search = el(0, 10)
+    const platform = el(0, 60)
+    const c1 = card(300, 0, 1)
+    const c2 = card(420, 0, 2)
+    const play = el(900, 10, { 'data-bigbox-play': '' })
+    const edit = el(900, 60)
+    const items = [search, platform, c1, c2, play, edit]
+    expect(nextFocus(items, c1, 'right')).toBe(c2)
+    expect(nextFocus(items, c2, 'right')).toBe(play)
+    expect(nextFocus(items, c1, 'left')).toBe(search)
+  })
+
+  it('UIX-044/nextFocus fora de um cartão usa a geometria de todos os itens', () => {
+    const search = el(0, 10)
+    const platform = el(0, 60)
+    const c1 = card(300, 0, 1)
+    const play = el(900, 10)
+    const edit = el(900, 60)
+    const items = [search, platform, c1, play, edit]
+    expect(nextFocus(items, play, 'down')).toBe(edit)
+    expect(nextFocus(items, play, 'left')).toBe(c1)
+    expect(nextFocus(items, search, 'down')).toBe(platform)
+  })
+})
+
+// Board: a left item, three cards (two in the first row, one below) and two panel items.
+function Board({ onBack, onPlay, pageKey = 'library' }: { onBack: () => void; onPlay: (id: number) => void; pageKey?: 'library' | 'stats' }) {
+  useBigBoxNav({ enabled: true, pageKey, onBack, onPlay })
+  const click = (name: string) => () => {
+    ;(window as unknown as Record<string, string[]>).clicks.push(name)
+  }
   return (
     <div>
+      <button type="button" data-bigbox-item data-x="0" data-y="0" onClick={click('left')}>
+        Esquerda
+      </button>
       {[1, 2, 3].map((n) => (
-        <article key={n}>
-          <div data-bigbox-item tabIndex={0} onClick={() => ((window as unknown as { opened?: number }).opened = n)}>
-            Jogo {n}
-          </div>
-          <button type="button" data-bigbox-item data-bigbox-play onClick={() => ((window as unknown as { played?: number }).played = n)}>
-            Jogar {n}
-          </button>
-          <button type="button" data-bigbox-item onClick={() => ((window as unknown as { untracked?: number }).untracked = n)}>
-            Sem contar {n}
-          </button>
-        </article>
+        <div
+          key={n}
+          role="option"
+          aria-selected={false}
+          tabIndex={0}
+          data-bigbox-item
+          data-bigbox-card
+          data-game-id={n}
+          data-x={300 + ((n - 1) % 2) * 120}
+          data-y={Math.floor((n - 1) / 2) * 120}
+          onClick={click(`card${n}`)}
+        >
+          Jogo {n}
+        </div>
       ))}
+      <button type="button" data-bigbox-item data-bigbox-play data-x="900" data-y="0" onClick={click('play')}>
+        Jogar
+      </button>
+      <button type="button" data-bigbox-item data-x="900" data-y="60" onClick={click('edit')}>
+        Editar
+      </button>
     </div>
   )
 }
 
-// jsdom has no layout: each card is placed on a grid, two per row, 120 px apart; its items sit at the
-// top of the card, one under the other.
-function placeCards() {
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    const articles = Array.from(document.querySelectorAll('article'))
-    const card = this.closest('article')
-    const ci = card ? articles.indexOf(card) : -1
-    const left = (Math.max(ci, 0) % 2) * 120
-    const top = Math.floor(Math.max(ci, 0) / 2) * 120
-    const slot = card ? Array.from(card.querySelectorAll('[data-bigbox-item]')).indexOf(this) : 0
-    const y = top + slot * 30
-    return { left, top: y, right: left + 100, bottom: y + 30, width: 100, height: 30, x: left, y, toJSON: () => ({}) } as DOMRect
-  })
-}
+const w = window as unknown as { clicks: string[] }
 
-const win = window as unknown as { opened?: number; played?: number; untracked?: number }
-
-describe('useBigBoxNav (BIG-002, BIG-003)', () => {
+describe('useBigBoxNav (UIX-044)', () => {
   beforeEach(() => {
     Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [] })
-    placeCards()
+    placeByData()
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
-    delete win.opened
-    delete win.played
-    delete win.untracked
+    w.clicks = []
   })
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('BIG-002/o foco começa no título do primeiro cartão', () => {
-    render(<Board onBack={vi.fn()} />)
+  const cardEl = (n: number) => bigBoxItems().find((e) => e.dataset.gameId === String(n)) as HTMLElement
+  const key = (k: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(window, { key: k, ...init })
+
+  it('UIX-044/o foco começa no primeiro item da página', () => {
+    render(<Board onBack={vi.fn()} onPlay={vi.fn()} />)
     expect(document.activeElement).toBe(bigBoxItems()[0])
   })
 
-  it('BIG-002/para baixo: título, Jogar, Sem contar tempo; depois o cartão de baixo', () => {
-    render(<Board onBack={vi.fn()} />)
-    const [t1, j1, s1, , , , t3] = bigBoxItems()
-    expect(document.activeElement).toBe(t1)
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(j1)
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(s1)
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(t3)
+  it('UIX-044/cada cartão é um item: direita e baixo andam cartão a cartão', () => {
+    render(<Board onBack={vi.fn()} onPlay={vi.fn()} />)
+    cardEl(1).focus()
+    key('ArrowRight')
+    expect(document.activeElement).toBe(cardEl(2))
+    key('ArrowLeft')
+    expect(document.activeElement).toBe(cardEl(1))
+    key('ArrowDown')
+    expect(document.activeElement).toBe(cardEl(3))
+    key('ArrowUp')
+    expect(document.activeElement).toBe(cardEl(1))
   })
 
-  it('BIG-002/para cima volta pela ordem do cartão', () => {
-    render(<Board onBack={vi.fn()} />)
-    const [t1, j1, s1] = bigBoxItems()
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(s1)
-    fireEvent.keyDown(window, { key: 'ArrowUp' })
-    expect(document.activeElement).toBe(j1)
-    fireEvent.keyDown(window, { key: 'ArrowUp' })
-    expect(document.activeElement).toBe(t1)
+  it('UIX-044/na borda direita da grade o foco vai ao painel e na esquerda à coluna esquerda', () => {
+    render(<Board onBack={vi.fn()} onPlay={vi.fn()} />)
+    cardEl(2).focus()
+    key('ArrowRight')
+    expect(document.activeElement?.textContent).toBe('Jogar')
+    cardEl(1).focus()
+    key('ArrowLeft')
+    expect(document.activeElement?.textContent).toBe('Esquerda')
   })
 
-  it('BIG-002/esquerda vai para o cartão anterior, e no primeiro cartão não faz nada', () => {
-    render(<Board onBack={vi.fn()} />)
-    const items = bigBoxItems()
-    fireEvent.keyDown(window, { key: 'ArrowRight' })
-    expect(document.activeElement).toBe(items[3]) // title of card 2
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(document.activeElement).toBe(items[0]) // back to card 1
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(document.activeElement).toBe(items[0]) // first card: stays
+  it('UIX-044/Enter num cartão faz click() nele', () => {
+    render(<Board onBack={vi.fn()} onPlay={vi.fn()} />)
+    cardEl(2).focus()
+    key('Enter')
+    expect(w.clicks).toEqual(['card2'])
   })
 
-  it('BIG-002/a esquerda a partir de Jogar vai para o Jogar do cartão anterior, não para o próprio cartão', () => {
-    render(<Board onBack={vi.fn()} />)
-    const items = bigBoxItems()
-    fireEvent.keyDown(window, { key: 'ArrowRight' }) // card 2 title
-    fireEvent.keyDown(window, { key: 'ArrowDown' }) // card 2 Jogar
-    expect(document.activeElement).toBe(items[4])
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(document.activeElement).toBe(items[1]) // card 1 Jogar
+  it('UIX-044/Enter em item que não é cartão fica com a ativação nativa (o hook não clica)', () => {
+    render(<Board onBack={vi.fn()} onPlay={vi.fn()} />)
+    ;(bigBoxItems().find((e) => e.textContent === 'Editar') as HTMLElement).focus()
+    key('Enter')
+    expect(w.clicks).toEqual([])
   })
 
-  it('BIG-003/Enter ativa o item focado (ativação nativa do navegador)', () => {
-    render(<Board onBack={vi.fn()} />)
-    fireEvent.keyDown(window, { key: 'ArrowRight' })
-    fireEvent.click(document.activeElement as HTMLElement)
-    expect(win.opened).toBe(2)
+  it('UIX-044/Shift+Enter num cartão chama onPlay com o id do cartão, uma vez', () => {
+    const onPlay = vi.fn()
+    render(<Board onBack={vi.fn()} onPlay={onPlay} />)
+    cardEl(3).focus()
+    key('Enter', { shiftKey: true })
+    expect(onPlay).toHaveBeenCalledTimes(1)
+    expect(onPlay).toHaveBeenCalledWith(3)
+    expect(w.clicks).toEqual([])
   })
 
-  it('BIG-002/Shift+Enter inicia o jogo do cartão focado', () => {
-    render(<Board onBack={vi.fn()} />)
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
-    expect(win.played).toBe(1)
+  it('UIX-044/Shift+Enter fora de um cartão não chama onPlay', () => {
+    const onPlay = vi.fn()
+    render(<Board onBack={vi.fn()} onPlay={onPlay} />)
+    ;(bigBoxItems().find((e) => e.textContent === 'Editar') as HTMLElement).focus()
+    key('Enter', { shiftKey: true })
+    expect(onPlay).not.toHaveBeenCalled()
   })
 
-  it('BIG-001/Esc chama o voltar da página', () => {
+  it('UIX-044/Esc chama o voltar da página', () => {
     const onBack = vi.fn()
-    render(<Board onBack={onBack} />)
-    fireEvent.keyDown(window, { key: 'Escape' })
+    render(<Board onBack={onBack} onPlay={vi.fn()} />)
+    key('Escape')
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
-  it('BIG-002/controle: direcional move, A ativa, Y inicia, B volta', () => {
+  it('UIX-044/controle: direcional move, A faz click no cartão, Y chama onPlay, B volta', () => {
     const onBack = vi.fn()
+    const onPlay = vi.fn()
     const pressed = (index: number) => {
       const buttons = Array.from({ length: 16 }, (_, i) => ({ pressed: i === index }))
       return { buttons, axes: [0, 0] } as unknown as Gamepad
@@ -157,7 +257,8 @@ describe('useBigBoxNav (BIG-002, BIG-003)', () => {
       frame = cb
       return 1
     })
-    render(<Board onBack={onBack} />)
+    render(<Board onBack={onBack} onPlay={onPlay} />)
+    cardEl(1).focus()
 
     const step = (index: number) => {
       pad = pressed(index)
@@ -165,45 +266,22 @@ describe('useBigBoxNav (BIG-002, BIG-003)', () => {
       pad = pressed(-1)
       act(() => frame(0))
     }
-    step(15) // right: card 2 title
-    expect(document.activeElement).toBe(bigBoxItems()[3])
+    step(15) // right: card 2
+    expect(document.activeElement).toBe(cardEl(2))
     step(0) // A
-    expect(win.opened).toBe(2)
+    expect(w.clicks).toEqual(['card2'])
     step(3) // Y
-    expect(win.played).toBe(2)
+    expect(onPlay).toHaveBeenCalledTimes(1)
+    expect(onPlay).toHaveBeenCalledWith(2)
+    step(15) // right edge: the panel
+    expect(document.activeElement?.textContent).toBe('Jogar')
     step(1) // B
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('gridNext (cards)', () => {
-  it('BIG-002/cartões em duas linhas: cima e baixo cruzam a linha pela mesma coluna', () => {
-    const card = (id: string) => {
-      const a = document.createElement('article')
-      const items = [0, 1].map((i) => {
-        const el = document.createElement('div')
-        el.setAttribute('data-bigbox-item', `${id}-${i}`)
-        a.appendChild(el)
-        return el
-      })
-      document.body.appendChild(a)
-      return { items, el: a }
-    }
-    const a = card('a')
-    const b = card('b')
-    const c = card('c')
-    // Row 1: a, b. Row 2: c, under a.
-    const rows = [[{ items: a.items }, { items: b.items }], [{ items: c.items }]]
-    expect(gridNext(rows, a.items[1], 'down')).toBe(c.items[0]) // last item of a: the card below, first item
-    expect(gridNext(rows, c.items[0], 'up')).toBe(a.items[1]) // first item of c: last item of the card above
-    expect(gridNext(rows, a.items[1], 'right')).toBe(b.items[1]) // same slot of the next card
-    expect(gridNext(rows, b.items[0], 'left')).toBe(a.items[0])
-    expect(gridNext(rows, b.items[1], 'down')).toBe(c.items[0]) // the column clamps to the card below a
-  })
-})
-
-describe('enterBigBox / exitBigBox (BIG-001)', () => {
-  it('BIG-001/fora do aplicativo desktop a tela cheia não faz nada e não falha', async () => {
+describe('enterBigBox / exitBigBox', () => {
+  it('UIX-044/fora do aplicativo desktop a tela cheia não faz nada e não falha', async () => {
     await expect(enterBigBox()).resolves.toBeUndefined()
     await expect(exitBigBox()).resolves.toBeUndefined()
   })

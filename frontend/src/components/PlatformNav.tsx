@@ -31,6 +31,7 @@ export function PlatformNav({
       <button
         type="button"
         aria-label={hasCatalog ? `Todos, ${total} jogos` : 'Todos'}
+        data-bigbox-item
         aria-current={allCurrent ? 'true' : undefined}
         onClick={() => {
           if (!allCurrent) onChange(undefined)
@@ -47,6 +48,7 @@ export function PlatformNav({
             key={p.id}
             type="button"
             aria-label={`${p.name}, ${p.gameCount} jogos`}
+            data-bigbox-item
             aria-current={current ? 'true' : undefined}
             onClick={() => {
               if (!current) onChange([p.id])

@@ -41,24 +41,18 @@ export function pickNext(items: Box[], current: number, dir: Direction): number 
   return best
 }
 
-// Card is a game card of the library: its focusable items in order (title, Jogar, Sem contar tempo).
+// Card is a game card of the library: one focusable item (UIX-044).
 export type Card = { items: HTMLElement[] }
 
-// cardGrid arranges the cards of the page in rows and columns, by where they are on the screen. The
-// rows are the cards with the same top edge (within 40 px); the columns follow the left edge. It returns
-// null when the page has no cards.
+// cardGrid arranges the cards of the page ([data-bigbox-card]) in rows and columns, by where they are on
+// the screen. The rows are the cards with the same top edge (within 40 px); the columns follow the left
+// edge. It returns null when the page has no cards.
 export function cardGrid(items: HTMLElement[]): Card[][] | null {
-  const articles: HTMLElement[] = []
-  for (const it of items) {
-    const card = it.closest<HTMLElement>('article')
-    if (card && !articles.includes(card)) {
-      articles.push(card)
-    }
-  }
-  if (articles.length === 0) {
+  const cards = items.filter((it) => it.hasAttribute('data-bigbox-card'))
+  if (cards.length === 0) {
     return null
   }
-  const placed = articles
+  const placed = cards
     .map((el) => {
       const r = el.getBoundingClientRect()
       return { el, top: r.top, left: r.left }
@@ -73,65 +67,37 @@ export function cardGrid(items: HTMLElement[]): Card[][] | null {
       rows.push([p])
     }
   }
-  return rows.map((row) =>
-    row
-      .sort((a, b) => a.left - b.left)
-      .map((p) => ({ items: items.filter((it) => p.el.contains(it)) })),
-  )
+  return rows.map((row) => row.sort((a, b) => a.left - b.left).map((p) => ({ items: [p.el] })))
 }
 
-// gridNext moves the focus between the cards: left and right go to the neighbouring card, keeping the
-// same item of the card; up and down go through the items of a card and then to the next or previous
-// row. It stays where it is when there is no card that way (BIG-002).
-export function gridNext(grid: Card[][], current: HTMLElement, dir: Direction): HTMLElement {
+// gridNext moves the focus between the cards: left and right go to the neighbouring card; up and down go
+// to the previous or next row, in the same column (clamped to the shorter row). It returns null at the
+// edge of the grid, where the caller decides (UIX-044).
+export function gridNext(grid: Card[][], current: HTMLElement, dir: Direction): HTMLElement | null {
   let row = -1
   let col = -1
-  let slot = -1
   grid.forEach((cards, r) =>
     cards.forEach((card, c) => {
-      const s = card.items.indexOf(current)
-      if (s >= 0) {
+      if (card.items.includes(current)) {
         row = r
         col = c
-        slot = s
       }
     }),
   )
   if (row < 0) {
-    return current
+    return null
   }
   const cards = grid[row]
-  const card = cards[col]
   switch (dir) {
     case 'left':
     case 'right': {
       const next = col + (dir === 'left' ? -1 : 1)
-      if (next < 0 || next >= cards.length) {
-        return current
-      }
-      const target = cards[next]
-      return target.items[Math.min(slot, target.items.length - 1)]
+      return next < 0 || next >= cards.length ? null : cards[next].items[0]
     }
-    case 'down': {
-      if (slot < card.items.length - 1) {
-        return card.items[slot + 1]
-      }
-      if (row + 1 >= grid.length) {
-        return current
-      }
-      const below = grid[row + 1]
-      return below[Math.min(col, below.length - 1)].items[0]
-    }
+    case 'down':
     case 'up': {
-      if (slot > 0) {
-        return card.items[slot - 1]
-      }
-      if (row - 1 < 0) {
-        return current
-      }
-      const above = grid[row - 1]
-      const target = above[Math.min(col, above.length - 1)]
-      return target.items[target.items.length - 1]
+      const target = grid[row + (dir === 'up' ? -1 : 1)]
+      return target ? target[Math.min(col, target.length - 1)].items[0] : null
     }
   }
 }
@@ -164,23 +130,22 @@ export function bigBoxItems(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>('[data-bigbox-item]'))
 }
 
-// focusedIndex is the index of the item that has the focus, or -1.
-function focusedIndex(items: HTMLElement[]): number {
-  return items.indexOf(document.activeElement as HTMLElement)
+// focusedCard is the focused game card, if the focus is on one.
+function focusedCard(): HTMLElement | null {
+  const el = document.activeElement as HTMLElement | null
+  return el && el.hasAttribute('data-bigbox-card') && el.dataset.gameId !== undefined ? el : null
 }
 
-// playButtonOf finds the "Jogar" button of the card that holds the item, if any (BIG-002).
-function playButtonOf(item: HTMLElement | undefined): HTMLElement | null {
-  return item?.closest('article')?.querySelector<HTMLElement>('[data-bigbox-play]') ?? null
-}
-
-// nextFocus is the item to focus when the focus moves in a direction from the focused item. On the cards
-// the card grid decides; on the other pages the geometry does.
+// nextFocus is the item to focus when the focus moves in a direction from the focused item. On a card the
+// card grid decides; at its edge, and on the other items, the geometry of all the items does (UIX-044).
 export function nextFocus(items: HTMLElement[], focused: HTMLElement | null, dir: Direction): HTMLElement {
   const current = focused && items.includes(focused) ? items.indexOf(focused) : 0
   const grid = cardGrid(items)
-  if (grid && focused && items.includes(focused) && focused.closest('article')) {
-    return gridNext(grid, focused, dir)
+  if (grid && focused && items.includes(focused) && focused.hasAttribute('data-bigbox-card')) {
+    const next = gridNext(grid, focused, dir)
+    if (next) {
+      return next
+    }
   }
   const boxes: Box[] = items.map((el) => {
     const r = el.getBoundingClientRect()
@@ -189,14 +154,30 @@ export function nextFocus(items: HTMLElement[], focused: HTMLElement | null, dir
   return items[pickNext(boxes, current, dir)]
 }
 
-// useBigBoxNav drives the Big Box with the keyboard and the gamepad (BIG-002, BIG-003). The directions
-// move the focus between the items of the page; A (or Enter) activates the focused item; Y (or Shift+Enter)
-// starts the game of the focused card; B (or Esc) goes back one page, and on the library it leaves the
-// Big Box. Gamepad buttons follow the standard mapping of the Gamepad API. Each page (pageKey) starts with
-// the focus on its first item.
-export function useBigBoxNav({ enabled, pageKey, onBack }: { enabled: boolean; pageKey: string; onBack: () => void }): void {
+// useBigBoxNav drives the Big Box with the keyboard and the gamepad (BIG-002, BIG-003, UIX-044). The
+// directions move the focus between the items of the page; A (or Enter on a card) clicks the focused item
+// (onOpenCard, when given, hears about the card first); Y (or Shift+Enter) on a card calls onPlay with its
+// game; B (or Esc) calls onBack. Gamepad buttons follow the standard mapping of the Gamepad API. Each page
+// (pageKey) starts with the focus on its first item.
+export function useBigBoxNav({
+  enabled,
+  pageKey,
+  onBack,
+  onPlay,
+  onOpenCard,
+}: {
+  enabled: boolean
+  pageKey: 'library' | 'stats'
+  onBack: () => void
+  onPlay: (gameId: number) => void
+  onOpenCard?: (gameId: number) => void
+}): void {
   const backRef = useRef(onBack)
   backRef.current = onBack
+  const playRef = useRef(onPlay)
+  playRef.current = onPlay
+  const openRef = useRef(onOpenCard)
+  openRef.current = onOpenCard
 
   // A new page: the focus goes to its first item, once the page is in the DOM.
   useEffect(() => {
@@ -223,13 +204,18 @@ export function useBigBoxNav({ enabled, pageKey, onBack }: { enabled: boolean; p
     const activate = () => {
       const focused = document.activeElement as HTMLElement | null
       if (focused && bigBoxItems().includes(focused)) {
+        const card = focusedCard()
+        if (card) {
+          openRef.current?.(Number(card.dataset.gameId))
+        }
         focused.click()
       }
     }
     const play = () => {
-      const items = bigBoxItems()
-      const i = focusedIndex(items)
-      playButtonOf(i >= 0 ? items[i] : undefined)?.click()
+      const card = focusedCard()
+      if (card) {
+        playRef.current(Number(card.dataset.gameId))
+      }
     }
 
     const onKey = (e: KeyboardEvent) => {
@@ -250,11 +236,16 @@ export function useBigBoxNav({ enabled, pageKey, onBack }: { enabled: boolean; p
           backRef.current()
           break
         case 'Enter':
-          // Enter on the focused item is the browser's own activation; Shift+Enter starts the game.
-          if (!e.shiftKey) {
+          // Enter on a card clicks it and Shift+Enter starts its game; on any other item Enter is the
+          // browser's own activation.
+          if (!focusedCard()) {
             return
           }
-          play()
+          if (e.shiftKey) {
+            play()
+          } else {
+            activate()
+          }
           break
         default:
           return
