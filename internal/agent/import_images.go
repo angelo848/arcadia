@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ type importImages interface {
 type imageImporter struct {
 	files *media.Store
 	st    interface {
+		ListMedia(ctx context.Context, gameID int64) ([]store.MediaRow, error)
 		AddMedia(ctx context.Context, m store.MediaRow) (bool, error)
 	}
 	clock domain.Clock
@@ -31,8 +33,19 @@ type imageImporter struct {
 
 // CopyLaunchBox copies the images of one game and returns how many were recorded.
 func (im imageImporter) CopyLaunchBox(ctx context.Context, gameID int64, root, platform, title string) (int, error) {
+	existing, err := im.st.ListMedia(ctx, gameID)
+	if err != nil {
+		return 0, fmt.Errorf("list media: %w", err)
+	}
+	have := map[string]int{}
+	for _, m := range existing {
+		have[m.Kind]++
+	}
 	n := 0
 	for _, ref := range importers.LaunchBoxImages(root, platform, title) {
+		if have[ref.Kind] >= domain.MediaKindLimit(ref.Kind) {
+			continue
+		}
 		stored, _, err := im.files.Import(ctx, gameID, ref.Path)
 		if err != nil {
 			im.log.Warn("imagem do LaunchBox não copiada", "game", gameID, "file", filepath.Base(ref.Path), "error", err.Error())
@@ -46,10 +59,22 @@ func (im imageImporter) CopyLaunchBox(ctx context.Context, gameID int64, root, p
 			return n, err
 		}
 		if added {
+			have[ref.Kind]++
 			n++
 		}
 	}
 	return n, nil
+}
+
+// logUnmappedFolders logs once per platform the LaunchBox image folders Arcadia does not read (AJU-022).
+func logUnmappedFolders(log *slog.Logger, seen map[string]bool, root, platform string) {
+	if seen[platform] {
+		return
+	}
+	seen[platform] = true
+	if folders := importers.UnmappedLaunchBoxFolders(root, platform); len(folders) > 0 {
+		log.Info("pastas de imagem do LaunchBox não lidas", "platform", platform, "folders", folders)
+	}
 }
 
 // launchBoxRoot returns the LaunchBox folder (the one with Data and Images) for the Data\Platforms

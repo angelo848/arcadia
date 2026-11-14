@@ -190,6 +190,8 @@ func handleImportApply(ctx context.Context, st importStore, clock domain.Clock,
 	out := ipc.ImportApplyResult{Applied: []ipc.ImportApplied{}, Skipped: []ipc.ImportSkipped{}}
 	platforms := map[string]int64{}
 	now := clock.Now()
+	seen := map[string]bool{}
+	lbRoot := launchBoxRoot(p.LaunchBoxPath)
 	for _, c := range p.Candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -204,12 +206,18 @@ func handleImportApply(ctx context.Context, st importStore, clock domain.Clock,
 		switch {
 		case errors.Is(err, store.ErrDuplicate):
 			out.Skipped = append(out.Skipped, ipc.ImportSkipped{Title: c.Title, Reason: "duplicate"})
+			if c.Source == ipc.ImportSourceLaunchBox && lbRoot != "" {
+				logUnmappedFolders(log, seen, lbRoot, c.Platform)
+			}
 		case err != nil:
 			log.Error("falha ao gravar um jogo importado", "title", c.Title, "error", err.Error())
 			out.Skipped = append(out.Skipped, ipc.ImportSkipped{Title: c.Title, Reason: "failed"})
 		default:
 			out.Applied = append(out.Applied, ipc.ImportApplied{GameID: id, Title: g.Title})
 			copyLaunchBoxImages(ctx, imgs, log, p.LaunchBoxPath, c, id)
+			if c.Source == ipc.ImportSourceLaunchBox && lbRoot != "" {
+				logUnmappedFolders(log, seen, lbRoot, c.Platform)
+			}
 		}
 	}
 	return out, nil

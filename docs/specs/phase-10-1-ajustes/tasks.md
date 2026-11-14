@@ -1,7 +1,7 @@
 # Fase 10.1 — Ajustes da nova interface: tarefas
 
 - **Status:** rascunho para aprovação do usuário (2026-11-14).
-- **Requisitos:** [requirements.md](requirements.md) (aprovado; AJU-001..AJU-029, com AJU-023 e AJU-024 removidos) · **Design:** [design.md](design.md) · **Contrato:** nenhum novo; o IPC continua v0.11.0.
+- **Requisitos:** [requirements.md](requirements.md) (aprovado; IDs 001 a 029, com os números 23 e 24 removidos) · **Design:** [design.md](design.md) · **Contrato:** nenhum novo; o IPC continua v0.11.0.
 - **ADRs:** 0015, 0028, 0029, 0030.
 
 ## Dúvidas da spec (resolvidas na T01 ou aceitas)
@@ -201,7 +201,7 @@ export async function applyImportInLots(candidates: ImportCandidate[], launchbox
 | AJU-020 | T02, T03, T04 |
 | AJU-021 | T01, T03, T17 |
 | AJU-022 | T03, T05, T17 |
-| ~~AJU-023~~, ~~AJU-024~~ | removidos |
+| (números 23 e 24) | removidos, sem tarefa |
 | AJU-025 | T15 |
 | AJU-026 | T04, T16 |
 | AJU-027 | T16 |
