@@ -298,6 +298,8 @@ Dado um patch com um membro válido e outro inválido (ex.: `title` vazio com `d
 então `-32602` é devolvido e nenhum campo, nenhum nome de catálogo novo e nenhuma linha de `game_fts` mudam.
 
 ### EDT-008 — Criar plataforma
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-016, PLT-018, PLT-020): `platform.add` também devolve
+`created`, e plataformas passam a poder ser renomeadas e excluídas.
 Dado `name` e `category` (DOM-015), quando chamo `platform.add`, então: se já existe plataforma com o mesmo nome sem
 diferenciar maiúsculas, devolve a existente (a categoria enviada é ignorada); senão cria e devolve a nova. Nome ou
 categoria inválidos → `-32602`. Plataformas não são renomeadas nem apagadas nesta fase (pergunta 2).
@@ -422,11 +424,13 @@ então recebo `{sessions, total, offset}` na ordem de STO-027. Dado `gameId` ine
 `-32602`.
 
 ### IPC-048 — `platform.list` e `platform.add`
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-014): `Platform` ganha `seedKey`, `iconPath` e `gameCount`.
 Dado o banco, quando chamo `platform.list`, então recebo `{platforms: [{id, name, category}]}` em ordem de nome. Quando
 chamo `platform.add` com `{name, category}` válidos, então recebo `{platform}` (existente ou nova, EDT-008). Nome ou
 categoria inválidos, `-32602`.
 
 ### IPC-049 — `library.catalog`
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-014): `Platform` ganha `seedKey`, `iconPath` e `gameCount`.
 Dado o banco, quando chamo `library.catalog`, então recebo `{platforms, genres, companies, playModes}` (STO-030); listas
 nunca nulas; `playModes` tem os cinco nomes de DOM-014.
 

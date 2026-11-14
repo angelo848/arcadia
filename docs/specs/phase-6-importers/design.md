@@ -158,6 +158,8 @@ qualquer assumção; se o cliente recusar, o caminho exe por pasta (RUL-002) con
 - **Plataforma:** Steam, Epic, pasta avulsa e a plataforma `Windows` do LaunchBox entram na plataforma `PC` (categoria `pc`),
   para não duplicar plataforma. Outras plataformas do LaunchBox (PS2, Switch, etc.) não são importadas nesta fase: a
   importação do LaunchBox lê só `Windows.xml`.
+  · alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-002, PLT-026, PLT-028): `PC` passa a se chamar
+  "Windows"; Steam, Epic e a plataforma `Windows` do LaunchBox entram na plataforma de chave `windows`.
 - **Modos de jogo:** `Único jogador` → `single`; `Cooperativo` → `coop_online`; `Multiplayer` → `multi_online`. O XML não
   diz se é local ou online; a escolha é a mais comum. Se o usuário quiser outra, a edição do jogo (EDT-004) corrige.
 - **Tempo:** `PlayTime` em segundos. `PlayCount` zero com `PlayTime > 0` gera a sessão mesmo assim.

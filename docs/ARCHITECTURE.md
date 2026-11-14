@@ -269,6 +269,8 @@ type MetadataProvider interface {
 | **7** | Scrapers e gerenciador de mídia (capas, screenshots, title screen, vídeo) |
 | **8** | Estatísticas (tempo por jogo/semana/plataforma), modo tela cheia navegável por controle ("Big Box") |
 
+As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
+
 ---
 
 ## 10. Pontos em aberto para decidir

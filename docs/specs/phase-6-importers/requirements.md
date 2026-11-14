@@ -37,12 +37,14 @@ nada. Dado que o usuário marca candidatos e confirma (`import.apply`), então s
 por jogo. Nenhuma gravação acontece no `scan`.
 
 ### IMP-002 — Steam
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-026): "plataforma PC" passa a "plataforma Windows".
 Dado a pasta de instalação da Steam, quando leio `steamapps\libraryfolders.vdf` e os `appmanifest_<appid>.acf` de cada
 biblioteca, então cada app instalado vira um candidato com `name` (campo `name`), `appid`, `installdir` e plataforma PC.
 O candidato tem `launch_type = uri` e alvo `steam://rungameid/<appid>`. Dado uma biblioteca inexistente, então o scan
 não falha: devolve zero candidatos e um aviso.
 
 ### IMP-003 — Epic
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-026): "candidato PC" passa a candidato da plataforma Windows.
 Dado `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item`, quando leio cada arquivo (JSON), então cada item com
 `AppName`, `DisplayName` e `InstallLocation` vira candidato PC com `launch_type = uri` e alvo
 `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`. Itens sem `DisplayName` são ignorados e contados no

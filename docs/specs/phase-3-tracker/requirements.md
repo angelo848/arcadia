@@ -96,6 +96,8 @@ Dado o caminho de um executável, quando calculo o título padrão, então ele �
 
 ### GAM-001 — Adicionar jogo grava a linha
 · alterado em 2026-11-12 (docs/specs/phase-5-library, FTS-002): a linha de `game_fts` é gravada na mesma transação.
+· alterado em 2026-11-13 (docs/specs/phase-9-plataformas, PLT-027): a plataforma deixa de ser `PC` e passa a ser a de
+chave `windows` (criada como "Windows" se não existir); vale PLT-027.
 Dado um executável válido `P` (absoluto, existente, arquivo regular, extensão `.exe`) e o título `X`, quando o agente
 adiciona o jogo, então existe uma linha em `game` com `title = X`, `launch_type = 'exe'`,
 `launch_target = filepath.Clean(P)`, `working_dir` = pasta de `P`, `launch_args = ''`, `total_play_seconds = 0`,

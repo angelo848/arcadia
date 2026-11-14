@@ -39,3 +39,5 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0023](0023-execucao-como-administrador.md) | Execução de jogos como administrador | aceito |
 | [0024](0024-agente-sempre-como-administrador.md) | Remoção do início automático com o Windows | aceito |
 | [0025](0025-rastreio-por-processo-adotado.md) | Rastreio por processo adotado | aceito |
+| [0026](0026-plataformas-do-seed-com-chave-estavel.md) | Plataformas do seed com chave estável | aceito |
+| [0027](0027-nome-de-plataforma-unico-sem-maiusculas.md) | Nome de plataforma único sem diferenciar maiúsculas | aceito |
