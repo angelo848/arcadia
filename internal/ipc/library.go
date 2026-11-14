@@ -64,6 +64,12 @@ type Platform struct {
 	Category string `json:"category"`
 	// EmulatorID is the default emulator of the platform, nil when none (EMU-002).
 	EmulatorID *int64 `json:"emulatorId"`
+	// SeedKey is the key of the seed platform, nil for a user-created one (PLT-014).
+	SeedKey *string `json:"seedKey"`
+	// IconPath is the absolute path of the custom icon, nil for the default one (PLT-014).
+	IconPath *string `json:"iconPath"`
+	// GameCount is the number of games of the platform (PLT-014).
+	GameCount int64 `json:"gameCount"`
 }
 
 // PlatformListResult is the result of platform.list.
@@ -74,6 +80,8 @@ type PlatformListResult struct {
 // PlatformAddResult is the result of platform.add.
 type PlatformAddResult struct {
 	Platform Platform `json:"platform"`
+	// Created is false when the platform already existed (PLT-016).
+	Created bool `json:"created"`
 }
 
 // CatalogItem is a genre or a company of library.catalog: the database id the

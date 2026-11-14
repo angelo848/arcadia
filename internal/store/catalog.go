@@ -17,6 +17,9 @@ type Platform struct {
 	Name       string
 	Category   domain.PlatformCategory
 	EmulatorID *int64 // default emulator of the platform, nil when none (EMU-002)
+	SeedKey    string // stable seed key, "" when the platform is not from the seed (PLT-001)
+	Icon       string // user icon relative to data\media, "" when none (PLT-011)
+	GameCount  int64  // games of the platform, hidden ones included (PLT-014)
 }
 
 // CatalogItem is a genre or a company of the catalog: its database id, which the
@@ -52,13 +55,21 @@ func (s *Store) Platforms(ctx context.Context) ([]Platform, error) {
 
 // platformsWith is Platforms reading with q, so Catalog can share a transaction.
 func platformsWith(ctx context.Context, q *dbgen.Queries) ([]Platform, error) {
-	rows, err := q.ListPlatformsByName(ctx)
+	rows, err := q.ListPlatformsWithCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("store: list platforms: %w", err)
 	}
 	out := make([]Platform, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, platformFromModel(r))
+		out = append(out, Platform{
+			ID:         r.ID,
+			Name:       r.Name,
+			Category:   domain.PlatformCategory(r.Category),
+			EmulatorID: nullIntPtr(r.EmulatorID),
+			SeedKey:    r.SeedKey.String,
+			Icon:       r.Icon.String,
+			GameCount:  r.GameCount,
+		})
 	}
 	return out, nil
 }
@@ -152,5 +163,8 @@ func companyItems(rows []dbgen.Company) []CatalogItem {
 
 // platformFromModel maps a platform row to Platform.
 func platformFromModel(p dbgen.Platform) Platform {
-	return Platform{ID: p.ID, Name: p.Name, Category: domain.PlatformCategory(p.Category), EmulatorID: nullIntPtr(p.EmulatorID)}
+	return Platform{
+		ID: p.ID, Name: p.Name, Category: domain.PlatformCategory(p.Category), EmulatorID: nullIntPtr(p.EmulatorID),
+		SeedKey: p.SeedKey.String, Icon: p.Icon.String,
+	}
 }

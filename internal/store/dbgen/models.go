@@ -147,6 +147,7 @@ type Platform struct {
 	Category   string
 	Icon       sql.NullString
 	EmulatorID sql.NullInt64
+	SeedKey    sql.NullString
 }
 
 type PlayMode struct {

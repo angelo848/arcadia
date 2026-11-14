@@ -76,18 +76,29 @@ func TestEmulatorHandlers(t *testing.T) {
 		})); err != nil {
 			t.Fatalf("setEmulator set: %v", err)
 		}
-		plats, err := st.Platforms(t.Context())
-		if err != nil || len(plats) != 1 || plats[0].EmulatorID == nil || *plats[0].EmulatorID != added.ID {
-			t.Fatalf("platform default = %+v, %v; want emulator %d", plats, err, added.ID)
+		defaultOf := func() *int64 {
+			plats, err := st.Platforms(t.Context())
+			if err != nil {
+				t.Fatalf("Platforms: %v", err)
+			}
+			for _, p := range plats {
+				if p.ID == pc {
+					return p.EmulatorID
+				}
+			}
+			t.Fatalf("platform %d not found in %+v", pc, plats)
+			return nil
+		}
+		if got := defaultOf(); got == nil || *got != added.ID {
+			t.Fatalf("platform default = %v; want emulator %d", got, added.ID)
 		}
 		if _, err := h[ipc.MethodPlatformSetEmulator](t.Context(), rawJSON(t, map[string]any{
 			"platformId": pc, "emulatorId": nil,
 		})); err != nil {
 			t.Fatalf("setEmulator clear: %v", err)
 		}
-		plats, _ = st.Platforms(t.Context())
-		if plats[0].EmulatorID != nil {
-			t.Errorf("platform default after null = %d, want none", *plats[0].EmulatorID)
+		if got := defaultOf(); got != nil {
+			t.Errorf("platform default after null = %d, want none", *got)
 		}
 	})
 }

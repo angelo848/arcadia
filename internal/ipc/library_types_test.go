@@ -80,7 +80,8 @@ func TestCatalogItems(t *testing.T) {
 		t.Parallel()
 		// The wire result as the agent sends it: id is the database id the FilterSpec
 		// filters by (FLT-002, FLT-003), and the lists are never null.
-		const wire = `{"platforms":[{"id":1,"name":"PC","category":"pc","emulatorId":null}],` +
+		// Platform members in declaration order: id, name, category, emulatorId, seedKey, iconPath, gameCount [PLT-014].
+		const wire = `{"platforms":[{"id":1,"name":"PC","category":"pc","emulatorId":null,"seedKey":"windows","iconPath":null,"gameCount":3}],` +
 			`"genres":[{"id":5,"name":"Action"},{"id":6,"name":"RPG"}],` +
 			`"companies":[{"id":9,"name":"Team Cherry"}],"playModes":["single"]}`
 		var cat ipc.Catalog

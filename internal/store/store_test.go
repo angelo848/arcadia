@@ -26,7 +26,7 @@ import (
 // explicitly. The migration may add columns, but every column listed here
 // must exist. game_fts (FTS5) is checked separately.
 var schemaColumns = map[string][]string{
-	"platform": {"id", "name", "category", "icon", "emulator_id"},
+	"platform": {"id", "name", "category", "icon", "emulator_id", "seed_key"},
 	"game": {
 		"id", "platform_id", "title", "sort_title", "release_date", "description", "install_dir",
 		"launch_type", "launch_target", "launch_args", "working_dir",

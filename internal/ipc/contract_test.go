@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-7-midia contract (v0.9.0)
-// supersedes phase-4-pause (v0.5.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-8-estatisticas", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-9-plataformas contract (v0.11.0)
+// supersedes phase-8-estatisticas (v0.10.0) [IPC-041].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-9-plataformas", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-8-estatisticas/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-9-plataformas/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -74,9 +74,10 @@ type openRPC struct {
 	Components struct {
 		Schemas map[string]jsonSchema `json:"schemas"`
 		Errors  map[string]struct {
-			Code    int         `json:"code"`
-			Message string      `json:"message"`
-			Data    *jsonSchema `json:"data"`
+			Code        int         `json:"code"`
+			Message     string      `json:"message"`
+			Description string      `json:"description"`
+			Data        *jsonSchema `json:"data"`
 		} `json:"errors"`
 	} `json:"components"`
 }
@@ -272,6 +273,9 @@ var phase6Methods = map[string]bool{
 	ipc.MethodSessionList:         false,
 	ipc.MethodPlatformList:        false,
 	ipc.MethodPlatformAdd:         false,
+	ipc.MethodPlatformUpdate:      false,
+	ipc.MethodPlatformSetIcon:     false,
+	ipc.MethodPlatformDelete:      false,
 	ipc.MethodLibraryCatalog:      false,
 	ipc.MethodImportScan:          false,
 	ipc.MethodImportApply:         false,
@@ -423,6 +427,9 @@ func TestContract(t *testing.T) {
 			"ProviderNoKey":       ipc.CodeProviderNoKey,
 			"ProviderUnavailable": ipc.CodeProviderUnavailable,
 			"MediaJobNotFound":    ipc.CodeMediaJobNotFound,
+			// PlatformNotFound shares -32001 with GameNotFound (no separate Go constant).
+			"PlatformNotFound": ipc.CodeGameNotFound,
+			"PlatformInUse":    ipc.CodePlatformInUse,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)
@@ -537,10 +544,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.10.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.11.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.10.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.10.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.11.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.11.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -567,6 +574,9 @@ func TestContract(t *testing.T) {
 			"MethodSessionList":         ipc.MethodSessionList,
 			"MethodPlatformList":        ipc.MethodPlatformList,
 			"MethodPlatformAdd":         ipc.MethodPlatformAdd,
+			"MethodPlatformUpdate":      ipc.MethodPlatformUpdate,
+			"MethodPlatformSetIcon":     ipc.MethodPlatformSetIcon,
+			"MethodPlatformDelete":      ipc.MethodPlatformDelete,
 			"MethodLibraryCatalog":      ipc.MethodLibraryCatalog,
 			"MethodImportScan":          ipc.MethodImportScan,
 			"MethodImportApply":         ipc.MethodImportApply,
@@ -595,6 +605,9 @@ func TestContract(t *testing.T) {
 			"MethodSessionList":         "session.list",
 			"MethodPlatformList":        "platform.list",
 			"MethodPlatformAdd":         "platform.add",
+			"MethodPlatformUpdate":      "platform.update",
+			"MethodPlatformSetIcon":     "platform.setIcon",
+			"MethodPlatformDelete":      "platform.delete",
 			"MethodLibraryCatalog":      "library.catalog",
 			"MethodImportScan":          "import.scan",
 			"MethodImportApply":         "import.apply",
@@ -640,6 +653,8 @@ func TestContract(t *testing.T) {
 			{ipc.MethodGameUpdate, ipc.GameUpdateParams{GameID: 1}, []string{"completedAt", "description", "developers", "emulatorId", "favorite", "gameId", "genres", "launchArgs", "launchTarget", "launchType", "platformId", "playModes", "publishers", "status", "title", "year"}, []string{"gameId"}},
 			{ipc.MethodSessionList, ipc.SessionListParams{GameID: 1, Offset: libPtr(0), Limit: libPtr(1)}, []string{"gameId", "limit", "offset"}, []string{"gameId"}},
 			{ipc.MethodPlatformAdd, ipc.PlatformAddParams{Name: "PC", Category: "pc"}, []string{"category", "name"}, []string{"category", "name"}},
+			{ipc.MethodPlatformUpdate, ipc.PlatformUpdateParams{ID: 1, Name: "PC", Category: "pc"}, []string{"category", "id", "name"}, []string{"category", "id", "name"}},
+			{ipc.MethodPlatformDelete, ipc.PlatformDeleteParams{ID: 1}, []string{"id"}, []string{"id"}},
 		} {
 			all, required := c.paramNames(t, tc.method)
 			if !slices.Equal(all, tc.wantAll) || !slices.Equal(required, tc.wantRequired) {
@@ -769,6 +784,9 @@ func TestContract(t *testing.T) {
 		assertExactFields(t, "session.list result", c.resultSchema(t, ipc.MethodSessionList), ipc.SessionListResult{})
 		assertExactFields(t, "platform.list result", c.resultSchema(t, ipc.MethodPlatformList), ipc.PlatformListResult{})
 		assertExactFields(t, "platform.add result", c.resultSchema(t, ipc.MethodPlatformAdd), ipc.PlatformAddResult{})
+		assertExactFields(t, "platform.update result", c.resultSchema(t, ipc.MethodPlatformUpdate), ipc.PlatformResult{})
+		assertExactFields(t, "platform.setIcon result", c.resultSchema(t, ipc.MethodPlatformSetIcon), ipc.PlatformResult{})
+		assertExactFields(t, "platform.delete result", c.resultSchema(t, ipc.MethodPlatformDelete), ipc.PlatformDeletedResult{})
 		assertExactFields(t, "library.catalog result", c.resultSchema(t, ipc.MethodLibraryCatalog), ipc.Catalog{})
 	})
 
@@ -889,6 +907,9 @@ func TestContract(t *testing.T) {
 			"ProviderNoKey":       ipc.CodeProviderNoKey,
 			"ProviderUnavailable": ipc.CodeProviderUnavailable,
 			"MediaJobNotFound":    ipc.CodeMediaJobNotFound,
+			// PlatformNotFound shares -32001 with GameNotFound (no separate Go constant).
+			"PlatformNotFound": ipc.CodeGameNotFound,
+			"PlatformInUse":    ipc.CodePlatformInUse,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)

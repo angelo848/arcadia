@@ -138,3 +138,45 @@ SELECT * FROM platform
 WHERE name = ? COLLATE NOCASE
 ORDER BY id
 LIMIT 1;
+
+-- name: ListPlatformsWithCount :many
+SELECT p.id, p.name, p.category, p.icon, p.emulator_id, p.seed_key,
+       (SELECT COUNT(*) FROM game g WHERE g.platform_id = p.id) AS game_count
+FROM platform p
+ORDER BY p.name COLLATE NOCASE, p.id;
+
+-- name: GetPlatformWithCount :one
+SELECT p.id, p.name, p.category, p.icon, p.emulator_id, p.seed_key,
+       (SELECT COUNT(*) FROM game g WHERE g.platform_id = p.id) AS game_count
+FROM platform p
+WHERE p.id = ?;
+
+-- name: GetPlatformBySeedKey :one
+SELECT * FROM platform
+WHERE seed_key = ?;
+
+-- name: InsertSeedPlatform :one
+INSERT INTO platform (name, category, seed_key)
+VALUES (?, ?, ?)
+RETURNING id;
+
+-- name: UpdatePlatform :execrows
+UPDATE platform SET name = sqlc.arg(name), category = sqlc.arg(category)
+WHERE id = sqlc.arg(id);
+
+-- name: SetPlatformIcon :execrows
+UPDATE platform SET icon = sqlc.narg(icon)
+WHERE id = sqlc.arg(id);
+
+-- name: SetPlatformSeedKey :execrows
+UPDATE platform SET seed_key = sqlc.arg(seed_key)
+WHERE id = sqlc.arg(id);
+
+-- name: CountPlatformGames :one
+SELECT COUNT(*) FROM game WHERE platform_id = ?;
+
+-- name: DeletePlatformRow :execrows
+DELETE FROM platform WHERE id = ?;
+
+-- name: CountPlatformsWithIcon :one
+SELECT COUNT(*) FROM platform WHERE icon = ?;

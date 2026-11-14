@@ -39,10 +39,10 @@ func countRows(t *testing.T, s *Store, table string, gameID int64) int {
 func TestMediaSchema(t *testing.T) {
 	t.Parallel()
 
-	t.Run("MID-004/migração 7 cria as tabelas media e media_job e SchemaVersion é 7", func(t *testing.T) {
+	t.Run("MID-004/migração 7 cria as tabelas media e media_job e SchemaVersion é 8", func(t *testing.T) {
 		t.Parallel()
-		if SchemaVersion != 7 {
-			t.Fatalf("SchemaVersion = %d, want 7", SchemaVersion)
+		if SchemaVersion != 8 {
+			t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
 		}
 		s := ftsOpen(t)
 		for _, table := range []string{"media", "media_job"} {

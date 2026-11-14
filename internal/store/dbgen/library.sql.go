@@ -21,6 +21,28 @@ func (q *Queries) CountGames(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countPlatformGames = `-- name: CountPlatformGames :one
+SELECT COUNT(*) FROM game WHERE platform_id = ?
+`
+
+func (q *Queries) CountPlatformGames(ctx context.Context, platformID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPlatformGames, platformID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPlatformsWithIcon = `-- name: CountPlatformsWithIcon :one
+SELECT COUNT(*) FROM platform WHERE icon = ?
+`
+
+func (q *Queries) CountPlatformsWithIcon(ctx context.Context, icon sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPlatformsWithIcon, icon)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteGameDevelopers = `-- name: DeleteGameDevelopers :exec
 DELETE FROM game_developer
 WHERE game_id = ?
@@ -59,6 +81,18 @@ WHERE game_id = ?
 func (q *Queries) DeleteGamePublishers(ctx context.Context, gameID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteGamePublishers, gameID)
 	return err
+}
+
+const deletePlatformRow = `-- name: DeletePlatformRow :execrows
+DELETE FROM platform WHERE id = ?
+`
+
+func (q *Queries) DeletePlatformRow(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePlatformRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const gameDeveloperIDs = `-- name: GameDeveloperIDs :many
@@ -381,7 +415,7 @@ func (q *Queries) GetGenreByName(ctx context.Context, name string) (int64, error
 }
 
 const getPlatformByNameNoCase = `-- name: GetPlatformByNameNoCase :one
-SELECT id, name, category, icon, emulator_id FROM platform
+SELECT id, name, category, icon, emulator_id, seed_key FROM platform
 WHERE name = ? COLLATE NOCASE
 ORDER BY id
 LIMIT 1
@@ -396,6 +430,58 @@ func (q *Queries) GetPlatformByNameNoCase(ctx context.Context, name string) (Pla
 		&i.Category,
 		&i.Icon,
 		&i.EmulatorID,
+		&i.SeedKey,
+	)
+	return i, err
+}
+
+const getPlatformBySeedKey = `-- name: GetPlatformBySeedKey :one
+SELECT id, name, category, icon, emulator_id, seed_key FROM platform
+WHERE seed_key = ?
+`
+
+func (q *Queries) GetPlatformBySeedKey(ctx context.Context, seedKey sql.NullString) (Platform, error) {
+	row := q.db.QueryRowContext(ctx, getPlatformBySeedKey, seedKey)
+	var i Platform
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Category,
+		&i.Icon,
+		&i.EmulatorID,
+		&i.SeedKey,
+	)
+	return i, err
+}
+
+const getPlatformWithCount = `-- name: GetPlatformWithCount :one
+SELECT p.id, p.name, p.category, p.icon, p.emulator_id, p.seed_key,
+       (SELECT COUNT(*) FROM game g WHERE g.platform_id = p.id) AS game_count
+FROM platform p
+WHERE p.id = ?
+`
+
+type GetPlatformWithCountRow struct {
+	ID         int64
+	Name       string
+	Category   string
+	Icon       sql.NullString
+	EmulatorID sql.NullInt64
+	SeedKey    sql.NullString
+	GameCount  int64
+}
+
+func (q *Queries) GetPlatformWithCount(ctx context.Context, id int64) (GetPlatformWithCountRow, error) {
+	row := q.db.QueryRowContext(ctx, getPlatformWithCount, id)
+	var i GetPlatformWithCountRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Category,
+		&i.Icon,
+		&i.EmulatorID,
+		&i.SeedKey,
+		&i.GameCount,
 	)
 	return i, err
 }
@@ -504,6 +590,25 @@ func (q *Queries) InsertPlatform(ctx context.Context, arg InsertPlatformParams) 
 	return id, err
 }
 
+const insertSeedPlatform = `-- name: InsertSeedPlatform :one
+INSERT INTO platform (name, category, seed_key)
+VALUES (?, ?, ?)
+RETURNING id
+`
+
+type InsertSeedPlatformParams struct {
+	Name     string
+	Category string
+	SeedKey  sql.NullString
+}
+
+func (q *Queries) InsertSeedPlatform(ctx context.Context, arg InsertSeedPlatformParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertSeedPlatform, arg.Name, arg.Category, arg.SeedKey)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listCompanyNames = `-- name: ListCompanyNames :many
 SELECT id, name FROM company
 ORDER BY name COLLATE NOCASE, id
@@ -561,7 +666,7 @@ func (q *Queries) ListGenreNames(ctx context.Context) ([]Genre, error) {
 }
 
 const listPlatforms = `-- name: ListPlatforms :many
-SELECT id, name, category, icon, emulator_id FROM platform
+SELECT id, name, category, icon, emulator_id, seed_key FROM platform
 ORDER BY name
 `
 
@@ -580,6 +685,7 @@ func (q *Queries) ListPlatforms(ctx context.Context) ([]Platform, error) {
 			&i.Category,
 			&i.Icon,
 			&i.EmulatorID,
+			&i.SeedKey,
 		); err != nil {
 			return nil, err
 		}
@@ -595,7 +701,7 @@ func (q *Queries) ListPlatforms(ctx context.Context) ([]Platform, error) {
 }
 
 const listPlatformsByName = `-- name: ListPlatformsByName :many
-SELECT id, name, category, icon, emulator_id FROM platform
+SELECT id, name, category, icon, emulator_id, seed_key FROM platform
 ORDER BY name COLLATE NOCASE, id
 `
 
@@ -614,6 +720,55 @@ func (q *Queries) ListPlatformsByName(ctx context.Context) ([]Platform, error) {
 			&i.Category,
 			&i.Icon,
 			&i.EmulatorID,
+			&i.SeedKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlatformsWithCount = `-- name: ListPlatformsWithCount :many
+SELECT p.id, p.name, p.category, p.icon, p.emulator_id, p.seed_key,
+       (SELECT COUNT(*) FROM game g WHERE g.platform_id = p.id) AS game_count
+FROM platform p
+ORDER BY p.name COLLATE NOCASE, p.id
+`
+
+type ListPlatformsWithCountRow struct {
+	ID         int64
+	Name       string
+	Category   string
+	Icon       sql.NullString
+	EmulatorID sql.NullInt64
+	SeedKey    sql.NullString
+	GameCount  int64
+}
+
+func (q *Queries) ListPlatformsWithCount(ctx context.Context) ([]ListPlatformsWithCountRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPlatformsWithCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlatformsWithCountRow{}
+	for rows.Next() {
+		var i ListPlatformsWithCountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Category,
+			&i.Icon,
+			&i.EmulatorID,
+			&i.SeedKey,
+			&i.GameCount,
 		); err != nil {
 			return nil, err
 		}
@@ -638,4 +793,59 @@ func (q *Queries) PlayModeIDByName(ctx context.Context, name string) (int64, err
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const setPlatformIcon = `-- name: SetPlatformIcon :execrows
+UPDATE platform SET icon = ?1
+WHERE id = ?2
+`
+
+type SetPlatformIconParams struct {
+	Icon sql.NullString
+	ID   int64
+}
+
+func (q *Queries) SetPlatformIcon(ctx context.Context, arg SetPlatformIconParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPlatformIcon, arg.Icon, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setPlatformSeedKey = `-- name: SetPlatformSeedKey :execrows
+UPDATE platform SET seed_key = ?1
+WHERE id = ?2
+`
+
+type SetPlatformSeedKeyParams struct {
+	SeedKey sql.NullString
+	ID      int64
+}
+
+func (q *Queries) SetPlatformSeedKey(ctx context.Context, arg SetPlatformSeedKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPlatformSeedKey, arg.SeedKey, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updatePlatform = `-- name: UpdatePlatform :execrows
+UPDATE platform SET name = ?1, category = ?2
+WHERE id = ?3
+`
+
+type UpdatePlatformParams struct {
+	Name     string
+	Category string
+	ID       int64
+}
+
+func (q *Queries) UpdatePlatform(ctx context.Context, arg UpdatePlatformParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updatePlatform, arg.Name, arg.Category, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

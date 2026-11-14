@@ -44,7 +44,7 @@ func TestCatalog(t *testing.T) {
 		}
 
 		wantPlatforms := []store.Platform{
-			{ID: libLookup(t, s, "platform", "PC"), Name: "PC", Category: domain.CategoryPC},
+			{ID: libLookup(t, s, "platform", "PC"), Name: "PC", Category: domain.CategoryPC, GameCount: 2},
 			{ID: libLookup(t, s, "platform", "Switch"), Name: "Switch", Category: domain.CategoryConsole},
 		}
 		// A migrated database may carry seed platforms: keep only the ones of this test.

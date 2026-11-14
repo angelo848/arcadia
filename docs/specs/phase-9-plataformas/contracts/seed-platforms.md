@@ -61,6 +61,9 @@ maiúsculas (`COLLATE NOCASE`).
 | 8 | — | `CREATE UNIQUE INDEX platform_seed_key_uidx ON platform (seed_key) WHERE seed_key IS NOT NULL` |
 
 - O passo 2 roda antes do 3..5 para que cada nome tenha no máximo uma linha quando o seed é aplicado.
+- Passo 2, herança de emulador: vale a primeira outra linha, por ordem de id, que **tenha** emulador.
+- Passo 6: os ids das linhas inseridas ficam acima do maior id que existia antes da migração, para que o SQLite não
+  reaproveite o id de uma plataforma apagada na fusão. Em banco vazio os ids ficam 1..13 (`windows` = 1).
 - `game.platform_id` é `ON DELETE RESTRICT`: toda linha apagada já teve os jogos movidos no mesmo passo.
 - `game_fts` não guarda o nome da plataforma; nenhuma reindexação é necessária.
 - **Down:** apaga os dois índices e a coluna `seed_key`. Renomeações, fusões e plataformas inseridas não são desfeitas
