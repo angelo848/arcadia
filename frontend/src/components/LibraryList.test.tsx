@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { GRID_INSET } from '../lib/gridNav'
 import { LibraryList } from './LibraryList'
 import { formatLocalDateTime } from '../lib/formatDate'
 import { formatPlayTime, type SessionView } from '../lib/games'
@@ -98,6 +99,74 @@ function props(over: Partial<ListProps> = {}): ListProps {
 function rowOf(title: string): HTMLElement {
   return screen.getByRole('option', { name: new RegExp(`^${title}( |$)`) })
 }
+
+describe('LibraryList: margem interna', () => {
+  const ROW = 64
+
+  function installScrollTo() {
+    const scrollTo = vi.fn(function (this: HTMLElement, opts: ScrollToOptions) {
+      Object.defineProperty(this, 'scrollTop', { configurable: true, value: opts.top ?? 0 })
+      queueMicrotask(() => fireEvent.scroll(this))
+    })
+    ;(HTMLElement.prototype as unknown as { scrollTo: unknown }).scrollTo = scrollTo
+    return scrollTo
+  }
+
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as { scrollTo?: unknown }).scrollTo
+  })
+
+  it('AJU-002/lista: primeira linha em translateY(GRID_INSET), linhas com left GRID_INSET e largura descontando a margem', () => {
+    render(<LibraryList {...props()} />)
+
+    const rows = screen.getAllByRole('option')
+    expect(rows[0].style.transform).toBe(`translateY(${GRID_INSET}px)`)
+    expect(rows[1].style.transform).toBe(`translateY(${GRID_INSET + ROW}px)`)
+    for (const row of rows) {
+      expect(row.style.left).toBe(`${GRID_INSET}px`)
+      expect(row.getAttribute('style') ?? '').toMatch(new RegExp(`calc\\(100% - ${2 * GRID_INSET}px\\)`))
+    }
+  })
+
+  it('AJU-002/lista: altura total inclui GRID_INSET em cima e embaixo', () => {
+    render(<LibraryList {...props()} />)
+    const inner = screen.getByRole('listbox', { name: 'Jogos' }).firstElementChild as HTMLElement
+    expect(parseFloat(inner.style.height)).toBe(3 * ROW + 2 * GRID_INSET)
+  })
+
+  it('AJU-002/lista: End e Home rolam com a margem', async () => {
+    const scrollTo = installScrollTo()
+    render(<LibraryList {...props({ games: makeGames(1000), total: 1000, selectedId: 0 })} />)
+    scrollTo.mockClear()
+
+    rowOf('Jogo 0').focus()
+    fireEvent.keyDown(rowOf('Jogo 0'), { key: 'End' })
+    expect(scrollTo).toHaveBeenCalled()
+    const down = (scrollTo.mock.calls.at(-1)?.[0] as ScrollToOptions).top ?? NaN
+    expect(down).toBeCloseTo(GRID_INSET + 999 * ROW + ROW + GRID_INSET - BOX_HEIGHT, 1)
+    await waitFor(() => expect(rowOf('Jogo 999')).toHaveFocus())
+
+    scrollTo.mockClear()
+    fireEvent.keyDown(rowOf('Jogo 999'), { key: 'Home' })
+    expect(scrollTo).toHaveBeenCalled()
+    const up = (scrollTo.mock.calls.at(-1)?.[0] as ScrollToOptions).top ?? NaN
+    expect(up).toBeLessThanOrEqual(GRID_INSET)
+  })
+
+  it('AJU-002/lista: ao montar com o jogo em foco, a centralização soma GRID_INSET', async () => {
+    const scrollTo = installScrollTo()
+    render(<LibraryList {...props({ games: makeGames(1000), total: 1000, selectedId: 600 })} />)
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled())
+    const top = (scrollTo.mock.calls[0][0] as ScrollToOptions).top ?? NaN
+    expect(top).toBeCloseTo(GRID_INSET + 600 * ROW - (BOX_HEIGHT - ROW) / 2, 1)
+  })
+
+  it('AJU-004/lista tem a classe [scrollbar-gutter:stable]', () => {
+    render(<LibraryList {...props()} />)
+    expect(screen.getByRole('listbox', { name: 'Jogos' })).toHaveClass('[scrollbar-gutter:stable]')
+  })
+})
 
 describe('LibraryList', () => {
   it('UIX-020/lista: linha com título, plataforma, tempo, última vez e selo, sem botões; clique põe em foco e duplo clique lança', () => {

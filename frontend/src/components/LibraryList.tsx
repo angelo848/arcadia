@@ -4,7 +4,7 @@ import type { LibraryGrid } from './LibraryGrid'
 import { liveOf } from './GameCard'
 import { formatLocalDateTime } from '../lib/formatDate'
 import { formatPlayTime } from '../lib/games'
-import { isNavKey, nextIndex } from '../lib/gridNav'
+import { GRID_INSET, isNavKey, nextIndex } from '../lib/gridNav'
 
 // Row metrics in px. The list is one column of rows [UIX-020].
 const ROW_HEIGHT = 64
@@ -30,11 +30,34 @@ export function LibraryList({
   const scrolledToSelected = useRef(false)
 
   const loaded = games.length
+
+  // On mount, the game in focus is brought into view once, when it is loaded [UIX-021]. Declared
+  // before the virtualizer so that its mount write reads the scroll position set here.
+  useLayoutEffect(() => {
+    if (scrolledToSelected.current) {
+      return
+    }
+    scrolledToSelected.current = true
+    if (selectedId === null) {
+      return
+    }
+    const index = games.findIndex((g) => g.id === selectedId)
+    const el = scrollRef.current
+    if (index >= 0 && el !== null) {
+      // Scrolled directly: the virtualizer clamps scrollToIndex to the scroll height, which a
+      // fresh element may not have yet. The virtualizer follows the scroll event.
+      const top = GRID_INSET + index * ROW_HEIGHT - (el.getBoundingClientRect().height - ROW_HEIGHT) / 2
+      el.scrollTo?.({ top: Math.max(0, top) })
+    }
+  }, [selectedId, games])
+
   const virtualizer = useVirtualizer({
     count: loaded,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN_ROWS,
+    paddingStart: GRID_INSET,
+    paddingEnd: GRID_INSET,
     // The window size comes from the same box the grid uses (getBoundingClientRect),
     // not from clientWidth/clientHeight, which the default reads.
     observeElementRect: (instance, cb) => {
@@ -54,25 +77,6 @@ export function LibraryList({
       }
     },
   })
-
-  // On mount, the game in focus is brought into view once, when it is loaded [UIX-021].
-  useLayoutEffect(() => {
-    if (scrolledToSelected.current) {
-      return
-    }
-    scrolledToSelected.current = true
-    if (selectedId === null) {
-      return
-    }
-    const index = games.findIndex((g) => g.id === selectedId)
-    const el = scrollRef.current
-    if (index >= 0 && el !== null) {
-      // Scrolled directly: the virtualizer clamps scrollToIndex to the scroll height, which a
-      // fresh element may not have yet. The virtualizer follows the scroll event.
-      const top = index * ROW_HEIGHT - (el.getBoundingClientRect().height - ROW_HEIGHT) / 2
-      el.scrollTo?.({ top: Math.max(0, top) })
-    }
-  }, [selectedId, games])
 
   const rows = virtualizer.getVirtualItems()
 
@@ -105,13 +109,13 @@ export function LibraryList({
       return
     }
     const height = el.getBoundingClientRect().height
-    const top = index * ROW_HEIGHT
+    const rowTop = GRID_INSET + index * ROW_HEIGHT
     if (center) {
-      el.scrollTo?.({ top: Math.max(0, top - (height - ROW_HEIGHT) / 2) })
-    } else if (top < el.scrollTop) {
-      el.scrollTo?.({ top })
-    } else if (top + ROW_HEIGHT > el.scrollTop + height) {
-      el.scrollTo?.({ top: top + ROW_HEIGHT - height })
+      el.scrollTo?.({ top: Math.max(0, rowTop - (height - ROW_HEIGHT) / 2) })
+    } else if (rowTop <= GRID_INSET || rowTop - GRID_INSET < el.scrollTop) {
+      el.scrollTo?.({ top: Math.max(0, rowTop - GRID_INSET) })
+    } else if (rowTop + ROW_HEIGHT + GRID_INSET > el.scrollTop + height) {
+      el.scrollTo?.({ top: rowTop + ROW_HEIGHT + GRID_INSET - height })
     }
   }
 
@@ -191,7 +195,7 @@ export function LibraryList({
       tabIndex={keyboard && loaded > 0 && !stopRendered ? 0 : -1}
       onKeyDown={onKeyDown}
       onFocus={onContainerFocus}
-      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2"
+      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2 [scrollbar-gutter:stable]"
     >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {rows.map((row) => {
@@ -213,10 +217,15 @@ export function LibraryList({
               tabIndex={tabbable ? 0 : -1}
               onClick={() => onSelect(g.id)}
               onDoubleClick={() => onLaunch(g.id)}
-              className={`absolute left-0 top-0 flex w-full cursor-pointer items-center gap-4 border-b border-line px-4 ${
+              className={`absolute top-0 flex cursor-pointer items-center gap-4 border-b border-line px-4 ${
                 selected ? 'bg-raised' : 'hover:bg-hover'
               }`}
-              style={{ height: ROW_HEIGHT, transform: `translateY(${row.start}px)` }}
+              style={{
+                height: ROW_HEIGHT,
+                left: GRID_INSET,
+                width: `calc(100% - ${2 * GRID_INSET}px)`,
+                transform: `translateY(${GRID_INSET + row.index * ROW_HEIGHT}px)`,
+              }}
             >
               <span className="min-w-0 flex-1 truncate font-medium text-fg">{g.title}</span>{' '}
               <span className="w-40 shrink-0 truncate text-sm text-muted">{g.platform}</span>{' '}

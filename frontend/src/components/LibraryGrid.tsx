@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { GameCard, liveOf } from './GameCard'
-import { GRID_GAP, columnsFor, isNavKey, nextIndex } from '../lib/gridNav'
+import { GRID_GAP, GRID_INSET, columnsFor, usableWidth, isNavKey, nextIndex } from '../lib/gridNav'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 
@@ -50,7 +50,7 @@ export function LibraryGrid({
       return undefined
     }
     const measure = () => {
-      const m = columnsFor(el.getBoundingClientRect().width)
+      const m = columnsFor(usableWidth(el.getBoundingClientRect().width))
       setMetrics((old) =>
         old.measured && old.cols === m.cols && old.rowHeight === m.rowHeight
           ? old
@@ -67,11 +67,52 @@ export function LibraryGrid({
 
   const loaded = games.length
   const rowCount = Math.ceil(loaded / cols)
+
+  // On mount, the game in focus is brought into view once, when it is among the loaded ones [UIX-021].
+  // Declared before the virtualizer so that its mount write reads the scroll position set here;
+  // the metrics are read from the element because the state is not measured yet.
+  const centerSelected = () => {
+    if (selectedId === null) {
+      return
+    }
+    const index = games.findIndex((g) => g.id === selectedId)
+    const el = scrollRef.current
+    if (index >= 0 && el !== null) {
+      // The row is centered in the window. The element is scrolled directly (the virtualizer
+      // clamps scrollToIndex to the scroll height, which a fresh element may not have yet)
+      // and the virtualizer follows the scroll event.
+      const box = el.getBoundingClientRect()
+      const m = columnsFor(usableWidth(box.width))
+      const top = GRID_INSET + Math.floor(index / m.cols) * m.rowHeight - (box.height - m.rowHeight) / 2
+      el.scrollTo?.({ top: Math.max(0, top) })
+    }
+  }
+  useLayoutEffect(() => {
+    if (scrolledToSelected.current) {
+      return
+    }
+    scrolledToSelected.current = true
+    centerSelected()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, games])
+  // Once measured, the position is set again: the virtualizer's own mount write may have run after.
+  const centeredAfterMeasure = useRef(false)
+  useLayoutEffect(() => {
+    if (!measured || centeredAfterMeasure.current) {
+      return
+    }
+    centeredAfterMeasure.current = true
+    centerSelected()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measured])
+
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan: OVERSCAN_ROWS,
+    paddingStart: GRID_INSET,
+    paddingEnd: GRID_INSET,
     // The window size comes from the same box as the column count (getBoundingClientRect),
     // not from clientWidth/clientHeight, which the default reads.
     observeElementRect: (instance, cb) => {
@@ -96,26 +137,6 @@ export function LibraryGrid({
   useEffect(() => {
     virtualizer.measure()
   }, [rowHeight, virtualizer])
-
-  // On mount, the game in focus is brought into view once, when it is among the loaded ones [UIX-021].
-  useLayoutEffect(() => {
-    if (!measured || scrolledToSelected.current) {
-      return
-    }
-    scrolledToSelected.current = true
-    if (selectedId === null) {
-      return
-    }
-    const index = games.findIndex((g) => g.id === selectedId)
-    const el = scrollRef.current
-    if (index >= 0 && el !== null) {
-      // The row is centered in the window. The element is scrolled directly (the virtualizer
-      // clamps scrollToIndex to the scroll height, which a fresh element may not have yet)
-      // and the virtualizer follows the scroll event.
-      const top = Math.floor(index / cols) * rowHeight - (el.getBoundingClientRect().height - rowHeight) / 2
-      el.scrollTo?.({ top: Math.max(0, top) })
-    }
-  }, [measured, selectedId, games, cols, rowHeight])
 
   const rows = virtualizer.getVirtualItems()
 
@@ -150,13 +171,13 @@ export function LibraryGrid({
       return
     }
     const height = el.getBoundingClientRect().height
-    const top = Math.floor(index / cols) * rowHeight
+    const rowTop = GRID_INSET + Math.floor(index / cols) * rowHeight
     if (center) {
-      el.scrollTo?.({ top: Math.max(0, top - (height - rowHeight) / 2) })
-    } else if (top < el.scrollTop) {
-      el.scrollTo?.({ top })
-    } else if (top + rowHeight > el.scrollTop + height) {
-      el.scrollTo?.({ top: top + rowHeight - height })
+      el.scrollTo?.({ top: Math.max(0, rowTop - (height - rowHeight) / 2) })
+    } else if (rowTop <= GRID_INSET || rowTop - GRID_INSET < el.scrollTop) {
+      el.scrollTo?.({ top: Math.max(0, rowTop - GRID_INSET) })
+    } else if (rowTop + rowHeight + GRID_INSET > el.scrollTop + height) {
+      el.scrollTo?.({ top: rowTop + rowHeight + GRID_INSET - height })
     }
   }
 
@@ -236,7 +257,7 @@ export function LibraryGrid({
       tabIndex={keyboard && loaded > 0 && !stopRendered ? 0 : -1}
       onKeyDown={onKeyDown}
       onFocus={onContainerFocus}
-      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2"
+      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2 [scrollbar-gutter:stable]"
     >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {rows.map((row) => {
@@ -245,10 +266,12 @@ export function LibraryGrid({
           return (
             <div
               key={row.key}
-              className="absolute left-0 top-0 grid w-full content-start"
+              className="absolute top-0 grid content-start"
               style={{
                 height: rowHeight,
-                transform: `translateY(${row.start}px)`,
+                left: GRID_INSET,
+                width: `calc(100% - ${2 * GRID_INSET}px)`,
+                transform: `translateY(${GRID_INSET + row.index * rowHeight}px)`,
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                 columnGap: GRID_GAP,
               }}

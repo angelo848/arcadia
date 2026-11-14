@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { LibraryGrid } from './LibraryGrid'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
+import { GRID_INSET, columnsFor, usableWidth } from '../lib/gridNav'
 
 type GridProps = Parameters<typeof LibraryGrid>[0]
 
@@ -272,24 +273,118 @@ describe('LibraryGrid', () => {
   })
 })
 
-// Keyboard [UIX-019]: a fixed grid of 3 columns (520 px = 3 cards of 160 px and 2 gaps of 16 px).
+// boxOf mocks the box of every element with the given width [AJU-003].
+function mockBox(width: number): void {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        bottom: BOX_HEIGHT,
+        right: width,
+        width,
+        height: BOX_HEIGHT,
+        toJSON: () => ({}),
+      }) as DOMRect,
+  )
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(width)
+}
+
+// installScrollTo mimics a browser: scrollTop moves and the scroll event follows later.
+function installScrollToFn() {
+  const scrollTo = vi.fn(function (this: HTMLElement, opts: ScrollToOptions) {
+    Object.defineProperty(this, 'scrollTop', { configurable: true, value: opts.top ?? 0 })
+    queueMicrotask(() => fireEvent.scroll(this))
+  })
+  ;(HTMLElement.prototype as unknown as { scrollTo: unknown }).scrollTo = scrollTo
+  return scrollTo
+}
+
+// rowElOf returns the absolute row element that holds the cards of a first row.
+function firstRowEl(): HTMLElement {
+  const el = screen.getAllByRole('option')[0].parentElement
+  if (el === null) {
+    throw new Error('card without row')
+  }
+  return el
+}
+
+// Margin inside the scroll box [AJU-001..AJU-004]. Box 800 px: usable width = 800 - 12 - 8 = 780.
+describe('LibraryGrid: margem interna', () => {
+  const { rowHeight } = columnsFor(usableWidth(BOX_WIDTH))
+
+  it('AJU-001/primeira linha em translateY(GRID_INSET), cada linha com left GRID_INSET e largura descontando 2 x GRID_INSET', () => {
+    render(<LibraryGrid {...props({ games: makeGames(10), total: 10 })} />)
+
+    const rows = new Set(screen.getAllByRole('option').map((c) => c.parentElement as HTMLElement))
+    expect(rows.size).toBeGreaterThan(1)
+    const sorted = [...rows]
+    expect(sorted[0].style.transform).toBe(`translateY(${GRID_INSET}px)`)
+    for (const row of sorted) {
+      expect(row.style.left).toBe(`${GRID_INSET}px`)
+      expect(row.getAttribute('style') ?? '').toMatch(new RegExp(`calc\\(100% - ${2 * GRID_INSET}px\\)`))
+    }
+  })
+
+  it('AJU-001/altura total inclui GRID_INSET em cima e embaixo', () => {
+    render(<LibraryGrid {...props({ games: makeGames(10), total: 10 })} />)
+
+    const inner = screen.getByRole('listbox', { name: 'Jogos' }).firstElementChild as HTMLElement
+    // 10 games in 4 columns = 3 rows.
+    expect(parseFloat(inner.style.height)).toBeCloseTo(3 * rowHeight + 2 * GRID_INSET, 1)
+  })
+
+  it('AJU-001/seta para baixo até linha fora da janela rola com GRID_INSET de folga', async () => {
+    mockBox(540) // usable 520 = 3 columns
+    const scrollTo = installScrollToFn()
+    const { rowHeight: rh } = columnsFor(usableWidth(540))
+    render(<LibraryGrid {...props({ games: makeGames(1000), total: 1000, selectedId: 0 })} />)
+    scrollTo.mockClear()
+
+    cardOf('Jogo 0').focus()
+    fireEvent.keyDown(cardOf('Jogo 0'), { key: 'End' })
+
+    expect(scrollTo).toHaveBeenCalled()
+    const top = (scrollTo.mock.calls.at(-1)?.[0] as ScrollToOptions).top ?? NaN
+    const rowTop = GRID_INSET + Math.floor(999 / 3) * rh
+    expect(top).toBeCloseTo(rowTop + rh + GRID_INSET - BOX_HEIGHT, 1)
+    await waitFor(() => expect(cardOf('Jogo 999')).toHaveFocus())
+  })
+
+  it('AJU-001/ao montar com o jogo em foco, a centralização soma GRID_INSET', async () => {
+    const scrollTo = installScrollToFn()
+    render(<LibraryGrid {...props({ games: makeGames(1000), total: 1000, selectedId: 600 })} />)
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled())
+    const top = (scrollTo.mock.calls[0][0] as ScrollToOptions).top ?? NaN
+    const rowTop = GRID_INSET + Math.floor(600 / 4) * rowHeight
+    expect(top).toBeCloseTo(rowTop - (BOX_HEIGHT - rowHeight) / 2, 1)
+  })
+
+  it.each([
+    [484, 2, 2],
+    [1132, 5, 6],
+  ])('AJU-003/caixa de %i px dá entre %i e %i colunas (484 dá 2; 1132 dá pelo menos 5)', (width, min, max) => {
+    mockBox(width)
+    render(<LibraryGrid {...props({ games: makeGames(20), total: 20 })} />)
+
+    const cols = firstRowEl().children.length
+    expect(cols).toBeGreaterThanOrEqual(min)
+    expect(cols).toBeLessThanOrEqual(max)
+  })
+
+  it('AJU-004/grade tem a classe [scrollbar-gutter:stable]', () => {
+    render(<LibraryGrid {...props()} />)
+    expect(screen.getByRole('listbox', { name: 'Jogos' })).toHaveClass('[scrollbar-gutter:stable]')
+  })
+})
+
+// Keyboard [UIX-019]: a fixed grid of 3 columns (box 540 px, usable 520 = 3 cards of 160 px and 2 gaps of 16 px).
 describe('LibraryGrid: teclado (3 colunas)', () => {
   beforeEach(() => {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-      () =>
-        ({
-          x: 0,
-          y: 0,
-          top: 0,
-          left: 0,
-          bottom: BOX_HEIGHT,
-          right: 520,
-          width: 520,
-          height: BOX_HEIGHT,
-          toJSON: () => ({}),
-        }) as DOMRect,
-    )
-    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(520)
+    mockBox(540)
   })
 
   // installScrollTo mimics a browser: scrollTop moves and the scroll event follows later.
