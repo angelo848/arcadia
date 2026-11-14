@@ -99,6 +99,7 @@ function props(over: Partial<GridProps> = {}): GridProps {
     onNeedMore: vi.fn(),
     onSelect: vi.fn(),
     onLaunch: vi.fn(),
+    keyboard: true,
     ...over,
   }
 }
@@ -268,5 +269,150 @@ describe('LibraryGrid', () => {
     unmount()
     const after = observerUnobserve.mock.calls.length + observerDisconnect.mock.calls.length
     expect(after).toBeGreaterThan(before)
+  })
+})
+
+// Keyboard [UIX-019]: a fixed grid of 3 columns (520 px = 3 cards of 160 px and 2 gaps of 16 px).
+describe('LibraryGrid: teclado (3 colunas)', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          bottom: BOX_HEIGHT,
+          right: 520,
+          width: 520,
+          height: BOX_HEIGHT,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    )
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(520)
+  })
+
+  // installScrollTo mimics a browser: scrollTop moves and the scroll event follows later.
+  function installScrollTo() {
+    const scrollTo = vi.fn(function (this: HTMLElement, opts: ScrollToOptions) {
+      Object.defineProperty(this, 'scrollTop', { configurable: true, value: opts.top ?? 0 })
+      queueMicrotask(() => fireEvent.scroll(this))
+    })
+    ;(HTMLElement.prototype as unknown as { scrollTo: unknown }).scrollTo = scrollTo
+    return scrollTo
+  }
+
+  function tabStops(listbox: HTMLElement): HTMLElement[] {
+    return [listbox, ...within(listbox).queryAllByRole('option')].filter((e) => e.tabIndex >= 0)
+  }
+
+  it('UIX-019/a grade é uma parada de Tab: o foco vai ao cartão do jogo em foco ou ao primeiro', () => {
+    const { rerender } = render(<LibraryGrid {...props({ selectedId: null })} />)
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    expect(tabStops(listbox)).toEqual([cardOf('Jogo 0')])
+
+    rerender(<LibraryGrid {...props({ selectedId: 4 })} />)
+    expect(tabStops(listbox)).toEqual([cardOf('Jogo 4')])
+
+    // Game in focus not loaded: the first card.
+    rerender(<LibraryGrid {...props({ selectedId: 999 })} />)
+    expect(tabStops(listbox)).toEqual([cardOf('Jogo 0')])
+  })
+
+  it('UIX-019/jogo em foco carregado mas fora da janela: só o contêiner é parada de Tab', () => {
+    render(<LibraryGrid {...props({ games: makeGames(1000), total: 1000, selectedId: 600 })} />)
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    expect(screen.queryByText('Jogo 600')).toBeNull()
+    expect(tabStops(listbox)).toEqual([listbox])
+  })
+
+  it.each([
+    ['ArrowRight', 5],
+    ['ArrowLeft', 3],
+    ['ArrowDown', 7],
+    ['ArrowUp', 1],
+    ['Home', 0],
+    ['End', 9],
+  ])('UIX-019/setas, Home e End movem o foco e o jogo em foco (onSelect): %s', (key, target) => {
+    const p = props({ selectedId: 4 })
+    render(<LibraryGrid {...p} />)
+
+    cardOf('Jogo 4').focus()
+    fireEvent.keyDown(cardOf('Jogo 4'), { key })
+
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+    expect(p.onSelect).toHaveBeenCalledWith(target)
+    expect(cardOf(`Jogo ${target}`)).toHaveFocus()
+    expect(p.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['ArrowLeft', 0],
+    ['ArrowUp', 1],
+    ['ArrowRight', 2],
+    ['ArrowDown', 9],
+  ])('UIX-019/seta na borda não chama onSelect: %s no jogo %i', (key, from) => {
+    const p = props({ selectedId: from })
+    render(<LibraryGrid {...p} />)
+
+    cardOf(`Jogo ${from}`).focus()
+    fireEvent.keyDown(cardOf(`Jogo ${from}`), { key })
+
+    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(cardOf(`Jogo ${from}`)).toHaveFocus()
+  })
+
+  it('UIX-019/o cartão focado rola para a área visível', async () => {
+    const scrollTo = installScrollTo()
+    const p = props({ games: makeGames(1000), total: 1000, selectedId: 0 })
+    render(<LibraryGrid {...p} />)
+    scrollTo.mockClear()
+
+    cardOf('Jogo 0').focus()
+    fireEvent.keyDown(cardOf('Jogo 0'), { key: 'End' })
+
+    expect(p.onSelect).toHaveBeenCalledWith(999)
+    await waitFor(() => expect(screen.getByText('Jogo 999')).toBeInTheDocument())
+    expect(scrollTo).toHaveBeenCalled()
+    await waitFor(() => expect(cardOf('Jogo 999')).toHaveFocus())
+  })
+
+  it('UIX-019/perto do fim do carregado, onNeedMore uma vez', async () => {
+    installScrollTo()
+    const onNeedMore = vi.fn()
+    render(<LibraryGrid {...props({ games: makeGames(50), total: 1000, selectedId: 0, onNeedMore })} />)
+    expect(onNeedMore).not.toHaveBeenCalled()
+
+    cardOf('Jogo 0').focus()
+    fireEvent.keyDown(cardOf('Jogo 0'), { key: 'End' })
+
+    await waitFor(() => expect(onNeedMore).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(cardOf('Jogo 49')).toHaveFocus())
+    fireEvent.keyDown(cardOf('Jogo 49'), { key: 'ArrowUp' })
+    expect(onNeedMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('UIX-019/Enter chama onLaunch do cartão focado', () => {
+    const p = props({ selectedId: 4 })
+    render(<LibraryGrid {...p} />)
+
+    cardOf('Jogo 4').focus()
+    fireEvent.keyDown(cardOf('Jogo 4'), { key: 'Enter' })
+
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(4)
+  })
+
+  it('UIX-019/com keyboard=false as setas não fazem nada na grade', () => {
+    const p = props({ selectedId: 4, keyboard: false })
+    render(<LibraryGrid {...p} />)
+
+    cardOf('Jogo 4').focus()
+    for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End']) {
+      fireEvent.keyDown(cardOf('Jogo 4'), { key })
+    }
+
+    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(cardOf('Jogo 4')).toHaveFocus()
   })
 })

@@ -1980,3 +1980,113 @@ describe('App: diálogo de plataformas', () => {
     expect(screen.queryByRole('dialog', { name: 'Plataformas' })).not.toBeInTheDocument()
   })
 })
+
+// tabStops lists the elements the Tab key visits, in document order (jsdom has no Tab navigation).
+function tabStops(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'),
+  ).filter((e) => e.tabIndex >= 0 && !e.hasAttribute('disabled'))
+}
+
+describe('App: teclado (T19)', () => {
+  it('UIX-041/Tab percorre cabeçalho → coluna esquerda (busca, plataformas, filtros) → barra do centro → grade (uma parada) → painel', async () => {
+    threePlatformLibrary()
+    renderApp()
+    await focusGame('Hollow Knight')
+
+    const stops = tabStops()
+    const nav = screen.getByRole('navigation', { name: 'Filtros da biblioteca' })
+    const center = screen.getByRole('region', { name: 'Jogos' })
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    const aside = asideOf()
+    const header = document.querySelector<HTMLElement>('main > header') as HTMLElement
+
+    const indexIn = (container: HTMLElement) =>
+      stops.map((s, i) => (container.contains(s) ? i : -1)).filter((i) => i >= 0)
+    const headerStops = indexIn(header)
+    const navStops = indexIn(nav)
+    const gridStops = stops.map((s, i) => (listbox.contains(s) ? i : -1)).filter((i) => i >= 0)
+    const asideStops = indexIn(aside)
+    const toolbarStops = stops
+      .map((s, i) => (center.contains(s) && !listbox.contains(s) ? i : -1))
+      .filter((i) => i >= 0)
+
+    expect(headerStops.length).toBeGreaterThan(0)
+    expect(navStops.length).toBeGreaterThan(0)
+    expect(toolbarStops.length).toBeGreaterThan(0)
+    expect(asideStops.length).toBeGreaterThan(0)
+    // The grid is a single stop: the card of the game in focus.
+    expect(gridStops).toHaveLength(1)
+    expect(stops[gridStops[0]]).toBe(rowOf('Hollow Knight'))
+
+    expect(Math.max(...headerStops)).toBeLessThan(Math.min(...navStops))
+    // Inside the left column: search first, then platforms, then filters.
+    const search = nav.querySelector('input')
+    expect(search).not.toBeNull()
+    expect(stops.indexOf(search as HTMLElement)).toBe(navStops[0])
+    const todos = within(nav).getByRole('button', { name: /^Todos/ })
+    const gran = within(nav).getByRole('button', { name: /PlayStation 2/ })
+    expect(stops.indexOf(todos)).toBeLessThan(stops.indexOf(gran))
+    expect(stops.indexOf(search as HTMLElement)).toBeLessThan(stops.indexOf(todos))
+    expect(Math.max(...navStops)).toBeLessThan(Math.min(...toolbarStops))
+    expect(Math.max(...toolbarStops)).toBeLessThan(gridStops[0])
+    expect(gridStops[0]).toBeLessThan(Math.min(...asideStops))
+  })
+
+  it('UIX-043/pôr em foco e lançar só pelo teclado, sem mouse', async () => {
+    app.ListGames.mockResolvedValue(
+      page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]),
+    )
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
+    renderApp()
+    const first = await findRow('Hollow Knight')
+
+    // Tab lands on the first card; the arrow puts the next game in focus.
+    first.focus()
+    expect(first).toHaveFocus()
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
+    expect(rowOf('Hades')).toHaveFocus()
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(rowOf('Hades'), { key: 'Enter' })
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+    expect(app.LaunchGame).toHaveBeenCalledWith(20)
+    await flush()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+  })
+
+  it('UIX-019/Enter com lançamento pendente: o App não chama LaunchGame de novo', async () => {
+    app.ListGames.mockResolvedValue(
+      page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]),
+    )
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
+    const pending = deferred<SessionView>()
+    app.LaunchGame.mockImplementation(() => pending.promise)
+    renderApp()
+    const first = await findRow('Hollow Knight')
+
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Enter' })
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
+    fireEvent.keyDown(rowOf('Hades'), { key: 'Enter' })
+    await flush()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve(session({ gameId: 10, state: 'running' }))
+      await pending.promise
+    })
+  })
+})

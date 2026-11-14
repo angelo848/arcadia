@@ -89,6 +89,7 @@ function props(over: Partial<ListProps> = {}): ListProps {
     onNeedMore: vi.fn(),
     onSelect: vi.fn(),
     onLaunch: vi.fn(),
+    keyboard: true,
     ...over,
   }
 }
@@ -175,5 +176,68 @@ describe('LibraryList', () => {
     const listbox = screen.getByRole('listbox', { name: 'Jogos' })
     expect(within(listbox).getAllByRole('option')).toHaveLength(3)
     expect(within(listbox).getByRole('option', { name: /^Jogo 0\b/ })).toBeInTheDocument()
+  })
+
+  it('UIX-020/lista: uma parada de Tab (a linha do jogo em foco ou a primeira)', () => {
+    const { rerender } = render(<LibraryList {...props({ selectedId: null })} />)
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    const stops = () => [listbox, ...within(listbox).getAllByRole('option')].filter((e) => e.tabIndex >= 0)
+    expect(stops()).toEqual([rowOf('Jogo 0')])
+
+    rerender(<LibraryList {...props({ selectedId: 2 })} />)
+    expect(stops()).toEqual([rowOf('Jogo 2')])
+  })
+
+  it.each([
+    ['ArrowDown', 1, 2],
+    ['ArrowUp', 1, 0],
+  ])('UIX-020/lista: %s move o foco e o jogo em foco', (key, from, target) => {
+    const p = props({ selectedId: from })
+    render(<LibraryList {...p} />)
+
+    rowOf(`Jogo ${from}`).focus()
+    fireEvent.keyDown(rowOf(`Jogo ${from}`), { key })
+
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+    expect(p.onSelect).toHaveBeenCalledWith(target)
+    expect(rowOf(`Jogo ${target}`)).toHaveFocus()
+    expect(p.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['ArrowUp', 0],
+    ['ArrowDown', 2],
+  ])('UIX-020/lista: %s na borda não chama onSelect', (key, from) => {
+    const p = props({ selectedId: from })
+    render(<LibraryList {...p} />)
+
+    rowOf(`Jogo ${from}`).focus()
+    fireEvent.keyDown(rowOf(`Jogo ${from}`), { key })
+
+    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(rowOf(`Jogo ${from}`)).toHaveFocus()
+  })
+
+  it('UIX-020/lista: Enter lança o jogo da linha focada', () => {
+    const p = props({ selectedId: 1 })
+    render(<LibraryList {...p} />)
+
+    rowOf('Jogo 1').focus()
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'Enter' })
+
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(1)
+  })
+
+  it('UIX-020/lista: com keyboard=false as setas não fazem nada', () => {
+    const p = props({ selectedId: 1, keyboard: false })
+    render(<LibraryList {...p} />)
+
+    rowOf('Jogo 1').focus()
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'ArrowDown' })
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'ArrowUp' })
+
+    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(rowOf('Jogo 1')).toHaveFocus()
   })
 })

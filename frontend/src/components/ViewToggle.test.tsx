@@ -82,6 +82,7 @@ function Harness({ onNeedMore = vi.fn() }: { onNeedMore?: () => void }) {
     current: null,
     onNeedMore,
     selectedId: null,
+    keyboard: true,
     onSelect: vi.fn(),
     onLaunch: vi.fn(),
   }

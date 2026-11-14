@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { GameCard, liveOf } from './GameCard'
-import { GRID_GAP, columnsFor } from '../lib/gridNav'
+import { GRID_GAP, columnsFor, isNavKey, nextIndex } from '../lib/gridNav'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 
@@ -22,7 +22,10 @@ export function LibraryGrid({
   onNeedMore,
   onSelect,
   onLaunch,
+  keyboard,
 }: {
+  // keyboard enables arrows/Home/End/Enter; false while Big Box owns the keys [UIX-041].
+  keyboard: boolean
   games: GameView[]
   // covers maps a game id to its cover thumbnail URL (MID-006); a game without one shows the placeholder.
   covers?: Record<number, string>
@@ -134,14 +137,103 @@ export function LibraryGrid({
     onNeedMore()
   }, [lastRow, lastCard, loaded, total, onNeedMore])
 
-  const selectedLoaded = selectedId !== null && games.some((g) => g.id === selectedId)
+  const selectedIndex = selectedId === null ? -1 : games.findIndex((g) => g.id === selectedId)
+  const selectedLoaded = selectedIndex >= 0
+  // The one card that is a Tab stop: the game in focus when loaded, else the first [UIX-019].
+  const stopIndex = selectedLoaded ? selectedIndex : 0
+  const stopRendered = rows.some((r) => r.index === Math.floor(stopIndex / cols))
+
+  // Scrolls the row of a game into the window (or centers it) [UIX-019].
+  const scrollToIndex = (index: number, center: boolean) => {
+    const el = scrollRef.current
+    if (el === null) {
+      return
+    }
+    const height = el.getBoundingClientRect().height
+    const top = Math.floor(index / cols) * rowHeight
+    if (center) {
+      el.scrollTo?.({ top: Math.max(0, top - (height - rowHeight) / 2) })
+    } else if (top < el.scrollTop) {
+      el.scrollTo?.({ top })
+    } else if (top + rowHeight > el.scrollTop + height) {
+      el.scrollTo?.({ top: top + rowHeight - height })
+    }
+  }
+
+  // The card that must receive DOM focus once it is rendered (it may be outside the window now).
+  const pendingFocus = useRef<number | null>(null)
+  const focusPending = () => {
+    const id = pendingFocus.current
+    if (id === null) {
+      return
+    }
+    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-game-id="${id}"]`)
+    if (card) {
+      pendingFocus.current = null
+      card.focus({ preventScroll: true })
+    }
+  }
+  useLayoutEffect(focusPending)
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!keyboard) {
+      return
+    }
+    const cardEl = (e.target as HTMLElement).closest<HTMLElement>('[data-game-id]')
+    const focusedId = cardEl === null ? null : Number(cardEl.dataset.gameId)
+    if (e.key === 'Enter') {
+      if (focusedId !== null) {
+        e.preventDefault()
+        onLaunch(focusedId)
+      }
+      return
+    }
+    if (!isNavKey(e.key) || loaded === 0) {
+      return
+    }
+    e.preventDefault()
+    const from = focusedId === null ? stopIndex : games.findIndex((g) => g.id === focusedId)
+    if (from < 0) {
+      return
+    }
+    const to = nextIndex(from, e.key, cols, loaded)
+    const target = games[to]
+    if (to === from || target === undefined) {
+      return
+    }
+    pendingFocus.current = target.id
+    onSelect(target.id)
+    scrollToIndex(to, false)
+    focusPending()
+    if (to >= loaded - PREFETCH_AHEAD && loaded < total && askedFor.current !== loaded) {
+      askedFor.current = loaded
+      onNeedMore()
+    }
+  }
+
+  // The container is a Tab stop only while the focusable card is not in the DOM; it hands the
+  // focus to the card after scrolling to it.
+  const onContainerFocus = (e: FocusEvent<HTMLDivElement>) => {
+    if (!keyboard || e.target !== e.currentTarget || loaded === 0) {
+      return
+    }
+    const target = games[stopIndex]
+    if (target === undefined) {
+      return
+    }
+    pendingFocus.current = target.id
+    scrollToIndex(stopIndex, true)
+    focusPending()
+  }
 
   return (
     <div
       ref={scrollRef}
       role="listbox"
       aria-label="Jogos"
-      tabIndex={-1}
+      tabIndex={keyboard && loaded > 0 && !stopRendered ? 0 : -1}
+      onKeyDown={onKeyDown}
+      onFocus={onContainerFocus}
       className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2"
     >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
@@ -166,7 +258,7 @@ export function LibraryGrid({
                   live={liveOf(current, g.id)}
                   coverUrl={covers?.[g.id]}
                   selected={g.id === selectedId}
-                  tabbable={selectedLoaded ? g.id === selectedId : first + i === 0}
+                  tabbable={first + i === stopIndex}
                   onSelect={onSelect}
                   onLaunch={onLaunch}
                 />

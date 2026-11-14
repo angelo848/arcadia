@@ -424,6 +424,7 @@ export default function App() {
                       total={total}
                       current={session}
                       selectedId={focusedId}
+                      keyboard={!bigBox}
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}
@@ -435,6 +436,7 @@ export default function App() {
                       total={total}
                       current={session}
                       selectedId={focusedId}
+                      keyboard={!bigBox}
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}
