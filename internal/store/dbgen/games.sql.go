@@ -23,17 +23,6 @@ func (q *Queries) DeleteGameRow(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected()
 }
 
-const ensurePCPlatform = `-- name: EnsurePCPlatform :exec
-INSERT INTO platform (name, category)
-VALUES ('PC', 'pc')
-ON CONFLICT (name) DO NOTHING
-`
-
-func (q *Queries) EnsurePCPlatform(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, ensurePCPlatform)
-	return err
-}
-
 const getGame = `-- name: GetGame :one
 SELECT id, platform_id, title, sort_title, release_date, description, install_dir, launch_type, launch_target, launch_args, working_dir, rating, favorite, hidden, status, first_played_at, completed_at, total_play_seconds, last_played_at, play_count, hltb_main_hours, hltb_extra_hours, hltb_complete_hours, created_at, updated_at, emulator_id FROM game
 WHERE id = ?
@@ -110,18 +99,6 @@ func (q *Queries) GetGameForUpdate(ctx context.Context, id int64) (GetGameForUpd
 		&i.LaunchArgs,
 	)
 	return i, err
-}
-
-const getPlatformIDByName = `-- name: GetPlatformIDByName :one
-SELECT id FROM platform
-WHERE name = ?
-`
-
-func (q *Queries) GetPlatformIDByName(ctx context.Context, name string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getPlatformIDByName, name)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
 }
 
 const hasOpenSession = `-- name: HasOpenSession :one

@@ -73,18 +73,6 @@ func platformRows(t *testing.T, db *sql.DB) []platformRow {
 	return out
 }
 
-// onlyPC keeps the platform rows named PC, so the checks do not depend on the
-// seed platforms a migrated database may already hold.
-func onlyPC(ps []platformRow) []platformRow {
-	var out []platformRow
-	for _, p := range ps {
-		if p.Name == "PC" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 func sameGame(a, b store.Game) bool {
 	return a.ID == b.ID && a.Title == b.Title && a.LaunchType == b.LaunchType &&
 		a.LaunchTarget == b.LaunchTarget && a.LaunchArgs == b.LaunchArgs && a.WorkingDir == b.WorkingDir &&
@@ -144,35 +132,32 @@ func TestAddGame(t *testing.T) {
 		}
 	})
 
-	t.Run("GAM-001/plataforma PC (categoria pc) criada na primeira adição", func(t *testing.T) {
+	t.Run("GAM-001/PLT-027/jogo vai para a plataforma de chave windows, sem criar plataforma nova", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		// Baseline: a migrated database may already hold seed platforms (but no "PC").
-		if ps := onlyPC(platformRows(t, s.DB())); len(ps) != 0 {
-			t.Fatalf("precondition: PC platforms = %+v, want none", ps)
-		}
+		before := len(platformRows(t, s.DB()))
+		win := countRows(t, s.DB(), `SELECT id FROM platform WHERE seed_key = 'windows'`)
 		g := mustAddGame(t, s, store.NewGame{Title: "Hades", Exe: `C:\Games\Hades\Hades.exe`, WorkingDir: `C:\Games\Hades`, At: addAt})
-		ps := onlyPC(platformRows(t, s.DB()))
-		if len(ps) != 1 || ps[0].Name != "PC" || ps[0].Category != "pc" {
-			t.Fatalf("platforms = %+v, want exactly one {Name:PC Category:pc}", ps)
+		if after := len(platformRows(t, s.DB())); after != before {
+			t.Errorf("platforms = %d, want %d (no new platform)", after, before)
 		}
-		if r := readGameRow(t, s.DB(), g.ID); r.PlatformID != ps[0].ID {
-			t.Errorf("game.platform_id = %d, want %d (PC)", r.PlatformID, ps[0].ID)
+		if r := readGameRow(t, s.DB(), g.ID); r.PlatformID != win {
+			t.Errorf("game.platform_id = %d, want %d (key windows)", r.PlatformID, win)
 		}
 	})
 
 	t.Run("GAM-001/segunda adição reutiliza a plataforma", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
+		win := countRows(t, s.DB(), `SELECT id FROM platform WHERE seed_key = 'windows'`)
 		g1 := mustAddGame(t, s, store.NewGame{Title: "Hades", Exe: `C:\Games\Hades\Hades.exe`, WorkingDir: `C:\Games\Hades`, At: addAt})
 		g2 := mustAddGame(t, s, store.NewGame{Title: "Celeste", Exe: `C:\Games\Celeste\Celeste.exe`, WorkingDir: `C:\Games\Celeste`, At: addAt.Add(time.Minute)})
-		ps := onlyPC(platformRows(t, s.DB()))
-		if len(ps) != 1 || ps[0].Name != "PC" || ps[0].Category != "pc" {
-			t.Fatalf("platforms = %+v, want exactly one {Name:PC Category:pc}", ps)
-		}
 		r1, r2 := readGameRow(t, s.DB(), g1.ID), readGameRow(t, s.DB(), g2.ID)
-		if r1.PlatformID != ps[0].ID || r2.PlatformID != ps[0].ID {
-			t.Errorf("platform_id = %d and %d, want both %d", r1.PlatformID, r2.PlatformID, ps[0].ID)
+		if r1.PlatformID != win || r2.PlatformID != win {
+			t.Errorf("platform_id = %d and %d, want both %d", r1.PlatformID, r2.PlatformID, win)
+		}
+		if n := countRows(t, s.DB(), `SELECT COUNT(*) FROM platform WHERE seed_key = 'windows'`); n != 1 {
+			t.Errorf("platforms with key windows = %d, want 1", n)
 		}
 	})
 

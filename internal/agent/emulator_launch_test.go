@@ -22,9 +22,10 @@ func emulatorGame(t *testing.T, romPath string, platformEmu *store.Emulator) (*r
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	pc, err := st.AddPlatform(t.Context(), "PC", domain.PlatformCategory("pc"))
+	// game.add goes to the platform of seed key "windows" (PLT-027).
+	winID, err := st.EnsureWindowsPlatformID(t.Context())
 	if err != nil {
-		t.Fatalf("AddPlatform: %v", err)
+		t.Fatalf("EnsureWindowsPlatformID: %v", err)
 	}
 	if platformEmu != nil {
 		emu, err := st.AddEmulator(t.Context(), platformEmu.Name, platformEmu.ExePath, platformEmu.ArgsTemplate)
@@ -32,7 +33,7 @@ func emulatorGame(t *testing.T, romPath string, platformEmu *store.Emulator) (*r
 			t.Fatalf("AddEmulator: %v", err)
 		}
 		id := emu.ID
-		if err := st.SetPlatformEmulator(t.Context(), pc.ID, &id); err != nil {
+		if err := st.SetPlatformEmulator(t.Context(), winID, &id); err != nil {
 			t.Fatalf("SetPlatformEmulator: %v", err)
 		}
 	}

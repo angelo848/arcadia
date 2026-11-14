@@ -202,7 +202,7 @@ func insertImportRules(ctx context.Context, q *dbgen.Queries, id int64, g Import
 // the given category when it does not exist (EDT-008). It is a separate
 // transaction, so the agent calls it before an import transaction starts.
 func (s *Store) EnsurePlatformID(ctx context.Context, name string, category domain.PlatformCategory) (int64, error) {
-	p, err := s.AddPlatform(ctx, name, category)
+	p, _, err := s.AddPlatform(ctx, name, category)
 	if err != nil {
 		return 0, err
 	}
@@ -242,12 +242,9 @@ func (s *Store) ImportDuplicate(ctx context.Context, launchType, launchTarget, t
 // case, and false when there is none. It never creates a platform, so the scan
 // can use it (IMP-001).
 func (s *Store) PlatformIDByName(ctx context.Context, name string) (int64, bool, error) {
-	row, err := s.q.GetPlatformByNameNoCase(ctx, name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
+	p, found, err := s.ResolvePlatform(ctx, name)
+	if err != nil || !found {
+		return 0, false, err
 	}
-	if err != nil {
-		return 0, false, fmt.Errorf("store: platform %q: %w", name, err)
-	}
-	return row.ID, true, nil
+	return p.ID, true, nil
 }

@@ -127,9 +127,12 @@ func TestAddPlatform(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
 
-		p, err := s.AddPlatform(t.Context(), "Mega Drive", domain.CategoryConsole)
+		p, created, err := s.AddPlatform(t.Context(), "Mega Drive", domain.CategoryConsole)
 		if err != nil {
 			t.Fatalf("AddPlatform: %v", err)
+		}
+		if !created {
+			t.Errorf("created = false, want true for a new name")
 		}
 		if p.ID == 0 {
 			t.Errorf("ID = 0, want the id of the new row")
@@ -145,14 +148,17 @@ func TestAddPlatform(t *testing.T) {
 	t.Run("EDT-008/mesmo nome em outra grafia devolve a existente e ignora a categoria enviada", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		first, err := s.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
+		first, _, err := s.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
 		if err != nil {
 			t.Fatalf("AddPlatform(Switch): %v", err)
 		}
 
-		again, err := s.AddPlatform(t.Context(), "SWITCH", domain.CategoryPC)
+		again, againCreated, err := s.AddPlatform(t.Context(), "SWITCH", domain.CategoryPC)
 		if err != nil {
 			t.Fatalf("AddPlatform(SWITCH): %v", err)
+		}
+		if againCreated {
+			t.Errorf("created = true, want false for an existing name")
 		}
 		if again.ID != first.ID {
 			t.Errorf("ID = %d, want the existing %d", again.ID, first.ID)
@@ -169,7 +175,7 @@ func TestAddPlatform(t *testing.T) {
 	})
 }
 
-func TestPlatforms(t *testing.T) {
+func TestPlatformList(t *testing.T) {
 	t.Parallel()
 
 	t.Run("IPC-048/Platforms em ordem de nome sem diferenciar maiúsculas; lista vazia não é nil", func(t *testing.T) {
@@ -195,7 +201,7 @@ func TestPlatforms(t *testing.T) {
 			{"atari", domain.CategoryArcade},
 			{"Amiga", domain.CategoryArcade},
 		} {
-			if _, err := s.AddPlatform(t.Context(), p.name, p.cat); err != nil {
+			if _, _, err := s.AddPlatform(t.Context(), p.name, p.cat); err != nil {
 				t.Fatalf("AddPlatform(%q): %v", p.name, err)
 			}
 		}

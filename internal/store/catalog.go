@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 
@@ -104,43 +103,6 @@ func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 		return Catalog{}, err
 	}
 	return c, nil
-}
-
-// AddPlatform returns the platform named name, creating it with category when no
-// platform matches the name without regard to case (EDT-008). An existing platform
-// is returned as stored, with its own spelling and category, and category is
-// ignored. The name is cut as DOM-016 requires; an invalid name or category is an
-// error and nothing is written.
-func (s *Store) AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (Platform, error) {
-	clean, err := domain.NormalizeName(name)
-	if err != nil {
-		return Platform{}, fmt.Errorf("store: add platform: name: %w", err)
-	}
-	cat, err := domain.ParsePlatformCategory(string(category))
-	if err != nil {
-		return Platform{}, fmt.Errorf("store: add platform: category: %w", err)
-	}
-	var out Platform
-	err = s.withTx(ctx, func(_ *sql.Tx, q *dbgen.Queries) error {
-		row, err := q.GetPlatformByNameNoCase(ctx, clean)
-		if err == nil {
-			out = platformFromModel(row)
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("store: find platform %q: %w", clean, err)
-		}
-		id, err := q.InsertPlatform(ctx, dbgen.InsertPlatformParams{Name: clean, Category: string(cat)})
-		if err != nil {
-			return fmt.Errorf("store: insert platform %q: %w", clean, err)
-		}
-		out = Platform{ID: id, Name: clean, Category: cat}
-		return nil
-	})
-	if err != nil {
-		return Platform{}, err
-	}
-	return out, nil
 }
 
 // genreItems maps genre rows to CatalogItem, never returning nil.

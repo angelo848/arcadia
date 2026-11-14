@@ -543,7 +543,7 @@ func handlePlatformAdd(ctx context.Context, st gameStore, log *slog.Logger, para
 	if err != nil {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
-	pl, err := st.AddPlatform(ctx, name, category)
+	pl, created, err := st.AddPlatform(ctx, name, category)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidField) {
 			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
@@ -551,7 +551,7 @@ func handlePlatformAdd(ctx context.Context, st gameStore, log *slog.Logger, para
 		log.Error("falha ao adicionar a plataforma", "name", name, "error", err.Error())
 		return nil, fmt.Errorf("platform.add: %w", err)
 	}
-	return ipc.PlatformAddResult{Platform: toIPCPlatform(pl)}, nil
+	return ipc.PlatformAddResult{Platform: toIPCPlatform(pl), Created: created}, nil
 }
 
 // handleLibraryCatalog serves library.catalog: the platforms, the genres and

@@ -112,7 +112,7 @@ func TestGameAddShape(t *testing.T) {
 		}
 		obj := objectOf(t, resp.Result)
 		wantKeys(t, obj, gameKeys...)
-		wantRaw(t, obj, "platform", `"PC"`)
+		wantRaw(t, obj, "platform", `"Windows"`)
 		wantRaw(t, obj, "status", `"not_played"`)
 		wantRaw(t, obj, "favorite", "false")
 		wantRaw(t, obj, "year", "null")
@@ -120,7 +120,7 @@ func TestGameAddShape(t *testing.T) {
 		var g ipc.Game
 		resultInto(t, resp, &g)
 		if g.PlatformID < 1 {
-			t.Errorf("platformId = %d, want the id of the PC platform (>= 1)", g.PlatformID)
+			t.Errorf("platformId = %d, want the id of the Windows platform (>= 1)", g.PlatformID)
 		}
 		stored, err := h.st.Game(t.Context(), g.ID)
 		if err != nil {
@@ -159,7 +159,7 @@ func (s *recordingGameStore) Platforms(ctx context.Context) ([]store.Platform, e
 	return s.inner.Platforms(ctx)
 }
 
-func (s *recordingGameStore) AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error) {
+func (s *recordingGameStore) AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, bool, error) {
 	return s.inner.AddPlatform(ctx, name, category)
 }
 
@@ -796,7 +796,7 @@ func TestGameUpdate(t *testing.T) {
 		t.Parallel()
 		h, _ := newUpdateHarness(t)
 		g := h.addGame(t, h.file(t, "game.exe"), "Hollow Knight")
-		sw, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
+		sw, _, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
 		if err != nil {
 			t.Fatalf("AddPlatform: %v", err)
 		}
@@ -1353,8 +1353,9 @@ func platformList(t *testing.T, h *gamesHarness) []ipc.Platform {
 }
 
 // platformAddOK calls platform.add with name and category, requires success,
-// checks that the result has exactly the member platform with id, name and
-// category, and returns the platform [IPC-048, EDT-008].
+// checks that the result has exactly the members platform and created, the
+// platform with the seven members of the wire (PLT-014), and returns the platform
+// [IPC-048, EDT-008]. The value of created is tested with the handler (T11).
 func platformAddOK(t *testing.T, h *gamesHarness, name, category string) ipc.Platform {
 	t.Helper()
 	resp := h.call(t, ipc.MethodPlatformAdd, mustJSON(t, map[string]string{"name": name, "category": category}))
@@ -1362,8 +1363,8 @@ func platformAddOK(t *testing.T, h *gamesHarness, name, category string) ipc.Pla
 		t.Fatalf("platform.add(%q, %q): error %d %q (data %s)", name, category, resp.Error.Code, resp.Error.Message, resp.Error.Data)
 	}
 	top := objectOf(t, resp.Result)
-	wantKeys(t, top, "platform")
-	wantKeys(t, objectOf(t, top["platform"]), "id", "name", "category", "emulatorId")
+	wantKeys(t, top, "platform", "created")
+	wantKeys(t, objectOf(t, top["platform"]), "id", "name", "category", "emulatorId", "seedKey", "iconPath", "gameCount")
 	var out ipc.PlatformAddResult
 	resultInto(t, resp, &out)
 	return out.Platform
@@ -1427,7 +1428,7 @@ func TestPlatformAndCatalog(t *testing.T) {
 			{"PC", domain.CategoryPC},
 		}
 		for _, p := range added {
-			if _, err := h.st.AddPlatform(t.Context(), p.name, p.category); err != nil {
+			if _, _, err := h.st.AddPlatform(t.Context(), p.name, p.category); err != nil {
 				t.Fatalf("AddPlatform(%q): %v", p.name, err)
 			}
 		}
@@ -1439,7 +1440,7 @@ func TestPlatformAndCatalog(t *testing.T) {
 		}
 		var names []string
 		for _, it := range items {
-			wantKeys(t, it, "id", "name", "category", "emulatorId")
+			wantKeys(t, it, "id", "name", "category", "emulatorId", "seedKey", "iconPath", "gameCount")
 			var name string
 			if err := json.Unmarshal(it["name"], &name); err != nil {
 				t.Fatalf("name: %v", err)
@@ -1467,7 +1468,7 @@ func TestPlatformAndCatalog(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
 		h.need(t, ipc.MethodPlatformAdd)
-		sw, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
+		sw, _, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole)
 		if err != nil {
 			t.Fatalf("AddPlatform: %v", err)
 		}
@@ -1516,7 +1517,7 @@ func TestPlatformAndCatalog(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
 		h.need(t, ipc.MethodPlatformAdd)
-		if _, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole); err != nil {
+		if _, _, err := h.st.AddPlatform(t.Context(), "Switch", domain.CategoryConsole); err != nil {
 			t.Fatalf("AddPlatform: %v", err)
 		}
 		before := platformsRaw(t, h)

@@ -53,7 +53,7 @@ type gameStore interface {
 	UpdateGame(ctx context.Context, id int64, p store.GamePatch, at time.Time) (store.GameDetail, error)
 	DeleteGame(ctx context.Context, id int64) error
 	Platforms(ctx context.Context) ([]store.Platform, error)
-	AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, error)
+	AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, bool, error)
 	Catalog(ctx context.Context) (store.Catalog, error)
 	ResolveEmulator(ctx context.Context, gameID int64) (store.Emulator, error)
 	Emulators(ctx context.Context) ([]store.Emulator, error)

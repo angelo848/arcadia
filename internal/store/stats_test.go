@@ -61,8 +61,8 @@ func TestStats(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StatsByPlatform: %v", err)
 		}
-		if len(got) != 1 || got[0].Name != "PC" || got[0].ActiveSeconds != 500 {
-			t.Errorf("platforms = %+v, want PC with 500 s only", got)
+		if len(got) != 1 || got[0].Name != "Windows" || got[0].ActiveSeconds != 500 {
+			t.Errorf("platforms = %+v, want Windows with 500 s only", got)
 		}
 	})
 

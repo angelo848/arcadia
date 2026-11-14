@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 )
@@ -20,11 +19,11 @@ func emulatorHandlersFor(t *testing.T) (map[string]ipc.Handler, *store.Store, in
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	pc, err := st.AddPlatform(t.Context(), "PC", domain.PlatformCategory("pc"))
+	win, err := st.EnsureWindowsPlatformID(t.Context())
 	if err != nil {
-		t.Fatalf("AddPlatform: %v", err)
+		t.Fatalf("EnsureWindowsPlatformID: %v", err)
 	}
-	return emulatorHandlers(st, quietLog()), st, pc.ID
+	return emulatorHandlers(st, quietLog()), st, win
 }
 
 func rawJSON(t *testing.T, v any) json.RawMessage {

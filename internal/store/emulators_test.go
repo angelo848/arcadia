@@ -86,7 +86,10 @@ func TestEmulators(t *testing.T) {
 	t.Run("EMU-002/jogo com emulador próprio ganha do padrão da plataforma", func(t *testing.T) {
 		t.Parallel()
 		s := ftsOpen(t)
-		pc := importPC(t, s)
+		pc, err := s.EnsureWindowsPlatformID(t.Context())
+		if err != nil {
+			t.Fatalf("EnsureWindowsPlatformID: %v", err)
+		}
 		platformEmu, err := s.AddEmulator(t.Context(), "Padrão", `C:\Emu\padrao.exe`, "{rom}")
 		if err != nil {
 			t.Fatalf("AddEmulator: %v", err)

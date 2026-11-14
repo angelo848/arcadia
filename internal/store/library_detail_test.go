@@ -137,16 +137,16 @@ func TestGameDetail(t *testing.T) {
 func TestAddGameFields(t *testing.T) {
 	t.Parallel()
 
-	t.Run("GAM-001/AddGame devolve Platform PC, Status not_played, Favorite false e ReleaseDate vazio", func(t *testing.T) {
+	t.Run("GAM-001/PLT-027/AddGame devolve Platform Windows, Status not_played, Favorite false e ReleaseDate vazio", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
 		g := mustAddGame(t, s, store.NewGame{Title: "Hades", Exe: `C:\Games\Hades\Hades.exe`, WorkingDir: `C:\Games\Hades`, At: addAt})
 
-		if g.Platform != "PC" {
-			t.Errorf("Platform = %q, want PC", g.Platform)
+		if g.Platform != "Windows" {
+			t.Errorf("Platform = %q, want Windows", g.Platform)
 		}
-		if want := libLookup(t, s, "platform", "PC"); g.PlatformID != want {
-			t.Errorf("PlatformID = %d, want %d (PC)", g.PlatformID, want)
+		if want := libLookup(t, s, "platform", "Windows"); g.PlatformID != want {
+			t.Errorf("PlatformID = %d, want %d (Windows)", g.PlatformID, want)
 		}
 		if g.Status != domain.StatusNotPlayed {
 			t.Errorf("Status = %q, want %q", g.Status, domain.StatusNotPlayed)

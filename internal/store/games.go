@@ -15,9 +15,6 @@ import (
 // ErrGameNotFound is returned by Game when no game has the given id.
 var ErrGameNotFound = errors.New("store: game not found")
 
-// pcPlatformName is the platform every game added by executable belongs to.
-const pcPlatformName = "PC"
-
 // launchTypeExe is the launch_type of a game started from an executable.
 const launchTypeExe = "exe"
 
@@ -40,18 +37,15 @@ type NewGame struct {
 	At                     time.Time
 }
 
-// AddGame inserts a game launched by executable, creating the PC platform on
-// first use, in a single transaction. The same executable may be added more
+// AddGame inserts a game launched by executable, creating the platform of seed
+// key "windows" on first use (PLT-027), in a single transaction. The same executable may be added more
 // than once; each addition is a distinct game (GAM-001).
 func (s *Store) AddGame(ctx context.Context, g NewGame) (Game, error) {
 	var out Game
 	err := s.withTx(ctx, func(tx *sql.Tx, q *dbgen.Queries) error {
-		if err := q.EnsurePCPlatform(ctx); err != nil {
-			return fmt.Errorf("store: ensure PC platform: %w", err)
-		}
-		platformID, err := q.GetPlatformIDByName(ctx, pcPlatformName)
+		platformID, err := ensureWindowsPlatformWith(ctx, q)
 		if err != nil {
-			return fmt.Errorf("store: PC platform id: %w", err)
+			return err
 		}
 		at := TimeToMillis(g.At)
 		row, err := q.InsertGame(ctx, dbgen.InsertGameParams{
