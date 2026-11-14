@@ -14,7 +14,7 @@ import {
 } from '../lib/metadata'
 
 const inputClass =
-  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 const providers: ProviderId[] = ['igdb', 'steamgriddb', 'steamstore']
 

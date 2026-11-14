@@ -7,7 +7,7 @@ import { Modal } from './Modal'
 import { PlatformIcon } from './PlatformIcon'
 
 const inputClass =
-  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 // The categories of a platform (DOM-015, PLT-019) and their labels.
 const categories: ReadonlyArray<{ value: string; label: string }> = [

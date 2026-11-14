@@ -9,7 +9,7 @@ import {
 } from '../lib/metadata'
 
 const inputClass =
-  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 type Configured = Record<KeyProviderId, boolean | null>
 

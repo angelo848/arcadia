@@ -21,8 +21,8 @@ export function StatsChart({ bars, label, format }: { bars: ChartBar[]; label: s
         return (
           <g key={`${b.label}-${i}`}>
             <title>{`${b.label}: ${format(b.value)}`}</title>
-            <rect x={x} y={y} width={barWidth} height={Math.max(h, 1)} rx={2} className={b.current ? 'fill-emerald-400' : 'fill-neutral-600'} />
-            <text x={x + barWidth / 2} y={height - 8} textAnchor="middle" className="fill-neutral-400" fontSize="10">
+            <rect x={x} y={y} width={barWidth} height={Math.max(h, 1)} rx={2} className={b.current ? 'fill-running' : 'fill-hover'} />
+            <text x={x + barWidth / 2} y={height - 8} textAnchor="middle" className="fill-muted" fontSize="10">
               {b.label}
             </text>
           </g>

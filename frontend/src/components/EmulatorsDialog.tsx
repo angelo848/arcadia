@@ -19,7 +19,7 @@ import {
 } from '../lib/emulators'
 
 const inputClass =
-  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 type Draft = { id: number | null; name: string; exePath: string; argsTemplate: string }
 

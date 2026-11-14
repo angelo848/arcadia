@@ -1,0 +1,437 @@
+import type { ReactNode } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import App from './App'
+
+// UIX-046 (the UI never influences play time) and UIX-047 (no new binding).
+// Every binding of window.go.main.App is a spy; any property read creates one, so a call to a
+// binding that is not in the phase 9 list is seen too.
+
+const dts = import.meta.glob('../wailsjs/go/main/App.d.ts', { query: '?raw', import: 'default', eager: true }) as Record<
+  string,
+  string
+>
+// The phase 9 bindings: the generated App.d.ts (it did not change in phase 10).
+const phase9 = new Set(
+  Object.values(dts).flatMap((src) => Array.from(src.matchAll(/export function (\w+)\(/g), (m) => m[1])),
+)
+
+// Bindings that start a game, change the session or write anything.
+const writes = [
+  'LaunchGame',
+  'LaunchGameUntracked',
+  'PauseSession',
+  'ResumeSession',
+  'UpdateGame',
+  'DeleteGame',
+  'AddPlatform',
+  'PlatformDelete',
+  'PlatformSetEmulator',
+  'PlatformSetIcon',
+  'PlatformUpdate',
+  'EmulatorAdd',
+  'EmulatorDelete',
+  'EmulatorUpdate',
+  'ProviderSetKey',
+  'ProviderDeleteKey',
+  'ImportApply',
+  'ScrapeApply',
+  'MediaQueue',
+  'MediaCancel',
+]
+
+type Spy = ReturnType<typeof vi.fn>
+let spies: Map<string, Spy>
+let overrides: Record<string, (...a: unknown[]) => unknown>
+let rectSpy: ReturnType<typeof vi.spyOn> | undefined
+
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+function game(id: number, title: string) {
+  return {
+    id,
+    platformId: 1,
+    title,
+    platform: 'Windows',
+    path: `C:\\Games\\${title}.exe`,
+    status: 'not_played',
+    favorite: false,
+    year: null,
+    totalPlaySeconds: 0,
+    playCount: 0,
+    firstPlayedAt: '',
+    lastPlayedAt: '',
+  }
+}
+
+const titles: Record<number, string> = { 10: 'Hollow Knight', 20: 'Hades', 30: 'Celeste' }
+
+function session(state: 'running' | 'paused' = 'running') {
+  return {
+    sessionId: 1,
+    gameId: 10,
+    title: 'Hollow Knight',
+    state,
+    startedAt: '2026-11-09T10:00:00.000Z',
+    endedAt: '',
+    activeSeconds: 0,
+    activeMs: 0,
+    asOf: '2026-11-09T10:00:00.000Z',
+  }
+}
+
+function defaults(name: string, args: unknown[]): unknown {
+  switch (name) {
+    case 'AgentStatus':
+      return {
+        connected: true,
+        version: '0.0.0-test',
+        pid: 1,
+        startedAt: '2026-11-09T09:00:00Z',
+        dataDir: 'C:\\data',
+        uptimeSeconds: 0,
+      }
+    case 'AgentElevated':
+      return true
+    case 'Catalog':
+      return {
+        platforms: [
+          { id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 3 },
+          { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null, seedKey: 'ps2', iconUrl: '', gameCount: 0 },
+        ],
+        genres: [],
+        companies: [],
+        playModes: [],
+      }
+    case 'CurrentSession':
+      return null
+    case 'ListGames': {
+      const q = args[0] as { offset?: number; limit?: number }
+      const rows = [game(10, 'Hollow Knight'), game(20, 'Hades'), game(30, 'Celeste')]
+      const offset = q?.offset ?? 0
+      return { games: rows.slice(offset, offset + (q?.limit ?? 100)), total: rows.length, offset }
+    }
+    case 'GetGame': {
+      const id = args[0] as number
+      return {
+        ...game(id, titles[id] ?? 'Jogo'),
+        description: '',
+        completedAt: null,
+        developers: [],
+        publishers: [],
+        genres: [],
+        playModes: [],
+        launchType: 'exe',
+        launchArgs: '',
+        emulatorId: null,
+      }
+    }
+    case 'GameSessions':
+      return { sessions: [], total: 0, offset: 0 }
+    case 'MediaList':
+      return {
+        media: [1, 2, 3].map((id) => ({
+          id,
+          kind: 'screenshot',
+          provider: 'p',
+          path: '',
+          thumbPath: '',
+          url: `/media/${id}.jpg`,
+          thumbUrl: `/thumb/${id}.jpg`,
+        })),
+      }
+    case 'LaunchGame':
+      return session()
+    case 'PauseSession':
+      return session('paused')
+    case 'ResumeSession':
+      return session('running')
+    case 'EmulatorList':
+      return { emulators: [] }
+    case 'ProviderKeyStatus':
+      return { provider: args[0], configured: false }
+    case 'StatsSummary':
+      return {
+        games: [
+          { gameId: 20, title: 'Hades', platform: 'Windows', sessions: 1, activeSeconds: 3600, importedSeconds: 0, lastPlayedAt: '' },
+        ],
+        platforms: [],
+        totalSeconds: 3600,
+        importedSeconds: 0,
+      }
+    case 'StatsWeekly':
+      return { weeks: [] }
+    case 'ScrapeSearch':
+      return { candidates: [] }
+    default:
+      return undefined
+  }
+}
+
+function install() {
+  spies = new Map()
+  overrides = {}
+  const target = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (typeof prop !== 'string' || prop === 'then') {
+          return undefined
+        }
+        let spy = spies.get(prop)
+        if (!spy) {
+          spy = vi.fn((...args: unknown[]) => Promise.resolve((overrides[prop] ?? ((...a) => defaults(prop, a)))(...args)))
+          spies.set(prop, spy)
+        }
+        return spy
+      },
+    },
+  )
+  const w = window as unknown as { go?: unknown; runtime?: unknown }
+  w.go = { main: { App: target } }
+  w.runtime = { EventsOn: vi.fn(() => () => {}) }
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+  rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () =>
+      ({ x: 0, y: 0, top: 0, left: 0, bottom: 600, right: 800, width: 800, height: 600, toJSON: () => ({}) }) as DOMRect,
+  )
+}
+
+function uninstall() {
+  const w = window as unknown as { go?: unknown; runtime?: unknown }
+  delete w.go
+  delete w.runtime
+  rectSpy?.mockRestore()
+  vi.unstubAllGlobals()
+}
+
+function calls(name: string): unknown[][] {
+  return spies.get(name)?.mock.calls ?? []
+}
+
+function writeCalls(): string[] {
+  return writes.filter((n) => calls(n).length > 0)
+}
+
+function renderApp() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  return render(<App />, { wrapper })
+}
+
+function cards(): HTMLElement[] {
+  const listbox = screen.queryByRole('listbox', { name: 'Jogos' })
+  return listbox ? within(listbox).queryAllByRole('option') : []
+}
+
+async function findCard(title: string): Promise<HTMLElement> {
+  await waitFor(() => expect(cards().length).toBe(3))
+  const card = cards().find((c) => within(c).queryAllByText(title).length > 0)
+  expect(card, `card of ${title}`).toBeDefined()
+  return card as HTMLElement
+}
+
+// topBar is the header with the title "Arcadia" and the modal buttons.
+function topBar(): HTMLElement {
+  return screen.getByRole('heading', { level: 1, name: 'Arcadia' }).closest('header') as HTMLElement
+}
+
+function aside(): HTMLElement {
+  return screen.getByRole('complementary', { name: 'Detalhes do jogo' })
+}
+
+async function focusGame(title: string): Promise<void> {
+  const card = await findCard(title)
+  fireEvent.click(within(card).getByText(title))
+  await within(aside()).findByRole('heading', { level: 2, name: title })
+  await within(aside()).findByRole('button', { name: 'Jogar' })
+}
+
+async function flush() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20))
+  })
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  install()
+})
+
+afterEach(() => {
+  cleanup()
+  uninstall()
+})
+
+describe('invariantes da UI', () => {
+  it('sanidade: a lista de bindings da fase 9 foi lida do App.d.ts', () => {
+    expect(phase9.has('LaunchGame')).toBe(true)
+    expect(phase9.has('ListGames')).toBe(true)
+    expect(phase9.size).toBeGreaterThan(30)
+  })
+
+  it('UIX-046/pôr em foco, setas, carrossel, plataformas, filtros, seção recolhível, abrir e fechar cada modal, entrar e sair do Big Box e estatísticas chamam só leituras', async () => {
+    renderApp()
+    await focusGame('Hollow Knight')
+
+    // Arrows on the grid.
+    const first = await findCard('Hollow Knight')
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    await within(aside()).findByRole('heading', { level: 2, name: 'Hades' })
+    fireEvent.keyDown(await findCard('Hades'), { key: 'ArrowLeft' })
+
+    // Carousel.
+    const next = within(aside()).queryByRole('button', { name: 'Próxima imagem' })
+    if (next) {
+      fireEvent.click(next)
+      fireEvent.click(within(aside()).getByRole('button', { name: 'Imagem anterior' }))
+    }
+
+    // Platforms and the collapsible filters section.
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 3 jogos' }))
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
+    await flush()
+    const filtros = screen.getByRole('button', { name: /^Filtros/ })
+    fireEvent.click(filtros)
+    fireEvent.click(screen.getByRole('button', { name: /^Filtros/ }))
+
+    // Every modal: open and close with Escape.
+    const openers = ['Provedores', 'Emuladores', 'Plataformas', 'Importar']
+    for (const name of openers) {
+      fireEvent.click(within(topBar()).getByRole('button', { name }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.keyDown(dialog, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    }
+    for (const name of ['Editar', 'Buscar metadados', 'Remover']) {
+      fireEvent.click(within(aside()).getByRole('button', { name }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.keyDown(dialog, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    }
+
+    // Big Box in and out, and the statistics.
+    fireEvent.keyDown(window, { key: 'F11' })
+    fireEvent.click(await screen.findByRole('button', { name: /Sair do Big Box/ }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Sair do Big Box/ })).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
+    await screen.findByRole('heading', { name: 'Estatísticas' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await flush()
+
+    expect(writeCalls(), 'bindings que escrevem ou lançam').toEqual([])
+  })
+
+  describe('UIX-046/duplo clique, Enter, Jogar e Y chamam LaunchGame exatamente uma vez cada; Jogar sem contar tempo chama LaunchGameUntracked uma vez', () => {
+    it('UIX-046/duplo clique', async () => {
+      renderApp()
+      fireEvent.doubleClick(await findCard('Hades'))
+      await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+      await flush()
+      expect(calls('LaunchGame')).toEqual([[20]])
+      expect(calls('LaunchGameUntracked')).toHaveLength(0)
+    })
+
+    it('UIX-046/Enter no cartão', async () => {
+      renderApp()
+      const card = await findCard('Hades')
+      card.focus()
+      fireEvent.keyDown(card, { key: 'Enter' })
+      await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+      await flush()
+      expect(calls('LaunchGame')).toEqual([[20]])
+      expect(calls('LaunchGameUntracked')).toHaveLength(0)
+    })
+
+    it('UIX-046/Jogar no painel', async () => {
+      renderApp()
+      await focusGame('Hades')
+      expect(calls('LaunchGame')).toHaveLength(0)
+      fireEvent.click(within(aside()).getByRole('button', { name: 'Jogar' }))
+      await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+      await flush()
+      expect(calls('LaunchGame')).toEqual([[20]])
+      expect(calls('LaunchGameUntracked')).toHaveLength(0)
+    })
+
+    it('UIX-046/Y (Shift+Enter) no Big Box', async () => {
+      renderApp()
+      await findCard('Hades')
+      fireEvent.keyDown(window, { key: 'F11' })
+      await screen.findByRole('button', { name: /Sair do Big Box/ })
+      const card = await findCard('Celeste')
+      card.focus()
+      fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+      await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+      await flush()
+      expect(calls('LaunchGame')).toEqual([[30]])
+      expect(calls('LaunchGameUntracked')).toHaveLength(0)
+    })
+
+    it('UIX-046/Jogar sem contar tempo chama LaunchGameUntracked uma vez e não LaunchGame', async () => {
+      renderApp()
+      await focusGame('Hades')
+      fireEvent.click(within(aside()).getByRole('button', { name: 'Jogar sem contar tempo' }))
+      await waitFor(() => expect(calls('LaunchGameUntracked')).toHaveLength(1))
+      await flush()
+      expect(calls('LaunchGameUntracked')).toEqual([[20]])
+      expect(calls('LaunchGame')).toHaveLength(0)
+    })
+  })
+
+  it('UIX-046/ToggleSession só é chamado pelo painel de sessão', async () => {
+    // ToggleSession is Pause/Resume of the running session.
+    overrides.CurrentSession = () => session('running')
+    renderApp()
+    await screen.findByRole('status', { name: 'Sessão em andamento' })
+
+    // Everything else in the UI leaves the session alone.
+    await focusGame('Hades')
+    expect(screen.queryByRole('status', { name: 'Sessão em andamento' }), 'after focus').not.toBeNull()
+    const card = await findCard('Celeste')
+    fireEvent.keyDown(card, { key: 'ArrowLeft' })
+    expect(screen.queryByRole('status', { name: 'Sessão em andamento' }), 'after arrow').not.toBeNull()
+    fireEvent.keyDown(window, { key: 'F11' })
+    fireEvent.click(await screen.findByRole('button', { name: /Sair do Big Box/ }))
+    await flush()
+    expect(calls('PauseSession')).toHaveLength(0)
+    expect(calls('ResumeSession')).toHaveLength(0)
+
+    const livePanel = await screen.findByRole('status', { name: 'Sessão em andamento' })
+    fireEvent.click(within(livePanel).getByRole('button', { name: 'Pausar' }))
+    await waitFor(() => expect(calls('PauseSession')).toHaveLength(1))
+    await flush()
+    expect(calls('PauseSession')).toHaveLength(1)
+    expect(calls('ResumeSession')).toHaveLength(0)
+  })
+
+  it('UIX-047/nenhum binding novo: as chamadas feitas pela UI estão na lista de bindings da fase 9', async () => {
+    renderApp()
+    await focusGame('Hades')
+    fireEvent.click(within(aside()).getByRole('button', { name: 'Jogar' }))
+    await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
+    await screen.findByRole('heading', { name: 'Estatísticas' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    for (const name of ['Provedores', 'Emuladores', 'Plataformas', 'Importar']) {
+      fireEvent.click(within(topBar()).getByRole('button', { name }))
+      fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    }
+    await flush()
+
+    const called = Array.from(spies.entries())
+      .filter(([, spy]) => spy.mock.calls.length > 0)
+      .map(([name]) => name)
+    expect(called.length).toBeGreaterThan(3)
+    const unknown = called.filter((n) => !phase9.has(n))
+    expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
+  })
+})

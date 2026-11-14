@@ -14,7 +14,7 @@ import {
 } from '../lib/imports'
 
 const inputClass =
-  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 export type ImportDialogProps = {
   // onImported runs after at least one game was written, so the library reloads (IMP-010).

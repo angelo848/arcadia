@@ -71,18 +71,18 @@ export function TagInput({ id, value, suggestions, onChange }: TagInputProps): J
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center gap-1.5 rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 focus-within:border-emerald-500">
+      <div className="flex flex-wrap items-center gap-1.5 rounded border border-line bg-app px-2 py-1.5 focus-within:border-accent">
         {value.map((tag, i) => {
           const isNew = !suggestions.some((s) => sameName(s, tag))
           return (
-            <span key={tag} className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-sm text-neutral-100">
+            <span key={tag} className="flex items-center gap-1 rounded bg-raised px-2 py-0.5 text-sm text-fg">
               {tag}
-              {isNew && <span className="text-xs text-emerald-400">nova</span>}
+              {isNew && <span className="text-xs text-running">nova</span>}
               <button
                 type="button"
                 aria-label={`Remover ${tag}`}
                 onClick={() => remove(i)}
-                className="text-neutral-400 hover:text-neutral-100"
+                className="text-muted hover:text-fg"
               >
                 ×
               </button>
@@ -98,7 +98,7 @@ export function TagInput({ id, value, suggestions, onChange }: TagInputProps): J
             setMessage(null)
           }}
           onKeyDown={onKeyDown}
-          className="min-w-[8rem] flex-1 bg-transparent text-neutral-100 focus:outline-none"
+          className="min-w-[8rem] flex-1 bg-transparent text-fg"
         />
       </div>
       {matches.length > 0 && (
@@ -110,7 +110,7 @@ export function TagInput({ id, value, suggestions, onChange }: TagInputProps): J
                 role="option"
                 aria-selected={false}
                 onClick={() => add(s)}
-                className="rounded border border-neutral-700 px-2 py-0.5 text-sm text-neutral-200 hover:bg-neutral-800"
+                className="rounded border border-line px-2 py-0.5 text-sm text-fg hover:bg-hover"
               >
                 {s}
               </button>
@@ -118,7 +118,7 @@ export function TagInput({ id, value, suggestions, onChange }: TagInputProps): J
           ))}
         </ul>
       )}
-      {message !== null && <p className="text-sm text-red-400">{message}</p>}
+      {message !== null && <p className="text-sm text-danger">{message}</p>}
     </div>
   )
 }

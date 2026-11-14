@@ -31,20 +31,20 @@ export function SessionPanel({
     <section
       role="status"
       aria-label="Sessão em andamento"
-      className="mx-6 my-4 flex items-center justify-between gap-4 rounded border border-emerald-800 bg-emerald-950/40 px-4 py-3"
+      className="mx-6 my-4 flex items-center justify-between gap-4 rounded border border-running bg-running/10 px-4 py-3"
     >
       <div className="flex min-w-0 flex-col">
-        <span className="truncate font-medium text-neutral-100">{session.title}</span>
-        {grace && <span className="text-sm text-amber-400">Encerrando…</span>}
-        {paused && <span className="text-sm font-medium text-sky-400">Pausado</span>}
+        <span className="truncate font-medium text-fg">{session.title}</span>
+        {grace && <span className="text-sm text-warning">Encerrando…</span>}
+        {paused && <span className="text-sm font-medium text-paused">Pausado</span>}
       </div>
       <div className="flex shrink-0 items-center gap-4">
-        <span className="font-mono text-xl tabular-nums text-emerald-300">{formatElapsed(seconds)}</span>
+        <span className="font-mono text-xl tabular-nums text-running">{formatElapsed(seconds)}</span>
         <button
           type="button"
           onClick={onToggle}
           disabled={grace || pending}
-          className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-500"
+          className="rounded bg-raised px-4 py-1.5 text-sm font-medium text-fg hover:bg-hover disabled:cursor-not-allowed disabled:text-muted"
         >
           {paused ? 'Retomar' : 'Pausar'}
         </button>

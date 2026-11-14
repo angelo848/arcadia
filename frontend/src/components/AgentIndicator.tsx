@@ -21,19 +21,19 @@ export function AgentIndicator({
   if (!status.connected) {
     return (
       <div role="status" data-state="disconnected" className="flex items-center gap-2 text-sm">
-        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-red-500" />
-        <span className="font-medium text-red-400">Desconectado</span>
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-danger" />
+        <span className="font-medium text-danger">Desconectado</span>
       </div>
     )
   }
 
   return (
     <div role="status" data-state="connected" className="flex items-center gap-2 text-sm">
-      <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+      <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-running" />
       {/* Explicit spaces keep the words separated in the text content. */}
-      <span className="font-medium text-emerald-400">Conectado</span>{' '}
-      <span className="text-neutral-400">{displayVersion(status.version)}</span>
-      {elevated === true && <span className="text-neutral-400">· Agente com privilégio de administrador</span>}
+      <span className="font-medium text-running">Conectado</span>{' '}
+      <span className="text-muted">{displayVersion(status.version)}</span>
+      {elevated === true && <span className="text-muted">· Agente com privilégio de administrador</span>}
     </div>
   )
 }

@@ -19,8 +19,8 @@ function classesInTree(root: Element): string[] {
   return all.map((el) => el.getAttribute('class') ?? '')
 }
 
-const greenRe = /green|emerald/
-const redRe = /red|rose/
+const greenRe = /\b(text|bg)-running\b/
+const redRe = /\b(text|bg)-danger\b/
 
 describe('AgentIndicator', () => {
   it('UI-001/conectado mostra Conectado em verde com versão e sem uptime', () => {

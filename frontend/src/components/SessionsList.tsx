@@ -15,11 +15,11 @@ const stateLabels: Record<SessionState, string> = {
 }
 
 const stateClasses: Record<SessionState, string> = {
-  running: 'font-medium text-emerald-400',
-  paused: 'font-medium text-emerald-400',
-  grace: 'font-medium text-emerald-400',
-  ended: 'text-neutral-400',
-  discarded: 'text-amber-400',
+  running: 'font-medium text-running',
+  paused: 'font-medium text-running',
+  grace: 'font-medium text-running',
+  ended: 'text-muted',
+  discarded: 'text-warning',
 }
 
 // A session without active time is shown as 0 min; formatPlayTime(0) reads "Nunca jogado".
@@ -48,23 +48,23 @@ export function SessionsList({
       )}
 
       {q.isError ? (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {q.error?.message}
         </p>
       ) : q.isPending ? (
-        <p className="text-sm text-neutral-400">Carregando sessões…</p>
+        <p className="text-sm text-muted">Carregando sessões…</p>
       ) : sessions.length === 0 ? (
-        <p className="text-sm text-neutral-400">Nenhuma sessão registrada.</p>
+        <p className="text-sm text-muted">Nenhuma sessão registrada.</p>
       ) : (
         <ul className="flex flex-col">
           {sessions.map((s) => (
             <li
               key={s.sessionId}
-              className="flex items-center justify-between gap-4 border-b border-neutral-800 py-2 text-sm"
+              className="flex items-center justify-between gap-4 border-b border-line py-2 text-sm"
             >
-              <span className="text-neutral-200">{formatLocalDateTime(s.startedAt)}</span>
-              <span className="text-neutral-400">{s.endedAt ? formatLocalDateTime(s.endedAt) : '—'}</span>
-              <span className="tabular-nums text-neutral-200">{durationText(s.activeSeconds)}</span>
+              <span className="text-fg">{formatLocalDateTime(s.startedAt)}</span>
+              <span className="text-muted">{s.endedAt ? formatLocalDateTime(s.endedAt) : '—'}</span>
+              <span className="tabular-nums text-fg">{durationText(s.activeSeconds)}</span>
               <span className={stateClasses[s.state]}>{stateLabels[s.state]}</span>
             </li>
           ))}
@@ -76,7 +76,7 @@ export function SessionsList({
           type="button"
           onClick={() => void q.fetchNextPage()}
           disabled={q.isFetchingNextPage}
-          className="self-center rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-500"
+          className="self-center rounded bg-raised px-4 py-1.5 text-sm font-medium text-fg hover:bg-hover disabled:cursor-not-allowed disabled:text-muted"
         >
           Carregar mais
         </button>
