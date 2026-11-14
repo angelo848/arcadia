@@ -51,9 +51,36 @@ export const mediaKindLabels: Record<MediaKind, string> = {
   select: 'Tela de seleção',
 }
 
-// orderMedia puts the covers first and keeps the order of the rest [UIX-026]; it does not mutate.
+// The order the details carousel shows the kinds in [AJU-009].
+export const carouselKindOrder: MediaKind[] = ['cover', 'screenshot', 'title', 'select', 'background', 'banner']
+
+// orderMedia sorts by carouselKindOrder, stable within a kind; it does not mutate.
 export function orderMedia(items: MediaItemView[]): MediaItemView[] {
-  return [...items.filter((m) => m.kind === 'cover'), ...items.filter((m) => m.kind !== 'cover')]
+  const rank = (k: MediaKind) => {
+    const i = carouselKindOrder.indexOf(k)
+    return i < 0 ? carouselKindOrder.length : i
+  }
+  return items.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m.kind) - rank(b.m.kind) || a.i - b.i).map((x) => x.m)
+}
+
+// The kinds a card falls back to when the game has no cover [AJU-015].
+export const cardFallbackOrder: MediaKind[] = ['title', 'select', 'screenshot', 'banner', 'background']
+
+export type CardImage = { url: string; fit: 'contain' | 'cover' }
+
+// cardImageOf picks the card image: the first cover (contain), else the first fallback kind (cover).
+export function cardImageOf(items: MediaItemView[]): CardImage | undefined {
+  const cover = items.find((m) => m.kind === 'cover')
+  if (cover) {
+    return { url: cover.thumbUrl || cover.url, fit: 'contain' }
+  }
+  for (const kind of cardFallbackOrder) {
+    const m = items.find((x) => x.kind === kind)
+    if (m) {
+      return { url: m.thumbUrl || m.url, fit: 'cover' }
+    }
+  }
+  return undefined
 }
 
 // The matching threshold of MID-002: a candidate at or above it is applied without asking.
@@ -141,6 +168,21 @@ export function useCovers(gameIds: number[]): Record<number, string> {
     }
   })
   return covers
+}
+
+// useCardImages maps each game to its card image; games with errors or no image are omitted [AJU-015].
+export function useCardImages(gameIds: number[]): Record<number, CardImage> {
+  const results = useQueries({
+    queries: gameIds.map((id) => ({ queryKey: mediaKey(id), queryFn: () => fetchMedia(id), retry: false, staleTime: 60_000 })),
+  })
+  const images: Record<number, CardImage> = {}
+  results.forEach((r, i) => {
+    const img = r.data ? cardImageOf(r.data) : undefined
+    if (img) {
+      images[gameIds[i]] = img
+    }
+  })
+  return images
 }
 
 // mediaQueue queues the chosen kinds of a provider's images (MID-005).
