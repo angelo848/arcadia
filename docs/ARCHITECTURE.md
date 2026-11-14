@@ -295,3 +295,18 @@ As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
 - Um campo que não é arquivo nem pasta (por exemplo, uma URI de Steam ou Epic) não tem seletor.
 - O diálogo nativo é um binding do desktop, com filtro adequado ao campo (`*.exe` para executáveis, todos os arquivos
   para arquivos avulsos e ROMs). Cancelar devolve vazio e não muda o campo.
+
+### Biblioteca em três colunas (fase 10)
+
+- A janela principal abre **maximizada** (não é tela cheia nem Big Box; restaurada, 1280×800, mínimo 1024×640).
+  Layout: filtros e plataformas à esquerda, grade ou lista no centro, detalhes do jogo em foco à direita
+  ([ADR 0028](adr/0028-biblioteca-em-tres-colunas-sem-pagina-do-jogo.md)). A página do jogo não existe mais.
+- O **jogo em foco** é estado da UI (reducer puro em `frontend/src/lib/selection.ts`, contrato em
+  `docs/specs/phase-10-nova-interface/contracts/selecao-do-jogo.md`): um clique foca, duplo clique ou Enter lança.
+  Não é gravado entre execuções e sobrevive a filtros e telas.
+- **Tema**: toda cor vem de tokens `--arc-*` em `index.css` (`[data-theme="dark"]`, expostos ao Tailwind por
+  `@theme inline`); testes varrem os componentes contra cor fixa e conferem o contraste
+  ([ADR 0029](adr/0029-tema-por-variaveis-css.md)).
+- **Modais** usam o componente `Modal` (tamanhos `large`, `medium`, `compact`; cabeçalho e rodapé fixos, corpo com
+  rolagem, foco preso). Com um modal aberto o Big Box fica suspenso.
+- A UI continua sem influenciar o tempo de jogo; a fase não alterou agente, tracker nem IPC.

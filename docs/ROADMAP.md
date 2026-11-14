@@ -55,7 +55,7 @@ plataforma), `internal/importers` (constante `PlatformPC`), `frontend` (diálogo
   fundir sem diferenciar maiúsculas.
 - Excluir uma plataforma do seed: permitir ou só ocultar.
 
-## Fase 10 — Nova interface (pontos 2, 3 e 4)
+## Fase 10 — Nova interface (pontos 2, 3 e 4) — implementada (falta a conferência manual, UIX-049)
 
 **Entrega**
 - Layout em três colunas, como o LaunchBox:
