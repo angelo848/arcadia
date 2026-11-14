@@ -3,7 +3,7 @@
 import {main} from '../models';
 import {jsontext} from '../models';
 
-export function AddPlatform(arg1:string,arg2:string):Promise<main.PlatformView>;
+export function AddPlatform(arg1:string,arg2:string):Promise<main.PlatformAddView>;
 
 export function AgentElevated():Promise<boolean>;
 
@@ -53,7 +53,15 @@ export function PickFolder():Promise<string>;
 
 export function PickGameExecutable():Promise<string>;
 
+export function PickPlatformIcon():Promise<string>;
+
+export function PlatformDelete(arg1:number):Promise<void>;
+
 export function PlatformSetEmulator(arg1:number,arg2:number):Promise<main.PlatformView>;
+
+export function PlatformSetIcon(arg1:number,arg2:any):Promise<main.PlatformView>;
+
+export function PlatformUpdate(arg1:number,arg2:string,arg3:string):Promise<main.PlatformView>;
 
 export function ProviderDeleteKey(arg1:string):Promise<main.ProviderKeyView>;
 

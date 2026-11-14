@@ -95,6 +95,18 @@ type PlatformView struct {
 	Category string `json:"category"`
 	// EmulatorID is the default emulator of the platform, nil when none (EMU-002).
 	EmulatorID *int64 `json:"emulatorId"`
+	// SeedKey is the key of the seed platform, nil for a user-created one (PLT-011).
+	SeedKey *string `json:"seedKey"`
+	// IconURL is the URL of the custom icon under /media/, "" for the bundled one (PLT-011).
+	IconURL string `json:"iconUrl"`
+	// GameCount is the number of games of the platform (PLT-015).
+	GameCount int64 `json:"gameCount"`
+}
+
+// PlatformAddView is the result of AddPlatform: Created is false when the platform already existed (PLT-016).
+type PlatformAddView struct {
+	Platform PlatformView `json:"platform"`
+	Created  bool         `json:"created"`
 }
 
 // CatalogItemView is a genre or a company of the catalog: the database id the
@@ -182,8 +194,16 @@ func sessionItemView(s ipc.SessionItem) SessionItemView {
 	}
 }
 
-func platformView(p ipc.Platform) PlatformView {
-	return PlatformView{ID: p.ID, Name: p.Name, Category: p.Category, EmulatorID: p.EmulatorID}
+// platformView converts a platform of the agent; an icon outside data\media has no URL (PLT-011).
+func (a *App) platformView(p ipc.Platform) PlatformView {
+	iconURL := ""
+	if p.IconPath != nil {
+		iconURL = mediaURL(a.mediaRoot(), *p.IconPath)
+	}
+	return PlatformView{
+		ID: p.ID, Name: p.Name, Category: p.Category, EmulatorID: p.EmulatorID,
+		SeedKey: p.SeedKey, IconURL: iconURL, GameCount: p.GameCount,
+	}
 }
 
 // filterParam decodes the filter of a query. An empty or null filter is the
@@ -315,7 +335,7 @@ func (a *App) Catalog() (CatalogView, error) {
 	}
 	platforms := make([]PlatformView, 0, len(res.Platforms))
 	for _, p := range res.Platforms {
-		platforms = append(platforms, platformView(p))
+		platforms = append(platforms, a.platformView(p))
 	}
 	return CatalogView{
 		Platforms: platforms,
@@ -335,11 +355,11 @@ func catalogItemViews(items []ipc.CatalogItem) []CatalogItemView {
 }
 
 // AddPlatform calls platform.add (5 s timeout).
-func (a *App) AddPlatform(name, category string) (PlatformView, error) {
+func (a *App) AddPlatform(name, category string) (PlatformAddView, error) {
 	var res ipc.PlatformAddResult
 	if err := a.callAgent(ipc.MethodPlatformAdd, libraryTimeout,
 		ipc.PlatformAddParams{Name: name, Category: category}, &res); err != nil {
-		return PlatformView{}, err
+		return PlatformAddView{}, err
 	}
-	return platformView(res.Platform), nil
+	return PlatformAddView{Platform: a.platformView(res.Platform), Created: res.Created}, nil
 }

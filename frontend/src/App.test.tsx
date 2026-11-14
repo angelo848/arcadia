@@ -57,7 +57,7 @@ function status(connected: boolean) {
 
 function catalog(over: Partial<CatalogView> = {}): CatalogView {
   return {
-    platforms: [{ id: 1, name: 'Windows', category: 'pc', emulatorId: null }],
+    platforms: [{ id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 1 }],
     genres: [],
     companies: [],
     playModes: [],
@@ -459,8 +459,8 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     app.Catalog.mockResolvedValue(
       catalog({
         platforms: [
-          { id: 1, name: 'Windows', category: 'pc', emulatorId: null },
-          { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null },
+          { id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 2 },
+          { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null, seedKey: 'ps2', iconUrl: '', gameCount: 37 },
         ],
       }),
     )
@@ -1400,5 +1400,18 @@ describe('App: sem contar tempo', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
     expect(app.PauseSession).toHaveBeenCalledTimes(3)
     await waitFor(() => expect(toggleIn(queryPanel())).toHaveAccessibleName('Retomar'))
+  })
+})
+
+describe('App: diálogo de plataformas', () => {
+  it('PLT-023/o botão Plataformas do cabeçalho abre o diálogo e Fechar o fecha', async () => {
+    renderApp()
+    await waitConnected()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plataformas' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Plataformas' })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }))
+    expect(screen.queryByRole('dialog', { name: 'Plataformas' })).not.toBeInTheDocument()
   })
 })

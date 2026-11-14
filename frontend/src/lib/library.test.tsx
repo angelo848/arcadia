@@ -58,7 +58,7 @@ function install() {
   app = {
     AddGame: vi.fn(() => Promise.resolve(gameView())),
     AddPlatform: vi.fn((name: string, category: string) =>
-      Promise.resolve(platformView({ name, category })),
+      Promise.resolve({ platform: platformView({ name, category }), created: true }),
     ),
     Catalog: vi.fn(() => Promise.resolve(catalog())),
     CurrentSession: vi.fn(() => Promise.resolve(null)),
@@ -145,12 +145,21 @@ function detail(over: Partial<GameDetailView> & { id?: number } = {}): GameDetai
 }
 
 function platformView(over: Partial<PlatformView> = {}): PlatformView {
-  return { id: 2, name: 'Switch', category: 'handheld', emulatorId: null, ...over }
+  return {
+    id: 2,
+    name: 'Switch',
+    category: 'handheld',
+    emulatorId: null,
+    seedKey: null,
+    iconUrl: '',
+    gameCount: 0,
+    ...over,
+  }
 }
 
 function catalog(over: Partial<CatalogView> = {}): CatalogView {
   return {
-    platforms: [{ id: 1, name: 'PC', category: 'pc', emulatorId: null }],
+    platforms: [{ id: 1, name: 'PC', category: 'pc', emulatorId: null, seedKey: null, iconUrl: '', gameCount: 0 }],
     genres: [],
     companies: [],
     playModes: [],
@@ -522,7 +531,32 @@ describe('mutações da biblioteca', () => {
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(app.AddPlatform).toHaveBeenCalledWith('Switch', 'handheld')
-    expect(result.current.data).toEqual(platformView({ name: 'Switch', category: 'handheld' }))
+    expect(result.current.data?.platform).toEqual(platformView({ name: 'Switch', category: 'handheld' }))
+  })
+
+  it('PLT-016/useAddPlatform devolve platform e created', async () => {
+    const { result } = renderHook(() => useAddPlatform(), { wrapper: wrapperFor(newClient()) })
+
+    act(() => {
+      result.current.mutate({ name: 'Switch', category: 'handheld' })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({
+      platform: platformView({ name: 'Switch', category: 'handheld' }),
+      created: true,
+    })
+  })
+
+  it('PLT-016/nome que já existe devolve a plataforma existente com created false', async () => {
+    const existing = platformView({ id: 7, name: 'Nintendo Switch', category: 'console', seedKey: 'switch' })
+    app.AddPlatform.mockResolvedValueOnce({ platform: existing, created: false })
+    const { result } = renderHook(() => useAddPlatform(), { wrapper: wrapperFor(newClient()) })
+
+    act(() => {
+      result.current.mutate({ name: 'nintendo switch', category: 'handheld' })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({ platform: existing, created: false })
   })
 })
 

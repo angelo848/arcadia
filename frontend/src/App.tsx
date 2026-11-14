@@ -5,6 +5,7 @@ import { AgentIndicator } from './components/AgentIndicator'
 import { DeleteDialog } from './components/DeleteDialog'
 import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
+import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
 import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
 import { useEmulators, type EmulatorView } from './lib/emulators'
@@ -167,6 +168,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [emulating, setEmulating] = useState(false)
+  const [platformsOpen, setPlatformsOpen] = useState(false)
   const [keying, setKeying] = useState(false)
   // The statistics page replaces the library while it is open (phase 8).
   const [showingStats, setShowingStats] = useState(false)
@@ -366,6 +368,13 @@ export default function App() {
           </button>
           <button
             type="button"
+            onClick={() => setPlatformsOpen(true)}
+            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+          >
+            Plataformas
+          </button>
+          <button
+            type="button"
             onClick={() => setImporting(true)}
             className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
           >
@@ -377,6 +386,7 @@ export default function App() {
       {conflict && <AgentConflict />}
       {error !== null && <ErrorBanner message={error} onClose={() => setError(null)} />}
       {emulating && <EmulatorsDialog onClose={() => setEmulating(false)} />}
+      {platformsOpen && <PlatformsDialog onClose={() => setPlatformsOpen(false)} />}
       {keying && <ProviderKeysDialog onClose={() => setKeying(false)} />}
       {importing && (
         <ImportDialog

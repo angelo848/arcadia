@@ -484,7 +484,7 @@ func TestLibraryWrites(t *testing.T) {
 	t.Run("DSK-017/Catalog e AddPlatform chamam library.catalog e platform.add e devolvem views", func(t *testing.T) {
 		t.Parallel()
 		p := &gamePinger{results: map[string]any{
-			ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[{"id":1,"name":"PC","category":"pc"}],` +
+			ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[{"id":1,"name":"PC","category":"pc","seedKey":"windows","iconPath":null,"gameCount":4}],` +
 				`"genres":[{"id":5,"name":"RPG"}],"companies":[{"id":7,"name":"Team Cherry"}],"playModes":["single"]}`),
 			ipc.MethodPlatformAdd: ipc.PlatformAddResult{Platform: ipc.Platform{ID: 9, Name: "Arcade X", Category: "arcade"}},
 		}}
@@ -496,7 +496,7 @@ func TestLibraryWrites(t *testing.T) {
 			t.Fatalf("Catalog() err = %v", err)
 		}
 		singleCall(t, p, ipc.MethodLibraryCatalog, 5*time.Second)
-		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc","emulatorId":null}],"genres":[{"id":5,"name":"RPG"}],`+
+		wantJSON(t, cat, `{"platforms":[{"id":1,"name":"PC","category":"pc","emulatorId":null,"seedKey":"windows","iconUrl":"","gameCount":4}],"genres":[{"id":5,"name":"RPG"}],`+
 			`"companies":[{"id":7,"name":"Team Cherry"}],"playModes":["single"]}`)
 
 		p2 := &gamePinger{results: p.results}
@@ -510,7 +510,7 @@ func TestLibraryWrites(t *testing.T) {
 		if !sameJSON(t, lp["name"], `"Arcade X"`) || !sameJSON(t, lp["category"], `"arcade"`) {
 			t.Errorf("platform.add params = %s, want name \"Arcade X\" and category \"arcade\"", c.params)
 		}
-		wantJSON(t, pl, `{"id":9,"name":"Arcade X","category":"arcade","emulatorId":null}`)
+		wantJSON(t, pl, `{"platform":{"id":9,"name":"Arcade X","category":"arcade","emulatorId":null,"seedKey":null,"iconUrl":"","gameCount":0},"created":false}`)
 
 		// An empty catalog gives [] in every list, never null.
 		p3 := &gamePinger{results: map[string]any{ipc.MethodLibraryCatalog: json.RawMessage(`{"platforms":[],"genres":[],"companies":[],"playModes":[]}`)}}

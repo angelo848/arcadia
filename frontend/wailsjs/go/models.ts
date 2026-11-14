@@ -19,6 +19,9 @@ export namespace main {
 	    name: string;
 	    category: string;
 	    emulatorId?: number;
+	    seedKey?: string;
+	    iconUrl: string;
+	    gameCount: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new PlatformView(source);
@@ -30,6 +33,9 @@ export namespace main {
 	        this.name = source["name"];
 	        this.category = source["category"];
 	        this.emulatorId = source["emulatorId"];
+	        this.seedKey = source["seedKey"];
+	        this.iconUrl = source["iconUrl"];
+	        this.gameCount = source["gameCount"];
 	    }
 	}
 	export class CatalogView {
@@ -423,6 +429,38 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.media = this.convertValues(source["media"], MediaItemView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PlatformAddView {
+	    platform: PlatformView;
+	    created: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlatformAddView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = this.convertValues(source["platform"], PlatformView);
+	        this.created = source["created"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

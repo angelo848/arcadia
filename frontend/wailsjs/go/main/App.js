@@ -102,8 +102,24 @@ export function PickGameExecutable() {
   return window['go']['main']['App']['PickGameExecutable']();
 }
 
+export function PickPlatformIcon() {
+  return window['go']['main']['App']['PickPlatformIcon']();
+}
+
+export function PlatformDelete(arg1) {
+  return window['go']['main']['App']['PlatformDelete'](arg1);
+}
+
 export function PlatformSetEmulator(arg1, arg2) {
   return window['go']['main']['App']['PlatformSetEmulator'](arg1, arg2);
+}
+
+export function PlatformSetIcon(arg1, arg2) {
+  return window['go']['main']['App']['PlatformSetIcon'](arg1, arg2);
+}
+
+export function PlatformUpdate(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PlatformUpdate'](arg1, arg2, arg3);
 }
 
 export function ProviderDeleteKey(arg1) {

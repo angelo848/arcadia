@@ -76,7 +76,7 @@ func (a *App) PlatformSetEmulator(platformID, emulatorID int64) (PlatformView, e
 	if err := a.callAgent(ipc.MethodPlatformSetEmulator, libraryTimeout, params, &res); err != nil {
 		return PlatformView{}, err
 	}
-	return platformView(res.Platform), nil
+	return a.platformView(res.Platform), nil
 }
 
 // pickEmulatorTitle is the title of the emulator executable dialog (EMU-006).

@@ -59,7 +59,21 @@ export type SessionItemView = {
 
 export type SessionListView = { sessions: SessionItemView[]; total: number; offset: number }
 
-export type PlatformView = { id: number; name: string; category: string; emulatorId: number | null }
+export type PlatformView = {
+  id: number
+  name: string
+  category: string
+  emulatorId: number | null
+  // Key of the seed platform, null for a user-created one (PLT-011).
+  seedKey: string | null
+  // URL of the custom icon under /media/, '' for the bundled one (PLT-011).
+  iconUrl: string
+  // Number of games of the platform (PLT-015).
+  gameCount: number
+}
+
+// The result of platform.add: created is false when the platform already existed (PLT-016).
+export type PlatformAddView = { platform: PlatformView; created: boolean }
 
 // A genre or a company of the catalog: id is the database id the FilterSpec filters by (FLT-002, FLT-003).
 export type CatalogItemView = { id: number; name: string }
@@ -96,7 +110,7 @@ type LibraryApp = {
   Catalog?: () => Promise<CatalogView>
   UpdateGame?: (id: number, patch: Record<string, unknown>) => Promise<GameDetailView>
   DeleteGame?: (id: number) => Promise<void>
-  AddPlatform?: (name: string, category: string) => Promise<PlatformView>
+  AddPlatform?: (name: string, category: string) => Promise<PlatformAddView>
 }
 
 type LibraryWindow = { go?: { main?: { App?: LibraryApp } } }
@@ -148,7 +162,7 @@ function deleteGame(id: number): Promise<void> {
   return call(() => libraryBinding('DeleteGame')(id))
 }
 
-function addPlatform(name: string, category: string): Promise<PlatformView> {
+function addPlatform(name: string, category: string): Promise<PlatformAddView> {
   return call(() => libraryBinding('AddPlatform')(name, category))
 }
 
@@ -246,7 +260,7 @@ export function useDeleteGame(): UseMutationResult<void, Error, number> {
   })
 }
 
-export function useAddPlatform(): UseMutationResult<PlatformView, Error, { name: string; category: string }> {
+export function useAddPlatform(): UseMutationResult<PlatformAddView, Error, { name: string; category: string }> {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ name, category }: { name: string; category: string }) => addPlatform(name, category),

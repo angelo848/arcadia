@@ -72,7 +72,8 @@ export function FilterPanel({
   onChange: (q: LibraryQuery) => void
 }): JSX.Element {
   const f = query.filter
-  const platforms = catalog?.platforms ?? []
+  // A platform with no game is hidden, unless the filter already marks it (PLT-032).
+  const platforms = (catalog?.platforms ?? []).filter((p) => p.gameCount > 0 || (f.platformIds ?? []).includes(p.id))
   const genres = catalog?.genres ?? []
   const companies = catalog?.companies ?? []
 

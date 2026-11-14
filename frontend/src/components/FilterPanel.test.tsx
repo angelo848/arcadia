@@ -9,8 +9,8 @@ import type { CatalogView } from '../lib/library'
 // see the ambiguity notes in the T30 report.
 const catalog: CatalogView = {
   platforms: [
-    { id: 1, name: 'Windows', category: 'PC', emulatorId: null },
-    { id: 2, name: 'SNES', category: 'Console', emulatorId: null },
+    { id: 1, name: 'Windows', category: 'PC', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 4 },
+    { id: 2, name: 'SNES', category: 'Console', emulatorId: null, seedKey: 'snes', iconUrl: '', gameCount: 1 },
   ],
   // Genres and companies are {id, name} items; the ids are the database ids the
   // FilterSpec filters by (FLT-002, FLT-003), and the option value is that id.
@@ -126,5 +126,36 @@ describe('FilterPanel', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith({ filter: { version: 1 }, sort: 'title' })
+  })
+
+  // PLT-032: platforms with no game are hidden, unless the filter already marks them.
+  const withEmpty: CatalogView = {
+    ...catalog,
+    platforms: [
+      ...catalog.platforms,
+      { id: 3, name: 'Nintendo 64', category: 'console', emulatorId: null, seedKey: 'n64', iconUrl: '', gameCount: 0 },
+    ],
+  }
+
+  it('PLT-032/plataforma sem jogos não aparece', () => {
+    render(<FilterPanel query={defaultQuery} catalog={withEmpty} onChange={() => {}} />)
+
+    const platform = screen.getByLabelText(/plataforma/i)
+    expect(within(platform).getByRole('option', { name: 'Windows' })).toBeInTheDocument()
+    expect(within(platform).getByRole('option', { name: 'SNES' })).toBeInTheDocument()
+    expect(within(platform).queryByRole('option', { name: 'Nintendo 64' })).not.toBeInTheDocument()
+  })
+
+  it('PLT-032/plataforma sem jogos já marcada continua até ser desmarcada', () => {
+    const marked: LibraryQuery = { filter: { version: 1, platformIds: [3] }, sort: 'title' }
+    const { rerender } = render(<FilterPanel query={marked} catalog={withEmpty} onChange={() => {}} />)
+
+    let platform = screen.getByLabelText(/plataforma/i)
+    expect(within(platform).getByRole('option', { name: 'Nintendo 64' })).toBeInTheDocument()
+    expect(platform).toHaveValue('3')
+
+    rerender(<FilterPanel query={defaultQuery} catalog={withEmpty} onChange={() => {}} />)
+    platform = screen.getByLabelText(/plataforma/i)
+    expect(within(platform).queryByRole('option', { name: 'Nintendo 64' })).not.toBeInTheDocument()
   })
 })
