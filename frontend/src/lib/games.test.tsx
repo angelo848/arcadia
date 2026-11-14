@@ -20,7 +20,15 @@ import {
 } from './games'
 import type { SessionView } from './games'
 import { resetQuery } from './filters'
-import { libraryKeys, useInfiniteGames, type GameListView, type GameView } from './library'
+import {
+  libraryKeys,
+  useGame,
+  useGameSessions,
+  useInfiniteGames,
+  type GameDetailView,
+  type GameListView,
+  type GameView,
+} from './library'
 
 // ---------------------------------------------------------------------------
 // Fakes for window.go.main.App and window.runtime.EventsOn
@@ -30,6 +38,8 @@ type Fn = ReturnType<typeof vi.fn>
 type FakeApp = {
   AgentStatus: Fn
   CurrentSession: Fn
+  GameSessions: Fn
+  GetGame: Fn
   LaunchGame: Fn
   LaunchGameUntracked: Fn
   ListGames: Fn
@@ -45,6 +55,10 @@ function install() {
   app = {
     AgentStatus: vi.fn(() => Promise.resolve({ connected: true })),
     CurrentSession: vi.fn(() => Promise.resolve(null)),
+    GameSessions: vi.fn((_id: number, offset: number) =>
+      Promise.resolve({ sessions: [], total: 0, offset }),
+    ),
+    GetGame: vi.fn((id: number) => Promise.resolve(detailOf(id))),
     LaunchGame: vi.fn(() => Promise.resolve(session())),
     LaunchGameUntracked: vi.fn(() => Promise.resolve()),
     ListGames: vi.fn(() => Promise.resolve(listPage([]))),
@@ -115,6 +129,21 @@ function game(over: Partial<GameView> = {}): GameView {
     lastPlayedAt: '',
     ...over,
   }
+}
+
+function detailOf(id: number): GameDetailView {
+  return {
+    ...game({ id }),
+    description: '',
+    emulatorId: null,
+    launchType: 'exe',
+    launchArgs: '',
+    completedAt: null,
+    developers: [],
+    publishers: [],
+    genres: [],
+    playModes: [],
+  } as GameDetailView
 }
 
 function session(over: Partial<SessionView> = {}): SessionView {
@@ -637,6 +666,112 @@ describe('sessão paused no cache', () => {
       expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true)
     })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Detalhe e sessões do jogo em foco [UIX-031, UIX-022]
+// ---------------------------------------------------------------------------
+
+describe('recarga do detalhe', () => {
+  // Mounts the detail and sessions of the given games, with the session events hook.
+  async function mountDetails(qc: QueryClient, ids: number[]) {
+    const hook = renderHook(
+      () => {
+        useSessionEvents()
+        return ids.map((id) => ({ game: useGame(id), sessions: useGameSessions(id) }))
+      },
+      { wrapper: wrapperFor(qc) },
+    )
+    await waitFor(() => {
+      for (const r of hook.result.current) {
+        expect(r.game.isSuccess).toBe(true)
+        expect(r.sessions.isSuccess).toBe(true)
+      }
+    })
+    return hook
+  }
+
+  for (const state of ['ended', 'discarded'] as const) {
+    it(`UIX-031/${state} de J relê GetGame(J) e GameSessions(J) uma vez`, async () => {
+      const qc = newClient()
+      await mountDetails(qc, [10])
+      expect(app.GetGame).toHaveBeenCalledTimes(1)
+      expect(app.GameSessions).toHaveBeenCalledTimes(1)
+
+      emit('session:changed', session({ gameId: 10, state, endedAt: '2026-11-09T10:30:00.000Z' }))
+
+      await waitFor(() => expect(app.GetGame).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(app.GameSessions).toHaveBeenCalledTimes(2))
+      expect(app.GetGame).toHaveBeenLastCalledWith(10)
+      expect(app.GameSessions.mock.calls.at(-1)?.[0]).toBe(10)
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20))
+      })
+      expect(app.GetGame).toHaveBeenCalledTimes(2)
+      expect(app.GameSessions).toHaveBeenCalledTimes(2)
+    })
+  }
+
+  it('UIX-031/running e paused não releem o detalhe nem as sessões', async () => {
+    const qc = newClient()
+    await mountDetails(qc, [10])
+    const getCalls = app.GetGame.mock.calls.length
+    const sessionCalls = app.GameSessions.mock.calls.length
+
+    emit('session:changed', session({ gameId: 10, state: 'running' }))
+    emit('session:changed', session({ gameId: 10, state: 'paused' }))
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+
+    expect(app.GetGame).toHaveBeenCalledTimes(getCalls)
+    expect(app.GameSessions).toHaveBeenCalledTimes(sessionCalls)
+    expect(qc.getQueryState(libraryKeys.game(10))?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(libraryKeys.sessions(10))?.isInvalidated).toBe(false)
+  })
+
+  it('UIX-031/fim de sessão de J não relê o detalhe de outro jogo G em cache', async () => {
+    const qc = newClient()
+    await mountDetails(qc, [10, 20])
+    expect(app.GetGame).toHaveBeenCalledTimes(2)
+
+    emit('session:changed', session({ gameId: 10, state: 'ended', endedAt: '2026-11-09T10:30:00.000Z' }))
+    await waitFor(() => expect(app.GetGame).toHaveBeenCalledTimes(3))
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+
+    expect(app.GetGame.mock.calls.filter((c) => c[0] === 20)).toHaveLength(1)
+    expect(app.GameSessions.mock.calls.filter((c) => c[0] === 20)).toHaveLength(1)
+    expect(qc.getQueryState(libraryKeys.game(20))?.isInvalidated).toBe(false)
+    expect(qc.getQueryState(libraryKeys.sessions(20))?.isInvalidated).toBe(false)
+  })
+
+  it('UIX-022/reconectar relê o detalhe e as sessões já carregados, sem ler os que nunca foram carregados', async () => {
+    const qc = newClient()
+    await mountDetails(qc, [10])
+    const getCalls = app.GetGame.mock.calls.length
+    const sessionCalls = app.GameSessions.mock.calls.length
+    // A query that never got data (still loading its first read) is not reloaded.
+    const neverLoaded = deferred<GameDetailView>()
+    app.GetGame.mockReturnValueOnce(neverLoaded.promise)
+    void qc.prefetchQuery({ queryKey: libraryKeys.game(99), queryFn: () => (app.GetGame as unknown as (id: number) => Promise<GameDetailView>)(99) })
+    await waitFor(() => expect(app.GetGame).toHaveBeenCalledTimes(getCalls + 1))
+
+    const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: false },
+    })
+    rerender({ connected: true })
+
+    await waitFor(() => expect(app.GetGame.mock.calls.filter((c) => c[0] === 10)).toHaveLength(2))
+    await waitFor(() => expect(app.GameSessions.mock.calls.length).toBeGreaterThan(sessionCalls))
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect(app.GetGame.mock.calls.filter((c) => c[0] === 99)).toHaveLength(1)
+    neverLoaded.resolve(detailOf(99))
+  })
 })
 
 // ---------------------------------------------------------------------------

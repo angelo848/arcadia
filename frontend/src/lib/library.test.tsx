@@ -4,7 +4,11 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { InfiniteData } from '@tanstack/react-query'
 import {
+  gameNotFoundMessage,
+  isNotFound,
+  libraryGamesKey,
   libraryKeys,
+  useRecentGames,
   useAddPlatform,
   useCatalog,
   useDeleteGame,
@@ -557,6 +561,52 @@ describe('mutações da biblioteca', () => {
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ platform: existing, created: false })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Jogados recentemente e jogo inexistente [UIX-023, UIX-024]
+// ---------------------------------------------------------------------------
+
+describe('leituras da fase 10', () => {
+  it('UIX-024/useRecentGames chama ListGames com played=played, sort lastPlayed, offset 0 e limit 5 e devolve os jogos', async () => {
+    const recent = [gameView({ id: 1, title: 'A' }), gameView({ id: 2, title: 'B' })]
+    app.ListGames.mockResolvedValueOnce({ games: recent, total: 2, offset: 0 })
+    const { result } = renderHook(() => useRecentGames(), { wrapper: wrapperFor(newClient()) })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(app.ListGames).toHaveBeenCalledTimes(1)
+    expect(app.ListGames).toHaveBeenCalledWith({
+      filter: { version: 1, played: 'played' },
+      sort: 'lastPlayed',
+      offset: 0,
+      limit: 5,
+    })
+    expect(result.current.data).toEqual(recent)
+  })
+
+  it('UIX-024/invalidar libraryGamesKey relê a lista recente', async () => {
+    const qc = newClient()
+    const { result } = renderHook(() => useRecentGames(), { wrapper: wrapperFor(qc) })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(libraryKeys.recent.slice(0, libraryGamesKey.length)).toEqual([...libraryGamesKey])
+    expect(app.ListGames).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: libraryGamesKey })
+    })
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledTimes(2))
+  })
+
+  it('UIX-023/isNotFound reconhece o texto de -32001 e recusa outras mensagens e não-erros', () => {
+    expect(gameNotFoundMessage).toBe('Jogo não encontrado. Atualize a lista.')
+    expect(isNotFound(new Error('Jogo não encontrado. Atualize a lista.'))).toBe(true)
+    expect(isNotFound(new Error('O agente não está respondendo. Tente de novo.'))).toBe(false)
+    expect(isNotFound(new Error(''))).toBe(false)
+    expect(isNotFound('Jogo não encontrado. Atualize a lista.')).toBe(false)
+    expect(isNotFound(null)).toBe(false)
+    expect(isNotFound(undefined)).toBe(false)
+    expect(isNotFound({ message: 'Jogo não encontrado. Atualize a lista.' })).toBe(false)
   })
 })
 

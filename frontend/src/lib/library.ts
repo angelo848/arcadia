@@ -93,6 +93,15 @@ export const libraryKeys = {
   game: (id: number) => ['library', 'game', id] as const,
   sessions: (id: number) => ['library', 'sessions', id] as const,
   catalog: ['library', 'catalog'] as const,
+  // Under libraryGamesKey, so a games invalidation reloads it [UIX-024].
+  recent: [...libraryGamesKey, 'recent'] as const,
+}
+
+// Text of the -32001 error as the binding returns it [DSK-011, UIX-023].
+export const gameNotFoundMessage = 'Jogo não encontrado. Atualize a lista.'
+
+export function isNotFound(err: unknown): boolean {
+  return err instanceof Error && err.message === gameNotFoundMessage
 }
 
 const gamesPageSize = 50
@@ -190,6 +199,21 @@ export function useInfiniteGames(
     retry: false,
     refetchOnWindowFocus: false,
     refetchInterval: (query) => (query.state.status === 'error' ? retryEveryMs : false),
+  })
+}
+
+// useRecentGames reads the 5 most recently played games for the empty panel [UIX-024].
+export function useRecentGames(): UseQueryResult<GameView[], Error> {
+  return useQuery({
+    queryKey: libraryKeys.recent,
+    queryFn: async () => {
+      const r = await call(() =>
+        libraryBinding('ListGames')({ filter: { version: 1, played: 'played' }, sort: 'lastPlayed', offset: 0, limit: 5 }),
+      )
+      return r.games
+    },
+    retry: false,
+    refetchOnWindowFocus: false,
   })
 }
 

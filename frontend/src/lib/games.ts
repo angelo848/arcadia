@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
-import { libraryGamesKey } from './library'
+import { libraryGamesKey, libraryKeys } from './library'
 import { statsKey } from './stats'
 
 export type SessionState = 'running' | 'paused' | 'grace' | 'ended' | 'discarded'
@@ -203,6 +203,8 @@ export function useSessionEvents(): void {
       qc.setQueryData<SessionView | null>(currentSessionKey, null)
       void qc.invalidateQueries({ queryKey: libraryGamesKey })
       void qc.invalidateQueries({ queryKey: statsKey })
+      void qc.invalidateQueries({ queryKey: libraryKeys.game(s.gameId) })
+      void qc.invalidateQueries({ queryKey: libraryKeys.sessions(s.gameId) })
     })
     return () => {
       if (typeof off === 'function') {
@@ -237,6 +239,9 @@ export function useReloadOnReconnect(connected: boolean): void {
         queryKey: libraryGamesKey,
         predicate: (q) => q.state.data !== undefined,
       })
+      for (const key of [['library', 'game'], ['library', 'sessions']]) {
+        void qc.invalidateQueries({ queryKey: key, predicate: (q) => q.state.data !== undefined })
+      }
       void qc.resetQueries({ queryKey: currentSessionKey })
     }
   }, [connected, qc])
