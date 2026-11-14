@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useId, useState, type JSX } from 'react'
+import { Modal } from './Modal'
 import {
   applyImport,
   needsPath,
@@ -12,16 +13,8 @@ import {
   type ImportSource,
 } from '../lib/imports'
 
-const focusableSelector = [
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'a[href]',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
 const inputClass =
-  'rounded border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-neutral-100 focus:border-emerald-500 focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
 
 export type ImportDialogProps = {
   // onImported runs after at least one game was written, so the library reloads (IMP-010).
@@ -43,17 +36,9 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [result, setResult] = useState<ImportApplyResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const pathId = useId()
   const platformId = useId()
-
-  // Focus starts in the dialog and goes back to the opener on unmount.
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
-    dialogRef.current?.querySelector<HTMLElement>(focusableSelector)?.focus()
-    return () => previous?.focus()
-  }, [])
 
   const checkable = (candidates ?? []).map((c, i) => ({ c, i })).filter(({ c }) => !c.exists)
   const selectedCount = checkable.filter(({ i }) => checked.has(i)).length
@@ -120,52 +105,34 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
     })
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === 'Escape') {
-      e.stopPropagation()
-      onClose()
-      return
-    }
-    if (e.key !== 'Tab') {
-      return
-    }
-    // Keep Tab and Shift+Tab inside the dialog (UI-041).
-    const dialog = dialogRef.current
-    if (!dialog) {
-      return
-    }
-    const items = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
-    if (items.length === 0) {
-      return
-    }
-    const first = items[0]
-    const last = items[items.length - 1]
-    const active = document.activeElement
-    if (e.shiftKey && (active === first || !dialog.contains(active))) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && (active === last || !dialog.contains(active))) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
-
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={onKeyDown}
-        className="flex max-h-full w-full max-w-2xl flex-col gap-3 overflow-y-auto rounded-lg bg-neutral-900 p-5"
-      >
-        <h2 id={titleId} className="text-lg font-semibold text-neutral-100">
-          Importar jogos
-        </h2>
-
+    <Modal
+      size="large"
+      title="Importar jogos"
+      onClose={onClose}
+      closeDisabled={busy}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover"
+          >
+            Fechar
+          </button>
+          <button
+            type="button"
+            onClick={() => void apply()}
+            disabled={busy || selectedCount === 0}
+            className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-raised disabled:text-muted"
+          >
+            Importar selecionados
+          </button>
+        </>
+      }
+    >
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-neutral-300">
+          <label className="flex flex-col gap-1 text-sm text-muted">
             Fonte
             <select
               value={source}
@@ -185,14 +152,14 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           </label>
 
           {needsPath(source) && (
-            <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-neutral-300">
+            <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
               <label htmlFor={pathId}>{source === 'file' ? 'Arquivo' : 'Pasta'}</label>
               <div className="flex gap-2">
                 <input id={pathId} type="text" readOnly value={path} className={`${inputClass} min-w-0 flex-1`} />
                 <button
                   type="button"
                   onClick={() => void choosePath()}
-                  className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+                  className="shrink-0 rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover"
                 >
                   {source === 'file' ? 'Escolher arquivo' : 'Escolher pasta'}
                 </button>
@@ -204,14 +171,14 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
             type="button"
             onClick={() => void scan()}
             disabled={busy || (needsPath(source) && path === '')}
-            className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+            className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-raised disabled:text-muted"
           >
             Buscar
           </button>
         </div>
 
         {warnings.length > 0 && (
-          <ul role="status" className="flex flex-col gap-1 text-sm text-amber-300">
+          <ul role="status" className="flex flex-col gap-1 text-sm text-warning">
             {warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
@@ -219,30 +186,30 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
         )}
 
         {error !== null && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
 
         {candidates !== null && candidates.length === 0 && (
-          <p className="text-sm text-neutral-400">Nenhum jogo encontrado nesta fonte.</p>
+          <p className="text-sm text-muted">Nenhum jogo encontrado nesta fonte.</p>
         )}
 
         {candidates !== null && candidates.length > 0 && (
-          <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded border border-neutral-800 p-2">
+          <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded border border-line p-2">
             {candidates.map((c, i) => (
-              <li key={`${c.source}-${c.launchTarget}-${i}`} className="flex items-center gap-2 text-sm text-neutral-200">
+              <li key={`${c.source}-${c.launchTarget}-${i}`} className="flex items-center gap-2 text-sm text-fg">
                 <input
                   id={`${titleId}-c${i}`}
                   type="checkbox"
                   disabled={c.exists || busy}
                   checked={checked.has(i)}
                   onChange={(e) => toggle(i, e.target.checked)}
-                  className="h-4 w-4 accent-emerald-600"
+                  className="h-4 w-4 accent-[var(--arc-accent)]"
                 />
                 <label htmlFor={`${titleId}-c${i}`} className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="truncate">{c.title}</span>
-                  {c.exists && <span className="shrink-0 text-xs text-neutral-400">já existe</span>}
+                  {c.exists && <span className="shrink-0 text-xs text-muted">já existe</span>}
                 </label>
               </li>
             ))}
@@ -250,7 +217,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
         )}
 
         {candidates !== null && (source === 'file' || source === 'folder') && (
-          <div className="flex items-center gap-2 text-sm text-neutral-300">
+          <div className="flex items-center gap-2 text-sm text-muted">
             <label htmlFor={platformId}>Plataforma do arquivo</label>
             <input
               id={platformId}
@@ -263,10 +230,10 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
         )}
 
         {result !== null && (
-          <div role="status" className="text-sm text-neutral-300">
+          <div role="status" className="text-sm text-muted">
             <p>Importados: {result.applied.length}</p>
             {result.skipped.length > 0 && (
-              <ul className="mt-1 flex flex-col gap-0.5 text-neutral-400">
+              <ul className="mt-1 flex flex-col gap-0.5 text-muted">
                 {result.skipped.map((s) => (
                   <li key={s.title}>
                     {s.title}: {skipReasonLabels[s.reason] ?? s.reason}
@@ -276,26 +243,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
             )}
           </div>
         )}
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded px-4 py-1.5 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
-          >
-            Fechar
-          </button>
-          <button
-            type="button"
-            onClick={() => void apply()}
-            disabled={busy || selectedCount === 0}
-            className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-          >
-            Importar selecionados
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useId, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { libraryKeys } from '../lib/library'
+import { Modal } from './Modal'
 import {
   acceptedScore,
   mediaKey,
@@ -13,7 +14,7 @@ import {
 } from '../lib/metadata'
 
 const inputClass =
-  'rounded border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-neutral-100 focus:border-emerald-500 focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
 
 const providers: ProviderId[] = ['igdb', 'steamgriddb', 'steamstore']
 
@@ -26,7 +27,6 @@ function messageOf(e: unknown): string {
 // Replacing the fields the user filled is off by default (MID-003).
 export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: () => void }): JSX.Element {
   const qc = useQueryClient()
-  const titleId = useId()
   const providerId = useId()
   const [provider, setProvider] = useState<ProviderId>('igdb')
   const [candidates, setCandidates] = useState<ScrapeCandidateView[] | null>(null)
@@ -70,24 +70,19 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="flex max-h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-neutral-900 p-5"
-      >
-        <div className="flex items-center justify-between">
-          <h2 id={titleId} className="text-lg font-semibold text-neutral-100">
-            Buscar metadados e mídia
-          </h2>
-          <button type="button" onClick={onClose} className="text-sm text-neutral-300 hover:text-neutral-100">
-            Fechar
-          </button>
-        </div>
+    <Modal
+      size="medium"
+      title="Buscar metadados e mídia"
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onClose} className="rounded px-3 py-1.5 text-sm text-muted hover:bg-hover">
+          Fechar
+        </button>
+      }
+    >
 
         <div className="flex flex-wrap items-end gap-3">
-          <label htmlFor={providerId} className="flex flex-col gap-1 text-sm text-neutral-300">
+          <label htmlFor={providerId} className="flex flex-col gap-1 text-sm text-muted">
             Provedor
             <select
               id={providerId}
@@ -109,34 +104,34 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
             type="button"
             disabled={busy}
             onClick={() => void search()}
-            className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+            className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-raised disabled:text-muted"
           >
             Buscar
           </button>
-          <label className="flex items-center gap-2 text-sm text-neutral-300">
+          <label className="flex items-center gap-2 text-sm text-muted">
             <input
               type="checkbox"
               checked={replace}
               onChange={(e) => setReplace(e.target.checked)}
-              className="h-4 w-4 accent-emerald-600"
+              className="h-4 w-4 accent-[var(--arc-accent)]"
             />
             Substituir os campos já preenchidos
           </label>
         </div>
 
         {error !== null && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
         {message !== null && (
-          <p role="status" className="text-sm text-emerald-400">
+          <p role="status" className="text-sm text-accent">
             {message}
           </p>
         )}
 
         {candidates !== null && candidates.length === 0 && (
-          <p className="text-sm text-neutral-400">Nenhum resultado neste provedor.</p>
+          <p className="text-sm text-muted">Nenhum resultado neste provedor.</p>
         )}
 
         {candidates !== null && candidates.length > 0 && (
@@ -144,14 +139,14 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
             {candidates.map((c) => (
               <li
                 key={c.providerId}
-                className="flex items-center justify-between gap-3 rounded border border-neutral-800 p-2"
+                className="flex items-center justify-between gap-3 rounded border border-line p-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-neutral-100">
+                  <p className="truncate text-sm text-fg">
                     {c.title}
-                    {c.year > 0 && <span className="text-neutral-400"> ({c.year})</span>}
+                    {c.year > 0 && <span className="text-muted"> ({c.year})</span>}
                   </p>
-                  <p className="truncate text-xs text-neutral-400">
+                  <p className="truncate text-xs text-muted">
                     {c.platform || 'Plataforma desconhecida'} · correspondência {scoreLabel(c.score)}
                     {c.score >= acceptedScore ? ' · provável' : ''}
                   </p>
@@ -160,7 +155,7 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
                   type="button"
                   disabled={busy}
                   onClick={() => void apply(c)}
-                  className="shrink-0 rounded bg-neutral-800 px-3 py-1 text-sm text-neutral-100 hover:bg-neutral-700 disabled:text-neutral-500"
+                  className="shrink-0 rounded bg-raised px-3 py-1 text-sm text-fg hover:bg-hover disabled:text-muted"
                 >
                   Aplicar
                 </button>
@@ -168,7 +163,6 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
             ))}
           </ul>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

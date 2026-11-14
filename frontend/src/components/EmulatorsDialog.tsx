@@ -1,6 +1,7 @@
 import { useId, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { libraryKeys, useCatalog } from '../lib/library'
+import { Modal } from './Modal'
 import {
   addEmulator,
   deleteEmulator,
@@ -18,7 +19,7 @@ import {
 } from '../lib/emulators'
 
 const inputClass =
-  'rounded border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-neutral-100 focus:border-emerald-500 focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent focus:outline-none'
 
 type Draft = { id: number | null; name: string; exePath: string; argsTemplate: string }
 
@@ -49,7 +50,6 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
-  const titleId = useId()
 
   const list: EmulatorView[] = emulators.data ?? []
 
@@ -113,34 +113,29 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="flex max-h-full w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-neutral-900 p-5"
-      >
-        <div className="flex items-center justify-between">
-          <h2 id={titleId} className="text-lg font-semibold text-neutral-100">
-            Emuladores
-          </h2>
-          <button type="button" onClick={onClose} className="text-sm text-neutral-300 hover:text-neutral-100">
-            Fechar
-          </button>
-        </div>
+    <Modal
+      size="medium"
+      title="Emuladores"
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onClose} className="rounded px-3 py-1.5 text-sm text-muted hover:bg-hover">
+          Fechar
+        </button>
+      }
+    >
 
         {error !== null && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
 
         <ul className="flex flex-col gap-2">
           {list.map((em) => (
-            <li key={em.id} className="flex items-center justify-between gap-3 rounded border border-neutral-800 p-2">
+            <li key={em.id} className="flex items-center justify-between gap-3 rounded border border-line p-2">
               <div className="min-w-0">
-                <p className="truncate text-sm text-neutral-100">{em.name}</p>
-                <p className="truncate text-xs text-neutral-400">{em.exePath}</p>
+                <p className="truncate text-sm text-fg">{em.name}</p>
+                <p className="truncate text-xs text-muted">{em.exePath}</p>
               </div>
               <div className="flex shrink-0 gap-2">
                 <button
@@ -149,14 +144,14 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
                     setError(null)
                     setDraft({ id: em.id, name: em.name, exePath: em.exePath, argsTemplate: em.argsTemplate })
                   }}
-                  className="rounded bg-neutral-800 px-3 py-1 text-sm text-neutral-100 hover:bg-neutral-700"
+                  className="rounded bg-raisedpx-3 py-1 text-sm text-fg hover:bg-hover"
                 >
                   Editar
                 </button>
                 <button
                   type="button"
                   onClick={() => void remove(em.id)}
-                  className="rounded bg-neutral-800 px-3 py-1 text-sm text-red-300 hover:bg-neutral-700"
+                  className="rounded bg-raisedpx-3 py-1 text-sm text-danger hover:bg-hover"
                 >
                   {confirming === em.id ? 'Confirmar exclusão' : 'Excluir'}
                 </button>
@@ -172,7 +167,7 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
               setError(null)
               setDraft(emptyDraft)
             }}
-            className="self-start rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+            className="self-start rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover"
           >
             Novo emulador
           </button>
@@ -186,10 +181,10 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
           />
         )}
 
-        <section className="flex flex-col gap-2 border-t border-neutral-800 pt-4">
-          <h3 className="text-sm font-medium text-neutral-300">Emulador padrão de cada plataforma</h3>
+        <section className="flex flex-col gap-2 border-t border-line pt-4">
+          <h3 className="text-sm font-medium text-muted">Emulador padrão de cada plataforma</h3>
           {(catalog.data?.platforms ?? []).map((p) => (
-            <label key={p.id} className="flex items-center justify-between gap-3 text-sm text-neutral-200">
+            <label key={p.id} className="flex items-center justify-between gap-3 text-sm text-fg">
               {p.name}
               <select
                 value={p.emulatorId === null ? '' : String(p.emulatorId)}
@@ -206,8 +201,7 @@ export function EmulatorsDialog({ onClose }: { onClose: () => void }): JSX.Eleme
             </label>
           ))}
         </section>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -227,17 +221,17 @@ function EmulatorForm({
   const idPrefix = useId()
   return (
     <form
-      className="flex flex-col gap-3 rounded border border-neutral-800 p-3"
+      className="flex flex-col gap-3 rounded border border-line p-3"
       onSubmit={(e) => {
         e.preventDefault()
         onSave()
       }}
     >
-      <label className="flex flex-col gap-1 text-sm text-neutral-300">
+      <label className="flex flex-col gap-1 text-sm text-muted">
         Nome
         <input className={inputClass} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} />
       </label>
-      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+      <div className="flex flex-col gap-1 text-sm text-muted">
         <label htmlFor={`${idPrefix}-exe`}>Caminho do aplicativo (executável do emulador)</label>
         <div className="flex gap-2">
           <input
@@ -249,13 +243,13 @@ function EmulatorForm({
           <button
             type="button"
             onClick={onPick}
-            className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+            className="shrink-0 rounded bg-raisedpx-3 py-1.5 text-sm text-fg hover:bg-hover"
           >
             Procurar...
           </button>
         </div>
       </div>
-      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+      <div className="flex flex-col gap-1 text-sm text-muted">
         <label htmlFor={`${idPrefix}-args`}>Parâmetros de linha de comando padrão</label>
         <input
           id={`${idPrefix}-args`}
@@ -264,30 +258,30 @@ function EmulatorForm({
           onChange={(e) => onChange({ ...draft, argsTemplate: e.target.value })}
         />
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <span className="text-xs text-neutral-500">Adicionar:</span>
+          <span className="text-xs text-muted">Adicionar:</span>
           {emulatorMarkers.map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => onChange({ ...draft, argsTemplate: appendMarker(draft.argsTemplate, m) })}
-              className="rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-700"
+              className="rounded bg-raisedpx-2 py-1 text-xs text-fg hover:bg-hover"
             >
               {m === '{rom}' ? 'Jogo ({rom})' : 'Pasta do jogo ({dir})'}
             </button>
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-1 text-sm text-neutral-300">
+      <div className="flex flex-col gap-1 text-sm text-muted">
         <span>Amostra de comando</span>
-        <code className="break-all rounded bg-neutral-950 px-3 py-1.5 text-neutral-200">
+        <code className="break-all rounded bg-raised px-3 py-1.5 text-fg">
           {commandSample(draft.exePath, draft.argsTemplate)}
         </code>
       </div>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="rounded px-4 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800">
+        <button type="button" onClick={onCancel} className="rounded px-4 py-1.5 text-sm text-muted hover:bg-hover">
           Cancelar
         </button>
-        <button type="submit" className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500">
+        <button type="submit" className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover">
           Salvar
         </button>
       </div>
