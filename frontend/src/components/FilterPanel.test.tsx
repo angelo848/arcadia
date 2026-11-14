@@ -1,19 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { FilterPanel } from './FilterPanel'
 import type { FilterSpec, LibraryQuery } from '../lib/filters'
 import { defaultQuery } from '../lib/filters'
 import type { CatalogView } from '../lib/library'
+import { readFiltersOpen, writeFiltersOpen } from '../lib/uiPrefs'
 
-// Labels of the controls are assumed here (the spec names the facets, not the labels);
-// see the ambiguity notes in the T30 report.
+// Labels of the controls are assumed here (the spec names the facets, not the labels).
+// The platform control left the panel: PLT-032 now holds in PlatformNav [UIX-011].
 const catalog: CatalogView = {
   platforms: [
     { id: 1, name: 'Windows', category: 'PC', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 4 },
     { id: 2, name: 'SNES', category: 'Console', emulatorId: null, seedKey: 'snes', iconUrl: '', gameCount: 1 },
   ],
-  // Genres and companies are {id, name} items; the ids are the database ids the
-  // FilterSpec filters by (FLT-002, FLT-003), and the option value is that id.
   genres: [
     { id: 5, name: 'Ação' },
     { id: 6, name: 'RPG' },
@@ -26,7 +25,6 @@ const catalog: CatalogView = {
 }
 
 const facetLabels: ReadonlyArray<RegExp> = [
-  /plataforma/i,
   /gênero/i,
   /modo/i,
   /desenvolvedora/i,
@@ -40,17 +38,32 @@ const facetLabels: ReadonlyArray<RegExp> = [
   /máximo/i,
 ]
 
+beforeEach(() => {
+  localStorage.clear()
+})
+
+function header(): HTMLElement {
+  return screen.getByRole('button', { name: /^Filtros/ })
+}
+
+// Opens the collapsible "Filtros" section, which starts collapsed [UIX-012].
+function openSection(): void {
+  const h = header()
+  if (h.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(h)
+  }
+}
+
 describe('FilterPanel', () => {
   it('UI-032/cada faceta tem um controle e a mudança chama onChange com um FilterSpec novo (version 1)', () => {
     for (const label of facetLabels) {
       const { unmount } = render(<FilterPanel query={defaultQuery} catalog={catalog} onChange={() => {}} />)
+      openSection()
       expect(screen.getByLabelText(label)).toBeInTheDocument()
       unmount()
     }
 
-    // Each change below must produce a new FilterSpec with version 1 and the sort kept.
     const changes: ReadonlyArray<{ label: RegExp; value: string; want: Partial<FilterSpec> }> = [
-      { label: /plataforma/i, value: '2', want: { platformIds: [2] } },
       { label: /gênero/i, value: '5', want: { genreIds: [5] } },
       { label: /desenvolvedora/i, value: '7', want: { developerIds: [7] } },
       { label: /editora/i, value: '8', want: { publisherIds: [8] } },
@@ -65,9 +78,11 @@ describe('FilterPanel', () => {
     ]
 
     for (const tc of changes) {
+      localStorage.clear()
       const onChange = vi.fn<(q: LibraryQuery) => void>()
       const start: LibraryQuery = { filter: { version: 1 }, sort: 'year' }
       const { unmount } = render(<FilterPanel query={start} catalog={catalog} onChange={onChange} />)
+      openSection()
 
       fireEvent.change(screen.getByLabelText(tc.label), { target: { value: tc.value } })
 
@@ -81,18 +96,14 @@ describe('FilterPanel', () => {
     }
   })
 
-  it('UI-032/listas de opções vêm do catálogo (plataforma, gênero, modo, desenvolvedora, editora)', () => {
+  it('UI-032/listas de opções vêm do catálogo (gênero, modo, desenvolvedora, editora)', () => {
     render(<FilterPanel query={defaultQuery} catalog={catalog} onChange={() => {}} />)
-
-    const platform = screen.getByLabelText(/plataforma/i)
-    expect(within(platform).getByRole('option', { name: 'Windows' })).toBeInTheDocument()
-    expect(within(platform).getByRole('option', { name: 'SNES' })).toBeInTheDocument()
+    openSection()
 
     const genre = screen.getByLabelText(/gênero/i)
     expect(within(genre).getByRole('option', { name: 'Ação' })).toHaveAttribute('value', '5')
     expect(within(genre).getByRole('option', { name: 'RPG' })).toHaveAttribute('value', '6')
 
-    // Developers and publishers both come from the catalog companies list.
     const developer = screen.getByLabelText(/desenvolvedora/i)
     expect(within(developer).getByRole('option', { name: 'Capcom' })).toHaveAttribute('value', '7')
     expect(within(developer).getByRole('option', { name: 'Konami' })).toHaveAttribute('value', '8')
@@ -101,13 +112,13 @@ describe('FilterPanel', () => {
     expect(within(publisher).getByRole('option', { name: 'Capcom' })).toHaveAttribute('value', '7')
     expect(within(publisher).getByRole('option', { name: 'Konami' })).toHaveAttribute('value', '8')
 
-    // Play mode group control exists (FLT-003 group values).
     const mode = screen.getByLabelText(/modo/i)
     expect(within(mode).getByRole('option', { name: 'Todos' })).toBeInTheDocument()
   })
 
   it('UI-032/sem catálogo ainda o painel mostra as facetas sem quebrar', () => {
     render(<FilterPanel query={defaultQuery} catalog={undefined} onChange={() => {}} />)
+    openSection()
 
     for (const label of facetLabels) {
       expect(screen.getByLabelText(label)).toBeInTheDocument()
@@ -121,6 +132,7 @@ describe('FilterPanel', () => {
       sort: 'year',
     }
     render(<FilterPanel query={active} catalog={catalog} onChange={onChange} />)
+    openSection()
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
 
@@ -128,34 +140,76 @@ describe('FilterPanel', () => {
     expect(onChange).toHaveBeenCalledWith({ filter: { version: 1 }, sort: 'title' })
   })
 
-  // PLT-032: platforms with no game are hidden, unless the filter already marks them.
-  const withEmpty: CatalogView = {
-    ...catalog,
-    platforms: [
-      ...catalog.platforms,
-      { id: 3, name: 'Nintendo 64', category: 'console', emulatorId: null, seedKey: 'n64', iconUrl: '', gameCount: 0 },
-    ],
-  }
+  it('UIX-011/não há controle "Plataforma" no painel', () => {
+    render(<FilterPanel query={defaultQuery} catalog={catalog} onChange={() => {}} />)
+    openSection()
 
-  it('PLT-032/plataforma sem jogos não aparece', () => {
-    render(<FilterPanel query={defaultQuery} catalog={withEmpty} onChange={() => {}} />)
-
-    const platform = screen.getByLabelText(/plataforma/i)
-    expect(within(platform).getByRole('option', { name: 'Windows' })).toBeInTheDocument()
-    expect(within(platform).getByRole('option', { name: 'SNES' })).toBeInTheDocument()
-    expect(within(platform).queryByRole('option', { name: 'Nintendo 64' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/plataforma/i)).not.toBeInTheDocument()
   })
 
-  it('PLT-032/plataforma sem jogos já marcada continua até ser desmarcada', () => {
-    const marked: LibraryQuery = { filter: { version: 1, platformIds: [3] }, sort: 'title' }
-    const { rerender } = render(<FilterPanel query={marked} catalog={withEmpty} onChange={() => {}} />)
+  it('UIX-012/a seção começa recolhida e aria-expanded alterna', () => {
+    render(<FilterPanel query={defaultQuery} catalog={catalog} onChange={() => {}} />)
 
-    let platform = screen.getByLabelText(/plataforma/i)
-    expect(within(platform).getByRole('option', { name: 'Nintendo 64' })).toBeInTheDocument()
-    expect(platform).toHaveValue('3')
+    expect(header()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText(/gênero/i)).not.toBeInTheDocument()
 
-    rerender(<FilterPanel query={defaultQuery} catalog={withEmpty} onChange={() => {}} />)
-    platform = screen.getByLabelText(/plataforma/i)
-    expect(within(platform).queryByRole('option', { name: 'Nintendo 64' })).not.toBeInTheDocument()
+    fireEvent.click(header())
+    expect(header()).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText(/gênero/i)).toBeInTheDocument()
+
+    fireEvent.click(header())
+    expect(header()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText(/gênero/i)).not.toBeInTheDocument()
+  })
+
+  it('UIX-012/recolhida com 2 facetas ativas mostra "Filtros (2)"; com só texto e plataforma mostra "Filtros"', () => {
+    const two: LibraryQuery = { filter: { version: 1, genreIds: [5], favorite: true }, sort: 'title' }
+    const { unmount } = render(<FilterPanel query={two} catalog={catalog} onChange={() => {}} />)
+    expect(header()).toHaveAttribute('aria-expanded', 'false')
+    expect(header()).toHaveTextContent('Filtros (2)')
+    unmount()
+
+    const textOnly: LibraryQuery = { filter: { version: 1, text: 'zelda', platformIds: [2] }, sort: 'title' }
+    render(<FilterPanel query={textOnly} catalog={catalog} onChange={() => {}} />)
+    expect(header()).toHaveTextContent(/^Filtros$/)
+  })
+
+  it('UIX-012/recolher não chama onChange; a escolha é gravada e lida de volta', () => {
+    const onChange = vi.fn<(q: LibraryQuery) => void>()
+    const active: LibraryQuery = { filter: { version: 1, favorite: true }, sort: 'title' }
+    const { unmount } = render(<FilterPanel query={active} catalog={catalog} onChange={onChange} />)
+
+    fireEvent.click(header())
+    expect(readFiltersOpen()).toBe(true)
+    fireEvent.click(header())
+    expect(readFiltersOpen()).toBe(false)
+    fireEvent.click(header())
+    expect(onChange).not.toHaveBeenCalled()
+    expect(readFiltersOpen()).toBe(true)
+    unmount()
+
+    // The saved choice is used on the next mount.
+    render(<FilterPanel query={active} catalog={catalog} onChange={onChange} />)
+    expect(header()).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText(/favorito/i)).toBeInTheDocument()
+
+    localStorage.clear()
+    writeFiltersOpen(false)
+    expect(readFiltersOpen()).toBe(false)
+  })
+
+  it('UIX-043/Enter e Espaço no cabeçalho abrem e fecham a seção', () => {
+    render(<FilterPanel query={defaultQuery} catalog={catalog} onChange={() => {}} />)
+    const h = header()
+    expect(h.tagName).toBe('BUTTON')
+
+    // A native button turns Enter and Space into a click; jsdom does not, so the test
+    // fires the click that the browser would dispatch and checks the element is a focusable button.
+    h.focus()
+    expect(h).toHaveFocus()
+    fireEvent.click(h)
+    expect(h).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(h)
+    expect(h).toHaveAttribute('aria-expanded', 'false')
   })
 })

@@ -471,13 +471,43 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     await findRow('Hollow Knight')
     expect(screen.getByText('2 jogos')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Plataforma'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'PlayStation 2, 37 jogos' }))
     await waitFor(() =>
       expect(app.ListGames).toHaveBeenLastCalledWith(
         expect.objectContaining({ filter: { version: 1, platformIds: [2] }, offset: 0 }),
       ),
     )
     expect(await screen.findByText('37 jogos')).toBeInTheDocument()
+  })
+
+  it('UIX-010/clicar numa plataforma envia ListGames com platformIds=[P] e mantém as outras facetas', async () => {
+    app.Catalog.mockResolvedValue(
+      catalog({
+        platforms: [
+          { id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 2 },
+          { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null, seedKey: 'ps2', iconUrl: '', gameCount: 3 },
+        ],
+        genres: [{ id: 5, name: 'Ação' }],
+      }),
+    )
+    app.ListGames.mockResolvedValue(page([game()]))
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.click(screen.getByRole('button', { name: /^Filtros/ }))
+    fireEvent.change(await screen.findByLabelText(/gênero/i), { target: { value: '5' } })
+    await waitFor(() =>
+      expect(app.ListGames).toHaveBeenLastCalledWith(
+        expect.objectContaining({ filter: { version: 1, genreIds: [5] } }),
+      ),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'PlayStation 2, 3 jogos' }))
+    await waitFor(() =>
+      expect(app.ListGames).toHaveBeenLastCalledWith(
+        expect.objectContaining({ filter: { version: 1, genreIds: [5], platformIds: [2] }, offset: 0 }),
+      ),
+    )
   })
 
   it('UI-033/a busca é enviada 300 ms depois da última tecla, uma tecla isolada não é enviada e apagar o texto remove o filtro', async () => {
@@ -529,13 +559,14 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     await findRow('Hollow Knight')
 
     fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'year' } })
-    fireEvent.change(screen.getByLabelText('Plataforma'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 1 jogos' }))
     await waitFor(() =>
       expect(app.ListGames).toHaveBeenLastCalledWith(
         expect.objectContaining({ filter: { version: 1, platformIds: [1] }, sort: 'year' }),
       ),
     )
 
+    fireEvent.click(screen.getByRole('button', { name: /^Filtros/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
     await waitFor(() =>
       expect(app.ListGames).toHaveBeenLastCalledWith(
@@ -543,7 +574,32 @@ describe('App: filtros, busca, ordenação e paginação', () => {
       ),
     )
     expect(screen.getByLabelText('Ordenar por')).toHaveValue('title')
-    expect(screen.getByLabelText('Plataforma')).toHaveValue('')
+    expect(screen.queryByLabelText('Plataforma')).toBeNull()
+  })
+
+  it('UIX-011/"Limpar filtros" volta a {version: 1}, à ordenação padrão e a "Todos"', async () => {
+    app.ListGames.mockResolvedValue(page([game()]))
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'year' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 1 jogos' }))
+    await waitFor(() =>
+      expect(app.ListGames).toHaveBeenLastCalledWith(
+        expect.objectContaining({ filter: { version: 1, platformIds: [1] }, sort: 'year' }),
+      ),
+    )
+    expect(screen.getByRole('button', { name: 'Windows, 1 jogos' })).toHaveAttribute('aria-current', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: /^Filtros/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
+    await waitFor(() =>
+      expect(app.ListGames).toHaveBeenLastCalledWith(
+        expect.objectContaining({ filter: { version: 1 }, sort: 'title', offset: 0 }),
+      ),
+    )
+    expect(screen.getByRole('button', { name: /^Todos/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByLabelText('Ordenar por')).toHaveValue('title')
   })
 
   it('UI-035/filtro sem resultado mostra "Nenhum jogo com estes filtros." e o botão Limpar filtros', async () => {
@@ -553,7 +609,7 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     renderApp()
     await findRow('Hollow Knight')
 
-    fireEvent.change(screen.getByLabelText('Plataforma'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 1 jogos' }))
     const message = await screen.findByText('Nenhum jogo com estes filtros.')
     const empty = message.closest('section') as HTMLElement
     expect(empty).not.toBeNull()

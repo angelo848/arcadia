@@ -56,7 +56,7 @@ export function SearchBox({
         setValue(v)
         debouncer.call(v)
       }}
-      className="w-full rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 placeholder:text-neutral-500"
+      className="w-full rounded bg-raised px-3 py-1.5 text-sm text-fg placeholder:text-muted"
     />
   )
 }

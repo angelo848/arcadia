@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultQuery, resetQuery, withText } from './filters'
+import { defaultQuery, resetQuery, withPlatforms, withText } from './filters'
 import type { FilterSpec, GameStatus, LibraryQuery, SortKey } from './filters'
 
 describe('filters', () => {
@@ -98,5 +98,31 @@ describe('filters', () => {
     // Limpar o texto depois da troca de sort mantém os outros filtros.
     const cleared = withText({ ...searched, sort: 'year' }, '  ')
     expect(cleared).toStrictEqual({ filter: others, sort: 'year' })
+  })
+
+  it('UIX-010/withPlatforms troca platformIds e mantém text, as outras facetas e sort; undefined remove o membro', () => {
+    const q: LibraryQuery = {
+      filter: { version: 1, platformIds: [1], text: 'hades', genreIds: [5], favorite: true, yearFrom: 2000 },
+      sort: 'year',
+    }
+    const snapshot = structuredClone(q)
+
+    const swapped = withPlatforms(q, [2])
+    expect(swapped).toStrictEqual({
+      filter: { version: 1, platformIds: [2], text: 'hades', genreIds: [5], favorite: true, yearFrom: 2000 },
+      sort: 'year',
+    })
+    // The input is not mutated.
+    expect(q).toStrictEqual(snapshot)
+
+    const removed = withPlatforms(q, undefined)
+    expect(removed.filter).not.toHaveProperty('platformIds')
+    expect(removed).toStrictEqual({
+      filter: { version: 1, text: 'hades', genreIds: [5], favorite: true, yearFrom: 2000 },
+      sort: 'year',
+    })
+
+    expect(withPlatforms(defaultQuery, [3])).toStrictEqual({ filter: { version: 1, platformIds: [3] }, sort: 'title' })
+    expect(withPlatforms(defaultQuery, undefined)).toStrictEqual({ filter: { version: 1 }, sort: 'title' })
   })
 })

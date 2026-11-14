@@ -1,7 +1,8 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
 import type { FilterSpec, GameStatus, LibraryQuery, PlayedFilter, PlayModeGroup } from '../lib/filters'
 import { resetQuery } from '../lib/filters'
+import { activeFacetCount, readFiltersOpen, writeFiltersOpen } from '../lib/uiPrefs'
 import type { CatalogView } from '../lib/library'
 
 type FacetKey = Exclude<keyof FilterSpec, 'version' | 'text'>
@@ -51,7 +52,7 @@ function Field({ label, children }: { label: string; children: (id: string) => R
   const id = useId()
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium text-neutral-400">
+      <label htmlFor={id} className="text-xs font-medium text-muted">
         {label}
       </label>
       {children(id)}
@@ -59,7 +60,7 @@ function Field({ label, children }: { label: string; children: (id: string) => R
   )
 }
 
-const controlClass = 'rounded bg-neutral-800 px-2 py-1.5 text-sm text-neutral-100'
+const controlClass = 'rounded bg-raised px-2 py-1.5 text-sm text-fg'
 
 // FilterPanel has one control per facet [UI-032]. Every change yields a new query; "Limpar filtros" resets it [UI-035].
 export function FilterPanel({
@@ -72,34 +73,32 @@ export function FilterPanel({
   onChange: (q: LibraryQuery) => void
 }): JSX.Element {
   const f = query.filter
-  // A platform with no game is hidden, unless the filter already marks it (PLT-032).
-  const platforms = (catalog?.platforms ?? []).filter((p) => p.gameCount > 0 || (f.platformIds ?? []).includes(p.id))
   const genres = catalog?.genres ?? []
   const companies = catalog?.companies ?? []
+  const [open, setOpen] = useState(() => readFiltersOpen())
+  const count = activeFacetCount(f)
+  const bodyId = useId()
+
+  function toggle() {
+    const next = !open
+    setOpen(next)
+    writeFiltersOpen(next)
+  }
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <Field label="Plataforma">
-        {(id) => (
-          <select
-            id={id}
-            className={controlClass}
-            value={f.platformIds?.[0] ?? ''}
-            onChange={(e) => {
-              const v = e.target.value
-              onChange(withFacet(query, 'platformIds', v === '' ? undefined : [Number(v)]))
-            }}
-          >
-            <option value="">Todas</option>
-            {platforms.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
-
+    <section className="flex flex-col gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={toggle}
+        className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm font-medium text-fg hover:bg-hover"
+      >
+        <span>{count > 0 ? `Filtros (${count})` : 'Filtros'}</span>
+        <span aria-hidden="true" className="chevron" />
+      </button>
+      {open && (
+    <div id={bodyId} className="flex flex-col gap-3">
       <Field label="Gênero">
         {(id) => (
           <select
@@ -307,10 +306,12 @@ export function FilterPanel({
       <button
         type="button"
         onClick={() => onChange(resetQuery())}
-        className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+        className="rounded bg-raised px-3 py-1.5 text-sm font-medium text-fg hover:bg-hover"
       >
         Limpar filtros
       </button>
     </div>
+      )}
+    </section>
   )
 }

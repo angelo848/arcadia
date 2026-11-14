@@ -12,13 +12,12 @@ import { useEmulators, type EmulatorView } from './lib/emulators'
 import { useCovers } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
 import { ErrorBanner } from './components/ErrorBanner'
-import { FilterPanel } from './components/FilterPanel'
 import { GameEditForm } from './components/GameEditForm'
 import { GamePage } from './components/GamePage'
 import { LibraryGrid } from './components/LibraryGrid'
 import { LibraryList } from './components/LibraryList'
 import { LibraryStates } from './components/LibraryStates'
-import { SearchBox } from './components/SearchBox'
+import { Sidebar } from './components/Sidebar'
 import { SessionPanel } from './components/SessionPanel'
 import { SortSelect } from './components/SortSelect'
 import { ViewToggle } from './components/ViewToggle'
@@ -439,15 +438,21 @@ export default function App() {
             onConfirmRemove={confirmRemove}
           />
         ) : (
+          <div className="flex min-h-0 flex-1">
+          <nav aria-label="Filtros da biblioteca" className="w-60 shrink-0 overflow-y-auto border-r border-line px-3 py-4">
+            <Sidebar
+              search={search}
+              onSearchChange={setSearch}
+              query={query}
+              catalog={catalog.data}
+              onChange={changeFilter}
+            />
+          </nav>
           <section className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
             <div className="flex flex-wrap items-center gap-3">
               <ViewToggle view={view} onChange={changeView} />
-              <div className="min-w-[200px] flex-1">
-                <SearchBox text={search} onChange={setSearch} />
-              </div>
               <SortSelect sort={query.sort} onChange={changeSort} />
             </div>
-            <FilterPanel query={query} catalog={catalog.data} onChange={changeFilter} />
             <LibraryStates
               loaded={loaded}
               total={total}
@@ -485,6 +490,7 @@ export default function App() {
               </div>
             )}
           </section>
+          </div>
         )}
       </div>
     </main>

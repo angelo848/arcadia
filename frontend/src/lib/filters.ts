@@ -51,6 +51,13 @@ export function withText(q: LibraryQuery, text: string): LibraryQuery {
   return { ...q, filter }
 }
 
+// Sets the platform filter; undefined or an empty list removes `platformIds`. Other members and the sort are kept.
+export function withPlatforms(q: LibraryQuery, ids: number[] | undefined): LibraryQuery {
+  const { platformIds: _previous, ...rest } = q.filter
+  const filter: FilterSpec = ids === undefined || ids.length === 0 ? rest : { ...rest, platformIds: ids }
+  return { ...q, filter }
+}
+
 // Changes the sort order; the filter (including text) is kept as is.
 export function withSort(q: LibraryQuery, sort: SortKey): LibraryQuery {
   return { ...q, sort }
