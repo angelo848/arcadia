@@ -73,6 +73,18 @@ func platformRows(t *testing.T, db *sql.DB) []platformRow {
 	return out
 }
 
+// onlyPC keeps the platform rows named PC, so the checks do not depend on the
+// seed platforms a migrated database may already hold.
+func onlyPC(ps []platformRow) []platformRow {
+	var out []platformRow
+	for _, p := range ps {
+		if p.Name == "PC" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func sameGame(a, b store.Game) bool {
 	return a.ID == b.ID && a.Title == b.Title && a.LaunchType == b.LaunchType &&
 		a.LaunchTarget == b.LaunchTarget && a.LaunchArgs == b.LaunchArgs && a.WorkingDir == b.WorkingDir &&
@@ -135,11 +147,12 @@ func TestAddGame(t *testing.T) {
 	t.Run("GAM-001/plataforma PC (categoria pc) criada na primeira adição", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		if ps := platformRows(t, s.DB()); len(ps) != 0 {
-			t.Fatalf("precondition: platforms = %+v, want none", ps)
+		// Baseline: a migrated database may already hold seed platforms (but no "PC").
+		if ps := onlyPC(platformRows(t, s.DB())); len(ps) != 0 {
+			t.Fatalf("precondition: PC platforms = %+v, want none", ps)
 		}
 		g := mustAddGame(t, s, store.NewGame{Title: "Hades", Exe: `C:\Games\Hades\Hades.exe`, WorkingDir: `C:\Games\Hades`, At: addAt})
-		ps := platformRows(t, s.DB())
+		ps := onlyPC(platformRows(t, s.DB()))
 		if len(ps) != 1 || ps[0].Name != "PC" || ps[0].Category != "pc" {
 			t.Fatalf("platforms = %+v, want exactly one {Name:PC Category:pc}", ps)
 		}
@@ -153,7 +166,7 @@ func TestAddGame(t *testing.T) {
 		s := openStore(t, dbPath(t), true)
 		g1 := mustAddGame(t, s, store.NewGame{Title: "Hades", Exe: `C:\Games\Hades\Hades.exe`, WorkingDir: `C:\Games\Hades`, At: addAt})
 		g2 := mustAddGame(t, s, store.NewGame{Title: "Celeste", Exe: `C:\Games\Celeste\Celeste.exe`, WorkingDir: `C:\Games\Celeste`, At: addAt.Add(time.Minute)})
-		ps := platformRows(t, s.DB())
+		ps := onlyPC(platformRows(t, s.DB()))
 		if len(ps) != 1 || ps[0].Name != "PC" || ps[0].Category != "pc" {
 			t.Fatalf("platforms = %+v, want exactly one {Name:PC Category:pc}", ps)
 		}

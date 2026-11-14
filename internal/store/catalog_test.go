@@ -47,7 +47,14 @@ func TestCatalog(t *testing.T) {
 			{ID: libLookup(t, s, "platform", "PC"), Name: "PC", Category: domain.CategoryPC},
 			{ID: libLookup(t, s, "platform", "Switch"), Name: "Switch", Category: domain.CategoryConsole},
 		}
-		if got := platformsByName(c.Platforms); !slices.Equal(got, wantPlatforms) {
+		// A migrated database may carry seed platforms: keep only the ones of this test.
+		var mine []store.Platform
+		for _, p := range c.Platforms {
+			if p.Name == "PC" || p.Name == "Switch" {
+				mine = append(mine, p)
+			}
+		}
+		if got := platformsByName(mine); !slices.Equal(got, wantPlatforms) {
 			t.Errorf("Platforms = %+v, want %+v", got, wantPlatforms)
 		}
 		// Genres and companies are {id, name} items: the ids are the database ids
@@ -169,12 +176,13 @@ func TestPlatforms(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
 
-		empty, err := s.Platforms(t.Context())
+		// Baseline: a migrated database may already hold seed platforms.
+		base, err := s.Platforms(t.Context())
 		if err != nil {
-			t.Fatalf("Platforms on an empty database: %v", err)
+			t.Fatalf("Platforms on a fresh database: %v", err)
 		}
-		if empty == nil || len(empty) != 0 {
-			t.Errorf("Platforms on an empty database = %#v, want an empty non-nil list", empty)
+		if base == nil {
+			t.Errorf("Platforms on a fresh database = nil, want a non-nil list")
 		}
 
 		// Binary order would put Amiga and PC before atari and switch.
@@ -198,7 +206,10 @@ func TestPlatforms(t *testing.T) {
 		}
 		var names []string
 		for _, p := range ps {
-			names = append(names, p.Name)
+			switch p.Name {
+			case "Amiga", "atari", "PC", "switch": // only the platforms created here
+				names = append(names, p.Name)
+			}
 		}
 		if want := []string{"Amiga", "atari", "PC", "switch"}; !slices.Equal(names, want) {
 			t.Errorf("names = %v, want %v (NOCASE order)", names, want)

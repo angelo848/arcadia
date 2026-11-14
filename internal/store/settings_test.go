@@ -165,7 +165,7 @@ func TestAppSettingSchema(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListPlatforms: %v", err)
 		}
-		if len(platforms) != 1 || platforms[0].Name != "Nintendo 64" {
+		if countNamed(platforms, "Nintendo 64") != 1 {
 			t.Errorf("ListPlatforms = %+v, want one platform named Nintendo 64", platforms)
 		}
 		var title string

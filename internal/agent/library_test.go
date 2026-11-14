@@ -1413,9 +1413,9 @@ func TestPlatformAndCatalog(t *testing.T) {
 		t.Parallel()
 		h := newGamesHarness(t, nil)
 		h.need(t, ipc.MethodPlatformList)
-		// An empty database gives [] and not null [IPC-048].
-		if raw := platformsRaw(t, h); raw != "[]" {
-			t.Errorf("platforms of an empty database = %s, want []", raw)
+		// The list is never null [IPC-048]; a migrated database may already hold seed platforms.
+		if raw := platformsRaw(t, h); raw == "null" {
+			t.Errorf("platforms of a fresh database = %s, want a list", raw)
 		}
 		added := []struct {
 			name     string
@@ -1444,13 +1444,19 @@ func TestPlatformAndCatalog(t *testing.T) {
 			if err := json.Unmarshal(it["name"], &name); err != nil {
 				t.Fatalf("name: %v", err)
 			}
-			names = append(names, name)
+			switch name {
+			case "amiga", "Atari 2600", "PC", "Switch": // only the platforms created here
+				names = append(names, name)
+			}
 		}
 		if want := []string{"amiga", "Atari 2600", "PC", "Switch"}; fmt.Sprint(names) != fmt.Sprint(want) {
 			t.Errorf("platform names = %v, want %v", names, want)
 		}
 		categories := map[string]string{"Switch": "console", "amiga": "pc", "Atari 2600": "console", "PC": "pc"}
 		for _, p := range platformList(t, h) {
+			if _, mine := categories[p.Name]; !mine {
+				continue
+			}
 			if p.ID < 1 || p.Category != categories[p.Name] {
 				t.Errorf("platform %+v, want id >= 1 and category %q", p, categories[p.Name])
 			}
@@ -1486,8 +1492,17 @@ func TestPlatformAndCatalog(t *testing.T) {
 		if got.ID < 1 || got.Name != "Amiga 1200" || got.Category != "arcade" {
 			t.Errorf("platform.add = %+v, want a new platform Amiga 1200 arcade", got)
 		}
-		if list := platformList(t, h); len(list) != 1 || list[0].ID != got.ID {
-			t.Errorf("platform.list after the add = %+v, want the new platform only", list)
+		matching := 0
+		for _, p := range platformList(t, h) {
+			if p.Name == "Amiga 1200" {
+				matching++
+				if p.ID != got.ID {
+					t.Errorf("platform.list Amiga 1200 id = %d, want %d", p.ID, got.ID)
+				}
+			}
+		}
+		if matching != 1 {
+			t.Errorf("platform.list after the add has %d platforms named Amiga 1200, want 1", matching)
 		}
 
 		// 100 runes is the largest accepted name (DOM-015, DOM-016).
@@ -1556,10 +1571,13 @@ func TestPlatformAndCatalog(t *testing.T) {
 		h := newGamesHarness(t, nil)
 		h.need(t, ipc.MethodLibraryCatalog)
 
-		// An empty database: every list is [] and not null [IPC-049, STO-030].
+		// An empty database: every list is [] and not null [IPC-049, STO-030]
+		// (platforms may hold seed platforms, but is never null).
 		empty := objectOf(t, h.call(t, ipc.MethodLibraryCatalog, "").Result)
 		wantKeys(t, empty, "platforms", "genres", "companies", "playModes")
-		wantRaw(t, empty, "platforms", "[]")
+		if string(empty["platforms"]) == "null" {
+			t.Errorf("catalog platforms = null, want a list")
+		}
 		wantRaw(t, empty, "genres", "[]")
 		wantRaw(t, empty, "companies", "[]")
 

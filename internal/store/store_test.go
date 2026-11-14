@@ -488,7 +488,7 @@ func TestReopenWithMigrationIsNoop(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListPlatforms: %v", err)
 		}
-		if len(platforms) != 1 || platforms[0].Name != "Super Nintendo" {
+		if countNamed(platforms, "Super Nintendo") != 1 {
 			t.Errorf("ListPlatforms = %+v, want one platform named Super Nintendo", platforms)
 		}
 		var title string
@@ -620,6 +620,11 @@ func TestConcurrentStores(t *testing.T) {
 			readers    = 2
 			iterations = 50
 		)
+		// Baseline: a migrated database may already hold seed platforms.
+		basePlatforms, err := platformCount(ctx, reader)
+		if err != nil {
+			t.Fatalf("baseline ListPlatforms: %v", err)
+		}
 		errs := make(chan error, (writers+readers)*iterations*2)
 		start := make(chan struct{})
 		var wg sync.WaitGroup
@@ -681,7 +686,7 @@ func TestConcurrentStores(t *testing.T) {
 		if err != nil {
 			t.Fatalf("final ListPlatforms: %v", err)
 		}
-		if want := writers * iterations; platforms != want {
+		if want := basePlatforms + writers*iterations; platforms != want {
 			t.Errorf("Platforms = %d, want %d", platforms, want)
 		}
 		if games != 0 {
@@ -703,6 +708,17 @@ func libraryTotal(ctx context.Context, s *store.Store) (int64, error) {
 		return 0, err
 	}
 	return page.Total, nil
+}
+
+// countNamed returns how many platform rows have exactly this name.
+func countNamed(platforms []dbgen.Platform, name string) int {
+	n := 0
+	for _, p := range platforms {
+		if p.Name == name {
+			n++
+		}
+	}
+	return n
 }
 
 // platformCount returns the number of platform rows.
@@ -796,7 +812,7 @@ func TestOpenWithoutMigrateCompatible(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListPlatforms: %v", err)
 		}
-		if len(platforms) != 1 || platforms[0].Name != "PlayStation" {
+		if countNamed(platforms, "PlayStation") != 1 {
 			t.Errorf("ListPlatforms = %+v, want one platform named PlayStation", platforms)
 		}
 	})
@@ -835,7 +851,7 @@ func TestOpenWithoutMigrateCompatible(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListPlatforms: %v", err)
 		}
-		if len(platforms) != 1 || platforms[0].Name != "Mega Drive" {
+		if countNamed(platforms, "Mega Drive") != 1 {
 			t.Errorf("ListPlatforms = %+v, want one platform named Mega Drive", platforms)
 		}
 	})
