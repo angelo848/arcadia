@@ -97,8 +97,31 @@ describe('GameCard', () => {
     const { container, rerender } = render(<GameCard {...props()} />)
     expect(container.querySelector('img')).toHaveAttribute('src', coverPlaceholderUrl)
 
-    rerender(<GameCard {...props({ coverUrl: '/media/7/thumb.jpg' })} />)
+    rerender(<GameCard {...props({ image: { url: '/media/7/thumb.jpg', fit: 'contain' } })} />)
     expect(container.querySelector('img')).toHaveAttribute('src', '/media/7/thumb.jpg')
+  })
+
+  it('AJU-015/cartão com image de capa mostra a miniatura com contain; com substituta, cover; sem image, placeholder', () => {
+    const { container, rerender } = render(<GameCard {...props({ image: { url: '/media/7/c.jpg', fit: 'contain' } })} />)
+    expect(container.querySelector('img')).toHaveAttribute('data-fit', 'contain')
+
+    rerender(<GameCard {...props({ image: { url: '/media/7/t.jpg', fit: 'cover' } })} />)
+    expect(container.querySelector('img')).toHaveAttribute('src', '/media/7/t.jpg')
+    expect(container.querySelector('img')).toHaveAttribute('data-fit', 'cover')
+
+    rerender(<GameCard {...props()} />)
+    expect(container.querySelector('img')).toHaveAttribute('src', coverPlaceholderUrl)
+    expect(container.querySelector('img')).not.toHaveAttribute('data-fit')
+  })
+
+  it('AJU-015/a área continua aspect-[2/3] nos três casos', () => {
+    const imgs = [{ url: '/a.jpg', fit: 'contain' as const }, { url: '/b.jpg', fit: 'cover' as const }, undefined]
+    for (const image of imgs) {
+      const { container, unmount } = render(<GameCard {...props({ image })} />)
+      const box = container.querySelector('img')?.parentElement as HTMLElement
+      expect(box.className).toContain('aspect-[2/3]')
+      unmount()
+    }
   })
 
   it('UIX-042/cartão é role option com o título como nome e aria-selected conforme selected', () => {

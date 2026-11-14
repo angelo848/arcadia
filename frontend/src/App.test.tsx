@@ -550,6 +550,28 @@ describe('App: grade e lista', () => {
     expect(screen.getByRole('button', { name: 'Mostrar em lista' })).toBeInTheDocument()
   })
 
+  it('AJU-015/jogo sem capa e com screenshot mostra o screenshot no cartão', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    app.MediaList.mockResolvedValue({
+      media: [{ id: 1, kind: 'screenshot', provider: 'x', path: 'p', thumbPath: 't', url: '/m/shot.jpg', thumbUrl: '/m/shot-t.jpg' }],
+    })
+    renderApp()
+
+    const card = await findRow('Hollow Knight')
+    await waitFor(() => expect(card.querySelector('img')).toHaveAttribute('src', '/m/shot-t.jpg'))
+    expect(card.querySelector('img')).toHaveAttribute('data-fit', 'cover')
+  })
+
+  it('AJU-015/MediaList com erro mostra o placeholder no cartão', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    app.MediaList.mockRejectedValue(new Error('boom'))
+    renderApp()
+
+    const card = await findRow('Hollow Knight')
+    await waitFor(() => expect(app.MediaList).toHaveBeenCalled())
+    expect(card.querySelector('img')).not.toHaveAttribute('data-fit')
+  })
+
   it('UIX-016/a grade renderiza no máximo 100 cartões mesmo com 10 000 jogos na biblioteca', async () => {
     app.ListGames.mockImplementation(libraryOf(makeGames(10_000)))
     renderApp()

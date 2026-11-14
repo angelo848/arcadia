@@ -14,8 +14,23 @@ const handlers = { onSelect: vi.fn(), onLaunch: vi.fn() }
 
 describe('GameCard cover (MID-006)', () => {
   it('MID-006/com capa mostra a imagem da capa', () => {
-    render(<GameCard game={game} live={null} selected={false} tabbable={false} coverUrl="/media/1/c.jpg" {...handlers} />)
+    render(<GameCard game={game} live={null} selected={false} tabbable={false} image={{ url: '/media/1/c.jpg', fit: 'contain' }} {...handlers} />)
     expect(document.querySelector('img')).toHaveAttribute('src', '/media/1/c.jpg')
+  })
+
+  it('AJU-015/com substituta mostra a imagem com cover', () => {
+    render(<GameCard game={game} live={null} selected={false} tabbable={false} image={{ url: '/media/1/t.jpg', fit: 'cover' }} {...handlers} />)
+    const img = document.querySelector('img')
+    expect(img).toHaveAttribute('src', '/media/1/t.jpg')
+    expect(img).toHaveAttribute('data-fit', 'cover')
+  })
+
+  it('AJU-016/substituta que falha vira placeholder sem data-fit', () => {
+    render(<GameCard game={game} live={null} selected={false} tabbable={false} image={{ url: '/media/1/t.jpg', fit: 'cover' }} {...handlers} />)
+    fireEvent.error(document.querySelector('img') as HTMLImageElement)
+    const img = document.querySelector('img')
+    expect(img).toHaveAttribute('src', coverPlaceholderUrl)
+    expect(img).not.toHaveAttribute('data-fit')
   })
 
   it('MID-006/sem capa mostra o placeholder no lugar e o título continua visível', () => {
@@ -25,7 +40,7 @@ describe('GameCard cover (MID-006)', () => {
   })
 
   it('UIX-015/imagem que falha ao carregar vira o placeholder', () => {
-    render(<GameCard game={game} live={null} selected={false} tabbable={false} coverUrl="/media/1/quebrada.jpg" {...handlers} />)
+    render(<GameCard game={game} live={null} selected={false} tabbable={false} image={{ url: '/media/1/quebrada.jpg', fit: 'contain' }} {...handlers} />)
     const img = document.querySelector('img') as HTMLImageElement
     expect(img).toHaveAttribute('src', '/media/1/quebrada.jpg')
 

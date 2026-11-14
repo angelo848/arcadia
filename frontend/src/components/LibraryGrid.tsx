@@ -4,6 +4,7 @@ import { GameCard, liveOf } from './GameCard'
 import { GRID_GAP, GRID_INSET, columnsFor, usableWidth, isNavKey, nextIndex } from '../lib/gridNav'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
+import type { CardImage } from '../lib/metadata'
 
 const OVERSCAN_ROWS = 2
 // The next page is asked for when the last rendered card is past loaded - 10 [UI-036].
@@ -15,7 +16,7 @@ const PREFETCH_AHEAD = 10
 // loaded - 10, onNeedMore is called once for this set of loaded games [UI-036].
 export function LibraryGrid({
   games,
-  covers,
+  images,
   total,
   current,
   selectedId,
@@ -27,8 +28,8 @@ export function LibraryGrid({
   // keyboard enables arrows/Home/End/Enter; false while Big Box owns the keys [UIX-041].
   keyboard: boolean
   games: GameView[]
-  // covers maps a game id to its cover thumbnail URL (MID-006); a game without one shows the placeholder.
-  covers?: Record<number, string>
+  // images maps a game id to its card image [AJU-015]; a game without one shows the placeholder.
+  images?: Record<number, CardImage>
   total: number
   current: SessionView | null
   // selectedId is the game in focus of the details panel; null when none [UIX-017].
@@ -281,7 +282,7 @@ export function LibraryGrid({
                   key={g.id}
                   game={g}
                   live={liveOf(current, g.id)}
-                  coverUrl={covers?.[g.id]}
+                  image={images?.[g.id]}
                   selected={g.id === selectedId}
                   tabbable={first + i === stopIndex}
                   onSelect={onSelect}

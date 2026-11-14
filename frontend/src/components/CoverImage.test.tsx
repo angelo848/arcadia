@@ -48,6 +48,34 @@ describe('CoverImage', () => {
     expect(imgOf(container).getAttribute('src')).toBe('/media/1/new.jpg')
   })
 
+  it('AJU-016/fit contain: data-fit="contain" e object-contain', () => {
+    const { container } = render(<CoverImage src="/m/c.jpg" fit="contain" />)
+    const img = imgOf(container)
+    expect(img).toHaveAttribute('data-fit', 'contain')
+    expect(img.className).toContain('object-contain')
+    const dflt = render(<CoverImage src="/m/c.jpg" />)
+    expect(imgOf(dflt.container)).toHaveAttribute('data-fit', 'contain')
+  })
+
+  it('AJU-016/fit cover: data-fit="cover" e object-cover object-center', () => {
+    const { container } = render(<CoverImage src="/m/t.jpg" fit="cover" />)
+    const img = imgOf(container)
+    expect(img).toHaveAttribute('data-fit', 'cover')
+    expect(img.className).toContain('object-cover')
+    expect(img.className).toContain('object-center')
+    expect(img.className).not.toContain('object-contain')
+  })
+
+  it('AJU-016/substituta que falha mostra o placeholder, sem data-fit (não tenta a próxima)', () => {
+    const { container } = render(<CoverImage src="/m/t.jpg" fit="cover" />)
+    fireEvent.error(imgOf(container))
+    const img = imgOf(container)
+    expect(img.getAttribute('src')).toBe(coverPlaceholderUrl)
+    expect(img).not.toHaveAttribute('data-fit')
+    const none = render(<CoverImage fit="cover" />)
+    expect(imgOf(none.container)).not.toHaveAttribute('data-fit')
+  })
+
   it('UIX-042/imagem e placeholder têm alt vazio', () => {
     const withCover = render(<CoverImage src="/media/1/c.jpg" />)
     expect(imgOf(withCover.container).getAttribute('alt')).toBe('')

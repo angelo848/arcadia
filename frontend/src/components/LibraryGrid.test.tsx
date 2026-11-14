@@ -312,6 +312,26 @@ function firstRowEl(): HTMLElement {
 }
 
 // Margin inside the scroll box [AJU-001..AJU-004]. Box 800 px: usable width = 800 - 12 - 8 = 780.
+describe('LibraryGrid: imagens do cartão', () => {
+  it('AJU-015/images por id chega ao cartão: capa com contain, substituta com cover, sem entrada placeholder', () => {
+    render(
+      <LibraryGrid
+        {...props({
+          games: makeGames(3),
+          total: 3,
+          images: { 0: { url: '/m/0.jpg', fit: 'contain' }, 1: { url: '/m/1.jpg', fit: 'cover' } },
+        })}
+      />,
+    )
+    const imgOf = (title: string) => cardOf(title).querySelector('img') as HTMLImageElement
+    expect(imgOf('Jogo 0')).toHaveAttribute('src', '/m/0.jpg')
+    expect(imgOf('Jogo 0')).toHaveAttribute('data-fit', 'contain')
+    expect(imgOf('Jogo 1')).toHaveAttribute('src', '/m/1.jpg')
+    expect(imgOf('Jogo 1')).toHaveAttribute('data-fit', 'cover')
+    expect(imgOf('Jogo 2')).not.toHaveAttribute('data-fit')
+  })
+})
+
 describe('LibraryGrid: margem interna', () => {
   const { rowHeight } = columnsFor(usableWidth(BOX_WIDTH))
 

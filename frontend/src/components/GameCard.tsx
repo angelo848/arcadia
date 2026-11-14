@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
+import type { CardImage } from '../lib/metadata'
 import { CoverImage } from './CoverImage'
 
 // LiveMark is the session marking of a card [UI-006, UI-043]: "running" (running or
@@ -29,7 +30,7 @@ export function liveOf(current: SessionView | null, gameId: number): LiveMark {
 // click launches it [UIX-017, UIX-018]. The card has no buttons.
 export function GameCard({
   game,
-  coverUrl,
+  image,
   live,
   selected,
   tabbable,
@@ -37,8 +38,8 @@ export function GameCard({
   onLaunch,
 }: {
   game: GameView
-  // coverUrl is the cover thumbnail of the game, when it has one (MID-006).
-  coverUrl?: string
+  // image is the card image of the game, when it has one [AJU-015].
+  image?: CardImage
   live: LiveMark
   selected: boolean
   tabbable: boolean
@@ -59,7 +60,7 @@ export function GameCard({
         selected ? 'bg-raised ring-2 ring-accent' : 'hover:bg-hover'
       }`}
     >
-      <CoverImage src={coverUrl} />
+      <CoverImage src={image?.url} fit={image?.fit} />
       <span title={game.title} className="line-clamp-2 text-sm font-medium text-fg">
         {game.title}
       </span>

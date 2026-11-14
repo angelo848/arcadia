@@ -9,7 +9,7 @@ import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
 import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
 import { useEmulators } from './lib/emulators'
-import { useCovers } from './lib/metadata'
+import { useCardImages } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
 import { ErrorBanner } from './components/ErrorBanner'
 import { GameDetailsPanel } from './components/GameDetailsPanel'
@@ -271,7 +271,7 @@ export default function App() {
   const rows = useMemo(() => games.data?.pages.flatMap((p) => p.games) ?? [], [games.data])
   const total = games.data?.pages.at(-1)?.total
   // The cover of each loaded game, for the grid (MID-006).
-  const covers = useCovers(useMemo(() => rows.map((g) => g.id), [rows]))
+  const images = useCardImages(useMemo(() => rows.map((g) => g.id), [rows]))
   const loaded = games.data !== undefined
   const filtered = hasFacets(query)
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = games
@@ -476,7 +476,7 @@ export default function App() {
                     <LibraryGrid
                       key={queryKey}
                       games={rows}
-                      covers={covers}
+                      images={images}
                       total={total}
                       current={session}
                       selectedId={focusedId}
