@@ -287,10 +287,11 @@ describe('invariantes da UI', () => {
     fireEvent.keyDown(await findCard('Hades'), { key: 'ArrowLeft' })
 
     // Carousel.
-    const next = within(aside()).queryByRole('button', { name: 'Próxima imagem' })
-    if (next) {
-      fireEvent.click(next)
-      fireEvent.click(within(aside()).getByRole('button', { name: 'Imagem anterior' }))
+    const strip = within(aside()).queryByRole('group', { name: 'Miniaturas' })
+    if (strip) {
+      const thumbs = within(strip).getAllByRole('button')
+      fireEvent.click(thumbs[thumbs.length - 1])
+      fireEvent.click(within(strip).getAllByRole('button')[0])
     }
 
     // Platforms and the collapsible filters section.
