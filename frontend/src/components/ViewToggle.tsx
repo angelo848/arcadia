@@ -20,7 +20,7 @@ export function ViewToggle({
       type="button"
       aria-label={aria}
       onClick={() => onChange(target)}
-      className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+      className="shrink-0 rounded bg-raised px-3 py-1.5 text-sm font-medium text-fg hover:bg-hover"
     >
       {label}
     </button>
