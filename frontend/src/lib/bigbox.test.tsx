@@ -509,6 +509,16 @@ describe('useBigBoxNav com a faixa de miniaturas do MediaCarousel (AJU-014)', ()
     expect(document.activeElement?.textContent).toBe('Direita')
   })
 
+  it('AJU-012/seta direita na miniatura 1 focada com destaque 0 vai para a 3 (a partir da focada)', () => {
+    const { container } = render(<Page />)
+    thumbs()[1].focus()
+    const notPrevented = fireEvent.keyDown(thumbs()[1], { key: 'ArrowRight' })
+    expect(notPrevented).toBe(false)
+    expect(countText()).toBe('3 de 3')
+    expect(shown(container)).toBe('/media/3.jpg')
+    expect(document.activeElement).toBe(thumbs()[2])
+  })
+
   it('AJU-014/cima e baixo numa miniatura são do Big Box', () => {
     const { container } = render(<Page />)
     thumbs()[1].focus()

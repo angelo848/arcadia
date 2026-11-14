@@ -157,6 +157,48 @@ describe('MediaCarousel', () => {
     expect(shownSrc(container)).toBe('/media/3.jpg')
   })
 
+  // Six kinds, so the display order is ids 1..6 (carouselKindOrder).
+  const six = [item(1, 'cover'), item(2, 'screenshot'), item(3, 'title'), item(4, 'select'), item(5, 'background'), item(6, 'banner')]
+
+  it('AJU-012/seta direita na miniatura 4 com destaque 0 vai para a 5', () => {
+    mockScroll()
+    const { container } = render(<MediaCarousel items={six} resetKey={1} />)
+    expect(thumbs()).toHaveLength(6)
+    thumbs()[4].focus()
+    expect(screen.getByText('1 de 6')).toBeTruthy()
+    fireEvent.keyDown(thumbs()[4], { key: 'ArrowRight' })
+    expect(shownSrc(container)).toBe('/media/6.jpg')
+    expect(screen.getByText('6 de 6')).toBeTruthy()
+    expect(document.activeElement).toBe(thumbs()[5])
+  })
+
+  it('AJU-012/seta esquerda na miniatura 0 focada não age', () => {
+    mockScroll()
+    const { container } = render(<MediaCarousel items={six} resetKey={1} />)
+    fireEvent.click(thumbs()[3])
+    thumbs()[0].focus()
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })
+    thumbs()[0].dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(false)
+    expect(shownSrc(container)).toBe('/media/4.jpg')
+    expect(screen.getByText('4 de 6')).toBeTruthy()
+    expect(document.activeElement).toBe(thumbs()[0])
+  })
+
+  it('AJU-012/Home e End a partir da focada', () => {
+    mockScroll()
+    const { container } = render(<MediaCarousel items={six} resetKey={1} />)
+    thumbs()[2].focus()
+    fireEvent.keyDown(thumbs()[2], { key: 'End' })
+    expect(shownSrc(container)).toBe('/media/6.jpg')
+    expect(document.activeElement).toBe(thumbs()[5])
+    fireEvent.click(thumbs()[1])
+    thumbs()[3].focus()
+    fireEvent.keyDown(thumbs()[3], { key: 'Home' })
+    expect(shownSrc(container)).toBe('/media/1.jpg')
+    expect(document.activeElement).toBe(thumbs()[0])
+  })
+
   it('AJU-012/a nova miniatura chama scrollIntoView com inline nearest', () => {
     mockScroll()
     render(<MediaCarousel items={three} resetKey={1} />)

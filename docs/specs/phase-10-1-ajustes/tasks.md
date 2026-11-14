@@ -156,19 +156,24 @@ export async function applyImportInLots(candidates: ImportCandidate[], launchbox
 - **Revisão (sessão principal):** `git diff --stat` da fase sem `internal/tracker`, `cmd/fake-game`, `internal/ipc`, `internal/store` (queries, `dbgen`, migrações) e `cmd/arcadia`. Em Go, só `internal/domain/media_limits*.go`, `internal/importers/launchbox_images*.go`, `internal/agent/import_images*.go` e `internal/agent/imports.go`. `internal/ipc/contract_test.go` sem alteração e verde.
 - Dependência: T01..T15.
 
+## T18 — Setas, Home e End a partir da miniatura focada (após a revisão)
+- Requisitos: AJU-012, AJU-014. **implementer:** `frontend/src/components/MediaThumbStrip.tsx`: o `onKeyDown` calcula k a partir da miniatura que tem o foco (índice do botão alvo do evento), não de `index`; pontas, `preventDefault`, `focus()` e `scrollIntoView` como na tabela do design §5.
+- **test-writer:** `frontend/src/components/MediaCarousel.test.tsx` e `frontend/src/lib/bigbox.test.tsx`: `AJU-012/seta direita na miniatura 4 com destaque 0 vai para a 5`; `AJU-012/seta esquerda na miniatura 0 focada não age`; `AJU-012/Home e End a partir da focada`.
+- Dependência: T12, T13. Antes da T17.
+
 ## T17 — Conferência manual com a base limpa e a biblioteca reimportada
 - Requisitos: AJU-029, AJU-001, AJU-002, AJU-004, AJU-006, AJU-007, AJU-008, AJU-018, AJU-021, AJU-022. **Responsável:** sessão principal com o usuário.
 - **Builds e testes:** `go build ./...`, `go vet ./...`, `CGO_ENABLED=0 go build ./...`, `go test ./...`; com `ARCADIA_LAUNCHBOX_ROOT`: `go test ./internal/importers -run TestLaunchBoxImagesRealFolder -v`; `npm test`, `tsc --noEmit`, `npm run build`, `wails build -ldflags "-X main.version=<v>"`. **Rastreio:** `spec-trace.ps1 -Spec docs/specs/phase-10-1-ajustes` e também na fase 10 (UIX-026 como substituído).
 - **Preparação:** backup de `data\`; o usuário limpa a base (as sessões do Arcadia são apagadas; o tempo do LaunchBox volta pela sessão importada, IMP-007) e reimporta tudo do LaunchBox.
 - **Roteiro (AJU-029)**, em 1366×768 e 1920×1080: (1) importação em lotes termina com "Importando k de N…"; (2) o log mostra "pastas de imagem do LaunchBox não lidas", uma linha por plataforma, sem nenhuma pasta da tabela; (3) jogos antes sem capa mostram capa ou substituta; Steam/Epic com o pôster da loja; (4) cartões nos quatro cantos da grade e na primeira e última linha da lista com contorno inteiro; colunas não mudam quando a barra aparece; (5) barra fina no tema na coluna esquerda, grade, lista, painel, faixa, modal de importação e estatísticas; (6) carrossel por mouse, teclado e Big Box com controle; (7) cursor de mão nos controles e "não permitido" em "Jogar" durante "Iniciando…"; "Jogar" é o botão mais visível.
 - **Documentação:** `docs/ARCHITECTURE.md` (tabela de limites, mapa de pastas do LaunchBox, importação em lotes); `docs/ROADMAP.md` (10.1 concluída; tabela de limites antecipada da fase 12); `CLAUDE.md` (spec atual).
-- Dependência: T01..T16.
+- Dependência: T01..T16, T18.
 
 ## Ordem
 
 - **Bloco A (paralelo):** T01 (usuário), T02, T06, T07, T09, T14, T15.
 - **Bloco B:** Go: T03 (após T01) → T04 (após T02 e T03) → T05. Frontend: T08 (após T07); T10 (após T08 e T09) → T11; T12 (após T09) → T13. As duas cadeias rodam em paralelo.
-- **Depois:** T16 → T17.
+- **Depois:** T16 → T18 (após a revisão) → T17.
 - **Arquivos compartilhados (não paralelos):** `LibraryGrid.tsx` e seu teste: T08 → T10; `lib/metadata.ts`: T09 → T11; `App.invariants.test.tsx`: T12 → T16; `internal/agent/import_images.go` e seu teste: T04 → T05; `internal/importers/launchbox_images.go`: só T03; `index.css`: só T06; `App.tsx`: só T10; `GameDetailsPanel.tsx`: só T14.
 
 ## Riscos de concorrência e recursos
@@ -192,8 +197,9 @@ export async function applyImportInLots(candidates: ImportCandidate[], launchbox
 | AJU-006, AJU-007 | T14, T17 |
 | AJU-008 | T06, T17 |
 | AJU-009 | T09, T12 |
-| AJU-010..AJU-013 | T12 |
-| AJU-014 | T13 |
+| AJU-010, AJU-011, AJU-013 | T12 |
+| AJU-012 | T12, T18 |
+| AJU-014 | T13, T18 |
 | AJU-015, AJU-016 | T09, T10 |
 | AJU-017 | T11 |
 | AJU-018 | T01, T03, T04, T17 |

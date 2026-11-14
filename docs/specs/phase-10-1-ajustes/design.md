@@ -135,6 +135,11 @@ Teclado (só no `onKeyDown` da faixa; nada no destaque):
 | miniatura k | ↑ ↓ | — | nada | não |
 | clique em k | — | — | destaque k, `focus()` em k | — |
 
+*Acrescentado após a revisão [AJU-012]:* nas linhas acima, **k é a miniatura que tem o foco** (o índice vem do botão
+alvo do evento, por exemplo `data-index` em `event.currentTarget`/`target`), não `index` (destaque). No Big Box o foco
+pode estar numa miniatura não destacada (vindo de cima ou de baixo); com destaque 0 e foco em 4, → leva destaque e foco
+a 5. As pontas também são as da focada.
+
 O Big Box (`lib/bigbox.ts`) já ignora eventos com `defaultPrevented` (linha do `keydown`); A/Enter numa miniatura é um
 clique. Os botões ‹ › saem; o critério de UIX-042 ("uma tecla, uma ação") passa a ser coberto pela tabela acima.
 
@@ -224,6 +229,9 @@ expressão; divergência volta à spec (AJU-021) antes do código.
 
 `handleImportApply` guarda um `map[string]bool` de plataformas já registradas e chama `UnmappedLaunchBoxFolders` uma vez
 por plataforma por chamada (`log.Info("pastas de imagem do LaunchBox não lidas", "platform", p, "folders", list)`).
+*Acrescentado após a revisão [AJU-022]:* o helper é chamado para todo candidato do LaunchBox com `launchBoxPath` válido,
+gravado ou "já existe"; o mapa é local à chamada, então com os lotes de AJU-025 a mesma plataforma pode ser registrada
+uma vez por lote (aceito; nada de estado entre chamadas no agente).
 
 ## 8. Importação em lotes [AJU-025]
 

@@ -214,7 +214,16 @@ vão à primeira e à última. Na primeira (esquerda) e na última (direita) min
 confirmada pelo usuário). A miniatura em destaque rola para a parte visível da faixa. Dado o foco fora da faixa (na
 grade, no painel, em outro botão), então as setas não mudam a imagem em destaque. Setas para cima e para baixo nunca são
 tratadas pela faixa.
-· verificação: teste de componente com eventos de teclado (foco fora da faixa não muda a imagem; pontas; Home/End).
+A seta, Home e End agem a partir da miniatura que **tem o foco**, não da que está em destaque (as duas costumam coincidir,
+mas no Big Box o foco pode chegar a uma miniatura não destacada vindo de baixo ou de cima). As pontas também são as da
+miniatura focada. Dado o Big Box com a miniatura 0 em destaque e o foco na miniatura 4 (de n ≥ 6), quando o usuário
+aperta seta direita, então a miniatura 5 passa ao destaque e recebe o foco. Dado o foco na miniatura 0 com outra em
+destaque, quando o usuário aperta seta esquerda, então a faixa não trata a tecla (o destaque não muda e não há
+`preventDefault`). Dado o foco na miniatura k com outra em destaque, quando o usuário aperta Home ou End, então a
+primeira ou a última passa ao destaque e recebe o foco.
+· alterado em 2026-11-14 (acrescentado após a revisão): a navegação parte da miniatura focada, não da destacada.
+· verificação: teste de componente com eventos de teclado (foco fora da faixa não muda a imagem; pontas; Home/End;
+foco numa miniatura diferente da destacada).
 
 ### AJU-013 — Troca de jogo e imagens que falham
 Dado o carrossel de G com a imagem k em destaque, quando o jogo em foco passa a H (ou G recebe imagens novas, UIX-033),
@@ -314,7 +323,15 @@ Dado uma chamada de `import.apply` que copia imagens do LaunchBox, então, para 
 registra uma única vez, em `slog` nível Info, a lista das subpastas de `Images\<plataforma>` que não estão na tabela de
 AJU-018 (nome da plataforma e nomes das pastas). Sem pasta não mapeada, nada é registrado. O registro não interrompe a
 importação.
-· verificação: teste com logger de captura (uma entrada por plataforma; nenhuma sem pasta extra).
+O registro é sobre a pasta de imagens da plataforma, não sobre a cópia: todo candidato do LaunchBox da chamada com a
+pasta do LaunchBox conhecida conta, inclusive os "já existe" (IMP-006), que não recebem imagens (AJU-018). A unicidade
+vale **por chamada** de `import.apply`: como a UI envia lotes de até 25 (AJU-025), uma plataforma pode aparecer uma vez
+por lote numa mesma importação; esse comportamento é aceito (as entradas repetidas são idênticas e o agente não guarda
+estado entre chamadas).
+· alterado em 2026-11-14 (acrescentado após a revisão): explicitados a unicidade por chamada (lotes) e a contagem dos
+candidatos "já existe".
+· verificação: teste com logger de captura (uma entrada por plataforma; nenhuma sem pasta extra; candidato "já existe"
+também gera a entrada).
 
 ### ~~AJU-023 — Completar imagens de jogos que já existem~~
 · status: removido em 2026-11-14 (decisão 1 do usuário: não haverá "Completar imagens" de jogos já importados; o usuário

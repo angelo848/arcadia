@@ -29,13 +29,16 @@ export function MediaThumbStrip({
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    let next = index
-    if (e.key === 'ArrowRight') next = index + 1
-    else if (e.key === 'ArrowLeft') next = index - 1
+    const target = (e.target as HTMLElement).closest?.('button')
+    const found = target ? refs.current.indexOf(target as HTMLButtonElement) : -1
+    const from = found >= 0 ? found : index
+    let next = from
+    if (e.key === 'ArrowRight') next = from + 1
+    else if (e.key === 'ArrowLeft') next = from - 1
     else if (e.key === 'Home') next = 0
     else if (e.key === 'End') next = n - 1
     else return
-    if (next < 0 || next >= n || next === index) return
+    if (next < 0 || next >= n || next === from) return
     e.preventDefault()
     select(next)
   }
