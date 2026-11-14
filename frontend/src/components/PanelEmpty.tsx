@@ -1,22 +1,26 @@
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import { useRecentGames } from '../lib/library'
-import { useCovers } from '../lib/metadata'
+import { useCardImages } from '../lib/metadata'
+import type { CardImage } from '../lib/metadata'
 import { formatLocalDateTime } from '../lib/formatDate'
 import { coverPlaceholderUrl } from './CoverImage'
 
 // Thumb is the small cover of a list item, with the placeholder when missing or broken.
-function Thumb({ src, title }: { src?: string; title: string }): JSX.Element {
+function Thumb({ image, title }: { image?: CardImage; title: string }): JSX.Element {
   const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [src])
+  const url = image?.url
+  useEffect(() => setFailed(false), [url])
+  const real = !!image && !failed
   return (
     <div className="aspect-[2/3] w-full overflow-hidden rounded bg-raised">
       <img
-        src={src && !failed ? src : coverPlaceholderUrl}
+        src={real ? image.url : coverPlaceholderUrl}
         alt={`Capa de ${title}`}
         loading="lazy"
+        data-fit={real ? image.fit : undefined}
         onError={() => setFailed(true)}
-        className="h-full w-full object-contain"
+        className={`h-full w-full ${real && image.fit === 'cover' ? 'object-cover' : 'object-contain'}`}
       />
     </div>
   )
@@ -28,7 +32,7 @@ export function PanelEmpty({ onSelect }: { onSelect: (id: number) => void }): JS
   const recent = useRecentGames()
   // A game that was never played has no last time: it is not a recent game.
   const games = (recent.data ?? []).filter((g) => g.lastPlayedAt !== '')
-  const covers = useCovers(games.map((g) => g.id))
+  const images = useCardImages(games.map((g) => g.id))
 
   return (
     <div className="flex flex-col gap-4 p-4 text-fg">
@@ -49,7 +53,7 @@ export function PanelEmpty({ onSelect }: { onSelect: (id: number) => void }): JS
                   className="flex w-full items-center gap-3 rounded bg-surface p-2 text-left hover:bg-hover"
                 >
                   <span className="w-12 shrink-0">
-                    <Thumb src={covers[g.id]} title={g.title} />
+                    <Thumb image={images[g.id]} title={g.title} />
                   </span>
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{g.title}</span>

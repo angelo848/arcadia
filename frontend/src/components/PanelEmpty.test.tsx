@@ -74,6 +74,38 @@ describe('PanelEmpty', () => {
     expect(container.querySelectorAll('li img')).toHaveLength(5)
   })
 
+  it('AJU-017/jogo com capa mostra a capa com contain; sem capa e com tela de título mostra a tela de título com cover; sem imagens, placeholder', async () => {
+    const mk = (id: number, kind: MediaItemView['kind']): MediaItemView => ({
+      id, kind, provider: 'p', path: '', thumbPath: '', url: `/m/${kind}${id}.jpg`, thumbUrl: `/t/${kind}${id}.jpg`,
+    })
+    install([game(1), game(2), game(3)], { 1: [mk(1, 'cover')], 2: [mk(2, 'title')] })
+    wrap(<PanelEmpty onSelect={() => {}} />)
+    const items = await screen.findAllByRole('listitem')
+    await waitFor(() =>
+      expect(within(items[0]).getByRole('img', { hidden: true }).getAttribute('src')).toBe('/t/cover1.jpg'),
+    )
+    expect(within(items[0]).getByRole('img', { hidden: true }).getAttribute('data-fit')).toBe('contain')
+    await waitFor(() =>
+      expect(within(items[1]).getByRole('img', { hidden: true }).getAttribute('src')).toBe('/t/title2.jpg'),
+    )
+    expect(within(items[1]).getByRole('img', { hidden: true }).getAttribute('data-fit')).toBe('cover')
+    expect(within(items[2]).getByRole('img', { hidden: true }).getAttribute('src')).toBe(coverPlaceholderUrl)
+  })
+
+  it('AJU-017/substituta que falha vira placeholder', async () => {
+    const title: MediaItemView = {
+      id: 7, kind: 'title', provider: 'p', path: '', thumbPath: '', url: '/m/t.jpg', thumbUrl: '/t/t.jpg',
+    }
+    install([game(1)], { 1: [title] })
+    wrap(<PanelEmpty onSelect={() => {}} />)
+    const li = (await screen.findAllByRole('listitem'))[0]
+    await waitFor(() => expect(within(li).getByRole('img', { hidden: true }).getAttribute('src')).toBe('/t/t.jpg'))
+    fireEvent.error(within(li).getByRole('img', { hidden: true }))
+    await waitFor(() =>
+      expect(within(li).getByRole('img', { hidden: true }).getAttribute('src')).toBe(coverPlaceholderUrl),
+    )
+  })
+
   it('UIX-024/ListGames chamado com played=played, sort lastPlayed e limit 5', async () => {
     install([game(1)])
     wrap(<PanelEmpty onSelect={() => {}} />)

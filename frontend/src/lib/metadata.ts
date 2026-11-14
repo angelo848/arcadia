@@ -154,22 +154,6 @@ export function useMedia(gameId: number) {
   return useQuery({ queryKey: mediaKey(gameId), queryFn: () => fetchMedia(gameId), retry: false })
 }
 
-// useCovers maps each game of the list to the URL of its cover thumbnail, when it has one (MID-006).
-// A game whose media cannot be read simply shows no cover.
-export function useCovers(gameIds: number[]): Record<number, string> {
-  const results = useQueries({
-    queries: gameIds.map((id) => ({ queryKey: mediaKey(id), queryFn: () => fetchMedia(id), retry: false, staleTime: 60_000 })),
-  })
-  const covers: Record<number, string> = {}
-  results.forEach((r, i) => {
-    const cover = r.data?.find((m) => m.kind === 'cover')
-    if (cover) {
-      covers[gameIds[i]] = cover.thumbUrl || cover.url
-    }
-  })
-  return covers
-}
-
 // useCardImages maps each game to its card image; games with errors or no image are omitted [AJU-015].
 export function useCardImages(gameIds: number[]): Record<number, CardImage> {
   const results = useQueries({
