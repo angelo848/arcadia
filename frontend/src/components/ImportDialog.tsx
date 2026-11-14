@@ -1,7 +1,7 @@
-import { useId, useState, type JSX } from 'react'
+import { useEffect, useId, useRef, useState, type JSX } from 'react'
 import { Modal } from './Modal'
 import {
-  applyImport,
+  applyImportInLots,
   needsPath,
   pickFile,
   pickFolder,
@@ -36,6 +36,14 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [result, setResult] = useState<ImportApplyResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const titleId = useId()
   const pathId = useId()
   const platformId = useId()
@@ -79,18 +87,25 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
       .map(({ c }) => ({ ...c, platform: c.platform || (source === 'file' || source === 'folder' ? platform.trim() : c.platform) }))
     setBusy(true)
     setError(null)
-    try {
-      const res = await applyImport(chosen, source === 'launchbox' ? path : '')
-      setResult(res)
-      setChecked(new Set())
-      if (res.applied.length > 0) {
-        onImported()
+    setResult(null)
+    const out = await applyImportInLots(chosen, source === 'launchbox' ? path : '', (sent, total) => {
+      if (mounted.current) {
+        setProgress({ sent, total })
       }
-    } catch (e) {
-      setError(messageOf(e))
-    } finally {
-      setBusy(false)
+    })
+    if (out.result.applied.length > 0) {
+      onImported()
     }
+    if (!mounted.current) {
+      return
+    }
+    setResult(out.result)
+    setChecked(new Set())
+    if (out.error) {
+      setError(`${messageOf(out.error)}. ${out.notSent} jogos não foram enviados.`)
+    }
+    setProgress(null)
+    setBusy(false)
   }
 
   function toggle(i: number, on: boolean) {
@@ -116,7 +131,8 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           <button
             type="button"
             onClick={onClose}
-            className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover"
+            disabled={busy}
+            className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             Fechar
           </button>
@@ -183,6 +199,12 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
               <li key={w}>{w}</li>
             ))}
           </ul>
+        )}
+
+        {progress !== null && (
+          <p role="status" className="text-sm text-muted">
+            Importando {progress.sent} de {progress.total}…
+          </p>
         )}
 
         {error !== null && (

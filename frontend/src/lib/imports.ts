@@ -65,6 +65,43 @@ export async function applyImport(candidates: ImportCandidate[], launchboxPath =
   return fn(candidates, launchboxPath)
 }
 
+// IMPORT_LOT_SIZE is how many candidates go in each ImportApply call (AJU-025).
+export const IMPORT_LOT_SIZE = 25
+
+export type ImportLotsOutcome = {
+  result: ImportApplyResult
+  // notSent counts the candidates of the failed lot and of the lots after it.
+  notSent: number
+  error?: Error
+}
+
+// applyImportInLots sends the candidates in sequential lots, in order, and stops
+// at the first lot that fails (AJU-025). onProgress(sent, total) runs before the
+// first lot and after each one that succeeds.
+export async function applyImportInLots(
+  candidates: ImportCandidate[],
+  launchboxPath: string,
+  onProgress: (sent: number, total: number) => void,
+): Promise<ImportLotsOutcome> {
+  const total = candidates.length
+  const result: ImportApplyResult = { applied: [], skipped: [] }
+  let sent = 0
+  onProgress(0, total)
+  for (let i = 0; i < total; i += IMPORT_LOT_SIZE) {
+    const lot = candidates.slice(i, i + IMPORT_LOT_SIZE)
+    try {
+      const res = await applyImport(lot, launchboxPath)
+      result.applied.push(...res.applied)
+      result.skipped.push(...res.skipped)
+    } catch (e) {
+      return { result, notSent: total - sent, error: e instanceof Error ? e : new Error(String(e)) }
+    }
+    sent += lot.length
+    onProgress(sent, total)
+  }
+  return { result, notSent: 0 }
+}
+
 // pickFile opens the single-file dialog of the file source; "" means cancelled (IMP-004).
 export async function pickFile(): Promise<string> {
   const fn = app().PickFile

@@ -47,6 +47,70 @@ describe('ImportDialog', () => {
     scanMock.mockReset()
     applyMock.mockReset()
     pickMock.mockReset()
+    // applyImportInLots reaches the binding through window, not through the mocked export.
+    ;(window as unknown as { go?: unknown }).go = {
+      main: { App: { ImportApply: (c: unknown, p: unknown) => applyMock(c, p) } },
+    }
+  })
+
+  async function scanMany(n: number) {
+    scanMock.mockResolvedValue({
+      candidates: Array.from({ length: n }, (_, i) =>
+        candidate({ title: `Jogo ${i}`, launchTarget: `steam://rungameid/${i}` }),
+      ),
+      warnings: [],
+    })
+  }
+
+  async function checkAll(n: number) {
+    await scanSteam()
+    await screen.findByRole('checkbox', { name: 'Jogo 0' })
+    for (let i = 0; i < n; i++) {
+      fireEvent.click(screen.getByRole('checkbox', { name: `Jogo ${i}` }))
+    }
+  }
+
+  it('AJU-025/diálogo: "Importando k de N…" durante os lotes; Fechar desativado e Esc sem efeito', async () => {
+    await scanMany(30)
+    let release: (v: unknown) => void = () => {}
+    applyMock.mockImplementationOnce(() => Promise.resolve({ applied: [], skipped: [] }))
+    applyMock.mockImplementationOnce(
+      () => new Promise((r) => {
+        release = r
+      }),
+    )
+    const onClose = vi.fn()
+    render(<ImportDialog onImported={vi.fn()} onClose={onClose} />)
+    await checkAll(30)
+    fireEvent.click(screen.getByRole('button', { name: 'Importar selecionados' }))
+
+    const status = await screen.findByText('Importando 25 de 30…')
+    expect(status).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fechar' })).toBeDisabled()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+
+    release({ applied: [], skipped: [] })
+    await waitFor(() => expect(screen.queryByText(/Importando \d+ de 30…/)).toBeNull())
+    expect(screen.getByRole('button', { name: 'Fechar' })).toBeEnabled()
+  })
+
+  it('AJU-025/diálogo: falha no 2º lote mostra o resumo do 1º e role=alert com quantos não foram enviados; onImported é chamado', async () => {
+    await scanMany(60)
+    applyMock.mockResolvedValueOnce({
+      applied: Array.from({ length: 25 }, (_, i) => ({ gameId: i, title: `Jogo ${i}` })),
+      skipped: [],
+    })
+    applyMock.mockRejectedValueOnce(new Error('O agente não está respondendo.'))
+    const onImported = vi.fn()
+    render(<ImportDialog onImported={onImported} onClose={vi.fn()} />)
+    await checkAll(60)
+    fireEvent.click(screen.getByRole('button', { name: 'Importar selecionados' }))
+
+    expect(await screen.findByText('Importados: 25')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/35/)
+    expect(applyMock).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledTimes(1)
   })
 
   it('IMP-010/Importar selecionados fica desabilitado sem marcados', async () => {

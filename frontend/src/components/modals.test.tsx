@@ -108,6 +108,10 @@ describe('modais existentes sobre o Modal', () => {
   beforeEach(() => {
     scanMock.mockReset()
     applyMock.mockReset()
+    // applyImportInLots reaches the binding through window, not through the mocked export.
+    ;(window as unknown as { go?: unknown }).go = {
+      main: { App: { ImportApply: (c: unknown, p: unknown) => applyMock(c, p) } },
+    }
   })
 
   it('UIX-037/Importar é large; Emuladores, Plataformas e Buscar metadados são medium; Provedores e Remover jogo são compact', () => {
