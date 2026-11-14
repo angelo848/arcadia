@@ -22,6 +22,57 @@
   --arc-focus: #79b8ff;
   --arc-overlay: rgb(0 0 0 / 0.6);
   --arc-placeholder: #2a2f3a;
+  --arc-scrollbar-track: transparent;
+  --arc-scrollbar-thumb: #3a404d;
+  --arc-scrollbar-thumb-hover: #6b7587;
+}
+
+/* Themed scrollbars (AJU-004, AJU-005). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--arc-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--arc-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: var(--arc-scrollbar-thumb-hover);
+}
+
+/* Pointer cursor on interactive elements (AJU-008). */
+@layer base {
+  button:not(:disabled),
+  [role="button"],
+  [role="option"],
+  [role="tab"],
+  a[href],
+  summary,
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  label[for] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 @theme inline {

@@ -3,6 +3,14 @@ export const CARD_MIN_WIDTH = 160
 export const GRID_GAP = 16
 export const CARD_TITLE_HEIGHT = 44 // two title lines under the 2:3 cover
 
+export const GRID_INSET = 6 // room for the focus ring on each side [AJU-001]
+export const SCROLLBAR_SIZE = 8 // matches the themed scrollbar [AJU-004]
+
+// usableWidth is the grid width left after both insets and the scrollbar [AJU-003].
+export function usableWidth(boxWidth: number): number {
+  return Math.max(0, boxWidth - 2 * GRID_INSET - SCROLLBAR_SIZE)
+}
+
 export type NavKey = 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' | 'Home' | 'End'
 
 const navKeys: readonly string[] = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']

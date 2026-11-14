@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_MIN_WIDTH, CARD_TITLE_HEIGHT, GRID_GAP, columnsFor, isNavKey, nextIndex } from './gridNav'
+import { CARD_MIN_WIDTH, CARD_TITLE_HEIGHT, GRID_GAP, GRID_INSET, columnsFor, isNavKey, nextIndex, usableWidth } from './gridNav'
+
+describe('usableWidth (fase 10.1)', () => {
+  it('AJU-003/usableWidth(484) = 464 e usableWidth(1132) = 1112', () => {
+    expect(usableWidth(484)).toBe(464)
+    expect(usableWidth(1132)).toBe(1112)
+  })
+
+  it('AJU-003/caixa menor que as margens dá 0', () => {
+    expect(usableWidth(0)).toBe(0)
+    expect(usableWidth(10)).toBe(0)
+    expect(usableWidth(-5)).toBe(0)
+  })
+
+  it('AJU-003/columnsFor(usableWidth(484)) dá 2 colunas e columnsFor(usableWidth(1132)) dá pelo menos 5', () => {
+    expect(columnsFor(usableWidth(484)).cols).toBe(2)
+    expect(columnsFor(usableWidth(1132)).cols).toBeGreaterThanOrEqual(5)
+  })
+
+  it('AJU-001/GRID_INSET ≥ 6', () => {
+    expect(GRID_INSET).toBeGreaterThanOrEqual(6)
+  })
+})
 
 // 3 columns, 8 loaded: rows are [0 1 2] [3 4 5] [6 7] (the last one is shorter).
 const COLS = 3
