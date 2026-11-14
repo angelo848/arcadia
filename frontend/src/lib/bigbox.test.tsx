@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { MediaCarousel } from '../components/MediaCarousel'
+import type { MediaItemView } from './metadata'
 import { bigBoxItems, cardGrid, enterBigBox, exitBigBox, gridNext, nextFocus, pickNext, useBigBoxNav, type Box } from './bigbox'
 
 // A 2 x 2 grid of boxes: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right.
@@ -405,5 +407,117 @@ describe('enterBigBox / exitBigBox', () => {
   it('UIX-044/fora do aplicativo desktop a tela cheia não faz nada e não falha', async () => {
     await expect(enterBigBox()).resolves.toBeUndefined()
     await expect(exitBigBox()).resolves.toBeUndefined()
+  })
+})
+
+// The carousel's thumbnail strip inside the Big Box navigation [AJU-014].
+describe('useBigBoxNav com a faixa de miniaturas do MediaCarousel (AJU-014)', () => {
+  const media = (id: number, kind: MediaItemView['kind']): MediaItemView => ({ id, kind, provider: 'p', path: '', thumbPath: '', url: `/media/${id}.jpg`, thumbUrl: `/thumb/${id}.jpg` })
+  // Display order: cover(1), screenshot(2), banner(3).
+  const items = [media(1, 'cover'), media(2, 'screenshot'), media(3, 'banner')]
+
+  function Page() {
+    useBigBoxNav({ enabled: true, pageKey: 'library', onBack: vi.fn(), onPlay: vi.fn() })
+    return (
+      <div>
+        <button type="button" data-bigbox-item data-x="120" data-y="300">Acima</button>
+        <MediaCarousel items={items} resetKey={1} />
+        <button type="button" data-bigbox-item data-x="120" data-y="700">Abaixo</button>
+        <button type="button" data-bigbox-item data-x="900" data-y="500">Direita</button>
+      </div>
+    )
+  }
+
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [] })
+    // Thumbnails sit side by side at y = 500; the other items use data-x / data-y.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const m = /(\d+) de \d+$/.exec(this.getAttribute('aria-label') ?? '')
+      const left = m ? (Number(m[1]) - 1) * 120 : Number(this.dataset.x ?? 0)
+      const top = m ? 500 : Number(this.dataset.y ?? 0)
+      return { left, top, right: left + 100, bottom: top + 30, width: 100, height: 30, x: left, y: top, toJSON: () => ({}) } as DOMRect
+    })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    Element.prototype.scrollIntoView = vi.fn() as unknown as typeof Element.prototype.scrollIntoView
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const thumbs = () => within(screen.getByRole('group', { name: 'Miniaturas' })).getAllByRole('button')
+  const shown = (c: HTMLElement) => c.querySelector('img')?.getAttribute('src')
+  const countText = () => screen.getByText(/^\d+ de 3$/).textContent
+
+  it('AJU-014/cada miniatura é um item data-bigbox-item', () => {
+    render(<Page />)
+    const all = bigBoxItems()
+    expect(thumbs()).toHaveLength(3)
+    for (const t of thumbs()) {
+      expect(t.hasAttribute('data-bigbox-item')).toBe(true)
+      expect(all).toContain(t)
+    }
+  })
+
+  it('AJU-014/A (gamepad simulado) e Enter numa miniatura a põem em destaque', () => {
+    const pressed = (index: number) => ({ buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: i === index })), axes: [0, 0] }) as unknown as Gamepad
+    let pad: Gamepad = pressed(-1)
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad] })
+    let frame: FrameRequestCallback = () => undefined
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { container } = render(<Page />)
+    thumbs()[1].focus()
+    pad = pressed(0)
+    act(() => frame(0))
+    pad = pressed(-1)
+    act(() => frame(0))
+    expect(countText()).toBe('2 de 3')
+    expect(shown(container)).toBe('/media/2.jpg')
+    // Enter on a non-card item is the browser's activation: the hook leaves it alone (jsdom does not click).
+    const free = fireEvent.keyDown(thumbs()[2], { key: 'Enter' })
+    expect(free).toBe(true)
+    act(() => thumbs()[2].click())
+    expect(countText()).toBe('3 de 3')
+    expect(shown(container)).toBe('/media/3.jpg')
+  })
+
+  it('AJU-014/seta direita numa miniatura do meio troca a imagem uma vez e o Big Box não move o foco (defaultPrevented)', () => {
+    const { container } = render(<Page />)
+    thumbs()[0].focus()
+    const notPrevented = fireEvent.keyDown(thumbs()[0], { key: 'ArrowRight' })
+    expect(notPrevented).toBe(false)
+    expect(countText()).toBe('2 de 3')
+    expect(shown(container)).toBe('/media/2.jpg')
+    expect(document.activeElement).toBe(thumbs()[1])
+    expect(document.activeElement?.textContent).not.toBe('Direita')
+  })
+
+  it('AJU-014/seta direita na última miniatura não troca a imagem e o Big Box move o foco ao vizinho', () => {
+    const { container } = render(<Page />)
+    thumbs()[0].focus()
+    fireEvent.keyDown(thumbs()[0], { key: 'ArrowRight' })
+    fireEvent.keyDown(thumbs()[1], { key: 'ArrowRight' })
+    expect(countText()).toBe('3 de 3')
+    const last = thumbs()[2]
+    expect(document.activeElement).toBe(last)
+    fireEvent.keyDown(last, { key: 'ArrowRight' })
+    expect(countText()).toBe('3 de 3')
+    expect(shown(container)).toBe('/media/3.jpg')
+    expect(document.activeElement?.textContent).toBe('Direita')
+  })
+
+  it('AJU-014/cima e baixo numa miniatura são do Big Box', () => {
+    const { container } = render(<Page />)
+    thumbs()[1].focus()
+    fireEvent.keyDown(thumbs()[1], { key: 'ArrowUp' })
+    expect(document.activeElement?.textContent).toBe('Acima')
+    thumbs()[1].focus()
+    fireEvent.keyDown(thumbs()[1], { key: 'ArrowDown' })
+    expect(document.activeElement?.textContent).toBe('Abaixo')
+    expect(countText()).toBe('1 de 3')
+    expect(shown(container)).toBe('/media/1.jpg')
   })
 })
