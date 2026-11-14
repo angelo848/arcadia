@@ -34,6 +34,7 @@ Dado uma plataforma, quando o usuário escolhe um emulador padrão, então `plat
 emulador deixa a plataforma sem emulador (ON DELETE SET NULL), e nenhum jogo é apagado.
 
 ### EMU-003 — Jogo importado do LaunchBox sem emulador
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-025): o aviso aparece no painel de detalhes, não na página.
 Dado um jogo de console importado do LaunchBox (ROM como alvo, sem emulador), quando não há emulador padrão para a
 plataforma, então o jogo é gravado com `launch_type = emulator` e um aviso na página ("sem emulador configurado"). Ao
 escolher um emulador para a plataforma, os jogos dela passam a lançar por ele, sem reimportar.

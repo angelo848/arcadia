@@ -723,6 +723,7 @@ e não é repassado (DSK-010).
 
 ### UI-019 — Botão "Sem contar tempo"
 · alterado em 2026-11-12 (docs/specs/phase-5-library, UI-031): os dois botões também ficam no card da grade e na linha da lista.
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-027): os dois botões ficam só no painel de detalhes do jogo em foco; este passa a se chamar "Jogar sem contar tempo".
 Dada a lista de jogos, então cada linha mostra, ao lado do botão "Jogar", um botão "Sem contar tempo".
 
 ### UI-020 — Lançar sem contar tempo
@@ -732,6 +733,7 @@ existe e a lista não é recarregada; dado erro (por exemplo `-32002` com uma se
 a mensagem de DSK-011 com "Fechar", e a próxima ação bem-sucedida o remove, como em UI-008. (Q3.)
 
 ### UI-021 — Lançamento pendente bloqueia os dois botões do jogo
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-027): vale para os dois botões do painel de detalhes.
 Dado um lançamento pendente do jogo `G` (por qualquer um dos botões), então os dois botões de `G` ficam desabilitados e o
 botão acionado mostra "Iniciando…" (o outro mantém o rótulo); os botões dos outros jogos continuam habilitados.
 

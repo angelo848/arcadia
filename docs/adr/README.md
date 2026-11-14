@@ -41,3 +41,5 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0025](0025-rastreio-por-processo-adotado.md) | Rastreio por processo adotado | aceito |
 | [0026](0026-plataformas-do-seed-com-chave-estavel.md) | Plataformas do seed com chave estável | aceito |
 | [0027](0027-nome-de-plataforma-unico-sem-maiusculas.md) | Nome de plataforma único sem diferenciar maiúsculas | aceito |
+| [0028](0028-biblioteca-em-tres-colunas-sem-pagina-do-jogo.md) | Biblioteca em três colunas e fim da página do jogo | aceito |
+| [0029](0029-tema-por-variaveis-css.md) | Tema por variáveis CSS | aceito |

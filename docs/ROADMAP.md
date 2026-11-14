@@ -89,6 +89,9 @@ plataforma), `internal/importers` (constante `PlatformPC`), `frontend` (diálogo
   (todas marcadas por padrão), título editável, arquivo, extensão e disco; contador de jogos; "já existe" continua
   desmarcado e bloqueado (IMP-006).
 - Substitui IMP-004 e IMP-010 da fase 6 (que hoje dizem "só o primeiro nível").
+- **Campo "plataforma do arquivo"** (achado na conferência da fase 9): hoje vem pré-preenchido com "PC" e é texto
+  livre. Passa a vir com "Windows" quando a fonte é arquivo e a ser um **select** com as plataformas existentes
+  (`platform.list`), sem digitar nome novo na janela (plataformas novas ficam no diálogo Plataformas).
 
 **Áreas**: `internal/importers` (scan de pasta, normalizador), `internal/agent` + `internal/ipc` (título editado na
 confirmação), `frontend` (`ImportDialog`).
@@ -115,6 +118,12 @@ confirmação), `frontend` (`ImportDialog`).
 - A busca roda em background com progresso e cancelamento; a importação não espera por ela (jogo entra, mídia chega
   depois, pela fila de MID-005).
 - Substitui MID-002 e a escolha de provedor do `MetadataDialog`.
+- **Mídia completa por provedor** (achados na conferência da fase 9):
+  - IGDB hoje traz só screenshots; passa a trazer também a **capa** (campo `cover` do jogo, endpoint `/covers`).
+  - SteamGridDB hoje traz só capas; passa a trazer também **screenshots de gameplay**.
+  - **Limite de imagens por tipo** ao importar: screenshot de gameplay no máximo 10, capa no máximo 2, fanart no
+    máximo 2. Vale para a união dos provedores (a busca unificada escolhe as melhores até o limite) e para o que já
+    existe no jogo (decidir na spec se o limite conta as imagens atuais).
 
 **Áreas**: `internal/scrapers` (agregador, pontuação, mapa de plataformas), `internal/agent` + `internal/ipc`,
 `frontend` (`ImportDialog`, `MetadataDialog`).

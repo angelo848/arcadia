@@ -417,6 +417,7 @@ Dado `totalPlaySeconds`, então o texto é: `0` → "Nunca jogado"; `1` e `59` �
 
 ### UI-006 — Jogo em execução · alterado em 2026-11-10: `paused` mostra "Pausado", não "Em execução" (docs/specs/phase-4-pause, UI-024)
 · alterado em 2026-11-12 (docs/specs/phase-5-library): a marcação também aparece no card da grade (UI-029) e na página do jogo (UI-038).
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-014, UIX-025): a marcação fica num selo sobre a capa do cartão e no painel de detalhes; a página do jogo deixa de existir.
 Dada uma sessão em `running` ou `grace` (lida de `CurrentSession` ao carregar e atualizada pelos eventos
 `session:changed`, sem polling), então a linha do jogo dela mostra "Em execução"; quando chega `session:changed` com
 `ended` ou `discarded`, então a marcação some e a lista é recarregada (total atualizado).

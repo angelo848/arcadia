@@ -61,6 +61,8 @@ concorrência, retomada após reinício do agente (itens não concluídos contin
 Verificação: teste da fila com relógio fake (`domain.Clock`) e provedor fake.
 
 ### MID-006 — Exibição na grade e na página
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-015, UIX-026): o cartão mostra sempre a capa ou um
+placeholder padrão; as imagens do jogo aparecem no carrossel do painel de detalhes (a página do jogo deixa de existir).
 Dado um jogo com capa baixada, quando a grade é mostrada, então a miniatura da capa aparece no lugar do cartão
 sem imagem. Dado um jogo com title screen ou screenshots, quando abro a página do jogo, então essas imagens aparecem
 com o tamanho de tela do aplicativo. Sem mídia, a grade e a página funcionam como hoje.

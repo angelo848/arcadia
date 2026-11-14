@@ -476,21 +476,29 @@ nem em `frontend/wailsjs/`, e DSK-008 passa a valer para as leituras de DSK-016 
 ## Frontend (UI)
 
 ### UI-029 — Grade virtualizada de cards
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-014..UIX-016): o cartão mostra capa (ou placeholder),
+título e selo de sessão; plataforma, tempo e botões vão para o painel. A virtualização não muda.
 Dada uma biblioteca com 10 000 jogos carregada em páginas, quando a grade é mostrada, então ela renderiza só os cards da
 janela visível (no máximo 100 no DOM, em teste com altura e largura fixas), e rolar muda a janela sem recarregar a
 página já carregada. Cada card mostra título, plataforma, tempo total (UI-005) e a marcação de sessão (UI-006: "Em
 execução" ou "Pausado"). Os botões do card são UI-031.
 
 ### UI-030 — Alternar grade e lista
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-020): a lista fica sem botões e segue as regras de
+seleção da grade (depende da pergunta 1 da fase 10).
 Dado o botão de alternância, quando clico, então a biblioteca passa de grade para lista (e de volta); a lista mostra a
 mesma página, os mesmos dados e os mesmos botões, em linhas virtualizadas. A escolha fica guardada na própria UI
 (preferência local, não no agente) e volta a valer ao abrir de novo; o padrão é grade.
 
 ### UI-031 — "Jogar" e "Sem contar tempo" no card e na linha
+· substituído por UIX-018 e UIX-027 (docs/specs/phase-10-nova-interface, 2026-11-14): os botões ficam no painel de
+detalhes; o duplo clique no cartão lança.
 Dado um card ou uma linha, então há os botões "Jogar" e "Sem contar tempo" (UI-019 e UI-020, da fase 4), com o mesmo
 bloqueio de UI-021: pendência de um jogo desabilita os dois botões dele e mostra "Iniciando…" no acionado.
 
 ### UI-032 — Painel de filtros
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-009..UIX-011): a plataforma vira a lista da coluna
+esquerda (com ícone e contagem); as demais facetas ficam abaixo dela, na seção "Filtros".
 Dado o painel de filtros, então ele tem um controle para cada faceta de FLT-002..FLT-006 (plataforma, gênero, modo,
 desenvolvedora, editora, ano de/até, status, favorito, jogado, faixa de tempo em horas). Cada mudança chama `ListGames`
 com o `FilterSpec` novo (FLT-001) e a primeira página; o contador "N jogos" mostra `total` da resposta. Os valores das
@@ -505,6 +513,8 @@ Dado o seletor de ordenação com as opções "Título", "Última vez jogado", "
 lista é recarregada com `sort` correspondente (LIB-001) e a página volta para o início.
 
 ### UI-035 — Limpar filtros e resultado vazio
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-011): o botão fica na coluna esquerda e também volta a
+plataforma para "Todos".
 Dado algum filtro ou busca ativo, quando clico "Limpar filtros", então o `FilterSpec` volta a `{"version": 1}` e a
 ordenação ao padrão. Dado um filtro sem resultado, então a grade mostra "Nenhum jogo com estes filtros." e o botão
 "Limpar filtros". Dada a biblioteca vazia sem filtro, então vale UI-044.
@@ -515,18 +525,24 @@ jogos (`loaded < total`), então a próxima página (`offset = loaded`) é pedid
 repetir nem pular jogos. Mudar filtro, texto ou ordenação descarta as páginas carregadas.
 
 ### UI-037 — Página do jogo
+· substituído por UIX-025, UIX-028, UIX-029 e UIX-048 (docs/specs/phase-10-nova-interface, 2026-11-14): a página deixa de
+existir; o conteúdo vai para o painel de detalhes do jogo em foco.
 Dado um card (clique no título ou botão "Detalhes"), quando abro, então a página mostra título, plataforma, gêneros,
 modos de jogo, desenvolvedora, editora, ano, tempo total (UI-005), primeira e última vez jogado (data e hora locais, ou
 "Nunca"), status, favorito, data de conclusão (em UTC, decisão h), descrição e o botão "Voltar". Não há imagem nem
 vídeo (fase 7). A marcação de sessão (UI-006) aparece no topo da página quando o jogo está em sessão.
 
 ### UI-038 — Sessões na página do jogo
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-030): a lista fica no painel de detalhes; as regras não
+mudam.
 Dada a página de um jogo, então a lista de sessões (`GameSessions`, 50 por página, "Carregar mais") mostra, por linha:
 início, fim (ou "Em andamento" quando aberta), tempo ativo em UI-005 e o estado. Sessão `discarded` mostra "Descartada"
 e seu tempo ativo, sem somar no total (pergunta 3). A sessão aberta do jogo mostra o cronômetro de UI-014, UI-015 e
 UI-022, a partir do `activeMs` recebido. A UI não soma nem subtrai tempo para montar a lista.
 
 ### UI-039 — Editar jogo
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-032): "Editar" fica no painel e o formulário abre num
+modal; as regras de envio, erro e cancelamento não mudam.
 Dada a página de um jogo, quando clico "Editar", então um formulário mostra os campos de EDT-001..EDT-004 com os valores
 atuais. "Salvar" envia só os campos alterados (patch, IPC-052) e fica desabilitado durante o envio. Sucesso: a página
 mostra o detalhe devolvido e a grade e o catálogo são atualizados (UI-042). Erro: aviso com a mensagem de DSK-011 e o
@@ -538,6 +554,8 @@ de conclusão não é `AAAA-MM-DD` ou a descrição passa de 10 000 caracteres, 
 desabilitado e nada é enviado ao agente.
 
 ### UI-041 — Remover jogo com confirmação
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-034): "Remover" fica no painel; o sucesso limpa o jogo
+em foco e o painel volta ao estado vazio. Texto e botões da confirmação não mudam.
 Dada a página de um jogo, quando clico "Remover", então abre uma confirmação com o texto "Remover «título»? As sessões e as
 pausas deste jogo também serão apagadas. Esta ação não pode ser desfeita." e os botões "Remover" e "Cancelar". "Cancelar"
 ou fechar não chama o agente. "Remover" chama `DeleteGame` uma vez; sucesso volta para a grade sem o jogo e atualiza as
@@ -548,6 +566,7 @@ Dado um `UpdateGame`, `DeleteGame`, `AddGame` ou `AddPlatform` concluído, entã
 catálogo são recarregados uma vez. Não há polling; a reconexão recarrega como em UI-009.
 
 ### UI-043 — Cards de jogo em sessão
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-014): a marcação é um selo sobre a capa do cartão.
 Dado um jogo com sessão em Running, Grace ou Paused, então o card e a linha dele mostram a marcação de UI-006, e a
 marcação some quando chega `session:changed` com `ended` ou `discarded` e a grade é recarregada (UI-006). Esta regra é
 a mesma do painel e da lista da fase 4 (UI-024), agora para a grade.

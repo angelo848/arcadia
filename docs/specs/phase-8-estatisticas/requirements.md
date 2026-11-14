@@ -25,6 +25,8 @@ Formato: IDs `ÁREA-NNN`, critérios Dado/Quando/Então. Áreas novas: **EST** (
 ## Requisitos de estatísticas
 
 ### EST-001 — Tempo por jogo
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-045): escolher um jogo volta à biblioteca com ele em
+foco no painel de detalhes (a página do jogo deixa de existir).
 Dado a página de estatísticas, quando abro, então vejo, por jogo, o tempo total no período, o número de sessões e a
 última vez jogado. Quando escolho um jogo, então vou para a página do jogo.
 Verificação: teste de componente com sessões de fixture; teste de consulta na store com período.
@@ -59,16 +61,22 @@ Verificação: teste de componente com evento simulado; revisão de que não há
 ## Requisitos do Big Box
 
 ### BIG-001 — Entrar e sair da tela cheia
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): a "página do jogo" vira o painel de detalhes; B
+com o foco no painel volta ao cartão; ao sair, a janela volta ao estado anterior (UIX-003).
 Dado a biblioteca, quando escolho "Big Box" (botão ou atalho), então a janela vai para tela cheia com a grade de capas
 em fonte grande. Quando aperto B ou Esc na biblioteca, então saio do Big Box, na mesma posição. Dentro de uma página (jogo ou estatísticas), B ou Esc voltam à página anterior (BIG-002).
 Verificação: teste de componente; teste manual na TV.
 
 ### BIG-002 — Navegação por controle
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): o cartão é um item só (sem botões); A no cartão o
+põe em foco e leva ao "Jogar" do painel; na borda da grade, as direções levam ao painel ou à coluna esquerda.
 Dado o Big Box com a janela em foco, quando aperto as setas ou o direcional do controle, então o foco se move pela
 grade, com a capa do foco destacada. O foco passa por todos os itens da página (capa, Jogar, Sem contar tempo, botões de volta e ação). A (ou Enter) ativa o item focado; Y (ou Shift+Enter) inicia o jogo do cartão focado. B (ou Esc) volta uma página, e na biblioteca sai do Big Box. Ao trocar de página, o foco vai para o primeiro item dela.
 Verificação: teste de componente com eventos de teclado simulados; teste manual com controle real.
 
 ### BIG-003 — Sem depender do mouse
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): lacuna registrada (a busca e os filtros não eram
+navegáveis pelo controle); a coluna esquerda passa a ser navegável.
 Dado o Big Box, quando não há mouse, então todas as ações (buscar, filtrar, abrir jogo, iniciar jogo, voltar) são
 alcançáveis pelo controle. A busca de texto abre pelo teclado virtual do Windows.
 Verificação: revisão da lista de ações; teste manual.

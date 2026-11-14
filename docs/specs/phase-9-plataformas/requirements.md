@@ -284,6 +284,8 @@ casamento (MID-002).
 ## PLT — Biblioteca
 
 ### PLT-032 — Painel de filtros sem plataformas vazias
+· alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-009): a regra passa a valer para a lista de plataformas
+da coluna esquerda.
 Dado o painel de filtros atual, quando ele lista as plataformas, então mostra só as que têm pelo menos um jogo; uma
 plataforma sem jogos que já está marcada no filtro continua aparecendo até ser desmarcada.
 · verificação: teste de componente.
