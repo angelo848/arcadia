@@ -95,6 +95,9 @@ Verificação: revisão de documentação (manual).
 ---
 
 ### MID-010 — Mídias do LaunchBox
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-018..AJU-021): passam a ser lidas `Box - Front` e as demais
+pastas de capa, screenshot, fundo e banner das lojas, em ordem de prioridade; o limite de 5 por tipo vira a tabela de
+limites do domínio (contando as imagens atuais); o nome `<título>.<GUID>-NN` também é aceito.
 Estrutura real (confirmada na pasta do usuário): `<LaunchBox>\Images\<plataforma>\<tipo>\[<região>\]<título>-NN.<ext>`,
 onde `<plataforma>` é o nome da plataforma do XML (`Windows` para PC). Tipos lidos e tipo de mídia gravado:
 `Banner` → `banner`; `Fanart - Background` → `background`; `Screenshot - Game Title` → `title`;

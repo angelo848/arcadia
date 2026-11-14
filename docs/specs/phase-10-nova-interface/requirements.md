@@ -211,6 +211,8 @@ jogo com estes filtros." com "Limpar filtros") aparecem no lugar da grade.
 · verificação: teste de componente.
 
 ### UIX-014 — Cartão com capa e título
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-001, AJU-015): a área da capa pode mostrar a imagem
+substituta; o contorno de seleção aparece inteiro em todas as bordas da grade.
 Dado um jogo na grade, então o cartão mostra a área da capa (proporção 2:3) e, embaixo, o título em até duas linhas
 (cortado com reticências; o título completo no atributo `title`). O cartão não mostra plataforma, tempo jogado nem
 botões. Dado uma sessão do jogo em `running` ou `grace`, então um selo "Em execução" aparece sobre a capa; em `paused`,
@@ -218,6 +220,8 @@ botões. Dado uma sessão do jogo em `running` ou `grace`, então um selo "Em ex
 · verificação: teste de componente.
 
 ### UIX-015 — Capa ou placeholder, sempre
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-015, AJU-016): sem capa, o cartão usa outra imagem do jogo
+(tela de título, tela de seleção, screenshot, banner, fundo) antes do placeholder.
 Dado um jogo com capa (MID-006), quando o cartão é mostrado, então aparece a miniatura da capa, inteira dentro da área
 (sem cortar). Dado um jogo sem capa, ou com a lista de mídia ainda sem resposta ou com erro, ou uma imagem que falha ao
 carregar, então aparece o placeholder padrão (imagem embutida, sem rede), do mesmo tamanho, de modo que a grade não muda
@@ -251,6 +255,7 @@ focado, como o duplo clique (UIX-018). Nas bordas, a seta não faz nada.
 · verificação: teste de componente com eventos de teclado (grade de tamanho fixo, 3 colunas).
 
 ### UIX-020 — Visualização em lista (pergunta 1: manter)
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-002): o contorno de foco da linha aparece inteiro.
 Dado a alternância grade/lista (UI-030, preferência local mantida), quando a lista está ativa, então cada linha mostra
 título, plataforma, tempo jogado (UI-005), última vez jogado e a marcação de sessão, sem botões; um clique põe o jogo em
 foco, o duplo clique lança, as setas para cima e para baixo movem o foco (e o jogo em foco), Enter lança, e a lista
@@ -284,6 +289,7 @@ então G deixa de estar em foco, o painel mostra o estado vazio (UIX-024) e a gr
 ## UIX — Painel da direita
 
 ### UIX-024 — Painel sem jogo em foco (pergunta 2: resumo)
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-017): a capa pequena segue a regra da imagem substituta.
 Dado nenhum jogo em foco (ao abrir a UI, decisão h, ou depois de UIX-023 e UIX-034), então o painel mantém a mesma largura
 e mostra "Nenhum jogo selecionado", o texto "Clique em um jogo para ver os detalhes. Clique duas vezes para jogar." e,
 quando há jogos já jogados, a lista "Jogados recentemente" com até 5 jogos (`ListGames` com `played = "played"`, ordem
@@ -299,6 +305,8 @@ jogo." quando G é de emulador sem emulador próprio nem padrão da plataforma (
 · verificação: teste de componente.
 
 ### UIX-026 — Carrossel de imagens
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-009..AJU-014): substituído por AJU-009..AJU-014 (carrossel com imagem em
+destaque e faixa de miniaturas (sem botões anterior/próximo, sem volta nas pontas, ordem fixa por tipo)).
 Dado G em foco com n imagens (`MediaList`, MID-006), então abaixo do cabeçalho há um carrossel que mostra uma imagem por
 vez, inteira dentro de uma área 16:9 da largura do painel, a capa primeiro e as demais na ordem recebida, com o rótulo do
 tipo ("Capa", "Screenshot", "Tela de título", "Banner", "Fundo", "Tela de seleção") e o indicador "k de n". Com n ≥ 2,
@@ -309,6 +317,8 @@ imagem que falha ao carregar mostra o placeholder no lugar dela.
 · verificação: teste de componente (n = 0, 1, 3; volta nas pontas; troca de jogo).
 
 ### UIX-027 — "Jogar" e "Jogar sem contar tempo"
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-006, AJU-007, AJU-008): "Jogar" em destaque grande,
+"Jogar sem contar tempo" logo abaixo com destaque menor, cursor de mão; as regras de chamada e pendência não mudam.
 Dado G em foco, então abaixo do carrossel ficam os botões "Jogar" (chama `LaunchGame(G)` uma vez) e "Jogar sem contar
 tempo" (chama `LaunchGameUntracked(G)` uma vez, com as regras de UI-020). Dado um lançamento pendente de G, então os dois
 ficam desativados e o acionado mostra "Iniciando…" (UI-021). Dado um lançamento pendente de outro jogo, então os botões de
@@ -439,6 +449,8 @@ elemento usa `tabIndex` maior que 0.
 · verificação: teste de componente da ordem; teste que varre os `.tsx` (sem `tabIndex` positivo).
 
 ### UIX-042 — Nomes e estados acessíveis
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-010, AJU-014): os botões "Imagem anterior" e "Próxima
+imagem" dão lugar às miniaturas ("<tipo>, k de n"); o critério "uma tecla, uma ação" vale para a faixa de miniaturas.
 Dado a tela, então: a grade tem `role="listbox"` com o nome "Jogos" e cada cartão `role="option"` com o título como nome
 e `aria-selected` conforme o jogo em foco; cada item de plataforma é um botão com o nome "<plataforma>, N jogos" e
 `aria-current` no atual; os botões do carrossel têm nome ("Imagem anterior", "Próxima imagem"); os ícones de plataforma,
@@ -452,6 +464,7 @@ Critério acrescentado após a revisão (2026-11-14):
   `defaultPrevented`, e o Big Box ignora eventos já tratados). (Ver também UIX-044.)
 
 ### UIX-043 — Tudo alcançável pelo teclado
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-012): navegar no carrossel é pela faixa de miniaturas.
 Dado a tela fora do Big Box, então toda ação de mouse desta fase tem um equivalente de teclado: pôr em foco (setas, UIX-019),
 lançar (Enter, ou os botões do painel), escolher plataforma (Enter ou Espaço no item), abrir e fechar a seção "Filtros",
 navegar no carrossel e acionar Editar, Buscar metadados e Remover. Nenhum ponto prende o foco fora dos modais.
@@ -513,6 +526,8 @@ Critério acrescentado após a revisão (2026-11-14):
   única vez. Repetições automáticas da tecla nunca são uma nova ação de lançamento.
 
 ### UIX-047 — Sem mudança no agente, no tracker e no IPC
+· alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-028): vale para a fase 10; na fase 10.1, agente, domínio e
+importadores mudam; o tracker e o IPC (v0.11.0) continuam sem mudança.
 Dado o diff da fase, então não há mudança em `internal/` nem no contrato IPC (continua a v0.11.0 da fase 9), e nenhum
 binding novo é criado em `cmd/arcadia`; a única mudança em Go é a das opções da janela (UIX-001, UIX-002).
 · verificação: revisão do diff; o teste de contrato do IPC continua passando sem alteração.
@@ -553,6 +568,8 @@ A confirmar na aprovação; não geram requisito nem teste.
 
 1. **Jogos do LaunchBox sem capa:** a importação do LaunchBox (MID-010) não lê a pasta `Box - Front`, então esses jogos
    aparecem com o placeholder até uma busca de metadados trazer a capa. Ler `Box - Front` é um item para a fase 11 ou 12.
+   · alterado em 2026-11-14: tratado na fase 10.1 ([phase-10-1-ajustes](../phase-10-1-ajustes/requirements.md), AJU-018)
+   para jogos importados a partir dela; os já importados ganham as imagens na reimportação com a base limpa.
 2. **Imagens que chegam depois:** a fila de mídia (MID-005) não avisa a UI quando termina; o carrossel e a capa mostram as
    imagens novas na próxima leitura (trocar de jogo em foco, reconexão ou nova busca).
 3. **Uma leitura por cartão:** a capa de cada cartão carregado continua vindo de um `MediaList` por jogo (como hoje). Em
