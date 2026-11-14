@@ -42,6 +42,23 @@ describe('varredura do tema', () => {
     expect(files.some(([p]) => p.endsWith('.test.tsx'))).toBe(false)
   })
 
+  it('AJU-027/MediaThumbStrip.tsx e os .tsx alterados na fase 10.1 estão no conjunto varrido', () => {
+    const changed = [
+      'App',
+      'CoverImage',
+      'GameCard',
+      'GameDetailsPanel',
+      'ImportDialog',
+      'LibraryGrid',
+      'LibraryList',
+      'MediaCarousel',
+      'MediaThumbStrip',
+      'PanelEmpty',
+    ]
+    const missing = changed.filter((n) => !files.some(([p]) => p.endsWith(`/${n}.tsx`)))
+    expect(missing, `.tsx fora da varredura: ${missing.join(', ')}`).toEqual([])
+  })
+
   it('UIX-006/nenhum .tsx usa classe de paleta do Tailwind (padrão de design §3)', () => {
     const hits = scan(palette)
     expect(hits, `classes de paleta:\n${hits.join('\n')}`).toEqual([])

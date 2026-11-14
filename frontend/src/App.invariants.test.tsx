@@ -436,6 +436,97 @@ describe('invariantes da UI', () => {
     expect(calls('ResumeSession')).toHaveLength(0)
   })
 
+  it('AJU-026/clicar e navegar nas miniaturas, rolar áreas e passar o mouse chamam só leituras', async () => {
+    renderApp()
+    await focusGame('Hollow Knight')
+    const strip = await within(aside()).findByRole('group', { name: 'Miniaturas' })
+    const thumbs = within(strip).getAllByRole('button')
+    expect(thumbs.length).toBeGreaterThan(1)
+    for (const t of thumbs) {
+      fireEvent.mouseEnter(t)
+      fireEvent.mouseOver(t)
+      fireEvent.click(t)
+    }
+    fireEvent.keyDown(within(strip).getAllByRole('button')[0], { key: 'ArrowRight' })
+    fireEvent.keyDown(within(strip).getAllByRole('button')[0], { key: 'ArrowLeft' })
+    fireEvent.scroll(strip)
+    fireEvent.scroll(aside())
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    fireEvent.scroll(listbox)
+    for (const c of cards()) {
+      fireEvent.mouseEnter(c)
+      fireEvent.mouseOver(c)
+      fireEvent.mouseMove(c)
+    }
+    await flush()
+    expect(writeCalls(), 'bindings que escrevem ou lançam').toEqual([])
+    expect(calls('LaunchGame')).toHaveLength(0)
+    expect(calls('LaunchGameUntracked')).toHaveLength(0)
+  })
+
+  it('AJU-026/importar 60 candidatos em lotes chama só ImportScan e ImportApply 3 vezes, sem lançamento nem pausa', async () => {
+    const candidates = Array.from({ length: 60 }, (_, i) => ({
+      source: 'steam',
+      title: `Jogo ${i}`,
+      platform: 'Windows',
+      launchType: 'uri',
+      launchTarget: `steam://rungameid/${i}`,
+      installDir: '',
+      developers: [],
+      publishers: [],
+      genres: [],
+      year: null,
+      description: '',
+      playModes: [],
+      playedSeconds: null,
+      lastPlayed: null,
+      exists: false,
+    }))
+    overrides.ImportScan = () => ({ candidates, warnings: [] })
+    overrides.ImportApply = () => ({ applied: [], skipped: [] })
+    renderApp()
+    await findCard('Hades')
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Importar' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    await within(dialog).findByRole('checkbox', { name: 'Jogo 0' })
+    for (let i = 0; i < 60; i++) {
+      fireEvent.click(within(dialog).getByRole('checkbox', { name: `Jogo ${i}` }))
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
+    await waitFor(() => expect(calls('ImportApply')).toHaveLength(3))
+    await flush()
+
+    expect(calls('ImportScan')).toHaveLength(1)
+    expect(calls('ImportApply')).toHaveLength(3)
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', 'PauseSession', 'ResumeSession']) {
+      expect(calls(n), n).toHaveLength(0)
+    }
+    const others = writeCalls().filter((n) => n !== 'ImportApply')
+    expect(others, 'outras escritas').toEqual([])
+  })
+
+  it('AJU-028/as chamadas da UI nas interações da fase 10.1 estão na lista de bindings da fase 9', async () => {
+    renderApp()
+    await focusGame('Hollow Knight')
+    const strip = await within(aside()).findByRole('group', { name: 'Miniaturas' })
+    for (const t of within(strip).getAllByRole('button')) {
+      fireEvent.click(t)
+    }
+    fireEvent.scroll(screen.getByRole('listbox', { name: 'Jogos' }))
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Importar' }))
+    fireEvent.keyDown(await screen.findByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await flush()
+
+    const called = Array.from(spies.entries())
+      .filter(([, spy]) => spy.mock.calls.length > 0)
+      .map(([name]) => name)
+    expect(called.length).toBeGreaterThan(3)
+    const unknown = called.filter((n) => !phase9.has(n))
+    expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
+  })
+
   it('UIX-047/nenhum binding novo: as chamadas feitas pela UI estão na lista de bindings da fase 9', async () => {
     renderApp()
     await focusGame('Hades')
