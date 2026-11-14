@@ -17,5 +17,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
+    // theme.test.ts reads index.css via ?raw; Vitest blanks CSS modules by default.
+    css: { include: [/index\.css/] },
   },
 })

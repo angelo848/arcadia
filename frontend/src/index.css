@@ -1,5 +1,80 @@
 @import "tailwindcss";
 
+/* Theme tokens (UIX-006): components use the utilities below, never raw palette colors. */
+[data-theme="dark"] {
+  --arc-bg: #16181d;
+  --arc-surface: #1e2128;
+  --arc-surface-2: #272b34;
+  --arc-surface-3: #323744;
+  --arc-border: #343a46;
+  --arc-text: #e6e8ec;
+  --arc-text-muted: #9aa3b2;
+  --arc-accent: #1f6feb;
+  --arc-accent-hover: #388bfd;
+  --arc-on-accent: #ffffff;
+  --arc-play: #238636;
+  --arc-play-hover: #2ea043;
+  --arc-running: #3fb950;
+  --arc-paused: #58a6ff;
+  --arc-warning: #d29922;
+  --arc-danger: #ff6b64;
+  --arc-danger-strong: #da3633;
+  --arc-focus: #79b8ff;
+  --arc-overlay: rgb(0 0 0 / 0.6);
+  --arc-placeholder: #2a2f3a;
+}
+
+@theme inline {
+  --color-app: var(--arc-bg);
+  --color-surface: var(--arc-surface);
+  --color-raised: var(--arc-surface-2);
+  --color-hover: var(--arc-surface-3);
+  --color-line: var(--arc-border);
+  --color-fg: var(--arc-text);
+  --color-muted: var(--arc-text-muted);
+  --color-accent: var(--arc-accent);
+  --color-accent-hover: var(--arc-accent-hover);
+  --color-on-accent: var(--arc-on-accent);
+  --color-play: var(--arc-play);
+  --color-play-hover: var(--arc-play-hover);
+  --color-running: var(--arc-running);
+  --color-paused: var(--arc-paused);
+  --color-warning: var(--arc-warning);
+  --color-danger: var(--arc-danger);
+  --color-danger-strong: var(--arc-danger-strong);
+  --color-focus: var(--arc-focus);
+  --color-overlay: var(--arc-overlay);
+  --color-placeholder: var(--arc-placeholder);
+}
+
+/* Library side columns (UIX-005). */
+:root {
+  --col-left: clamp(220px, 16vw, 300px);
+  --col-right: clamp(320px, 26vw, 480px);
+}
+
+/* Visible keyboard focus everywhere (UIX-040). */
+:focus-visible {
+  outline: 2px solid var(--arc-focus);
+  outline-offset: 2px;
+}
+
+/* Modal sizes (UIX-037). */
+.modal-large {
+  width: min(92vw, 1600px);
+  height: 88vh;
+}
+
+.modal-medium {
+  width: min(75vw, 1100px);
+  height: 80vh;
+}
+
+.modal-compact {
+  width: clamp(420px, 40vw, 560px);
+  max-height: 80vh;
+}
+
 /* Big Box (phase 8): the library in full screen, with large text. */
 .big-box {
   font-size: 1.25rem;
