@@ -49,6 +49,36 @@ export function Modal(props: ModalProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Focus that leaves the dialog (a click on the overlay or on plain text) comes back to it.
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const dialog = dialogRef.current
+      if (dialog !== null && e.target instanceof Node && !dialog.contains(e.target)) {
+        // Another modal stacked above this one keeps its own focus.
+        if (e.target instanceof Element && e.target.closest('[role="dialog"][aria-modal="true"]') !== null) {
+          return
+        }
+        dialog.focus()
+      }
+    }
+    const onFocusOut = (e: FocusEvent) => {
+      const dialog = dialogRef.current
+      if (dialog !== null && e.relatedTarget === null && e.target instanceof Node && dialog.contains(e.target)) {
+        queueMicrotask(() => {
+          if (dialogRef.current !== null && !dialogRef.current.contains(document.activeElement)) {
+            dialogRef.current.focus()
+          }
+        })
+      }
+    }
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
+    return () => {
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
+    }
+  }, [])
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -72,7 +102,7 @@ export function Modal(props: ModalProps): JSX.Element {
       return
     }
     const active = document.activeElement
-    const outside = active === null || !dialog.contains(active)
+    const outside = active === null || active === dialog || !dialog.contains(active)
     if (event.shiftKey && (outside || active === first)) {
       event.preventDefault()
       last.focus()
@@ -83,15 +113,31 @@ export function Modal(props: ModalProps): JSX.Element {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault()
+        }
+      }}
+    >
       <div
         ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         data-size={size}
         onKeyDown={onKeyDown}
-        className={`modal-${size} flex max-h-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-fg shadow-xl`}
+        onMouseDown={(e) => {
+          // A press on plain text (not a control) must not drop the focus out of the dialog.
+          const t = e.target as HTMLElement
+          if (t.closest(`${focusableSelector}, label, [contenteditable], summary`) === null) {
+            e.preventDefault()
+            dialogRef.current?.focus()
+          }
+        }}
+        className={`modal-${size} flex focus-visible:outline-none max-h-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-fg shadow-xl`}
       >
         <div className="shrink-0 border-b border-line px-5 py-3">
           <h2 id={titleId} className="text-lg font-semibold text-fg">

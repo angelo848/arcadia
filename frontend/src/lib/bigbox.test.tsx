@@ -280,6 +280,127 @@ describe('useBigBoxNav (UIX-044)', () => {
   })
 })
 
+describe('useBigBoxNav com modal, eventos tratados e tecla mantida', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [] })
+    placeByData()
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    w.clicks = []
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const cardEl = (n: number) => bigBoxItems().find((e) => e.dataset.gameId === String(n)) as HTMLElement
+  const key = (k: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(window, { key: k, ...init })
+
+  function WithModal({ open, onBack, onPlay }: { open: boolean; onBack: () => void; onPlay: (id: number) => void }) {
+    return (
+      <div>
+        <Board onBack={onBack} onPlay={onPlay} />
+        {open && (
+          <div role="dialog" aria-modal="true" aria-label="Editar jogo">
+            <button type="button">Salvar</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  it('UIX-037/com um modal aberto, setas, Enter, Shift+Enter, Y e B do teclado não agem no fundo e o foco fica no modal', () => {
+    const onBack = vi.fn()
+    const onPlay = vi.fn()
+    const { rerender } = render(<WithModal open={false} onBack={onBack} onPlay={onPlay} />)
+    cardEl(1).focus()
+    rerender(<WithModal open onBack={onBack} onPlay={onPlay} />)
+    const save = document.querySelector('[role="dialog"] button') as HTMLElement
+    save.focus()
+    for (const k of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Enter', 'Escape']) {
+      key(k)
+    }
+    key('Enter', { shiftKey: true })
+    key('y')
+    key('Y')
+    expect(onBack).not.toHaveBeenCalled()
+    expect(onPlay).not.toHaveBeenCalled()
+    expect(w.clicks).toEqual([])
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('UIX-037/com um modal aberto, direções, A, Y e B do controle (gamepad simulado) não agem no fundo', () => {
+    const onBack = vi.fn()
+    const onPlay = vi.fn()
+    const pressed = (index: number) => ({ buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: i === index })), axes: [0, 0] }) as unknown as Gamepad
+    let pad: Gamepad = pressed(-1)
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad] })
+    let frame: FrameRequestCallback = () => undefined
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { rerender } = render(<WithModal open={false} onBack={onBack} onPlay={onPlay} />)
+    cardEl(1).focus()
+    rerender(<WithModal open onBack={onBack} onPlay={onPlay} />)
+    const save = document.querySelector('[role="dialog"] button') as HTMLElement
+    save.focus()
+    for (const b of [15, 13, 14, 12, 0, 3, 1]) {
+      pad = pressed(b)
+      act(() => frame(0))
+      pad = pressed(-1)
+      act(() => frame(0))
+    }
+    expect(onBack).not.toHaveBeenCalled()
+    expect(onPlay).not.toHaveBeenCalled()
+    expect(w.clicks).toEqual([])
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('UIX-037/ao fechar o modal, a navegação do Big Box volta a valer', () => {
+    const onBack = vi.fn()
+    const { rerender } = render(<WithModal open onBack={onBack} onPlay={vi.fn()} />)
+    key('Escape')
+    expect(onBack).not.toHaveBeenCalled()
+    rerender(<WithModal open={false} onBack={onBack} onPlay={vi.fn()} />)
+    cardEl(1).focus()
+    key('ArrowRight')
+    expect(document.activeElement).toBe(cardEl(2))
+    key('Escape')
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('UIX-044/evento de teclado com defaultPrevented é ignorado pelo Big Box', () => {
+    const onBack = vi.fn()
+    const onPlay = vi.fn()
+    render(<Board onBack={onBack} onPlay={onPlay} />)
+    cardEl(1).focus()
+    const handled = (k: string, init: KeyboardEventInit = {}) => {
+      const ev = new KeyboardEvent('keydown', { key: k, cancelable: true, bubbles: true, ...init })
+      ev.preventDefault()
+      window.dispatchEvent(ev)
+    }
+    handled('ArrowRight')
+    handled('Enter')
+    handled('Enter', { shiftKey: true })
+    handled('Escape')
+    expect(document.activeElement).toBe(cardEl(1))
+    expect(w.clicks).toEqual([])
+    expect(onPlay).not.toHaveBeenCalled()
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
+  it('UIX-046/Shift+Enter mantido (repeat) num cartão chama onPlay uma vez', () => {
+    const onPlay = vi.fn()
+    render(<Board onBack={vi.fn()} onPlay={onPlay} />)
+    cardEl(2).focus()
+    key('Enter', { shiftKey: true })
+    key('Enter', { shiftKey: true, repeat: true })
+    key('Enter', { shiftKey: true, repeat: true })
+    expect(onPlay).toHaveBeenCalledTimes(1)
+    expect(onPlay).toHaveBeenCalledWith(2)
+  })
+})
+
 describe('enterBigBox / exitBigBox', () => {
   it('UIX-044/fora do aplicativo desktop a tela cheia não faz nada e não falha', async () => {
     await expect(enterBigBox()).resolves.toBeUndefined()

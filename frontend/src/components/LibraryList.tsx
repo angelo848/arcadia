@@ -139,7 +139,9 @@ export function LibraryList({
     if (e.key === 'Enter') {
       if (focusedId !== null) {
         e.preventDefault()
-        onLaunch(focusedId)
+        if (!e.repeat) {
+          onLaunch(focusedId)
+        }
       }
       return
     }

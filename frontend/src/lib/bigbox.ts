@@ -154,6 +154,11 @@ export function nextFocus(items: HTMLElement[], focused: HTMLElement | null, dir
   return items[pickNext(boxes, current, dir)]
 }
 
+// modalOpen tells whether a modal dialog is in the document; the Big Box stands still then (UIX-037).
+function modalOpen(): boolean {
+  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null
+}
+
 // useBigBoxNav drives the Big Box with the keyboard and the gamepad (BIG-002, BIG-003, UIX-044). The
 // directions move the focus between the items of the page; A (or Enter on a card) clicks the focused item
 // (onOpenCard, when given, hears about the card first); Y (or Shift+Enter) on a card calls onPlay with its
@@ -219,6 +224,9 @@ export function useBigBoxNav({
     }
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || modalOpen()) {
+        return
+      }
       switch (e.key) {
         case 'ArrowUp':
           move('up')
@@ -241,10 +249,12 @@ export function useBigBoxNav({
           if (!focusedCard()) {
             return
           }
-          if (e.shiftKey) {
-            play()
-          } else {
-            activate()
+          if (!e.repeat) {
+            if (e.shiftKey) {
+              play()
+            } else {
+              activate()
+            }
           }
           break
         default:
@@ -268,7 +278,13 @@ export function useBigBoxNav({
     const poll = () => {
       const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : []
       const pad = Array.from(pads).find((p) => p !== null && p !== undefined)
-      if (pad) {
+      if (pad && modalOpen()) {
+        // Keep the edge state current so a button held while a modal closes does not fire.
+        for (const [button] of buttonActions) {
+          previous.set(button, pad.buttons[button]?.pressed === true)
+        }
+        previous.set(-1, true)
+      } else if (pad) {
         for (const [button, action] of buttonActions) {
           const down = pad.buttons[button]?.pressed === true
           if (down && !previous.get(button)) {

@@ -1192,6 +1192,121 @@ describe('App: jogo em foco, painel, edição e remoção', () => {
     expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeEnabled()
   })
 
+  it('UIX-032/Esc durante o salvamento não fecha; sucesso fecha e o painel mostra o detalhe devolvido', async () => {
+    const pending = deferred<GameDetailView>()
+    app.ListGames.mockResolvedValue(page([game()]))
+    app.UpdateGame.mockImplementation(() => pending.promise)
+    renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(app.UpdateGame).toHaveBeenCalledTimes(1))
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await flush()
+    expect(screen.getByRole('dialog', { name: 'Editar jogo' })).toBeInTheDocument()
+
+    await act(async () => {
+      pending.resolve(detail({ title: 'Hollow Knight II' }))
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight II' })).toBeInTheDocument()
+  })
+
+  it('UIX-032/Esc durante o salvamento não fecha; erro mantém o modal com os valores e a mensagem', async () => {
+    const msg = 'Não foi possível salvar o jogo. Tente de novo.'
+    const pending = deferred<GameDetailView>()
+    app.ListGames.mockResolvedValue(page([game()]))
+    app.UpdateGame.mockImplementation(() => pending.promise)
+    renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(app.UpdateGame).toHaveBeenCalledTimes(1))
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await flush()
+    expect(screen.getByRole('dialog', { name: 'Editar jogo' })).toBeInTheDocument()
+
+    await act(async () => {
+      pending.reject(msg)
+    })
+    const again = screen.getByRole('dialog', { name: 'Editar jogo' })
+    expect(await within(again).findByRole('alert')).toHaveTextContent(msg)
+    expect(within(again).getByLabelText('Título')).toHaveValue('Hollow Knight II')
+  })
+
+  // The panel only offers "Editar" with the game loaded, so the read is taken away after the click
+  // (the queries are reset) to leave the open modal without its game.
+  it('UIX-032/Editar com GetGame pendente abre o modal com "Carregando jogo…" e depois o formulário', async () => {
+    app.ListGames.mockResolvedValue(page([game()]))
+    const qc = renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    const read = deferred<GameDetailView>()
+    app.GetGame.mockImplementation(() => read.promise)
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    act(() => {
+      void qc.resetQueries({ queryKey: [] })
+    })
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    expect(within(dialog).getByText('Carregando jogo…')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Título')).toBeNull()
+
+    await act(async () => {
+      read.resolve(detail())
+    })
+    expect(await within(dialog).findByLabelText('Título')).toHaveValue('Hollow Knight')
+    expect(within(dialog).queryByText('Carregando jogo…')).toBeNull()
+  })
+
+  it('UIX-032/Editar com GetGame em erro abre o modal com a mensagem de erro', async () => {
+    app.ListGames.mockResolvedValue(page([game()]))
+    const qc = renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    app.GetGame.mockRejectedValue('Falha ao ler o jogo.')
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    act(() => {
+      void qc.resetQueries({ queryKey: [] })
+    })
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Falha ao ler o jogo.')
+    expect(within(dialog).queryByLabelText('Título')).toBeNull()
+  })
+
+  it('UIX-032/erro de edição de A não aparece no modal de edição de B (GameDialogs reinicia por jogo)', async () => {
+    const msg = 'Não foi possível salvar o jogo. Tente de novo.'
+    const a = game({ id: 10, title: 'Hollow Knight' })
+    const b = game({ id: 20, title: 'Hades' })
+    app.ListGames.mockResolvedValue(page([a, b]))
+    app.GetGame.mockImplementation((id: number) => Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })))
+    app.UpdateGame.mockRejectedValue(msg)
+    renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Outro' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(msg)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await focusGame('Hades')
+    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Editar' }))
+    const dialogB = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    expect(within(dialogB).queryByRole('alert')).toBeNull()
+    expect(within(dialogB).queryByText(msg)).toBeNull()
+    expect(within(dialogB).getByLabelText('Título')).toHaveValue('Hades')
+  })
+
   it('UI-040/título vazio desabilita Salvar e nada é enviado ao agente', async () => {
     app.ListGames.mockResolvedValue(page([game()]))
     renderApp()
@@ -2312,6 +2427,111 @@ describe('App: Big Box sobre o layout novo (T20)', () => {
     expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
     await waitFor(() => expect(playButton()).toHaveFocus())
     expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
+  })
+
+  const titleOf = (id: number) => ({ 10: 'Hollow Knight', 20: 'Hades', 30: 'Celeste' } as Record<number, string>)[id]
+
+  it('UIX-037/Big Box com Editar aberto: setas, Enter, Shift+Enter, Y e B não mudam o jogo em foco, não lançam e não saem do Big Box', async () => {
+    bigBoxLibrary()
+    renderApp()
+    await focusGame('Hades')
+    enterBigBoxByKey()
+
+    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    for (const init of [
+      { key: 'ArrowRight' },
+      { key: 'ArrowLeft' },
+      { key: 'ArrowDown' },
+      { key: 'ArrowUp' },
+      { key: 'Enter' },
+      { key: 'Enter', shiftKey: true },
+      { key: 'y' },
+      { key: 'Escape' },
+    ]) {
+      fireEvent.keyDown(window, init)
+    }
+    await flush()
+
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+  })
+
+  it('UIX-044/A num cartão de G e depois clique em H antes de G carregar: o foco não vai a "Jogar" de H', async () => {
+    bigBoxLibrary()
+    const g = deferred<GameDetailView>()
+    app.GetGame.mockImplementation((id: number) =>
+      id === 20 ? g.promise : Promise.resolve(detail({ id, title: titleOf(id) })),
+    )
+    renderApp()
+    await findRow('Hollow Knight')
+    enterBigBoxByKey()
+
+    rowOf('Hades').focus()
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.click(within(rowOf('Celeste')).getByText('Celeste'))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Celeste' })
+    await within(asideOf()).findByRole('button', { name: 'Jogar' })
+    await act(async () => {
+      g.resolve(detail({ id: 20, title: 'Hades' }))
+    })
+    await flush()
+
+    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
+  })
+
+  it('UIX-044/A num cartão de G com GetGame em erro: o foco não vai a "Jogar" (nem depois de "Tentar de novo")', async () => {
+    bigBoxLibrary()
+    let fail = true
+    app.GetGame.mockImplementation((id: number) =>
+      id === 20 && fail ? Promise.reject('Falha ao ler o jogo.') : Promise.resolve(detail({ id, title: titleOf(id) })),
+    )
+    renderApp()
+    await findRow('Hollow Knight')
+    enterBigBoxByKey()
+
+    rowOf('Hades').focus()
+    fireEvent.keyDown(window, { key: 'Enter' })
+    await within(asideOf()).findByRole('alert')
+    await flush()
+    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
+
+    fail = false
+    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Tentar de novo' }))
+    await within(asideOf()).findByRole('button', { name: 'Jogar' })
+    await flush()
+    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
+  })
+
+  it('UIX-045/no Big Box, escolher G nas estatísticas com GetGame(G) em -32001: o foco não vai a "Jogar"', async () => {
+    threePlatformLibrary()
+    app.GetGame.mockImplementation((id: number) =>
+      id === 20 ? Promise.reject(gameNotFoundMessage) : Promise.resolve(detail({ id, title: titleOf(id) ?? 'Jogo' })),
+    )
+    app.StatsSummary.mockResolvedValue({
+      games: [
+        { gameId: 20, title: 'Hades', platform: 'Windows', sessions: 1, activeSeconds: 3600, importedSeconds: 0, lastPlayedAt: '' },
+      ],
+      platforms: [],
+      totalSeconds: 3600,
+      importedSeconds: 0,
+    })
+    renderApp()
+    await findRow('Hollow Knight')
+    enterBigBoxByKey()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Hades' }))
+    await flush()
+    await flush()
+
+    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
   })
 
   it('UIX-022/entrar e sair do Big Box mantém G no painel', async () => {

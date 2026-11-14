@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MediaCarousel } from './MediaCarousel'
 import { coverPlaceholderUrl } from './CoverImage'
 import type { MediaItemView } from '../lib/metadata'
@@ -83,6 +83,27 @@ describe('MediaCarousel', () => {
     const region = screen.getByRole('region', { name: /Imagens/ })
     expect(region.getAttribute('aria-roledescription')).toBe('carrossel')
     expect(region.querySelector('[aria-live="polite"]')?.textContent).toContain('1 de 3')
+  })
+
+  it('UIX-042/no Big Box, seta num botão do carrossel troca a imagem uma vez e não move o foco do Big Box', () => {
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+    try {
+      const { container } = render(<MediaCarousel items={three} resetKey={1} />)
+      const next = screen.getByRole('button', { name: 'Próxima imagem' })
+      next.focus()
+      const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+      act(() => {
+        next.dispatchEvent(ev)
+      })
+      expect(shownSrc(container)).toBe('/media/1.jpg')
+      expect(screen.getByText('2 de 3')).toBeTruthy()
+      expect(ev.defaultPrevented).toBe(true)
+      expect(outer).toHaveBeenCalledTimes(1)
+      expect((outer.mock.calls[0][0] as KeyboardEvent).defaultPrevented).toBe(true)
+    } finally {
+      window.removeEventListener('keydown', outer)
+    }
   })
 
   it('UIX-043/o carrossel é navegável só pelo teclado', () => {

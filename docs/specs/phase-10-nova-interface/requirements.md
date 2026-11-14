@@ -344,6 +344,20 @@ fecha o modal e o painel mostra o detalhe devolvido; com erro, o modal continua 
 mensagem de DSK-011; "Cancelar" (ou Esc) fecha sem chamar o agente.
 · verificação: teste de componente.
 
+Critérios acrescentados após a revisão (2026-11-14):
+- **Salvamento pendente.** Dado o modal "Editar jogo" com "Salvar" acionado e a resposta do agente ainda pendente, quando
+  o usuário aperta Esc, então o modal não fecha (o fechamento fica desativado, UIX-039) e, quando a resposta chega, o
+  resultado aparece sempre: sucesso fecha o modal e o painel mostra o detalhe devolvido; erro mantém o modal com os valores
+  digitados e a mensagem. Nenhum resultado de salvamento é descartado em silêncio.
+- **Leitura do jogo ainda carregando ou com falha.** Dado G em foco com a leitura de G (`GetGame`) ainda sem resposta,
+  quando o usuário aciona "Editar", então o modal "Editar jogo" abre mostrando "Carregando jogo…" (sem formulário) e, quando a
+  leitura chega, mostra o formulário. Dado a leitura de G com erro, quando o usuário aciona "Editar", então o modal abre
+  com a mensagem de erro (`role="alert"`) e sem formulário. Em nenhum dos dois casos o clique em "Editar" fica sem efeito
+  visível. (O conteúdo do painel continua regido por UIX-035, sem mudança.)
+- **Diálogos por jogo.** Dado o jogo A em foco com um erro de edição exibido ou um estado de diálogo qualquer, quando o
+  jogo em foco passa a ser B, então os diálogos de B começam do zero: nenhuma mensagem de erro, pendência ou valor de A
+  aparece no modal de B.
+
 ### UIX-033 — Buscar metadados
 Dado G em foco, quando o usuário toca "Buscar metadados", então abre o diálogo de busca de metadados de G (MID-002..MID-004,
 tamanho médio). Depois de aplicar um candidato, o painel mostra os dados novos e o carrossel lê a lista de mídia de novo.
@@ -383,6 +397,12 @@ Importar é sempre o maior. Na janela mínima (1024 × 640), todos cabem inteiro
 · verificação: teste de componente (cada modal declara a classe certa, `data-size`); conferência manual em 1024 × 640 e
 1920 × 1080.
 
+Critério acrescentado após a revisão (2026-11-14):
+- **Modal suspende o Big Box.** Dado o Big Box ativo e um modal aberto (qualquer classe), quando o usuário aperta setas,
+  Enter, Shift+Enter, Y ou B, pelo teclado ou pelo controle, então nada acontece no fundo (o foco não se move na grade, no
+  painel ou na coluna esquerda, nenhum jogo é posto em foco nem lançado, o Big Box não é encerrado) e o foco do teclado
+  permanece dentro do modal. Ao fechar o modal, a navegação do Big Box volta a valer. (Ver também UIX-044.)
+
 ### UIX-038 — Rolagem interna
 Dado um modal grande ou médio, então o título fica fixo no topo, os botões de ação ficam fixos embaixo e só o corpo rola;
 a tela de trás não rola enquanto o modal está aberto. Na importação, a lista de candidatos usa toda a altura do corpo (não
@@ -395,6 +415,12 @@ teclado vai para o primeiro controle (ou para "Cancelar", nas confirmações des
 presos dentro dele; Esc faz o mesmo que o botão de fechar (ou "Cancelar") e não faz nada quando esse botão está
 desativado (operação em andamento); clicar fora do modal não o fecha; ao fechar, o foco volta ao elemento que o abriu.
 · verificação: teste de componente comum a todos os modais.
+
+Critério acrescentado após a revisão (2026-11-14):
+- **Clique que não pega foco.** Dado um modal aberto, quando o usuário clica no overlay (fora do diálogo) ou em texto não
+  focável dentro do modal, então o foco do teclado não sai do diálogo (se o clique o tirou do controle atual, ele volta ao
+  elemento `role="dialog"`); em seguida, Tab e Shift+Tab continuam presos no modal e Esc continua fechando-o (com a mesma
+  regra de botão desativado acima).
 
 ---
 
@@ -419,6 +445,12 @@ e `aria-selected` conforme o jogo em foco; cada item de plataforma é um botão 
 as capas e o placeholder são decorativos (`alt=""`), porque o nome aparece ao lado.
 · verificação: teste de componente por papel e nome (Testing Library `getByRole`).
 
+Critério acrescentado após a revisão (2026-11-14):
+- **Uma tecla, uma ação no carrossel.** Dado o Big Box ativo e o foco num botão do carrossel ("Imagem anterior" ou
+  "Próxima imagem"), quando o usuário aperta uma seta esquerda ou direita, então acontece exatamente uma ação: a imagem
+  troca uma vez e o foco do Big Box não se move por causa da mesma tecla (o carrossel marca o evento como tratado,
+  `defaultPrevented`, e o Big Box ignora eventos já tratados). (Ver também UIX-044.)
+
 ### UIX-043 — Tudo alcançável pelo teclado
 Dado a tela fora do Big Box, então toda ação de mouse desta fase tem um equivalente de teclado: pôr em foco (setas, UIX-019),
 lançar (Enter, ou os botões do painel), escolher plataforma (Enter ou Espaço no item), abrir e fechar a seção "Filtros",
@@ -441,11 +473,25 @@ Dado o Big Box (BIG-001..BIG-004, sem visual novo), então ele usa as três colu
   estatísticas, volta à biblioteca; na grade ou na coluna esquerda, sai do Big Box (BIG-001).
 · verificação: teste de componente com eventos de teclado simulados (`useBigBoxNav`); manual com controle na TV.
 
+Critérios acrescentados após a revisão (2026-11-14):
+- **Suspenso com modal aberto.** Dado um modal aberto, então o Big Box não trata setas, A/Enter, Y/Shift+Enter nem B (teclado
+  e controle): o critério de UIX-037 vale aqui.
+- **Eventos já tratados.** Dado um evento de teclado que um controle já tratou (`defaultPrevented`, como as setas no
+  carrossel, UIX-042), então o Big Box não age sobre ele.
+- **"Focar Jogar" pendente é descartado.** Dado A/Enter num cartão de G (ou a escolha de G nas estatísticas, UIX-045) com a
+  leitura de G ainda pendente, quando outro jogo H passa a ser o jogo em foco antes de G aparecer no painel, ou quando a
+  leitura de G falha (erro ou `-32001`), então o pedido de levar o foco a "Jogar" é descartado: o foco não salta para
+  "Jogar" de H nem para "Jogar" de G numa leitura posterior.
+
 ### UIX-045 — Estatísticas abrem o jogo no painel
 Dado a página de estatísticas, quando o usuário escolhe um jogo G (EST-001), então a página fecha, a biblioteca volta com
 os filtros que tinha e G fica em foco no painel (com a regra de UIX-021 se G estiver fora dos filtros). No Big Box, o
 foco do controle vai para "Jogar" do painel.
 · verificação: teste de componente.
+
+Critério acrescentado após a revisão (2026-11-14):
+- No Big Box, se outro jogo é posto em foco antes de G aparecer no painel, ou a leitura de G falha, o foco não vai para
+  "Jogar" (regra do pedido pendente em UIX-044).
 
 ---
 
@@ -459,6 +505,12 @@ acontecem por ação explícita (Jogar, Jogar sem contar tempo, duplo clique, En
 pausa e retomada só pelo painel de sessão (UI-027); a UI não calcula, soma nem altera tempo (UI-017, UI-025).
 · verificação: teste de componente que percorre as interações com espiões em todos os bindings (nenhum lançamento,
 `ToggleSession` ou escrita fora dos casos permitidos); revisão.
+
+Critério acrescentado após a revisão (2026-11-14):
+- **Tecla mantida não relança.** Dado o foco num cartão ou numa linha da grade/lista (fora do Big Box), quando o usuário
+  mantém Enter apertado (eventos com `repeat = true` depois do primeiro), então `LaunchGame` é chamado uma única vez. Dado
+  o Big Box com o foco num cartão, quando o usuário mantém Shift+Enter (ou Y) apertado, então `LaunchGame` é chamado uma
+  única vez. Repetições automáticas da tecla nunca são uma nova ação de lançamento.
 
 ### UIX-047 — Sem mudança no agente, no tracker e no IPC
 Dado o diff da fase, então não há mudança em `internal/` nem no contrato IPC (continua a v0.11.0 da fase 9), e nenhum

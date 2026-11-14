@@ -167,7 +167,7 @@ export function GameEditForm({
 
   const actions = (
     <>
-      <button type="button" onClick={onCancel} className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover">
+      <button type="button" onClick={onCancel} disabled={pending} className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover">
         Cancelar
       </button>
       <button

@@ -35,6 +35,8 @@ function game(over: Partial<GameDetailView> = {}): GameDetailView {
 function renderDialog(over: Partial<Props> = {}) {
   const props: Props = {
     game: game(),
+    loading: false,
+    loadError: null,
     genreSuggestions: ['Metroidvania', 'Ação'],
     emulators: [],
     pending: false,
@@ -133,6 +135,35 @@ describe('GameEditDialog', () => {
     pressEscape()
     expect(props.onCancel).toHaveBeenCalledTimes(2)
     expect(props.onSave).not.toHaveBeenCalled()
+  })
+
+  it('UIX-032/com pending, Esc não chama onCancel e Cancelar fica desativado', () => {
+    const { props } = renderDialog({ pending: true })
+
+    pressEscape()
+    expect(props.onCancel).not.toHaveBeenCalled()
+    const cancel = screen.getByRole('button', { name: 'Cancelar' })
+    expect(cancel).toBeDisabled()
+    fireEvent.click(cancel)
+    expect(props.onCancel).not.toHaveBeenCalled()
+  })
+
+  it('UIX-032/com loading mostra "Carregando jogo…" e nenhum campo', () => {
+    renderDialog({ game: undefined, loading: true })
+
+    const dialog = screen.getByRole('dialog', { name: 'Editar jogo' })
+    expect(within(dialog).getByText('Carregando jogo…')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Título')).toBeNull()
+    expect(within(dialog).queryByRole('textbox')).toBeNull()
+  })
+
+  it('UIX-032/com loadError mostra role=alert e nenhum campo', () => {
+    renderDialog({ game: undefined, loadError: 'Falha ao ler o jogo.' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Editar jogo' })
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Falha ao ler o jogo.')
+    expect(within(dialog).queryByLabelText('Título')).toBeNull()
+    expect(within(dialog).queryByRole('textbox')).toBeNull()
   })
 
   it('UIX-032/título vazio desativa Salvar (UI-040)', () => {

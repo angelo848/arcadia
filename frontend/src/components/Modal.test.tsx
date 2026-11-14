@@ -109,6 +109,59 @@ describe('Modal', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('UIX-039/mousedown no overlay não tira o foco do diálogo; depois, Tab continua preso e Esc fecha', () => {
+    const { onClose } = renderModal()
+    const dialog = screen.getByRole('dialog')
+    const overlay = dialog.parentElement as HTMLElement
+    const first = screen.getByRole('button', { name: 'Primeiro' })
+    const last = screen.getByRole('button', { name: 'Salvar' })
+
+    // A real mousedown on a non-focusable area moves the focus to the body unless it is prevented.
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    overlay.dispatchEvent(down)
+    if (!down.defaultPrevented) {
+      ;(document.activeElement as HTMLElement).blur()
+    }
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    last.focus()
+    fireEvent.keyDown(last, { key: 'Tab' })
+    expect(first).toHaveFocus()
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('UIX-039/clique em texto não focável do modal mantém o foco no diálogo; Tab vai ao primeiro controle e Esc fecha', () => {
+    const { onClose } = renderModal()
+    const dialog = screen.getByRole('dialog')
+    const first = screen.getByRole('button', { name: 'Primeiro' })
+
+    // Clicking plain text blurs the focused control: the focus must come back to the dialog itself.
+    act(() => {
+      ;(document.activeElement as HTMLElement).blur()
+    })
+    fireEvent.mouseDown(screen.getByTestId('body-text'))
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(dialog)
+    expect(dialog).toHaveAttribute('tabindex', '-1')
+
+    fireEvent.keyDown(dialog, { key: 'Tab' })
+    expect(first).toHaveFocus()
+
+    dialog.focus()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('UIX-039/foco no próprio dialog: Shift+Tab vai ao último controle', () => {
+    renderModal()
+    const dialog = screen.getByRole('dialog')
+    dialog.focus()
+    expect(dialog).toHaveFocus()
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })
+    expect(screen.getByRole('button', { name: 'Salvar' })).toHaveFocus()
+  })
+
   it('UIX-039/ao desmontar, o foco volta ao elemento que abriu; se ele saiu do documento, vai ao listbox "Jogos"', () => {
     function Host() {
       const [open, setOpen] = useState(false)

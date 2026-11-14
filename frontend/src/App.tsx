@@ -73,16 +73,19 @@ function GameDialogs({
   onRemoved: (id: number) => void
   onError: (message: string | null) => void
 }): JSX.Element | null {
+  const qc = useQueryClient()
   const detail = useGame(gameId)
   const emulators = useEmulators()
   const update = useUpdateGame()
   const remove = useDeleteGame()
   const [editError, setEditError] = useState<string | null>(null)
 
-  if (dialog === 'edit' && detail.data !== undefined) {
+  if (dialog === 'edit') {
     return (
       <GameEditDialog
         game={detail.data}
+        loading={detail.isPending}
+        loadError={detail.isError ? errorMessage(detail.error) : null}
         genreSuggestions={genreSuggestions}
         emulators={emulators.data ?? []}
         pending={update.isPending}
@@ -91,7 +94,9 @@ function GameDialogs({
           update.mutate(
             { id: gameId, patch },
             {
-              onSuccess: () => {
+              onSuccess: (saved) => {
+                // The detail the agent returned is what the panel shows.
+                qc.setQueryData(libraryKeys.game(gameId), saved)
                 setEditError(null)
                 onClose()
               },
@@ -208,7 +213,17 @@ export default function App() {
   }
   useEffect(() => {
     const id = pendingPlayFocus.current
-    if (id !== null && selection.kind === 'shown' && selection.gameId === id && focusPlayOf(id)) {
+    if (id === null) {
+      return
+    }
+    // The pending focus belongs to one game: another selection or a failed read drops it.
+    if (selection.kind === 'error' || selection.kind === 'empty') {
+      pendingPlayFocus.current = null
+    } else if (selection.kind === 'shown' && selection.gameId === id) {
+      if (focusPlayOf(id)) {
+        pendingPlayFocus.current = null
+      }
+    } else if (focusedGameId(selection) !== null && focusedGameId(selection) !== id) {
       pendingPlayFocus.current = null
     }
   })
@@ -398,6 +413,7 @@ export default function App() {
       )}
       {focusedId !== null && (
         <GameDialogs
+          key={focusedId}
           gameId={focusedId}
           dialog={dialog}
           genreSuggestions={genreNames}

@@ -468,6 +468,55 @@ export function useBigBoxNav(opts: {
 - **Revisão (sessão principal):** `git diff --stat` da fase sem arquivos em `internal/` e `cmd/fake-game/`; em `cmd/arcadia`, só `window.go`, `window_test.go` e `main_windows.go`; `internal/ipc/contract_test.go` sem alteração e verde.
 - Dependência: T21.
 
+## T24 — Lacunas da revisão: modais no Big Box, foco dos modais, edição e tecla mantida
+- Requisitos: UIX-032, UIX-037, UIX-039, UIX-042, UIX-044, UIX-045, UIX-046 (critérios "acrescentados após a revisão", 2026-11-14)
+- **implementer:**
+  - `lib/bigbox.ts` (`useBigBoxNav`): não age enquanto houver `[role="dialog"][aria-modal="true"]` no documento (teclado e laço do controle: setas, A/Enter, Y/Shift+Enter, B); ignora `KeyboardEvent` com `defaultPrevented`; ignora `e.repeat` em Enter/Shift+Enter; Y do controle lança só na borda de descida do botão (já é, conferir).
+  - `components/MediaCarousel.tsx`: setas tratadas chamam `e.preventDefault()` (o Big Box então ignora).
+  - `components/Modal.tsx`: `mousedown` no overlay e em área não focável não tira o foco do diálogo (`preventDefault` no overlay; `focusout`/`focusin` para fora do diálogo devolve o foco ao `role="dialog"` com `tabIndex={-1}`); o trap de Tab e o Esc tratam também o foco no próprio `dialog`.
+  - `components/GameEditDialog.tsx`: `closeDisabled={pending}` (Esc e Cancelar sem efeito durante o salvamento); props `game` passa a `game: GameDetailView | undefined` mais `loading: boolean` e `loadError: string | null` (corpo com "Carregando jogo…" ou `role="alert"` no lugar do formulário).
+  - `App.tsx`: `GameDialogs` montado com `key={gameId}`; abre o modal de edição sempre que `dialog === 'edit'` (passa `loading`/`loadError` de `useGame`); o fechamento depois do sucesso e a mensagem de erro não dependem do modal ter sido desmontado; o "focar Jogar" pendente guarda o id do jogo e é limpo quando `selection` passa a outro id ou a leitura dá `readError`/`readMissing`; `LibraryGrid`/`LibraryList`: Enter com `e.repeat` não chama `onLaunch`.
+```ts
+export function GameEditDialog(props: {
+  game: GameDetailView | undefined; loading: boolean; loadError: string | null
+  genreSuggestions: string[]; emulators: EmulatorView[]
+  pending: boolean; error: string | null
+  onSave: (patch: Record<string, unknown>) => void; onCancel: () => void
+}): JSX.Element   // Modal size="medium" title="Editar jogo" closeDisabled={pending}
+```
+- **test-writer:**
+  - `lib/bigbox.test.tsx`:
+    - `UIX-037/com um modal aberto, setas, Enter, Shift+Enter, Y e B do teclado não agem no fundo e o foco fica no modal`
+    - `UIX-037/com um modal aberto, direções, A, Y e B do controle (gamepad simulado) não agem no fundo`
+    - `UIX-037/ao fechar o modal, a navegação do Big Box volta a valer`
+    - `UIX-044/evento de teclado com defaultPrevented é ignorado pelo Big Box`
+    - `UIX-046/Shift+Enter mantido (repeat) num cartão chama onPlay uma vez`
+  - `components/MediaCarousel.test.tsx`:
+    - `UIX-042/no Big Box, seta num botão do carrossel troca a imagem uma vez e não move o foco do Big Box`
+  - `components/Modal.test.tsx`:
+    - `UIX-039/mousedown no overlay não tira o foco do diálogo; depois, Tab continua preso e Esc fecha`
+    - `UIX-039/clique em texto não focável do modal mantém o foco no diálogo; Tab vai ao primeiro controle e Esc fecha`
+    - `UIX-039/foco no próprio dialog: Shift+Tab vai ao último controle`
+  - `components/GameEditDialog.test.tsx`:
+    - `UIX-032/com pending, Esc não chama onCancel e Cancelar fica desativado`
+    - `UIX-032/com loading mostra "Carregando jogo…" e nenhum campo`
+    - `UIX-032/com loadError mostra role=alert e nenhum campo`
+  - `App.test.tsx`:
+    - `UIX-032/Esc durante o salvamento não fecha; sucesso fecha e o painel mostra o detalhe devolvido`
+    - `UIX-032/Esc durante o salvamento não fecha; erro mantém o modal com os valores e a mensagem`
+    - `UIX-032/Editar com GetGame pendente abre o modal com "Carregando jogo…" e depois o formulário`
+    - `UIX-032/Editar com GetGame em erro abre o modal com a mensagem de erro`
+    - `UIX-032/erro de edição de A não aparece no modal de edição de B (GameDialogs reinicia por jogo)`
+    - `UIX-037/Big Box com Editar aberto: setas, Enter, Shift+Enter, Y e B não mudam o jogo em foco, não lançam e não saem do Big Box`
+    - `UIX-044/A num cartão de G e depois clique em H antes de G carregar: o foco não vai a "Jogar" de H`
+    - `UIX-044/A num cartão de G com GetGame em erro: o foco não vai a "Jogar" (nem depois de "Tentar de novo")`
+    - `UIX-045/no Big Box, escolher G nas estatísticas com GetGame(G) em -32001: o foco não vai a "Jogar"`
+  - `components/LibraryGrid.test.tsx` e `components/LibraryList.test.tsx`:
+    - `UIX-046/Enter mantido (repeat) chama onLaunch uma vez`
+  - `App.invariants.test.tsx`:
+    - `UIX-046/Enter mantido na grade e Shift+Enter mantido no Big Box chamam LaunchGame exatamente uma vez cada`
+- Dependência: T22.
+
 ## T23 — Conferência manual da fase 10
 - Requisitos: UIX-049, UIX-001, UIX-002, UIX-003, UIX-005, UIX-007, UIX-037, UIX-038, UIX-040, UIX-043, UIX-044, UIX-047
 - **Responsável:** sessão principal com o usuário.
@@ -484,13 +533,13 @@ export function useBigBoxNav(opts: {
   8. comparação visual com o LaunchBox (UIX-007) e colunas cabendo em 1024, 1366 e 1920 (UIX-005).
 - **Se a saída do Big Box não restaurar a janela maximizada:** tarefa extra com a alternativa do design §2 (`exitBigBox` guarda `WindowIsMaximised()` ao entrar e chama `WindowMaximise()` ao sair); muda só `lib/bigbox.ts` e o teste.
 - **Documentação:** `docs/ARCHITECTURE.md` §11 (três colunas, jogo em foco como estado da UI, tokens `--arc-*`, classes de modal); `docs/ROADMAP.md`: fase 10 concluída.
-- Dependência: T01..T22.
+- Dependência: T01..T22 e T24.
 
 ## Ordem
 
 - **Bloco A (paralelo):** T01, T02, T03, T04, T05, T06, T07, T08, T11, T16.
 - **Bloco B:** T09 (após T02) → T10 e T14 em paralelo; T12 após T08; T13 após T06 e T08; T15 após T03, T06 e T12; T17 após T05 e T11.
-- **Depois:** T18 → T19 → T20 → T21 → T22 → T23.
+- **Depois:** T18 → T19 → T20 → T21 → T22 → T24 → T23.
 
 ## Riscos de concorrência e recursos
 
@@ -534,21 +583,21 @@ export function useBigBoxNav(opts: {
 | UIX-027 | T15, T18 |
 | UIX-028, UIX-029, UIX-030 | T15 |
 | UIX-031 | T07, T18 |
-| UIX-032 | T14, T18 |
+| UIX-032 | T14, T18, T24 |
 | UIX-033 | T18 |
 | UIX-034 | T03, T18 |
 | UIX-035 | T03, T15 |
 | UIX-036 | T15 |
-| UIX-037 | T02, T09, T10, T14, T23 |
+| UIX-037 | T02, T09, T10, T14, T24, T23 |
 | UIX-038 | T09, T10, T23 |
-| UIX-039 | T09, T10 |
+| UIX-039 | T09, T10, T24 |
 | UIX-040 | T02, T21, T23 |
 | UIX-041 | T19, T21 |
-| UIX-042 | T08, T11, T12, T18 |
+| UIX-042 | T08, T11, T12, T18, T24 |
 | UIX-043 | T11, T12, T17, T19, T23 |
-| UIX-044 | T20, T23 (TV) |
-| UIX-045 | T18, T20 |
-| UIX-046 | T22 |
+| UIX-044 | T20, T24, T23 (TV) |
+| UIX-045 | T18, T20, T24 |
+| UIX-046 | T22, T24 |
 | UIX-047 | T22, T23 (revisão do diff) |
 | UIX-048 | T18 |
 | UIX-049 | T23 |

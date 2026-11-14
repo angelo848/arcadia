@@ -403,6 +403,19 @@ describe('LibraryGrid: teclado (3 colunas)', () => {
     expect(p.onLaunch).toHaveBeenCalledWith(4)
   })
 
+  it('UIX-046/Enter mantido (repeat) chama onLaunch uma vez', () => {
+    const p = props({ selectedId: 4 })
+    render(<LibraryGrid {...p} />)
+
+    cardOf('Jogo 4').focus()
+    fireEvent.keyDown(cardOf('Jogo 4'), { key: 'Enter' })
+    fireEvent.keyDown(cardOf('Jogo 4'), { key: 'Enter', repeat: true })
+    fireEvent.keyDown(cardOf('Jogo 4'), { key: 'Enter', repeat: true })
+
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(4)
+  })
+
   it('UIX-019/com keyboard=false as setas não fazem nada na grade', () => {
     const p = props({ selectedId: 4, keyboard: false })
     render(<LibraryGrid {...p} />)

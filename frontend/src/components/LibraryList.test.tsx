@@ -229,6 +229,19 @@ describe('LibraryList', () => {
     expect(p.onLaunch).toHaveBeenCalledWith(1)
   })
 
+  it('UIX-046/Enter mantido (repeat) chama onLaunch uma vez', () => {
+    const p = props({ selectedId: 1 })
+    render(<LibraryList {...p} />)
+
+    rowOf('Jogo 1').focus()
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'Enter' })
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'Enter', repeat: true })
+    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'Enter', repeat: true })
+
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(1)
+  })
+
   it('UIX-020/lista: com keyboard=false as setas não fazem nada', () => {
     const p = props({ selectedId: 1, keyboard: false })
     render(<LibraryList {...p} />)

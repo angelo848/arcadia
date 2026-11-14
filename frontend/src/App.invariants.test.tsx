@@ -386,6 +386,29 @@ describe('invariantes da UI', () => {
     })
   })
 
+  it('UIX-046/Enter mantido na grade e Shift+Enter mantido no Big Box chamam LaunchGame exatamente uma vez cada', async () => {
+    renderApp()
+    const card = await findCard('Hades')
+    card.focus()
+    fireEvent.keyDown(card, { key: 'Enter' })
+    fireEvent.keyDown(card, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(card, { key: 'Enter', repeat: true })
+    await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+    await flush()
+    expect(calls('LaunchGame')).toEqual([[20]])
+
+    fireEvent.keyDown(window, { key: 'F11' })
+    await screen.findByRole('button', { name: /Sair do Big Box/ })
+    const bb = await findCard('Celeste')
+    bb.focus()
+    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true, repeat: true })
+    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true, repeat: true })
+    await waitFor(() => expect(calls('LaunchGame')).toHaveLength(2))
+    await flush()
+    expect(calls('LaunchGame')).toEqual([[20], [30]])
+  })
+
   it('UIX-046/ToggleSession só é chamado pelo painel de sessão', async () => {
     // ToggleSession is Pause/Resume of the running session.
     overrides.CurrentSession = () => session('running')
