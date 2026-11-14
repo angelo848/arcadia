@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useId, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
@@ -10,7 +11,7 @@ import { TagInput } from './TagInput'
 // The play modes in the order the form shows them (DOM-014).
 const playModeOrder: PlayModeName[] = ['single', 'multi_local', 'multi_online', 'coop_local', 'coop_online']
 
-// Labels match the library filter (FilterPanel) and the status names of GamePage.
+// Labels match the library filter (FilterPanel) and the status names of the details panel.
 const statusOptions: Array<{ value: GameStatus; label: string }> = [
   { value: 'not_played', label: 'Não jogado' },
   { value: 'playing', label: 'Jogando' },
@@ -49,6 +50,9 @@ export type GameEditFormProps = {
   onCancel: () => void
   pending: boolean
   error: string | null
+  // actionsTarget, when given, receives Salvar/Cancelar by portal (the footer of a Modal); null waits for
+  // the target to mount. Without it the buttons stay at the end of the form.
+  actionsTarget?: HTMLElement | null
 }
 
 const noSuggestions: string[] = []
@@ -99,7 +103,7 @@ function toDraft(v: FormValues): EditDraft {
 }
 
 const inputClass =
-  'rounded border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-neutral-100 focus:border-emerald-500 focus:outline-none'
+  'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 // GameEditForm edits the fields of EDT-001..EDT-004 with the values of the game. It keeps the
 // draft and sends only the changed fields through onSave (UI-039). "Salvar" is disabled while
@@ -113,6 +117,7 @@ export function GameEditForm({
   onCancel,
   pending,
   error,
+  actionsTarget,
 }: GameEditFormProps): JSX.Element {
   const [values, setValues] = useState<FormValues>(() => initialValues(game))
   const idPrefix = useId()
@@ -146,18 +151,45 @@ export function GameEditForm({
     }
   }
 
-  function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  function submitNow() {
     if (!canSave) {
       return
     }
     onSave(diffPatch(game, draft))
   }
 
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    submitNow()
+  }
+
   const id = (name: string) => `${idPrefix}-${name}`
 
+  const actions = (
+    <>
+      <button type="button" onClick={onCancel} className="rounded px-4 py-1.5 text-sm font-medium text-muted hover:bg-hover">
+        Cancelar
+      </button>
+      <button
+        type={actionsTarget === undefined ? 'submit' : 'button'}
+        onClick={actionsTarget === undefined ? undefined : submitNow}
+        disabled={!canSave}
+        className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Salvar
+      </button>
+    </>
+  )
+
   return (
-    <form onSubmit={submit} className="mx-6 my-4 flex flex-col gap-3 rounded border border-neutral-800 bg-neutral-900 p-4">
+    <form
+      onSubmit={submit}
+      className={
+        actionsTarget === undefined
+          ? 'mx-6 my-4 flex flex-col gap-3 rounded border border-line bg-surface p-4'
+          : 'flex flex-col gap-3'
+      }
+    >
       <Row id={id('title')} label="Título" message={errors.title}>
         <input
           id={id('title')}
@@ -223,29 +255,29 @@ export function GameEditForm({
           type="checkbox"
           checked={values.favorite}
           onChange={(e) => set('favorite', e.target.checked)}
-          className="h-4 w-4 accent-emerald-600"
+          className="h-4 w-4"
         />
-        <label htmlFor={id('favorite')} className="text-sm font-medium text-neutral-300">
+        <label htmlFor={id('favorite')} className="text-sm font-medium text-muted">
           Favorito
         </label>
       </div>
 
       <fieldset className="flex flex-col gap-1.5">
-        <legend className="mb-1 text-sm font-medium text-neutral-300">Modos de jogo</legend>
+        <legend className="mb-1 text-sm font-medium text-muted">Modos de jogo</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           {playModeOrder.map((mode) => (
-            <label key={mode} className="flex items-center gap-2 text-sm text-neutral-300">
+            <label key={mode} className="flex items-center gap-2 text-sm text-muted">
               <input
                 type="checkbox"
                 checked={values.playModes.includes(mode)}
                 onChange={(e) => togglePlayMode(mode, e.target.checked)}
-                className="h-4 w-4 accent-emerald-600"
+                className="h-4 w-4"
               />
               {playModeLabels[mode]}
             </label>
           ))}
         </div>
-        {errors.playModes !== undefined && <p className="text-sm text-red-400">{errors.playModes}</p>}
+        {errors.playModes !== undefined && <p className="text-sm text-danger">{errors.playModes}</p>}
       </fieldset>
 
       <Row id={id('developers')} label="Desenvolvedora" hint="Separe os nomes por vírgula." message={errors.developers}>
@@ -286,7 +318,8 @@ export function GameEditForm({
             className={inputClass}
           >
             <option value="exe">Executável</option>
-            <option value="emulator">Emulador (ROM)</option>\n            <option value="uri">URI (Steam, Epic, ...)</option>
+            <option value="emulator">Emulador (ROM)</option>
+            <option value="uri">URI (Steam, Epic, ...)</option>
           </select>
         </Row>
         <Row
@@ -306,7 +339,7 @@ export function GameEditForm({
               <button
                 type="button"
                 onClick={() => void pickExecutable()}
-                className="shrink-0 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+                className="shrink-0 rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover"
               >
                 Procurar...
               </button>
@@ -342,27 +375,16 @@ export function GameEditForm({
       </Row>
 
       {error !== null && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
 
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded px-4 py-1.5 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
-        >
-          Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={!canSave}
-          className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-        >
-          Salvar
-        </button>
-      </div>
+      {actionsTarget === undefined ? (
+        <div className="flex justify-end gap-2">{actions}</div>
+      ) : (
+        actionsTarget !== null && createPortal(actions, actionsTarget)
+      )}
     </form>
   )
 }
@@ -382,12 +404,12 @@ function Row({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-neutral-300">
+      <label htmlFor={id} className="text-sm font-medium text-muted">
         {label}
       </label>
       {children}
-      {hint !== undefined && <span className="text-xs text-neutral-500">{hint}</span>}
-      {message !== undefined && <span className="text-xs text-red-400">{message}</span>}
+      {hint !== undefined && <span className="text-xs text-muted">{hint}</span>}
+      {message !== undefined && <span className="text-xs text-danger">{message}</span>}
     </div>
   )
 }
