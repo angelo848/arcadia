@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
@@ -8,19 +8,20 @@ import { ImportDialog } from './components/ImportDialog'
 import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
 import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
-import { useEmulators, type EmulatorView } from './lib/emulators'
+import { useEmulators } from './lib/emulators'
 import { useCovers } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
 import { ErrorBanner } from './components/ErrorBanner'
-import { GameEditForm } from './components/GameEditForm'
-import { GamePage } from './components/GamePage'
+import { GameDetailsPanel } from './components/GameDetailsPanel'
+import { GameEditDialog } from './components/GameEditDialog'
 import { LibraryGrid } from './components/LibraryGrid'
 import { LibraryList } from './components/LibraryList'
 import { LibraryStates } from './components/LibraryStates'
+import { LibraryToolbar } from './components/LibraryToolbar'
+import { MetadataDialog } from './components/MetadataDialog'
+import { PanelEmpty } from './components/PanelEmpty'
 import { Sidebar } from './components/Sidebar'
 import { SessionPanel } from './components/SessionPanel'
-import { SortSelect } from './components/SortSelect'
-import { ViewToggle } from './components/ViewToggle'
 import { disconnectedStatus, useAgentElevated, useAgentStatus } from './lib/agent'
 import { resetQuery, withSort, withText, type LibraryQuery } from './lib/filters'
 import {
@@ -30,7 +31,6 @@ import {
   useReloadOnReconnect,
   useSessionEvents,
   useToggleSession,
-  type SessionView,
 } from './lib/games'
 import {
   libraryGamesKey,
@@ -43,6 +43,7 @@ import {
 } from './lib/library'
 import { readLibraryView, writeLibraryView, type LibraryView } from './lib/libraryView'
 import type { PendingLaunch } from './lib/pendingLaunch'
+import { focusedGameId, initialSelection, selectionReducer, type SelectionEvent } from './lib/selection'
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -53,75 +54,88 @@ function hasFacets(q: LibraryQuery): boolean {
   return Object.keys(q.filter).some((k) => k !== 'version')
 }
 
-type GameScreenProps = {
-  id: number
-  current: SessionView | null
-  genreSuggestions: string[]
-  emulators: EmulatorView[]
-  editing: boolean
-  editError: string | null
-  savePending: boolean
-  removing: boolean
-  removePending: boolean
-  onBack: () => void
-  onEdit: () => void
-  onCancelEdit: () => void
-  onSave: (patch: Record<string, unknown>) => void
-  onRemove: () => void
-  onCancelRemove: () => void
-  onConfirmRemove: () => void
-}
+type GameDialog = 'edit' | 'metadata' | 'remove'
 
-// GameScreen shows the game page, or its edit form [UI-039], and the removal confirmation
-// [UI-041] over it. The page is the only place where these actions start.
-function GameScreen({
-  id,
-  current,
+// GameDialogs opens the edit, metadata and removal modals for the game in focus [UIX-032..UIX-034].
+// The details panel is the only place where these actions start.
+function GameDialogs({
+  gameId,
+  dialog,
   genreSuggestions,
-  emulators,
-  editing,
-  editError,
-  savePending,
-  removing,
-  removePending,
-  onBack,
-  onEdit,
-  onCancelEdit,
-  onSave,
-  onRemove,
-  onCancelRemove,
-  onConfirmRemove,
-}: GameScreenProps): JSX.Element {
-  const detail = useGame(id)
-  const title = detail.data?.title ?? ''
+  onClose,
+  onRemoved,
+  onError,
+}: {
+  gameId: number
+  dialog: GameDialog | null
+  genreSuggestions: string[]
+  onClose: () => void
+  onRemoved: (id: number) => void
+  onError: (message: string | null) => void
+}): JSX.Element | null {
+  const detail = useGame(gameId)
+  const emulators = useEmulators()
+  const update = useUpdateGame()
+  const remove = useDeleteGame()
+  const [editError, setEditError] = useState<string | null>(null)
 
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      {editing && detail.data !== undefined ? (
-        <GameEditForm
-          key={id}
-          game={detail.data}
-          genreSuggestions={genreSuggestions}
-          emulators={emulators}
-          onSave={onSave}
-          onCancel={onCancelEdit}
-          pending={savePending}
-          error={editError}
-        />
-      ) : (
-        <GamePage id={id} current={current} onBack={onBack} onEdit={onEdit} onRemove={onRemove} />
-      )}
-      {removing && (
-        <DeleteDialog
-          title={title}
-          pending={removePending}
-          error={null}
-          onConfirm={onConfirmRemove}
-          onCancel={onCancelRemove}
-        />
-      )}
-    </div>
-  )
+  if (dialog === 'edit' && detail.data !== undefined) {
+    return (
+      <GameEditDialog
+        game={detail.data}
+        genreSuggestions={genreSuggestions}
+        emulators={emulators.data ?? []}
+        pending={update.isPending}
+        error={editError}
+        onSave={(patch) => {
+          update.mutate(
+            { id: gameId, patch },
+            {
+              onSuccess: () => {
+                setEditError(null)
+                onClose()
+              },
+              onError: (e) => setEditError(errorMessage(e)),
+            },
+          )
+        }}
+        onCancel={() => {
+          setEditError(null)
+          onClose()
+        }}
+      />
+    )
+  }
+  if (dialog === 'metadata') {
+    return <MetadataDialog gameId={gameId} onClose={onClose} />
+  }
+  if (dialog === 'remove') {
+    return (
+      <DeleteDialog
+        title={detail.data?.title ?? ''}
+        pending={remove.isPending}
+        error={null}
+        onCancel={onClose}
+        onConfirm={() => {
+          // Success empties the panel; any failure (e.g. -32002, DSK-018) closes the
+          // confirmation and shows the message at the top, the game stays in focus.
+          remove.mutate(gameId, {
+            onSuccess: () => {
+              onError(null)
+              onClose()
+              onRemoved(gameId)
+              document.querySelector<HTMLElement>('[role="listbox"][aria-label="Jogos"]')?.focus()
+            },
+            onError: (e) => {
+              onClose()
+              onError(errorMessage(e))
+            },
+          })
+        }}
+      />
+    )
+  }
+  return null
 }
 
 export default function App() {
@@ -143,11 +157,10 @@ export default function App() {
   const queryKey = JSON.stringify(query)
 
   const [view, setView] = useState<LibraryView>(() => readLibraryView())
-  // The open game and its sub-state; null means the library is shown [UI-037].
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [editError, setEditError] = useState<string | null>(null)
-  const [removing, setRemoving] = useState(false)
+  // The game in focus of the details panel; UI state only, never sent to the agent [UIX-017].
+  const [selection, dispatch] = useReducer(selectionReducer, initialSelection)
+  const focusedId = focusedGameId(selection)
+  const [dialog, setDialog] = useState<GameDialog | null>(null)
 
   // The list waits for the first agent status, so the connect does not reload a page still on its way [UI-009].
   const games = useInfiniteGames(query, { enabled: status.data !== undefined && !conflict })
@@ -161,8 +174,6 @@ export default function App() {
   const launch = useLaunchGame()
   const untracked = useLaunchGameUntracked()
   const toggle = useToggleSession()
-  const update = useUpdateGame()
-  const remove = useDeleteGame()
 
   // Last failed action's message [UI-008, UI-020, UI-028, UI-041].
   const [error, setError] = useState<string | null>(null)
@@ -180,9 +191,7 @@ export default function App() {
   }
   // B (or Esc) goes back one page; on the library it leaves the Big Box (BIG-002).
   const bigBoxBack = () => {
-    if (selectedId !== null) {
-      closeGame()
-    } else if (showingStats) {
+    if (showingStats) {
       setShowingStats(false)
     } else {
       leaveBigBox()
@@ -190,7 +199,7 @@ export default function App() {
   }
   useBigBoxNav({
     enabled: bigBox,
-    pageKey: `${selectedId ?? 'library'}|${showingStats ? 'stats' : ''}`,
+    pageKey: showingStats ? 'stats' : 'library',
     onBack: bigBoxBack,
   })
   useEffect(() => {
@@ -204,7 +213,6 @@ export default function App() {
     window.addEventListener('keydown', onF11)
     return () => window.removeEventListener('keydown', onF11)
   }, [])
-  const emulators = useEmulators()
 
   const session = current.data ?? null
 
@@ -263,18 +271,14 @@ export default function App() {
     })
   }
 
-  function openGame(id: number) {
-    setSelectedId(id)
-    setEditing(false)
-    setEditError(null)
-    setRemoving(false)
+  function select(id: number) {
+    dispatch({ type: 'select', gameId: id })
   }
 
-  function closeGame() {
-    setSelectedId(null)
-    setEditing(false)
-    setEditError(null)
-    setRemoving(false)
+  // A double click (or Enter) puts the game in focus and launches it [UIX-018].
+  function launchFromList(id: number) {
+    select(id)
+    play(id)
   }
 
   function changeView(v: LibraryView) {
@@ -293,91 +297,49 @@ export default function App() {
     setBase((b) => withSort(b, s))
   }
 
-  // The edit form sends the changed fields; success closes it, the page reloads through
-  // useUpdateGame [UI-039, UI-042]. The error stays in the form [UI-039].
-  function saveEdit(patch: Record<string, unknown>) {
-    if (selectedId === null) {
-      return
-    }
-    update.mutate(
-      { id: selectedId, patch },
-      {
-        onSuccess: () => {
-          setEditing(false)
-          setEditError(null)
-        },
-        onError: (e) => setEditError(errorMessage(e)),
-      },
-    )
-  }
+  // The panel reports what it read about the game in focus; a game that no longer exists
+  // empties the panel and reloads the lists once [UIX-023].
+  const onSelectionEvent = useCallback(
+    (e: SelectionEvent) => {
+      dispatch(e)
+      if (e.type === 'readMissing') {
+        setDialog(null)
+        void qc.invalidateQueries({ queryKey: libraryGamesKey })
+      }
+    },
+    [qc],
+  )
 
-  // Success goes back to the library, where the grid no longer has the game [UI-041, UI-042].
-  // Any failure (e.g. -32002, DSK-018) closes the confirmation and shows the message at the top.
-  function confirmRemove() {
-    if (selectedId === null) {
-      return
-    }
-    remove.mutate(selectedId, {
-      onSuccess: () => {
-        setError(null)
-        closeGame()
-      },
-      onError: (e) => {
-        setRemoving(false)
-        setError(errorMessage(e))
-      },
-    })
-  }
-
-  // The empty library has its add button in LibraryStates; the header keeps it otherwise.
+  const topButton =
+    'rounded bg-raised px-4 py-1.5 text-sm font-medium text-fg hover:bg-hover'
 
   return (
-    <main className={`flex h-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100${bigBox ? ' big-box' : ''}`}>
+    <main className={`flex h-screen flex-col overflow-hidden bg-app text-fg${bigBox ? ' big-box' : ''}`}>
       {bigBox && (
         <button
           type="button"
           onClick={leaveBigBox}
-          className="fixed right-4 top-4 z-30 rounded bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700"
+          className="fixed right-4 top-4 z-30 rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover"
         >
           Sair do Big Box (Esc)
         </button>
       )}
-      <header className="flex items-center justify-between gap-4 border-b border-neutral-800 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
         <h1 className="text-2xl font-semibold">Arcadia</h1>
         <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setShowingStats(true)}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
-          >
+          <button type="button" onClick={() => setShowingStats(true)} className={topButton}>
             Estatísticas
           </button>
-          <button
-            type="button"
-            onClick={() => setKeying(true)}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
-          >
+          <button type="button" onClick={() => setKeying(true)} className={topButton}>
             Provedores
           </button>
-          <button
-            type="button"
-            onClick={() => setEmulating(true)}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
-          >
+          <button type="button" onClick={() => setEmulating(true)} className={topButton}>
             Emuladores
           </button>
-          <button
-            type="button"
-            onClick={() => setPlatformsOpen(true)}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
-          >
+          <button type="button" onClick={() => setPlatformsOpen(true)} className={topButton}>
             Plataformas
           </button>
-          <button
-            type="button"
-            onClick={() => setImporting(true)}
-            className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
-          >
+          <button type="button" onClick={() => setImporting(true)} className={topButton}>
             Importar
           </button>
           <AgentIndicator status={agent} elevated={elevation.data ?? undefined} />
@@ -397,99 +359,107 @@ export default function App() {
           onClose={() => setImporting(false)}
         />
       )}
+      {focusedId !== null && (
+        <GameDialogs
+          gameId={focusedId}
+          dialog={dialog}
+          genreSuggestions={genreNames}
+          onClose={() => setDialog(null)}
+          onRemoved={(id) => dispatch({ type: 'removed', gameId: id })}
+          onError={setError}
+        />
+      )}
       {/* Without the agent the UI cannot know whether the session goes on [UI-016]. */}
       {connected && session && (
         <SessionPanel session={session} onToggle={toggleSession} pending={toggle.isPending} />
       )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {selectedId === null && showingStats ? (
+        {showingStats ? (
           <StatsPage
             onOpenGame={(id) => {
               setShowingStats(false)
-              openGame(id)
+              select(id)
             }}
             onBack={() => setShowingStats(false)}
           />
-        ) : selectedId !== null ? (
-          <GameScreen
-            key={selectedId}
-            id={selectedId}
-            current={session}
-            genreSuggestions={genreNames}
-            emulators={emulators.data ?? []}
-            editing={editing}
-            editError={editError}
-            savePending={update.isPending}
-            removing={removing}
-            removePending={remove.isPending}
-            onBack={closeGame}
-            onEdit={() => {
-              setEditError(null)
-              setEditing(true)
-            }}
-            onCancelEdit={() => {
-              setEditing(false)
-              setEditError(null)
-            }}
-            onSave={saveEdit}
-            onRemove={() => setRemoving(true)}
-            onCancelRemove={() => setRemoving(false)}
-            onConfirmRemove={confirmRemove}
-          />
         ) : (
-          <div className="flex min-h-0 flex-1">
-          <nav aria-label="Filtros da biblioteca" className="w-60 shrink-0 overflow-y-auto border-r border-line px-3 py-4">
-            <Sidebar
-              search={search}
-              onSearchChange={setSearch}
-              query={query}
-              catalog={catalog.data}
-              onChange={changeFilter}
-            />
-          </nav>
-          <section className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <ViewToggle view={view} onChange={changeView} />
-              <SortSelect sort={query.sort} onChange={changeSort} />
-            </div>
-            <LibraryStates
-              loaded={loaded}
-              total={total}
-              filtered={filtered}
-              onClear={() => changeFilter(resetQuery())}
-            />
-            {loaded && total !== undefined && total > 0 && (
-              <div className="flex min-h-0 flex-1 flex-col">
-                {view === 'grid' ? (
-                  <LibraryGrid
-                    key={queryKey}
-                    games={rows}
-                    covers={covers}
-                    total={total}
-                    current={session}
-                    pending={pending}
-                    onNeedMore={needMore}
-                    onOpen={openGame}
-                    onPlay={play}
-                    onPlayUntracked={playUntracked}
-                  />
-                ) : (
-                  <LibraryList
-                    key={queryKey}
-                    games={rows}
-                    total={total}
-                    current={session}
-                    pending={pending}
-                    onNeedMore={needMore}
-                    onOpen={openGame}
-                    onPlay={play}
-                    onPlayUntracked={playUntracked}
-                  />
-                )}
-              </div>
-            )}
-          </section>
+          <div
+            className="grid min-h-0 flex-1"
+            style={{ gridTemplateColumns: 'var(--col-left) 1fr var(--col-right)' }}
+          >
+            <nav
+              aria-label="Filtros da biblioteca"
+              className="min-h-0 overflow-y-auto border-r border-line bg-surface px-3 py-4"
+            >
+              <Sidebar
+                search={search}
+                onSearchChange={setSearch}
+                query={query}
+                catalog={catalog.data}
+                onChange={changeFilter}
+              />
+            </nav>
+            <section aria-label="Jogos" className="flex min-h-0 min-w-0 flex-col gap-3 px-6 py-4">
+              <LibraryToolbar
+                total={total}
+                sort={query.sort}
+                view={view}
+                onSortChange={changeSort}
+                onViewChange={changeView}
+              />
+              <LibraryStates
+                loaded={loaded}
+                total={total}
+                filtered={filtered}
+                onClear={() => changeFilter(resetQuery())}
+              />
+              {loaded && total !== undefined && total > 0 && (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {view === 'grid' ? (
+                    <LibraryGrid
+                      key={queryKey}
+                      games={rows}
+                      covers={covers}
+                      total={total}
+                      current={session}
+                      selectedId={focusedId}
+                      onNeedMore={needMore}
+                      onSelect={select}
+                      onLaunch={launchFromList}
+                    />
+                  ) : (
+                    <LibraryList
+                      key={queryKey}
+                      games={rows}
+                      total={total}
+                      current={session}
+                      selectedId={focusedId}
+                      onNeedMore={needMore}
+                      onSelect={select}
+                      onLaunch={launchFromList}
+                    />
+                  )}
+                </div>
+              )}
+            </section>
+            <aside aria-label="Detalhes do jogo" className="min-h-0 overflow-hidden border-l border-line bg-surface">
+              {focusedId === null ? (
+                <PanelEmpty onSelect={select} />
+              ) : (
+                <GameDetailsPanel
+                  gameId={focusedId}
+                  current={session}
+                  pending={pending}
+                  onPlay={play}
+                  onPlayUntracked={playUntracked}
+                  onEdit={() => setDialog('edit')}
+                  onSearchMetadata={() => setDialog('metadata')}
+                  onRemove={() => setDialog('remove')}
+                  onSelectionEvent={onSelectionEvent}
+                />
+              )}
+            </aside>
           </div>
         )}
       </div>

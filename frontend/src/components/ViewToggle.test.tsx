@@ -80,11 +80,10 @@ function Harness({ onNeedMore = vi.fn() }: { onNeedMore?: () => void }) {
     games,
     total: games.length,
     current: null,
-    pending: null,
     onNeedMore,
-    onOpen: vi.fn(),
-    onPlay: vi.fn(),
-    onPlayUntracked: vi.fn(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    onLaunch: vi.fn(),
   }
   return (
     <>

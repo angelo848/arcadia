@@ -43,3 +43,48 @@ describe('UI-045 componentes de resumo removidos', () => {
     expect(present).toEqual([])
   })
 })
+
+// UIX-048: the game page is gone; the details panel replaced it (phase 10).
+const forbiddenPage = ['GamePage', 'GameScreen'] as const
+const removedPageFiles = ['./components/GamePage.tsx', './components/GamePage.test.tsx'] as const
+
+describe('UIX-048 página do jogo removida', () => {
+  it('UIX-048/nenhum arquivo de frontend/src referencia GamePage nem GameScreen', () => {
+    const offenders: string[] = []
+    for (const [path, text] of Object.entries(sources)) {
+      if (path === selfPath) {
+        continue
+      }
+      for (const name of forbiddenPage) {
+        if (text.includes(name)) {
+          offenders.push(`${path} referencia ${name}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('UIX-048/GamePage.tsx e GamePage.test.tsx não existem', () => {
+    const present = removedPageFiles.filter((f) => f in sources)
+    expect(present).toEqual([])
+  })
+
+  it('UIX-048/não há botão "Voltar" fora de StatsPage nem botão "Detalhes"', () => {
+    const offenders: string[] = []
+    for (const [path, text] of Object.entries(sources)) {
+      // Tests may name the buttons they look for; only the production sources are scanned.
+      if (path === selfPath || /\.test\.tsx?$/.test(path)) {
+        continue
+      }
+      if (path !== './components/StatsPage.tsx' && /\bVoltar\b/.test(text)) {
+        offenders.push(`${path} tem o botão Voltar`)
+      }
+      // A button labelled "Detalhes" is JSX text or an accessible name on its own; the
+      // aria-label "Detalhes do jogo" of the panel is a different string.
+      if (/>\s*Detalhes\s*</.test(text) || /^\s*Detalhes\s*$/m.test(text) || /['"`]Detalhes['"`]/.test(text)) {
+        offenders.push(`${path} tem o botão Detalhes`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+})

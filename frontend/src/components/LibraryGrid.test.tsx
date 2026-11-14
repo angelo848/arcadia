@@ -1,18 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { LibraryGrid } from './LibraryGrid'
-import type { PendingLaunch } from '../lib/pendingLaunch'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 
 type GridProps = Parameters<typeof LibraryGrid>[0]
 
 // Every element reports this box, so the virtualizer computes its window from a
-// fixed size [UI-029]. Nothing here depends on real layout.
+// fixed size [UIX-016]. Nothing here depends on real layout. 800 px gives 4 columns.
 const BOX_WIDTH = 800
 const BOX_HEIGHT = 600
 
-// Observer calls are recorded so the unmount test can see the cleanup [UI-029].
+// Observer calls are recorded so the unmount test can see the cleanup [UIX-016].
 const observerUnobserve = vi.fn()
 const observerDisconnect = vi.fn()
 
@@ -51,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  delete (HTMLElement.prototype as unknown as { scrollTo?: unknown }).scrollTo
 })
 
 function game(id: number, over: Partial<GameView> = {}): GameView {
@@ -95,11 +95,10 @@ function props(over: Partial<GridProps> = {}): GridProps {
     games: makeGames(10),
     total: 10,
     current: null,
-    pending: null,
+    selectedId: null,
     onNeedMore: vi.fn(),
-    onOpen: vi.fn(),
-    onPlay: vi.fn(),
-    onPlayUntracked: vi.fn(),
+    onSelect: vi.fn(),
+    onLaunch: vi.fn(),
     ...over,
   }
 }
@@ -108,7 +107,7 @@ function props(over: Partial<GridProps> = {}): GridProps {
 // ancestor that the virtualizer listens to; every ancestor inside the container
 // gets the scrollTop and a scroll event, so the test does not depend on the markup.
 function scrollGridTo(container: HTMLElement, top: number): void {
-  const anchor = within(container).getAllByRole('button', { name: 'Jogar' })[0]
+  const anchor = within(container).getAllByRole('option')[0]
   for (let el: HTMLElement | null = anchor; el !== null && el !== container.parentElement; el = el.parentElement) {
     Object.defineProperty(el, 'scrollTop', { configurable: true, value: top })
     fireEvent.scroll(el)
@@ -120,30 +119,23 @@ function titlesInDom(): string[] {
   return screen.queryAllByText(/^Jogo \d+$/).map((e) => e.textContent ?? '')
 }
 
-// cardOf returns the smallest ancestor of the title that holds a "Jogar" button.
+// cardOf returns the option (card) of the game with that title.
 function cardOf(title: string): HTMLElement {
-  let el: HTMLElement | null = screen.getByText(title)
-  while (el && within(el).queryAllByRole('button', { name: 'Jogar' }).length === 0) {
-    el = el.parentElement
-  }
-  if (!el) {
-    throw new Error(`no card for ${title}`)
-  }
-  return el
+  return screen.getByRole('option', { name: new RegExp(`^${title}( |$)`) })
 }
 
 describe('LibraryGrid', () => {
-  it('UI-029/10 000 jogos: no máximo 100 cards no DOM com altura e largura fixas', () => {
+  it('UIX-016/10 000 jogos: no máximo 100 cartões no DOM com altura e largura fixas', () => {
     render(<LibraryGrid {...props({ games: makeGames(10000), total: 10000 })} />)
 
-    const cards = screen.getAllByRole('button', { name: 'Jogar' })
+    const cards = screen.getAllByRole('option')
     expect(cards.length).toBeGreaterThan(0)
     expect(cards.length).toBeLessThanOrEqual(100)
     expect(screen.getByText('Jogo 0')).toBeInTheDocument()
     expect(screen.queryByText('Jogo 9999')).toBeNull()
   })
 
-  it('UI-029/rolar muda a janela sem chamar a rede (nenhum onNeedMore fora da pré-busca)', () => {
+  it('UIX-016/rolar muda a janela sem chamar a rede (nenhum onNeedMore fora da pré-busca)', () => {
     const onNeedMore = vi.fn()
     const { container } = render(
       <LibraryGrid {...props({ games: makeGames(1000), total: 10000, onNeedMore })} />,
@@ -163,7 +155,7 @@ describe('LibraryGrid', () => {
     expect(onNeedMore).not.toHaveBeenCalled()
   })
 
-  it('UI-036/pré-busca chama onNeedMore uma única vez ao passar de loaded - 40', () => {
+  it('UIX-016/pré-busca chama onNeedMore uma única vez ao passar de loaded - 40', () => {
     const onNeedMore = vi.fn()
     const { container } = render(
       <LibraryGrid {...props({ games: makeGames(50), total: 10000, onNeedMore })} />,
@@ -182,9 +174,20 @@ describe('LibraryGrid', () => {
     expect(onNeedMore).toHaveBeenCalledTimes(1)
   })
 
-  // Extra cases for the marking of the grid itself: the card receives live from
-  // the grid, which maps running and grace to "Em execução" and drops ended and discarded [UI-043].
-  it('UI-006/grade: sessão grace marca só o card do jogo dela como Em execução', () => {
+  it('UIX-042/grade com role listbox "Jogos" e cartões role option com o título como nome', () => {
+    render(<LibraryGrid {...props({ games: makeGames(3), total: 3 })} />)
+
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    const options = within(listbox).getAllByRole('option')
+    expect(options).toHaveLength(3)
+    expect(within(listbox).getByRole('option', { name: 'Jogo 0' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'Jogo 1' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'Jogo 2' })).toBeInTheDocument()
+  })
+
+  // The card receives live from the grid, which maps running and grace to "Em execução"
+  // and drops ended and discarded [UIX-014, UI-043].
+  it('UIX-014/grade: sessão grace marca só o cartão do jogo dela como Em execução', () => {
     render(<LibraryGrid {...props({ current: session({ gameId: 0, state: 'grace' }) })} />)
 
     expect(screen.getAllByText('Em execução')).toHaveLength(1)
@@ -192,7 +195,7 @@ describe('LibraryGrid', () => {
     expect(cardOf('Jogo 1')).not.toHaveTextContent('Em execução')
   })
 
-  it('UI-043/grade: sessão ended ou discarded não marca nenhum card', () => {
+  it('UIX-014/grade: sessão paused marca Pausado; ended ou discarded não marcam nenhum cartão', () => {
     const p = props({ current: session({ gameId: 0, state: 'paused' }) })
     const { rerender } = render(<LibraryGrid {...p} />)
     expect(cardOf('Jogo 0')).toHaveTextContent('Pausado')
@@ -203,19 +206,62 @@ describe('LibraryGrid', () => {
     }
   })
 
-  it('UI-021/pendência de um jogo na grade desabilita só os botões dele', () => {
-    const pending: PendingLaunch = { id: 0, mode: 'untracked' }
-    render(<LibraryGrid {...props({ pending })} />)
-
-    const triggered = within(cardOf('Jogo 0')).getByRole('button', { name: 'Iniciando…' })
-    expect(triggered).toBeDisabled()
-    expect(within(cardOf('Jogo 0')).getByRole('button', { name: 'Jogar' })).toBeDisabled()
-    expect(within(cardOf('Jogo 1')).getByRole('button', { name: 'Jogar' })).toBeEnabled()
-    expect(within(cardOf('Jogo 1')).getByRole('button', { name: 'Sem contar tempo' })).toBeEnabled()
-    expect(screen.getAllByRole('button', { name: 'Iniciando…' })).toHaveLength(1)
+  it('UIX-014/grade não tem botões nos cartões', () => {
+    render(<LibraryGrid {...props()} />)
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 
-  it('UI-029/desmontar a grade desfaz a observação da janela', () => {
+  it('UIX-017/selectedId marca só o cartão do jogo em foco (aria-selected)', () => {
+    const { rerender } = render(<LibraryGrid {...props({ selectedId: 2 })} />)
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1)
+    expect(cardOf('Jogo 2')).toHaveAttribute('aria-selected', 'true')
+    expect(cardOf('Jogo 1')).toHaveAttribute('aria-selected', 'false')
+
+    rerender(<LibraryGrid {...props({ selectedId: 5 })} />)
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1)
+    expect(cardOf('Jogo 5')).toHaveAttribute('aria-selected', 'true')
+    expect(cardOf('Jogo 2')).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('UIX-017/um clique chama onSelect(id) do cartão; duplo clique chama onLaunch(id)', () => {
+    const p = props()
+    render(<LibraryGrid {...p} />)
+
+    fireEvent.click(cardOf('Jogo 3'))
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+    expect(p.onSelect).toHaveBeenCalledWith(3)
+    expect(p.onLaunch).not.toHaveBeenCalled()
+
+    fireEvent.doubleClick(cardOf('Jogo 4'))
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(4)
+  })
+
+  it('UIX-021/jogo em foco fora do carregado: nenhum cartão marcado e a grade começa do topo', () => {
+    render(<LibraryGrid {...props({ selectedId: 999 })} />)
+
+    expect(screen.queryAllByRole('option', { selected: true })).toHaveLength(0)
+    expect(screen.getByText('Jogo 0')).toBeInTheDocument()
+  })
+
+  it('UIX-021/jogo em foco carregado: ao montar a grade rola até ele e o cartão fica marcado', async () => {
+    // jsdom has no Element.scrollTo: this one moves scrollTop and dispatches scroll
+    // afterwards (as a browser does, never inside the caller), so the window follows.
+    const scrollTo = vi.fn(function (this: HTMLElement, opts: ScrollToOptions) {
+      Object.defineProperty(this, 'scrollTop', { configurable: true, value: opts.top ?? 0 })
+      queueMicrotask(() => fireEvent.scroll(this))
+    })
+    ;(HTMLElement.prototype as unknown as { scrollTo: unknown }).scrollTo = scrollTo
+
+    render(<LibraryGrid {...props({ games: makeGames(1000), total: 1000, selectedId: 600 })} />)
+
+    await waitFor(() => expect(screen.getByText('Jogo 600')).toBeInTheDocument())
+    expect(scrollTo).toHaveBeenCalled()
+    expect(cardOf('Jogo 600')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Jogo 0')).toBeNull()
+  })
+
+  it('UIX-016/desmontar a grade desfaz a observação da janela', () => {
     const { unmount } = render(<LibraryGrid {...props()} />)
     const before = observerUnobserve.mock.calls.length + observerDisconnect.mock.calls.length
 

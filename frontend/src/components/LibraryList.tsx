@@ -1,33 +1,31 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, type JSX } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { LibraryGrid } from './LibraryGrid'
-import { liveOf, type BusyMode } from './GameCard'
+import { liveOf } from './GameCard'
+import { formatLocalDateTime } from '../lib/formatDate'
 import { formatPlayTime } from '../lib/games'
 
-// Row metrics in px. The list is one column of rows [UI-030].
-const ROW_HEIGHT = 80
+// Row metrics in px. The list is one column of rows [UIX-020].
+const ROW_HEIGHT = 64
 const OVERSCAN_ROWS = 4
 // The next page is asked for when the last rendered row is past loaded - 10 [UI-036].
 const PREFETCH_AHEAD = 10
 
-const buttonClass =
-  'shrink-0 rounded px-4 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400'
-
-// LibraryList shows the same page as LibraryGrid, one game per row, with the same data
-// and the same buttons [UI-030, UI-024, UI-031]. Rows are virtualized, so only the
-// rows of the visible window are in the DOM. The prefetch rule is the grid's [UI-036].
+// LibraryList shows the same page as LibraryGrid, one game per row: title, platform, play
+// time, last played and the session mark, with no buttons [UIX-020]. Rows are virtualized, so
+// only the rows of the visible window are in the DOM. The prefetch rule is the grid's [UI-036].
 export function LibraryList({
   games,
   total,
   current,
-  pending,
+  selectedId,
   onNeedMore,
-  onOpen,
-  onPlay,
-  onPlayUntracked,
+  onSelect,
+  onLaunch,
 }: Parameters<typeof LibraryGrid>[0]): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const askedFor = useRef<number | null>(null)
+  const scrolledToSelected = useRef(false)
 
   const loaded = games.length
   const virtualizer = useVirtualizer({
@@ -54,6 +52,26 @@ export function LibraryList({
       }
     },
   })
+
+  // On mount, the game in focus is brought into view once, when it is loaded [UIX-021].
+  useLayoutEffect(() => {
+    if (scrolledToSelected.current) {
+      return
+    }
+    scrolledToSelected.current = true
+    if (selectedId === null) {
+      return
+    }
+    const index = games.findIndex((g) => g.id === selectedId)
+    const el = scrollRef.current
+    if (index >= 0 && el !== null) {
+      // Scrolled directly: the virtualizer clamps scrollToIndex to the scroll height, which a
+      // fresh element may not have yet. The virtualizer follows the scroll event.
+      const top = index * ROW_HEIGHT - (el.getBoundingClientRect().height - ROW_HEIGHT) / 2
+      el.scrollTo?.({ top: Math.max(0, top) })
+    }
+  }, [selectedId, games])
+
   const rows = virtualizer.getVirtualItems()
 
   const lastRow = rows.at(-1)?.index ?? -1
@@ -73,64 +91,52 @@ export function LibraryList({
     onNeedMore()
   }, [lastRow, loaded, total, onNeedMore])
 
+  const selectedLoaded = selectedId !== null && games.some((g) => g.id === selectedId)
+
   return (
-    <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
-      <ul className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+    <div
+      ref={scrollRef}
+      role="listbox"
+      aria-label="Jogos"
+      tabIndex={-1}
+      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2"
+    >
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {rows.map((row) => {
           const g = games[row.index]
           if (g === undefined) {
             return null
           }
           const live = liveOf(current, g.id)
-          const busy: BusyMode = pending !== null && pending.id === g.id ? pending.mode : null
-          const blocked = busy !== null
+          const selected = g.id === selectedId
+          const tabbable = selectedLoaded ? selected : row.index === 0
           return (
-            <li
+            <div
               key={row.key}
-              className="absolute left-0 top-0 flex w-full items-center justify-between gap-4 border-b border-neutral-800 px-6"
+              role="option"
+              aria-selected={selected}
+              data-game-id={g.id}
+              data-bigbox-item
+              tabIndex={tabbable ? 0 : -1}
+              onClick={() => onSelect(g.id)}
+              onDoubleClick={() => onLaunch(g.id)}
+              className={`absolute left-0 top-0 flex w-full cursor-pointer items-center gap-4 border-b border-line px-4 ${
+                selected ? 'bg-raised' : 'hover:bg-hover'
+              }`}
               style={{ height: ROW_HEIGHT, transform: `translateY(${row.start}px)` }}
             >
-              <div
-                role="link"
-                tabIndex={0}
-                onClick={() => onOpen(g.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    onOpen(g.id)
-                  }
-                }}
-                className="flex min-w-0 cursor-pointer flex-col"
-              >
-                <span className="truncate font-medium text-neutral-100">{g.title}</span>
-                <span className="truncate text-sm text-neutral-400">{g.platform}</span>
-                <span className="flex items-center gap-2 text-sm text-neutral-400">
-                  <span>{formatPlayTime(g.totalPlaySeconds)}</span>
-                  {live === 'running' && <span className="font-medium text-emerald-400">Em execução</span>}
-                  {live === 'paused' && <span className="font-medium text-sky-400">Pausado</span>}
-                </span>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  disabled={blocked}
-                  onClick={() => onPlay(g.id)}
-                  className={`${buttonClass} bg-emerald-600 hover:bg-emerald-500`}
-                >
-                  {busy === 'tracked' ? 'Iniciando…' : 'Jogar'}
-                </button>
-                <button
-                  type="button"
-                  disabled={blocked}
-                  onClick={() => onPlayUntracked(g.id)}
-                  className={`${buttonClass} bg-neutral-800 text-neutral-100 hover:bg-neutral-700`}
-                >
-                  {busy === 'untracked' ? 'Iniciando…' : 'Sem contar tempo'}
-                </button>
-              </div>
-            </li>
+              <span className="min-w-0 flex-1 truncate font-medium text-fg">{g.title}</span>{' '}
+              <span className="w-40 shrink-0 truncate text-sm text-muted">{g.platform}</span>{' '}
+              <span className="w-28 shrink-0 text-sm text-muted">{formatPlayTime(g.totalPlaySeconds)}</span>{' '}
+              <span className="w-36 shrink-0 text-sm text-muted">{formatLocalDateTime(g.lastPlayedAt)}</span>{' '}
+              <span className="w-24 shrink-0 text-sm font-medium">
+                {live === 'running' && <span className="text-running">Em execução</span>}
+                {live === 'paused' && <span className="text-paused">Pausado</span>}
+              </span>
+            </div>
           )
         })}
-      </ul>
+      </div>
     </div>
   )
 }

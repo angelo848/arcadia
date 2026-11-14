@@ -9,17 +9,18 @@ const game = {
   genres: [], year: null,
 } as unknown as GameView
 
-const handlers = { onOpen: vi.fn(), onPlay: vi.fn(), onPlayUntracked: vi.fn() }
+const handlers = { onSelect: vi.fn(), onLaunch: vi.fn() }
 
 describe('GameCard in the Big Box (BIG-004)', () => {
-  it('BIG-004/jogo pausado mostra Pausado no Big Box e a pausa não muda o botão Jogar', () => {
-    render(<GameCard game={game} live="paused" busy={null} {...handlers} />)
+  it('BIG-004/jogo pausado mostra Pausado no Big Box', () => {
+    render(<GameCard game={game} live="paused" selected={false} tabbable={false} {...handlers} />)
     expect(screen.getByText('Pausado')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    // The card has no launch buttons any more (UIX-014); launching is a double click or the panel.
+    expect(screen.queryByRole('button', { name: 'Jogar' })).toBeNull()
   })
 
   it('BIG-004/jogo rodando mostra Em execução', () => {
-    render(<GameCard game={game} live="running" busy={null} {...handlers} />)
+    render(<GameCard game={game} live="running" selected={false} tabbable={false} {...handlers} />)
     expect(screen.getByText('Em execução')).toBeInTheDocument()
   })
 })

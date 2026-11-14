@@ -26,7 +26,8 @@ function Thumb({ src, title }: { src?: string; title: string }): JSX.Element {
 // last played games. Selecting one only focuses it; it never launches.
 export function PanelEmpty({ onSelect }: { onSelect: (id: number) => void }): JSX.Element {
   const recent = useRecentGames()
-  const games = recent.data ?? []
+  // A game that was never played has no last time: it is not a recent game.
+  const games = (recent.data ?? []).filter((g) => g.lastPlayedAt !== '')
   const covers = useCovers(games.map((g) => g.id))
 
   return (

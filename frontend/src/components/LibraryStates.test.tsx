@@ -32,12 +32,13 @@ describe('LibraryStates', () => {
     expect(screen.queryByRole('button', { name: 'Adicionar jogo' })).not.toBeInTheDocument()
   })
 
-  it('UI-044/total > 0 mostra N jogos e nenhum contador de plataformas', () => {
-    states({ loaded: true, total: 3, filtered: false })
+  it('UIX-013/total > 0 não mostra contador aqui (ele está em LibraryToolbar) nem estado nenhum', () => {
+    const { container } = states({ loaded: true, total: 3, filtered: false })
 
-    expect(screen.getByText('3 jogos')).toBeInTheDocument()
-    expect(screen.queryByText(/plataforma/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/jogos/)).not.toBeInTheDocument()
     expect(screen.queryByText('Nenhum jogo ainda')).not.toBeInTheDocument()
+    expect(screen.queryByText('Conectando ao agente…')).not.toBeInTheDocument()
+    expect(container).toBeEmptyDOMElement()
   })
 
   it("UI-035/total 0 com filtro mostra 'Nenhum jogo com estes filtros.' e o botão 'Limpar filtros'", () => {
@@ -49,9 +50,10 @@ describe('LibraryStates', () => {
     expect(screen.queryByText('Nenhum jogo ainda')).not.toBeInTheDocument()
   })
 
-  it('UI-044/contagem usa plural fixo também para 1 jogo', () => {
-    states({ loaded: true, total: 1, filtered: false })
+  it('UIX-013/total 1 também não mostra contador no LibraryStates', () => {
+    const { container } = states({ loaded: true, total: 1, filtered: false })
 
-    expect(screen.getByText('1 jogos')).toBeInTheDocument()
+    expect(screen.queryByText('1 jogos')).not.toBeInTheDocument()
+    expect(container).toBeEmptyDOMElement()
   })
 })

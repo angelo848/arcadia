@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import App from './App'
 import type { SessionView } from './lib/games'
-import type { CatalogView, GameDetailView, GameListView, GameView } from './lib/library'
+import { gameNotFoundMessage, type CatalogView, type GameDetailView, type GameListView, type GameView } from './lib/library'
 import { readLibraryView, writeLibraryView } from './lib/libraryView'
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,11 @@ type FakeApp = {
   PauseSession: Fn
   ResumeSession: Fn
   UpdateGame: Fn
+  MediaList: Fn
+  ScrapeSearch: Fn
+  ScrapeApply: Fn
+  StatsSummary: Fn
+  StatsWeekly: Fn
 }
 
 let app: FakeApp
@@ -82,6 +87,11 @@ function install() {
     PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
     ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
     UpdateGame: vi.fn((_id: number, patch: Partial<GameDetailView>) => Promise.resolve(detail(patch))),
+    MediaList: vi.fn(() => Promise.resolve({ media: [] })),
+    ScrapeSearch: vi.fn(() => Promise.resolve({ candidates: [] })),
+    ScrapeApply: vi.fn(() => Promise.resolve({ game: detail(), queued: 0 })),
+    StatsSummary: vi.fn(() => Promise.resolve({ games: [], platforms: [], totalSeconds: 0, importedSeconds: 0 })),
+    StatsWeekly: vi.fn(() => Promise.resolve({ weeks: [] })),
   }
   const w = window as unknown as { go?: unknown; runtime?: unknown }
   w.go = { main: { App: app } }
@@ -207,14 +217,21 @@ function session(over: Partial<SessionView> = {}): SessionView {
   }
 }
 
-function renderApp() {
-  const qc = new QueryClient({
+function newClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  function Wrapper({ children }: { children: ReactNode }) {
+}
+
+function wrapperOf(qc: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   }
-  render(<App />, { wrapper: Wrapper })
+}
+
+function renderApp() {
+  const qc = newClient()
+  render(<App />, { wrapper: wrapperOf(qc) })
   return qc
 }
 
@@ -232,25 +249,26 @@ async function waitConnected() {
   await waitFor(() => expect(indicatorState()).toBe('connected'))
 }
 
-// rowOf returns the card (grid) or the row (list) of the game: the smallest ancestor of the
-// title (outside the session panel) that contains a button.
+// rowOf returns the card (grid) or the row (list) of the game: the option that holds the
+// title as an element of its own. Only the options of the library are looked at.
 function rowOf(title: string): HTMLElement {
-  const candidates = screen
-    .getAllByText(title)
-    .filter((el) => !el.closest(`[aria-label="${panelName}"]`))
-  expect(candidates, `one list title ${title}`).toHaveLength(1)
-  let el: HTMLElement | null = candidates[0]
-  while (el && within(el).queryAllByRole('button').length === 0) {
-    el = el.parentElement
-  }
-  if (!el) {
-    throw new Error(`no row with a button for ${title}`)
-  }
-  return el
+  const candidates = cards().filter((o) => within(o).queryAllByText(title).length > 0)
+  expect(candidates, `one option with the title ${title}`).toHaveLength(1)
+  return candidates[0]
+}
+
+// cards are the options of the library listbox only: the native sort select also has options.
+function cards(): HTMLElement[] {
+  const listbox = screen.queryByRole('listbox', { name: 'Jogos' })
+  return listbox ? within(listbox).queryAllByRole('option') : []
+}
+
+function selectedCards(): HTMLElement[] {
+  return cards().filter((o) => o.getAttribute('aria-selected') === 'true')
 }
 
 async function findRow(title: string): Promise<HTMLElement> {
-  await waitFor(() => expect(screen.getAllByRole('button', { name: /Jogar|Iniciando…/ }).length).toBeGreaterThan(0))
+  await waitFor(() => expect(cards().length).toBeGreaterThan(0))
   let row!: HTMLElement
   await waitFor(() => {
     row = rowOf(title)
@@ -258,21 +276,83 @@ async function findRow(title: string): Promise<HTMLElement> {
   return row
 }
 
-// openGamePage clicks the title of the card and waits for the page heading [UI-037].
-async function openGamePage(title: string): Promise<HTMLElement> {
+// asideOf is the details panel column [UIX-004].
+function asideOf(): HTMLElement {
+  return screen.getByRole('complementary', { name: 'Detalhes do jogo' })
+}
+
+// focusGame clicks the card of the game and waits for the panel heading [UIX-017].
+async function focusGame(title: string): Promise<HTMLElement> {
   const card = await findRow(title)
   fireEvent.click(within(card).getByText(title))
-  return screen.findByRole('heading', { level: 1, name: title })
+  await within(asideOf()).findByRole('heading', { level: 2, name: title })
+  return asideOf()
+}
+
+// pageCalls are the ListGames calls of the library pages; the recent-games read of the empty
+// panel (limit 5, UIX-024) is not one of them.
+function pageCalls(): unknown[][] {
+  return app.ListGames.mock.calls.filter((c) => (c[0] as { limit: number }).limit !== 5)
 }
 
 // scrollGridTo moves the window of the grid to top px. Every ancestor of the first card gets the
 // scrollTop and a scroll event, so the test does not depend on the markup.
 function scrollGridTo(top: number): void {
-  const anchor = screen.getAllByRole('button', { name: 'Jogar' })[0]
+  const anchor = cards()[0]
   for (let el: HTMLElement | null = anchor; el !== null; el = el.parentElement) {
     Object.defineProperty(el, 'scrollTop', { configurable: true, value: top })
     fireEvent.scroll(el)
   }
+}
+
+async function disconnectAgent() {
+  app.AgentStatus.mockResolvedValue(status(false))
+  emit('agent:heartbeat')
+  await waitFor(() => expect(indicatorState()).toBe('disconnected'), { timeout: 3000 })
+}
+
+async function reconnectAgent() {
+  app.AgentStatus.mockResolvedValue(status(true))
+  emit('agent:heartbeat')
+  await waitConnected()
+}
+
+// trackEmptyPanel records whether the empty panel showed up at any commit while it runs [UIX-021].
+function trackEmptyPanel(): { sawEmpty: () => boolean; stop: () => void } {
+  let saw = false
+  const observer = new MutationObserver(() => {
+    if (document.body.textContent?.includes('Nenhum jogo selecionado')) {
+      saw = true
+    }
+  })
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true })
+  return { sawEmpty: () => saw, stop: () => observer.disconnect() }
+}
+
+// A library of three games on two platforms; ListGames and GetGame answer from it.
+function threePlatformLibrary() {
+  const hk = game({ id: 10, title: 'Hollow Knight', platformId: 1 })
+  const hades = game({ id: 20, title: 'Hades', platformId: 1 })
+  const gt = game({ id: 30, title: 'Gran Turismo', platformId: 2, platform: 'PlayStation 2' })
+  const all = [hk, hades, gt]
+  app.Catalog.mockResolvedValue(
+    catalog({
+      platforms: [
+        { id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 2 },
+        { id: 2, name: 'PlayStation 2', category: 'console', emulatorId: null, seedKey: 'ps2', iconUrl: '', gameCount: 1 },
+      ],
+    }),
+  )
+  app.ListGames.mockImplementation(
+    ({ filter, offset, limit }: { filter: { platformIds?: number[] }; offset: number; limit: number }) => {
+      const rows = filter.platformIds === undefined ? all : all.filter((g) => filter.platformIds?.includes(g.platformId))
+      return Promise.resolve(page(rows.slice(offset, offset + limit), rows.length, offset))
+    },
+  )
+  app.GetGame.mockImplementation((id: number) => {
+    const g = all.find((x) => x.id === id)
+    return g ? Promise.resolve(detail({ ...g })) : Promise.reject(gameNotFoundMessage)
+  })
 }
 
 function precedes(a: Node, b: Node): boolean {
@@ -354,22 +434,85 @@ describe('App: estado vazio e carregamento', () => {
 
     expect(screen.getByText('Conectando ao agente…')).toBeInTheDocument()
     expect(screen.queryByText('Nenhum jogo ainda')).toBeNull()
-    expect(app.ListGames).toHaveBeenCalledTimes(1)
+    expect(pageCalls()).toHaveLength(1)
 
     await tick(1800)
-    expect(app.ListGames).toHaveBeenCalledTimes(1)
+    expect(pageCalls()).toHaveLength(1)
     await tick(400)
-    expect(app.ListGames).toHaveBeenCalledTimes(2)
+    expect(pageCalls()).toHaveLength(2)
     expect(screen.getByText('Conectando ao agente…')).toBeInTheDocument()
     await tick(2000)
-    expect(app.ListGames).toHaveBeenCalledTimes(3)
+    expect(pageCalls()).toHaveLength(3)
 
     // When the call starts working the grid replaces the loading text.
     app.ListGames.mockResolvedValue(page([game()]))
     await tick(2000)
     await settle()
     expect(screen.queryByText('Conectando ao agente…')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Jogar' })).toBeInTheDocument()
+    expect(cards()).toHaveLength(1)
+  })
+
+  it('UIX-013/"Conectando ao agente…", "Nenhum jogo ainda" e "Nenhum jogo com estes filtros." aparecem no centro', async () => {
+    const centerOf = () => screen.getByRole('region', { name: 'Jogos' })
+
+    // Connecting: the first page has no answer yet.
+    const pending = deferred<GameListView>()
+    app.ListGames.mockImplementation(() => pending.promise)
+    const first = render(<App />, { wrapper: wrapperOf(newClient()) })
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalled())
+    expect(within(centerOf()).getByText('Conectando ao agente…')).toBeInTheDocument()
+    first.unmount()
+
+    // Empty library.
+    app.ListGames.mockResolvedValue(page([]))
+    const second = render(<App />, { wrapper: wrapperOf(newClient()) })
+    expect(await within(centerOf()).findByText('Nenhum jogo ainda')).toBeInTheDocument()
+    second.unmount()
+
+    // A filter without results.
+    app.ListGames.mockImplementation(({ filter, ...rest }: { filter: { platformIds?: number[] } }) =>
+      libraryOf(filter.platformIds ? [] : [game()])(rest as { offset: number; limit: number }),
+    )
+    render(<App />, { wrapper: wrapperOf(newClient()) })
+    await findRow('Hollow Knight')
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 1 jogos' }))
+    expect(await within(centerOf()).findByText('Nenhum jogo com estes filtros.')).toBeInTheDocument()
+    expect(within(centerOf()).getByRole('button', { name: 'Limpar filtros' })).toBeInTheDocument()
+  })
+
+  it('UIX-004/três marcos: nav "Filtros da biblioteca", região "Jogos" e aside "Detalhes do jogo"; main com h-screen e overflow-hidden', async () => {
+    app.ListGames.mockResolvedValue(page([game()]))
+    renderApp()
+    await findRow('Hollow Knight')
+
+    expect(screen.getByRole('navigation', { name: 'Filtros da biblioteca' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Jogos' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Detalhes do jogo' })).toBeInTheDocument()
+    expect(screen.getByRole('main')).toHaveClass('h-screen', 'overflow-hidden')
+  })
+
+  it('UIX-024/ao abrir, nenhum jogo em foco e o painel mostra o resumo', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight', lastPlayedAt: '2026-11-09T10:00:00.000Z' })]))
+    renderApp()
+    await findRow('Hollow Knight')
+
+    const aside = asideOf()
+    expect(await within(aside).findByText('Nenhum jogo selecionado')).toBeInTheDocument()
+    expect(selectedCards()).toHaveLength(0)
+    expect(app.GetGame).not.toHaveBeenCalled()
+
+    // The recent games come from the five last played [UIX-024].
+    expect(app.ListGames).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: { version: 1, played: 'played' }, sort: 'lastPlayed', offset: 0, limit: 5 }),
+    )
+    expect(await within(aside).findByText('Jogados recentemente')).toBeInTheDocument()
+
+    // Choosing one only puts it in focus; nothing is launched.
+    fireEvent.click(within(aside).getByRole('button', { name: /Hollow Knight/ }))
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(app.GetGame).toHaveBeenCalledWith(10)
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
   })
 
   it('UI-044/total maior que zero mostra "N jogos" com o total da resposta', async () => {
@@ -398,41 +541,52 @@ describe('App: grade e lista', () => {
     renderApp()
 
     const card = await findRow('Hollow Knight')
-    expect(card.tagName).toBe('ARTICLE')
-    expect(screen.getAllByRole('article')).toHaveLength(2)
-    expect(within(card).getByRole('button', { name: 'Jogar' })).toBeEnabled()
-    expect(within(card).getByRole('button', { name: 'Sem contar tempo' })).toBeEnabled()
-    expect(card).toHaveTextContent('5 min')
+    expect(cards()).toHaveLength(2)
+    // The card has the cover and the title only: no buttons, platform or time [UIX-014].
+    expect(within(card).queryAllByRole('button')).toHaveLength(0)
+    expect(within(card).queryByText('Windows')).toBeNull()
+    expect(card).not.toHaveTextContent('5 min')
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Mostrar em lista' })).toBeInTheDocument()
   })
 
-  it('UI-029/a grade renderiza no máximo 100 cards mesmo com 10 000 jogos na biblioteca', async () => {
+  it('UIX-016/a grade renderiza no máximo 100 cartões mesmo com 10 000 jogos na biblioteca', async () => {
     app.ListGames.mockImplementation(libraryOf(makeGames(10_000)))
     renderApp()
 
     await findRow('Jogo 0')
-    const cards = screen.getAllByRole('article')
-    expect(cards.length).toBeGreaterThan(0)
-    expect(cards.length).toBeLessThanOrEqual(100)
+    const shown = cards()
+    expect(shown.length).toBeGreaterThan(0)
+    expect(shown.length).toBeLessThanOrEqual(100)
     expect(screen.getByText('10000 jogos')).toBeInTheDocument()
   })
 
-  it('UI-030/o botão alterna grade e lista com os mesmos jogos e botões, e a escolha fica salva na UI', async () => {
+  it('UIX-042/grade com role listbox "Jogos" e cartões role option com o título como nome', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
     renderApp()
     await findRow('Hollow Knight')
 
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    expect(within(listbox).getByRole('option', { name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'Hades' })).toBeInTheDocument()
+  })
+
+  it('UI-030/o botão alterna grade e lista com os mesmos jogos, e a escolha fica salva na UI', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    renderApp()
+    await findRow('Hollow Knight')
+    // In the grid the card has no platform; the list row has it.
+    expect(within(rowOf('Hollow Knight')).queryByText('Windows')).toBeNull()
+
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar em lista' }))
-    expect(screen.queryAllByRole('article')).toHaveLength(0)
-    const items = await screen.findAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    expect(within(items[0]).getByRole('button', { name: 'Jogar' })).toBeEnabled()
-    expect(within(items[0]).getByRole('button', { name: 'Sem contar tempo' })).toBeEnabled()
+    await waitFor(() => expect(within(rowOf('Hollow Knight')).getByText('Windows')).toBeInTheDocument())
+    expect(within(rowOf('Hades')).getByText('Windows')).toBeInTheDocument()
     expect(readLibraryView()).toBe('list')
+    expect(cards()).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar em grade' }))
-    expect(await screen.findAllByRole('article')).toHaveLength(2)
+    await waitFor(() => expect(within(rowOf('Hollow Knight')).queryByText('Windows')).toBeNull())
+    expect(cards()).toHaveLength(2)
     expect(readLibraryView()).toBe('grid')
   })
 
@@ -442,8 +596,7 @@ describe('App: grade e lista', () => {
     renderApp()
 
     await findRow('Hollow Knight')
-    expect(screen.queryAllByRole('article')).toHaveLength(0)
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(within(rowOf('Hollow Knight')).getByText('Windows')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mostrar em grade' })).toBeInTheDocument()
   })
 })
@@ -624,7 +777,7 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     renderApp()
     await findRow('Jogo 0')
 
-    const offsets = () => app.ListGames.mock.calls.map((c) => (c[0] as { offset: number }).offset)
+    const offsets = () => pageCalls().map((c) => (c[0] as { offset: number }).offset)
     expect(offsets()).toEqual([0])
 
     scrollGridTo(2800)
@@ -657,31 +810,333 @@ describe('App: filtros, busca, ordenação e paginação', () => {
 // UI-037 game page, UI-038 sessions, UI-039/040 edit, UI-041 removal
 // ---------------------------------------------------------------------------
 
-describe('App: página do jogo, edição e remoção', () => {
-  it("UI-037/clicar no título de um card abre a página do jogo e 'Voltar' volta à grade", async () => {
-    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
-    app.GetGame.mockResolvedValue(detail({ id: 10, title: 'Hollow Knight' }))
+describe('App: jogo em foco, painel, edição e remoção', () => {
+  it('UIX-017/um clique marca o cartão (aria-selected) e desmarca o anterior; o painel mostra G; só leituras chamadas', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
     renderApp()
 
-    await openGamePage('Hollow Knight')
+    const hk = await findRow('Hollow Knight')
+    expect(hk).toHaveAttribute('aria-selected', 'false')
+    fireEvent.click(within(hk).getByText('Hollow Knight'))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight' })
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'false')
     expect(app.GetGame).toHaveBeenCalledWith(10)
-    expect(screen.queryByRole('button', { name: 'Jogar' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
-    await findRow('Hollow Knight')
-    expect(screen.getByRole('button', { name: 'Mostrar em lista' })).toBeInTheDocument()
+    fireEvent.click(within(rowOf('Hades')).getByText('Hades'))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'false')
+    expect(selectedCards()).toHaveLength(1)
+
+    // Only reads happened [UIX-046].
+    for (const name of [
+      'LaunchGame',
+      'LaunchGameUntracked',
+      'AddGame',
+      'UpdateGame',
+      'DeleteGame',
+      'PauseSession',
+      'ResumeSession',
+    ] as const) {
+      expect(app[name], name).not.toHaveBeenCalled()
+    }
   })
 
-  it('UI-038/a página do jogo mostra a seção Sessões com as sessões do jogo', async () => {
+  it('UIX-018/duplo clique chama LaunchGame(G) exatamente uma vez e nunca LaunchGameUntracked', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    renderApp()
+    const card = await findRow('Hollow Knight')
+
+    fireEvent.doubleClick(within(card).getByText('Hollow Knight'))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight' })
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+    expect(app.LaunchGame).toHaveBeenCalledWith(10)
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    await flush()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+  })
+
+  it('UIX-018/com lançamento pendente, o duplo clique só põe em foco', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
+    const pending = deferred<SessionView>()
+    app.LaunchGame.mockImplementation(() => pending.promise)
+    renderApp()
+    const first = await findRow('Hollow Knight')
+
+    fireEvent.doubleClick(within(first).getByText('Hollow Knight'))
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+
+    fireEvent.doubleClick(within(rowOf('Hades')).getByText('Hades'))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
+    await flush()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve(session({ gameId: 10, state: 'running' }))
+      await pending.promise
+    })
+  })
+
+  it('UIX-018/erro do lançamento por duplo clique vai para o aviso do topo (UI-008)', async () => {
+    const msg = 'Já há um jogo em andamento: Celeste. Feche-o antes de iniciar outro.'
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    app.LaunchGame.mockRejectedValue(msg)
+    renderApp()
+    const card = await findRow('Hollow Knight')
+
+    fireEvent.doubleClick(within(card).getByText('Hollow Knight'))
+    const notice = await screen.findByText(msg)
+    expect(precedes(notice, rowOf('Hollow Knight'))).toBe(true)
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+  })
+
+  it('UIX-021/filtro que mantém G: painel com G sem passar pelo vazio e cartão marcado', async () => {
+    threePlatformLibrary()
+    renderApp()
+    await focusGame('Hollow Knight')
+
+    const tracker = trackEmptyPanel()
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Windows, 2 jogos' }))
+      await waitFor(() =>
+        expect(app.ListGames).toHaveBeenLastCalledWith(
+          expect.objectContaining({ filter: { version: 1, platformIds: [1] }, offset: 0 }),
+        ),
+      )
+      await waitFor(() => expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true'))
+      await flush()
+    } finally {
+      tracker.stop()
+    }
+    expect(tracker.sawEmpty()).toBe(false)
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('UIX-021/filtro que tira G: painel com G e nenhum cartão marcado; filtro que o traz de volta: marcado de novo', async () => {
+    threePlatformLibrary()
+    renderApp()
+    await focusGame('Hollow Knight')
+
+    fireEvent.click(screen.getByRole('button', { name: 'PlayStation 2, 1 jogos' }))
+    await findRow('Gran Turismo')
+    await waitFor(() => expect(cards().length).toBe(1))
+    expect(selectedCards()).toHaveLength(0)
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 2 jogos' }))
+    const back = await findRow('Hollow Knight')
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true'))
+    expect(back).toBeInTheDocument()
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+  })
+
+  it('UIX-022/alternar grade e lista, abrir e fechar estatísticas e abrir e fechar um modal mantêm G no painel', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    app.StatsSummary.mockResolvedValue({ games: [], platforms: [], totalSeconds: 0, importedSeconds: 0 })
+    renderApp()
+    await focusGame('Hollow Knight')
+    const heading = () => within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight' })
+
+    // Grid to list and back.
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar em lista' }))
+    await heading()
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true'))
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar em grade' }))
+    await heading()
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true'))
+
+    // Statistics open and close.
+    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
+    expect(await screen.findByRole('heading', { name: 'Estatísticas' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    await heading()
+    await waitFor(() => expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true'))
+
+    // A modal opens and closes.
+    fireEvent.click(screen.getByRole('button', { name: 'Plataformas' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Plataformas' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await heading()
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('UIX-022/reconectar mantém G e relê GetGame(G)', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    renderApp()
+    await waitConnected()
+    await focusGame('Hollow Knight')
+    await flush()
+    const reads = app.GetGame.mock.calls.length
+
+    const tracker = trackEmptyPanel()
+    try {
+      await disconnectAgent()
+      await reconnectAgent()
+      await waitFor(() => expect(app.GetGame.mock.calls.length).toBeGreaterThan(reads))
+      await flush()
+    } finally {
+      tracker.stop()
+    }
+    expect(tracker.sawEmpty()).toBe(false)
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(app.GetGame).toHaveBeenLastCalledWith(10)
+  })
+
+  it('UIX-023/GetGame(G) com -32001: painel vazio e ListGames chamado de novo uma vez', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    renderApp()
+    const card = await findRow('Hollow Knight')
+    await flush()
+    const before = pageCalls().length
+
+    app.GetGame.mockRejectedValue(gameNotFoundMessage)
+    fireEvent.click(within(card).getByText('Hollow Knight'))
+
+    expect(await within(asideOf()).findByText('Nenhum jogo selecionado')).toBeInTheDocument()
+    await waitFor(() => expect(pageCalls().length).toBe(before + 1))
+    await flush()
+    expect(pageCalls().length).toBe(before + 1)
+    expect(selectedCards()).toHaveLength(0)
+  })
+
+  it('UIX-027/pendência de outro jogo: clicar em Jogar de G não chama nada', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
+    const pending = deferred<SessionView>()
+    app.LaunchGame.mockImplementation(() => pending.promise)
+    renderApp()
+
+    const aside = await focusGame('Hollow Knight')
+    fireEvent.click(within(aside).getByRole('button', { name: 'Jogar' }))
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+
+    // Hades is not the pending game: its buttons are active but do nothing until the launch ends.
+    const other = await focusGame('Hades')
+    expect(within(other).getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    expect(within(other).getByRole('button', { name: 'Jogar sem contar tempo' })).toBeEnabled()
+    fireEvent.click(within(other).getByRole('button', { name: 'Jogar' }))
+    fireEvent.click(within(other).getByRole('button', { name: 'Jogar sem contar tempo' }))
+    await flush()
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve(session({ gameId: 10, state: 'running' }))
+      await pending.promise
+    })
+  })
+
+  it('UIX-031/ended de G relê GetGame(G) e GameSessions(G) uma vez e o painel mostra o total novo; sessão de outro jogo não relê G', async () => {
+    let total = 0
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    app.GetGame.mockImplementation(() => Promise.resolve(detail({ id: 10, title: 'Hollow Knight', totalPlaySeconds: total })))
+    renderApp()
+    await waitConnected()
+    const aside = await focusGame('Hollow Knight')
+    expect(within(aside).getByText('Nunca jogado')).toBeInTheDocument()
+    await waitFor(() => expect(app.GameSessions).toHaveBeenCalled())
+    await flush()
+    const reads = app.GetGame.mock.calls.length
+    const sessionReads = app.GameSessions.mock.calls.length
+
+    total = 600
+    emit('session:changed', session({ gameId: 10, state: 'ended', endedAt: '2026-11-09T10:10:00.000Z', activeMs: 600000 }))
+    await waitFor(() => expect(within(asideOf()).getByText('10 min')).toBeInTheDocument())
+    await flush()
+    expect(app.GetGame.mock.calls.length).toBe(reads + 1)
+    expect(app.GameSessions.mock.calls.length).toBe(sessionReads + 1)
+
+    emit('session:changed', session({ sessionId: 2, gameId: 20, title: 'Hades', state: 'ended', endedAt: '2026-11-09T10:20:00.000Z' }))
+    await flush()
+    expect(app.GetGame.mock.calls.length).toBe(reads + 1)
+    expect(app.GameSessions.mock.calls.length).toBe(sessionReads + 1)
+  })
+
+  it('UIX-033/Buscar metadados abre o diálogo de G; depois de aplicar, o painel mostra os dados novos e MediaList(G) é lido de novo', async () => {
+    let saved = detail({ title: 'Hollow Knight', description: 'Antiga.' })
+    app.ListGames.mockResolvedValue(page([game()]))
+    app.GetGame.mockImplementation(() => Promise.resolve(saved))
+    app.ScrapeSearch.mockResolvedValue({
+      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
+    })
+    app.ScrapeApply.mockImplementation(() => {
+      saved = { ...saved, description: 'Descrição nova do provedor.' }
+      return Promise.resolve({ game: saved, queued: 1 })
+    })
+    renderApp()
+    const aside = await focusGame('Hollow Knight')
+    expect(within(aside).getByText('Antiga.')).toBeInTheDocument()
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    await waitFor(() => expect(app.ScrapeSearch).toHaveBeenCalledWith(10, 'igdb'))
+    const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
+    await flush()
+    const mediaReads = app.MediaList.mock.calls.length
+
+    fireEvent.click(apply[0])
+    await waitFor(() => expect(app.ScrapeApply).toHaveBeenCalledWith(10, 'igdb', '7', false))
+    await waitFor(() => expect(within(asideOf()).getByText('Descrição nova do provedor.')).toBeInTheDocument())
+    await waitFor(() => expect(app.MediaList.mock.calls.length).toBeGreaterThan(mediaReads))
+    expect(app.MediaList).toHaveBeenLastCalledWith(10)
+  })
+
+  it('UIX-045/escolher G nas estatísticas volta à biblioteca com os filtros e G no painel', async () => {
+    threePlatformLibrary()
+    app.StatsSummary.mockResolvedValue({
+      games: [
+        { gameId: 20, title: 'Hades', platform: 'Windows', sessions: 1, activeSeconds: 3600, importedSeconds: 0, lastPlayedAt: '' },
+      ],
+      platforms: [],
+      totalSeconds: 3600,
+      importedSeconds: 0,
+    })
+    renderApp()
+    await findRow('Hollow Knight')
+    fireEvent.click(screen.getByRole('button', { name: 'Windows, 2 jogos' }))
+    await waitFor(() =>
+      expect(app.ListGames).toHaveBeenLastCalledWith(expect.objectContaining({ filter: { version: 1, platformIds: [1] } })),
+    )
+    await findRow('Hades')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Hades' }))
+
+    // The page closes, the filters are the same and Hades is in the panel and marked.
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Estatísticas' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Windows, 2 jogos' })).toHaveAttribute('aria-current', 'true')
+    await findRow('Hades')
+    await waitFor(() => expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true'))
+    expect(app.GetGame).toHaveBeenCalledWith(20)
+  })
+
+  it('UI-038/o painel do jogo mostra a seção Sessões com as sessões do jogo', async () => {
     app.ListGames.mockResolvedValue(page([game()]))
     renderApp()
 
-    await openGamePage('Hollow Knight')
+    await focusGame('Hollow Knight')
     await waitFor(() => expect(app.GameSessions).toHaveBeenCalledWith(10, 0, expect.any(Number)))
-    expect(screen.getByRole('heading', { level: 2, name: 'Sessões' })).toBeInTheDocument()
+    expect(within(asideOf()).getByRole('heading', { name: 'Sessões' })).toBeInTheDocument()
   })
 
-  it('UI-039/Editar envia só o título alterado e a página mostra o detalhe devolvido', async () => {
+  it('UIX-032/Editar abre "Editar jogo" e envia só o título alterado; Salvar com sucesso fecha e o painel mostra o detalhe', async () => {
     let saved = detail({ title: 'Hollow Knight' })
     app.ListGames.mockResolvedValue(page([game()]))
     app.GetGame.mockImplementation(() => Promise.resolve(saved))
@@ -690,59 +1145,63 @@ describe('App: página do jogo, edição e remoção', () => {
       return Promise.resolve(saved)
     })
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    const input = await screen.findByLabelText('Título')
-    fireEvent.change(input, { target: { value: 'Hollow Knight II' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() => expect(app.UpdateGame).toHaveBeenCalledTimes(1))
     expect(app.UpdateGame).toHaveBeenCalledWith(10, { title: 'Hollow Knight II' })
-    expect(await screen.findByRole('heading', { level: 1, name: 'Hollow Knight II' })).toBeInTheDocument()
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight II' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.queryByLabelText('Título')).toBeNull()
   })
 
-  it('UI-039/Cancelar descarta as alterações sem chamar UpdateGame', async () => {
+  it('UIX-032/Cancelar descarta as alterações sem chamar UpdateGame', async () => {
     app.ListGames.mockResolvedValue(page([game()]))
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Outro nome' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Outro nome' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
 
-    await waitFor(() => expect(screen.queryByLabelText('Título')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(app.UpdateGame).not.toHaveBeenCalled()
-    expect(screen.getByRole('heading', { level: 1, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
   })
 
-  it('UI-039/erro de UpdateGame mostra a mensagem e mantém o formulário com os valores digitados', async () => {
+  it('UIX-032/erro de UpdateGame mostra a mensagem e mantém o modal com os valores digitados', async () => {
     const msg = 'Não foi possível salvar o jogo. Tente de novo.'
     app.ListGames.mockResolvedValue(page([game()]))
     app.UpdateGame.mockRejectedValue(msg)
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    const input = await screen.findByLabelText('Título')
-    fireEvent.change(input, { target: { value: 'Hollow Knight II' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(msg)
-    expect(screen.getByLabelText('Título')).toHaveValue('Hollow Knight II')
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled()
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(msg)
+    expect(screen.getByRole('dialog', { name: 'Editar jogo' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Título')).toHaveValue('Hollow Knight II')
+    expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeEnabled()
   })
 
   it('UI-040/título vazio desabilita Salvar e nada é enviado ao agente', async () => {
     app.ListGames.mockResolvedValue(page([game()]))
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: '   ' } })
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(dialog).getByLabelText('Título'), { target: { value: '   ' } })
+    expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
     await flush()
     expect(app.UpdateGame).not.toHaveBeenCalled()
   })
@@ -750,9 +1209,9 @@ describe('App: página do jogo, edição e remoção', () => {
   it('UI-041/Remover abre a confirmação com o texto de UI-041; Cancelar não chama DeleteGame', async () => {
     app.ListGames.mockResolvedValue(page([game()]))
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remover' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remover jogo' })
     expect(
       within(dialog).getByText(
@@ -763,10 +1222,10 @@ describe('App: página do jogo, edição e remoção', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(app.DeleteGame).not.toHaveBeenCalled()
-    expect(screen.getByRole('heading', { level: 1, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
   })
 
-  it('UI-041/Remover chama DeleteGame uma vez e volta à grade sem o jogo', async () => {
+  it('UIX-034/Remover abre a confirmação; sucesso esvazia o painel e a grade é recarregada sem G', async () => {
     let library = [game()]
     app.ListGames.mockImplementation(() => Promise.resolve(page(library)))
     app.DeleteGame.mockImplementation(() => {
@@ -774,9 +1233,9 @@ describe('App: página do jogo, edição e remoção', () => {
       return Promise.resolve()
     })
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remover' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remover jogo' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }))
 
@@ -784,17 +1243,19 @@ describe('App: página do jogo, edição e remoção', () => {
     expect(app.DeleteGame).toHaveBeenCalledTimes(1)
     expect(app.DeleteGame).toHaveBeenCalledWith(10)
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Hollow Knight' })).toBeNull()
+    expect(await within(asideOf()).findByText('Nenhum jogo selecionado')).toBeInTheDocument()
+    expect(within(asideOf()).queryByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeNull()
+    expect(cards()).toHaveLength(0)
   })
 
-  it('UI-041/-32002 mostra a mensagem de DSK-018, fecha a confirmação e mostra o aviso no topo', async () => {
+  it('UIX-034/-32002: aviso de DSK-018 no topo, a confirmação fecha e G continua em foco', async () => {
     const msg = 'Não é possível remover: o jogo está em uma sessão ativa. Feche a sessão antes de remover.'
     app.ListGames.mockResolvedValue(page([game()]))
     app.DeleteGame.mockRejectedValue(msg)
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remover' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remover jogo' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }))
 
@@ -802,8 +1263,9 @@ describe('App: página do jogo, edição e remoção', () => {
     expect(alert).toHaveTextContent(msg)
     expect(within(alert).getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
-    const heading = screen.getByRole('heading', { level: 1, name: 'Hollow Knight' })
+    const heading = within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })
     expect(precedes(alert, heading)).toBe(true)
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
   })
 
   it('UI-041/Remover fica desabilitado enquanto DeleteGame está pendente', async () => {
@@ -811,9 +1273,9 @@ describe('App: página do jogo, edição e remoção', () => {
     app.ListGames.mockResolvedValue(page([game()]))
     app.DeleteGame.mockImplementation(() => pending.promise)
     renderApp()
-    await openGamePage('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remover' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remover jogo' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }))
 
@@ -853,31 +1315,31 @@ describe('App: atualização depois de escrita (UI-042)', () => {
     await findRow('Hollow Knight')
     await waitFor(() => expect(app.Catalog).toHaveBeenCalledTimes(1))
     await flush()
-    const lists0 = app.ListGames.mock.calls.length
+    const lists0 = pageCalls().length
     const catalog0 = app.Catalog.mock.calls.length
 
-    // Update: the page saves, then "Voltar" shows the grid, which is reloaded once.
-    await openGamePage('Hollow Knight')
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    // Update: the modal saves and the grid is reloaded once, the panel stays on the game.
+    let aside = await focusGame('Hollow Knight')
+    fireEvent.click(within(aside).getByRole('button', { name: 'Editar' }))
+    const editDialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
+    fireEvent.change(within(editDialog).getByLabelText('Título'), { target: { value: 'Hollow Knight II' } })
+    fireEvent.click(within(editDialog).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(app.UpdateGame).toHaveBeenCalledTimes(1))
-    await screen.findByRole('heading', { level: 1, name: 'Hollow Knight II' })
-    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hollow Knight II' })
     await findRow('Hollow Knight II')
     await flush()
-    expect(app.ListGames.mock.calls.length).toBe(lists0 + 1)
+    expect(pageCalls().length).toBe(lists0 + 1)
     expect(app.Catalog.mock.calls.length).toBe(catalog0 + 1)
 
     // Delete: the game leaves the grid, and the lists are reloaded once more.
-    await openGamePage('Hollow Knight II')
-    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    aside = asideOf()
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remover' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remover jogo' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover' }))
     expect(await screen.findByText('Nenhum jogo ainda')).toBeInTheDocument()
     await flush()
     expect(app.DeleteGame).toHaveBeenCalledTimes(1)
-    expect(app.ListGames.mock.calls.length).toBe(lists0 + 2)
+    expect(pageCalls().length).toBe(lists0 + 2)
     expect(app.Catalog.mock.calls.length).toBe(catalog0 + 2)
   })
 })
@@ -931,35 +1393,34 @@ describe('App: erros', () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
     app.LaunchGame.mockRejectedValue(launchMsg)
     renderApp()
-    const row = await findRow('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Jogar' }))
     const msg = await screen.findByText(launchMsg)
     expect(app.LaunchGame).toHaveBeenCalledWith(10)
     // The notice is at the top of the grid.
     expect(precedes(msg, rowOf('Hollow Knight'))).toBe(true)
     // The button is back to Jogar after the failure.
-    expect(within(rowOf('Hollow Knight')).getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    expect(within(asideOf()).getByRole('button', { name: 'Jogar' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
     await waitFor(() => expect(screen.queryByText(launchMsg)).toBeNull())
     expect(screen.queryByRole('button', { name: 'Fechar' })).toBeNull()
   })
 
-  it('UI-008 Jogar pendente mostra Iniciando… desabilitado no App', async () => {
+  it('UI-008 Jogar pendente mostra Iniciando… desabilitado no painel', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
     const pending = deferred<SessionView>()
     app.LaunchGame.mockImplementation(() => pending.promise)
     renderApp()
-    const row = await findRow('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Jogar' }))
     await waitFor(() => {
-      const btn = within(rowOf('Hollow Knight')).getByRole('button', { name: 'Iniciando…' })
+      const btn = within(asideOf()).getByRole('button', { name: 'Iniciando…' })
       expect(btn).toHaveAccessibleName('Iniciando…')
       expect(btn).toBeDisabled()
     })
-    expect(within(rowOf('Hades')).getByRole('button', { name: 'Jogar' })).toBeInTheDocument()
 
     await act(async () => {
       pending.resolve(session({ gameId: 10, state: 'running' }))
@@ -972,15 +1433,13 @@ describe('App: erros', () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
     app.LaunchGame.mockRejectedValueOnce(launchMsg).mockResolvedValueOnce(session({ gameId: 10 }))
     renderApp()
-    const row = await findRow('Hollow Knight')
+    const aside = await focusGame('Hollow Knight')
 
-    fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
+    fireEvent.click(within(aside).getByRole('button', { name: 'Jogar' }))
     await screen.findByText(launchMsg)
 
-    await waitFor(() =>
-      expect(within(rowOf('Hollow Knight')).getByRole('button', { name: 'Jogar' })).toBeEnabled(),
-    )
-    fireEvent.click(within(rowOf('Hollow Knight')).getByRole('button', { name: 'Jogar' }))
+    await waitFor(() => expect(within(asideOf()).getByRole('button', { name: 'Jogar' })).toBeEnabled())
+    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Jogar' }))
     await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByText(launchMsg)).toBeNull())
     expect(screen.queryByRole('button', { name: 'Fechar' })).toBeNull()
@@ -1003,6 +1462,8 @@ describe('App: sessão', () => {
   })
 
   it('UI-006 ended remove a marcação e recarrega a lista', async () => {
+    // The list rows show the play time; the cards of the grid do not [UIX-014, UIX-020].
+    writeLibraryView('list')
     let total = 0
     app.ListGames.mockImplementation(() => Promise.resolve(page([game({ id: 10, totalPlaySeconds: total })])))
     app.CurrentSession.mockResolvedValue(session({ gameId: 10 }))
@@ -1083,8 +1544,8 @@ describe('App: sessão', () => {
     app.LaunchGame.mockResolvedValue(session({ gameId: 10, title: 'Hollow Knight', activeMs: 0 }))
     renderApp()
     await waitConnected()
-    const row = await findRow('Hollow Knight')
-    fireEvent.click(within(row).getByRole('button', { name: 'Jogar' }))
+    const aside = await focusGame('Hollow Knight')
+    fireEvent.click(within(aside).getByRole('button', { name: 'Jogar' }))
 
     const panel = await screen.findByRole('status', { name: panelName })
     expect(panel).toHaveTextContent('Hollow Knight')
@@ -1237,6 +1698,7 @@ describe('App: desconexão e reconexão', () => {
 
 describe('App: cronômetro e ordem', () => {
   it('UI-017 10 min com painel não chamam bindings extras e o total só muda depois de ended', async () => {
+    writeLibraryView('list')
     vi.useFakeTimers({ toFake: [...fakeTimerApis] })
     let total = 300
     app.ListGames.mockImplementation(() => Promise.resolve(page([game({ id: 10, totalPlaySeconds: total })])))
@@ -1307,8 +1769,9 @@ function toggleIn(panelEl: HTMLElement | null): HTMLElement {
   return within(panelEl as HTMLElement).getByRole('button', { name: /Pausar|Retomar/ })
 }
 
-function untrackedOf(title: string): HTMLElement {
-  return within(rowOf(title)).getByRole('button', { name: 'Sem contar tempo' })
+// untrackedBtn is "Jogar sem contar tempo" of the panel of the game in focus [UIX-027].
+function untrackedBtn(): HTMLElement {
+  return within(asideOf()).getByRole('button', { name: /^(Jogar sem contar tempo|Iniciando…)$/ })
 }
 
 describe('App: sem contar tempo', () => {
@@ -1318,13 +1781,13 @@ describe('App: sem contar tempo', () => {
     app.LaunchGameUntracked.mockResolvedValue(undefined)
     renderApp()
     await waitConnected()
-    await findRow('Hollow Knight')
+    await focusGame('Hollow Knight')
     await waitFor(() => expect(app.CurrentSession).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText('Conectando ao agente…')).toBeNull())
     await flush()
     const listCalls = app.ListGames.mock.calls.length
 
-    fireEvent.click(untrackedOf('Hollow Knight'))
+    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Jogar sem contar tempo' }))
     await waitFor(() => expect(app.LaunchGameUntracked).toHaveBeenCalledTimes(1))
     expect(app.LaunchGameUntracked).toHaveBeenCalledWith(10)
     await flush()
@@ -1341,15 +1804,16 @@ describe('App: sem contar tempo', () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
     app.LaunchGameUntracked.mockRejectedValueOnce(msg).mockResolvedValueOnce(undefined)
     renderApp()
-    await findRow('Hollow Knight')
+    await focusGame('Hollow Knight')
 
-    fireEvent.click(untrackedOf('Hollow Knight'))
+    fireEvent.click(untrackedBtn())
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(msg)
     expect(within(alert).getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
     expect(app.LaunchGame).not.toHaveBeenCalled()
 
-    fireEvent.click(untrackedOf('Hollow Knight'))
+    await waitFor(() => expect(untrackedBtn()).toBeEnabled())
+    fireEvent.click(untrackedBtn())
     await waitFor(() => expect(app.LaunchGameUntracked).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
     expect(screen.queryByRole('button', { name: 'Fechar' })).toBeNull()
@@ -1358,18 +1822,24 @@ describe('App: sem contar tempo', () => {
   it('UI-021/lançamento pendente sem contar tempo desabilita os dois botões do jogo no App', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
     const pending = deferred<void>()
+    app.GetGame.mockImplementation((id: number) =>
+      Promise.resolve(detail({ id, title: id === 10 ? 'Hollow Knight' : 'Hades' })),
+    )
     app.LaunchGameUntracked.mockImplementation(() => pending.promise)
     renderApp()
-    await findRow('Hollow Knight')
+    await focusGame('Hollow Knight')
 
-    fireEvent.click(untrackedOf('Hollow Knight'))
+    fireEvent.click(untrackedBtn())
     await waitFor(() => {
-      const row = rowOf('Hollow Knight')
-      expect(within(row).getByRole('button', { name: 'Iniciando…' })).toBeDisabled()
-      expect(within(row).getByRole('button', { name: 'Jogar' })).toBeDisabled()
+      const aside = asideOf()
+      expect(within(aside).getByRole('button', { name: 'Iniciando…' })).toBeDisabled()
+      expect(within(aside).getByRole('button', { name: 'Jogar' })).toBeDisabled()
     })
-    expect(within(rowOf('Hades')).getByRole('button', { name: 'Jogar' })).toBeEnabled()
-    expect(within(rowOf('Hades')).getByRole('button', { name: 'Sem contar tempo' })).toBeEnabled()
+
+    // Another game in focus has its buttons active [UIX-027].
+    const other = await focusGame('Hades')
+    expect(within(other).getByRole('button', { name: 'Jogar' })).toBeEnabled()
+    expect(within(other).getByRole('button', { name: 'Jogar sem contar tempo' })).toBeEnabled()
 
     await act(async () => {
       pending.resolve()
@@ -1395,6 +1865,7 @@ describe('App: sem contar tempo', () => {
   })
 
   it('UI-024/sessão paused mostra Pausado no lugar de Em execução; ended ou discarded: a marcação some e a lista é recarregada', async () => {
+    writeLibraryView('list')
     let total = 0
     app.ListGames.mockImplementation(() => Promise.resolve(page([game({ id: 10, totalPlaySeconds: total })])))
     app.CurrentSession.mockResolvedValue(session({ gameId: 10, state: 'running' }))

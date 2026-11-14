@@ -1,61 +1,59 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { GameCard, liveOf } from './GameCard'
+import { GRID_GAP, columnsFor } from '../lib/gridNav'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
-import type { PendingLaunch } from '../lib/pendingLaunch'
 
-// Card and grid metrics in px. A row holds as many cards as fit the width.
-const CARD_MIN_WIDTH = 220
-const CARD_HEIGHT = 180
-const GAP = 16
-const ROW_HEIGHT = CARD_HEIGHT + GAP
 const OVERSCAN_ROWS = 2
 // The next page is asked for when the last rendered card is past loaded - 10 [UI-036].
 const PREFETCH_AHEAD = 10
 
-// columnsFor returns how many cards fit a row of the given width (at least one).
-function columnsFor(width: number): number {
-  return Math.max(1, Math.floor((width + GAP) / (CARD_MIN_WIDTH + GAP)))
-}
-
 // LibraryGrid shows the loaded games as a grid of cards, virtualized so that only
-// the rows of the visible window are in the DOM [UI-029]. Scrolling changes the
+// the rows of the visible window are in the DOM [UIX-016]. Scrolling changes the
 // window without touching the network. When the last rendered card passes
-// loaded - 40, onNeedMore is called once for this set of loaded games [UI-036].
+// loaded - 10, onNeedMore is called once for this set of loaded games [UI-036].
 export function LibraryGrid({
   games,
   covers,
   total,
   current,
-  pending,
+  selectedId,
   onNeedMore,
-  onOpen,
-  onPlay,
-  onPlayUntracked,
+  onSelect,
+  onLaunch,
 }: {
   games: GameView[]
-  // covers maps a game id to its cover thumbnail URL (MID-006); a game without one shows none.
+  // covers maps a game id to its cover thumbnail URL (MID-006); a game without one shows the placeholder.
   covers?: Record<number, string>
   total: number
   current: SessionView | null
-  pending: PendingLaunch
+  // selectedId is the game in focus of the details panel; null when none [UIX-017].
+  selectedId: number | null
   onNeedMore: () => void
-  onOpen: (id: number) => void
-  onPlay: (id: number) => void
-  onPlayUntracked: (id: number) => void
+  onSelect: (id: number) => void
+  onLaunch: (id: number) => void
 }): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [cols, setCols] = useState(1)
+  const [metrics, setMetrics] = useState(() => ({ ...columnsFor(0), measured: false }))
   const askedFor = useRef<number | null>(null)
+  const scrolledToSelected = useRef(false)
+  const { cols, rowHeight, measured } = metrics
 
-  // The number of columns follows the width of the scroll element.
+  // The columns and the row height follow the width of the scroll element.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el === null) {
       return undefined
     }
-    const measure = () => setCols(columnsFor(el.getBoundingClientRect().width))
+    const measure = () => {
+      const m = columnsFor(el.getBoundingClientRect().width)
+      setMetrics((old) =>
+        old.measured && old.cols === m.cols && old.rowHeight === m.rowHeight
+          ? old
+          : { ...m, measured: true },
+      )
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
@@ -69,7 +67,7 @@ export function LibraryGrid({
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: OVERSCAN_ROWS,
     // The window size comes from the same box as the column count (getBoundingClientRect),
     // not from clientWidth/clientHeight, which the default reads.
@@ -90,6 +88,32 @@ export function LibraryGrid({
       }
     },
   })
+
+  // A new row height invalidates the sizes the virtualizer measured.
+  useEffect(() => {
+    virtualizer.measure()
+  }, [rowHeight, virtualizer])
+
+  // On mount, the game in focus is brought into view once, when it is among the loaded ones [UIX-021].
+  useLayoutEffect(() => {
+    if (!measured || scrolledToSelected.current) {
+      return
+    }
+    scrolledToSelected.current = true
+    if (selectedId === null) {
+      return
+    }
+    const index = games.findIndex((g) => g.id === selectedId)
+    const el = scrollRef.current
+    if (index >= 0 && el !== null) {
+      // The row is centered in the window. The element is scrolled directly (the virtualizer
+      // clamps scrollToIndex to the scroll height, which a fresh element may not have yet)
+      // and the virtualizer follows the scroll event.
+      const top = Math.floor(index / cols) * rowHeight - (el.getBoundingClientRect().height - rowHeight) / 2
+      el.scrollTo?.({ top: Math.max(0, top) })
+    }
+  }, [measured, selectedId, games, cols, rowHeight])
+
   const rows = virtualizer.getVirtualItems()
 
   const lastRow = rows.at(-1)?.index ?? -1
@@ -110,8 +134,16 @@ export function LibraryGrid({
     onNeedMore()
   }, [lastRow, lastCard, loaded, total, onNeedMore])
 
+  const selectedLoaded = selectedId !== null && games.some((g) => g.id === selectedId)
+
   return (
-    <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto">
+    <div
+      ref={scrollRef}
+      role="listbox"
+      aria-label="Jogos"
+      tabIndex={-1}
+      className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2"
+    >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {rows.map((row) => {
           const first = row.index * cols
@@ -119,25 +151,24 @@ export function LibraryGrid({
           return (
             <div
               key={row.key}
-              className="absolute left-0 top-0 grid w-full"
+              className="absolute left-0 top-0 grid w-full content-start"
               style={{
-                height: ROW_HEIGHT,
+                height: rowHeight,
                 transform: `translateY(${row.start}px)`,
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                gridTemplateRows: `${CARD_HEIGHT}px`,
-                columnGap: GAP,
+                columnGap: GRID_GAP,
               }}
             >
-              {cards.map((g) => (
+              {cards.map((g, i) => (
                 <GameCard
                   key={g.id}
                   game={g}
                   live={liveOf(current, g.id)}
                   coverUrl={covers?.[g.id]}
-                  busy={pending !== null && pending.id === g.id ? pending.mode : null}
-                  onOpen={onOpen}
-                  onPlay={onPlay}
-                  onPlayUntracked={onPlayUntracked}
+                  selected={g.id === selectedId}
+                  tabbable={selectedLoaded ? g.id === selectedId : first + i === 0}
+                  onSelect={onSelect}
+                  onLaunch={onLaunch}
                 />
               ))}
             </div>

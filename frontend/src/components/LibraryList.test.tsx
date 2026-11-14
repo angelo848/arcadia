@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { LibraryList } from './LibraryList'
-import { LibraryGrid } from './LibraryGrid'
-import type { PendingLaunch } from '../lib/pendingLaunch'
+import { formatLocalDateTime } from '../lib/formatDate'
 import { formatPlayTime, type SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 
 type ListProps = Parameters<typeof LibraryList>[0]
 
 // Every element reports this box, so the virtualizer computes its window from a
-// fixed size [UI-030]. Nothing here depends on real layout.
+// fixed size [UIX-020]. Nothing here depends on real layout.
 const BOX_WIDTH = 800
 const BOX_HEIGHT = 600
 
@@ -86,94 +85,66 @@ function props(over: Partial<ListProps> = {}): ListProps {
     games: makeGames(3),
     total: 3,
     current: null,
-    pending: null,
+    selectedId: null,
     onNeedMore: vi.fn(),
-    onOpen: vi.fn(),
-    onPlay: vi.fn(),
-    onPlayUntracked: vi.fn(),
+    onSelect: vi.fn(),
+    onLaunch: vi.fn(),
     ...over,
   }
 }
 
-// titlesInDom lists the synthetic titles currently rendered.
-function titlesInDom(): string[] {
-  return screen.queryAllByText(/^Jogo \d+$/).map((e) => e.textContent ?? '')
-}
-
-// rowOf returns the smallest ancestor of the title that holds a button (any of the
-// launch buttons, including "Iniciando…"): the row (or card) of that game, without
-// assuming the markup.
+// rowOf returns the option (row) of the game with that title.
 function rowOf(title: string): HTMLElement {
-  let el: HTMLElement | null = screen.getByText(title)
-  while (el && within(el).queryAllByRole('button').length === 0) {
-    el = el.parentElement
-  }
-  if (!el) {
-    throw new Error(`no row for ${title}`)
-  }
-  return el
+  return screen.getByRole('option', { name: new RegExp(`^${title}( |$)`) })
 }
 
 describe('LibraryList', () => {
-  it('UI-030/lista mostra a mesma página, os mesmos dados e os mesmos botões da grade', () => {
+  it('UIX-020/lista: linha com título, plataforma, tempo, última vez e selo, sem botões; clique põe em foco e duplo clique lança', () => {
+    const lastPlayedAt = '2026-11-09T10:00:00.000Z'
     const games = [
       game(0, { totalPlaySeconds: 0 }),
-      game(1, { totalPlaySeconds: 3900, platform: 'Nintendo Switch' }),
+      game(1, { totalPlaySeconds: 3900, platform: 'Nintendo Switch', lastPlayedAt }),
       game(2, { totalPlaySeconds: 30 }),
     ]
-    const onPlay = vi.fn()
-    const onPlayUntracked = vi.fn()
-    const pending: PendingLaunch = { id: 2, mode: 'tracked' }
-    const p = props({ games, total: games.length, onPlay, onPlayUntracked, pending })
-
-    // Same page, same data and same buttons in the grid [UI-029, UI-031].
-    const grid = render(<LibraryGrid {...p} />)
-    const gridTitles = titlesInDom()
-    for (const g of games) {
-      const card = rowOf(g.title)
-      expect(within(card).getByText(g.platform)).toBeInTheDocument()
-      expect(within(card).getByText(formatPlayTime(g.totalPlaySeconds))).toBeInTheDocument()
-      expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(
-        g.id === 2 ? ['Iniciando…', 'Sem contar tempo'] : ['Jogar', 'Sem contar tempo'],
-      )
-    }
-    grid.unmount()
-
-    // The list shows the same games, in the same order, with the same data and buttons.
+    const p = props({ games, total: games.length, current: session({ gameId: 1, state: 'running' }) })
     render(<LibraryList {...p} />)
-    expect(titlesInDom()).toEqual(gridTitles)
-    expect(titlesInDom()).toEqual(['Jogo 0', 'Jogo 1', 'Jogo 2'])
+
+    expect(screen.getAllByRole('option').map((o) => within(o).getByText(/^Jogo \d$/).textContent)).toEqual([
+      'Jogo 0',
+      'Jogo 1',
+      'Jogo 2',
+    ])
     for (const g of games) {
       const row = rowOf(g.title)
       expect(within(row).getByText(g.platform)).toBeInTheDocument()
       expect(within(row).getByText(formatPlayTime(g.totalPlaySeconds))).toBeInTheDocument()
-      expect(within(row).getAllByRole('button').map((b) => b.textContent)).toEqual(
-        g.id === 2 ? ['Iniciando…', 'Sem contar tempo'] : ['Jogar', 'Sem contar tempo'],
-      )
+      expect(within(row).getByText(formatLocalDateTime(g.lastPlayedAt))).toBeInTheDocument()
     }
+    expect(within(rowOf('Jogo 1')).getByText('Em execução')).toBeInTheDocument()
+    expect(within(rowOf('Jogo 0')).queryByText(/Em execução|Pausado/)).toBeNull()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
 
-    // The buttons of the row act on the row's game, as in the grid [UI-031].
-    fireEvent.click(within(rowOf('Jogo 1')).getByRole('button', { name: 'Jogar' }))
-    expect(onPlay).toHaveBeenCalledWith(1)
-    fireEvent.click(within(rowOf('Jogo 0')).getByRole('button', { name: 'Sem contar tempo' }))
-    expect(onPlayUntracked).toHaveBeenCalledWith(0)
-    expect(onPlay).toHaveBeenCalledTimes(1)
-    expect(onPlayUntracked).toHaveBeenCalledTimes(1)
+    fireEvent.click(rowOf('Jogo 2'))
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+    expect(p.onSelect).toHaveBeenCalledWith(2)
+    expect(p.onLaunch).not.toHaveBeenCalled()
+
+    fireEvent.doubleClick(rowOf('Jogo 1'))
+    expect(p.onLaunch).toHaveBeenCalledTimes(1)
+    expect(p.onLaunch).toHaveBeenCalledWith(1)
   })
 
-  it('UI-030/lista virtualizada: no máximo 100 linhas no DOM com 10 000 jogos', () => {
-    // Extra case for the requirement "em linhas virtualizadas" of UI-030; not in the
-    // tasks.md list of T29.
+  it('UIX-020/lista virtualizada: no máximo 100 linhas no DOM com 10 000 jogos', () => {
     render(<LibraryList {...props({ games: makeGames(10000), total: 10000 })} />)
 
-    const rows = screen.getAllByRole('button', { name: 'Jogar' })
+    const rows = screen.getAllByRole('option')
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.length).toBeLessThanOrEqual(100)
     expect(screen.getByText('Jogo 0')).toBeInTheDocument()
     expect(screen.queryByText('Jogo 9999')).toBeNull()
   })
 
-  it('UI-024/linha de jogo pausado mostra \'Pausado\'; jogo em execução mostra \'Em execução\'', () => {
+  it('UIX-014/linha de jogo pausado mostra Pausado; jogo em execução ou grace mostra Em execução', () => {
     const p = props({ games: makeGames(2), total: 2, current: session({ gameId: 0, state: 'paused' }) })
     const { rerender } = render(<LibraryList {...p} />)
 
@@ -188,5 +159,21 @@ describe('LibraryList', () => {
       expect(within(rowOf('Jogo 0')).queryByText('Pausado')).toBeNull()
       expect(within(rowOf('Jogo 1')).queryByText('Em execução')).toBeNull()
     }
+  })
+
+  it('UIX-017/selectedId marca só a linha do jogo em foco (aria-selected)', () => {
+    render(<LibraryList {...props({ selectedId: 1 })} />)
+
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1)
+    expect(rowOf('Jogo 1')).toHaveAttribute('aria-selected', 'true')
+    expect(rowOf('Jogo 0')).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('UIX-042/lista com role listbox "Jogos" e linhas role option que começam pelo título', () => {
+    render(<LibraryList {...props()} />)
+
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    expect(within(listbox).getAllByRole('option')).toHaveLength(3)
+    expect(within(listbox).getByRole('option', { name: /^Jogo 0\b/ })).toBeInTheDocument()
   })
 })

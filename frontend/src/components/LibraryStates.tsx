@@ -2,7 +2,8 @@ import type { JSX } from 'react'
 import { EmptyResults } from './EmptyResults'
 
 // LibraryStates shows what the library grid replaces: the connecting state while the list is
-// not loaded (or the call fails), the empty library, the filtered-empty result, or the count [UI-044, UI-035].
+// not loaded (or the call fails), the empty library or the filtered-empty result [UI-044, UI-035].
+// With games it renders nothing: the count is in LibraryToolbar [UIX-013].
 // onClear is optional only because the caller may not wire it yet; the button is always rendered in the filtered-empty state.
 export function LibraryStates({
   loaded,
@@ -14,11 +15,11 @@ export function LibraryStates({
   total: number | undefined
   filtered: boolean
   onClear?: () => void
-}): JSX.Element {
+}): JSX.Element | null {
   if (!loaded || total === undefined) {
     return (
       <section className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-sm text-neutral-400">Conectando ao agente…</p>
+        <p className="text-sm text-muted">Conectando ao agente…</p>
       </section>
     )
   }
@@ -29,14 +30,13 @@ export function LibraryStates({
     }
     return (
       <section className="flex flex-col items-center justify-center gap-3 py-24 text-center">
-        <p className="text-xl font-medium text-neutral-200">Nenhum jogo ainda</p>
-        <p className="text-sm text-neutral-400">Use Importar para adicionar jogos.</p>
+        <p className="text-xl font-medium text-fg">Nenhum jogo ainda</p>
+        <p className="text-sm text-muted">Use Importar para adicionar jogos.</p>
       </section>
     )
   }
 
-  // Plural is fixed by UI-044, also for one game.
-  return <p className="text-sm text-neutral-400">{`${total} jogos`}</p>
+  return null
 }
 
 function noop(): void {}
