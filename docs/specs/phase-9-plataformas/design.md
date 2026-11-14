@@ -1,9 +1,10 @@
 # Fase 9 — Plataformas: design
 
-- **Requisitos:** [requirements.md](requirements.md) (rascunho, aguardando aprovação) · **Tarefas:** `tasks.md` (do planner)
+- **Requisitos:** [requirements.md](requirements.md) (aprovado, 2026-11-13) · **Tarefas:** [tasks.md](tasks.md)
+  (aprovado, 2026-11-13)
 - **Contratos:** [contracts/seed-platforms.md](contracts/seed-platforms.md) (tabela do seed, ícones, migração 00008,
-  resolução por nome) e [contracts/ipc-delta.openrpc.json](contracts/ipc-delta.openrpc.json) (delta do IPC v0.11.0 sobre
-  a v0.10.0 da fase 8; a primeira tarefa gera o arquivo completo `contracts/ipc.openrpc.json`).
+  resolução por nome) e [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (IPC v0.11.0 completo; substitui a
+  v0.10.0 da fase 8).
 - **ADRs:** 0006 (arquivos em `data\`), 0010 (agente dono das migrações), 0012 (enums no `domain`, tolerância a valor
   desconhecido), 0015 (agente único escritor). Nenhum é contrariado; ver §11 para o que merece ADR novo.
 
@@ -110,7 +111,7 @@ ALTER TABLE platform DROP COLUMN seed_key;
   `game` depende dela com `RESTRICT`, ADR 0012); o índice `NOCASE` é mais restritivo e é o que vale.
 - **Down** não desfaz dados (contrato §3); o comentário do arquivo diz isso.
 
-## 4. Store [PLT-014, PLT-017..PLT-021, PLT-025, PLT-027]
+## 4. Store [PLT-014, PLT-017..PLT-021, PLT-025, PLT-026, PLT-027]
 
 ```go
 // Platform ganha campos (catalog.go).
@@ -147,6 +148,13 @@ func (s *Store) UpdatePlatform(ctx context.Context, id int64, name string, categ
 // SetPlatformIcon stores icon ("" = default) and returns the platform and the previous icon.
 func (s *Store) SetPlatformIcon(ctx context.Context, id int64, icon string) (p Platform, previous string, err error)
 
+// EnsureWindowsPlatformID returns the id of the platform of seed key "windows" (renamed or not), creating
+// ("Windows", pc, "windows") when it is missing (PLT-026, PLT-027). Never resolves by name.
+func (s *Store) EnsureWindowsPlatformID(ctx context.Context) (int64, error)
+
+// WindowsPlatformID returns the id of the platform of seed key "windows"; false when none. Never creates (scan).
+func (s *Store) WindowsPlatformID(ctx context.Context) (int64, bool, error)
+
 // PlatformIconInUse reports whether any platform uses icon (PLT-013).
 func (s *Store) PlatformIconInUse(ctx context.Context, icon string) (bool, error)
 
@@ -164,10 +172,17 @@ func (s *Store) DeletePlatform(ctx context.Context, id int64) (icon string, err 
   índice; erro de `UNIQUE` vira `ErrPlatformNameTaken`. Renomear para um nome canônico de seed com chave livre **não**
   atribui a chave (só a criação faz isso, PLT-017), para não mudar ícone e identificador de uma plataforma do usuário
   sem ele pedir.
-- `AddGame` (PLT-027): troca `EnsurePCPlatform`/`GetPlatformIDByName('PC')` por `GetPlatformBySeedKey('windows')`; se não
-  houver, `InsertSeedPlatform('Windows', 'pc', 'windows')` na mesma transação. Pela resolução (PLT-017, PLT-025) uma
-  plataforma chamada "Windows" sem a chave só existe por escrita fora do agente; nesse caso, em vez de inserir, a chave
-  `windows` é gravada nela (o índice `NOCASE` impediria o `INSERT`). O teste cobre: renomeada, excluída, recriada à mão.
+- `EnsureWindowsPlatformID` (PLT-026, PLT-027), usado por `AddGame` e pelo apply de Steam/Epic: lê
+  `GetPlatformBySeedKey('windows')`; se não houver, `InsertSeedPlatform('Windows', 'pc', 'windows')`. O método público
+  abre a própria transação (como `EnsurePlatformID`, chamado pelo apply antes da transação do jogo); `AddGame` usa uma
+  variante interna sobre o `*dbgen.Queries` da sua transação, para criar a plataforma e o jogo juntos (PLT-027).
+  **Não** passa pela resolução por nome: com a `windows` renomeada para "PC" e outra
+  plataforma (sem chave) chamada "Windows", o jogo vai para a "PC". Se o nome "Windows" já está ocupado por uma
+  plataforma sem chave, o `INSERT` violaria o índice `NOCASE`: então a chave `windows` é gravada nela
+  (`SetPlatformSeedKey`), em vez de inserir. Se o nome está ocupado e a chave `windows` existe noutra linha, nada é
+  criado (a linha da chave ganha). O teste cobre: renomeada, renomeada com outra "Windows" sem chave, excluída,
+  "Windows" sem chave inserida à mão.
+- `AddGame` (PLT-027): troca `EnsurePCPlatform`/`GetPlatformIDByName('PC')` por `EnsureWindowsPlatformID`.
 - Consequência da resolução: com a plataforma `windows` renomeada para "PC", `platform.add("Windows")` devolve a "PC"
   com `created: false`; por isso a mensagem de PLT-016 usa o nome da plataforma devolvida.
 - `EnsurePlatformID` e `PlatformIDByName` passam a usar `AddPlatform`/`ResolvePlatform`.
@@ -175,10 +190,17 @@ func (s *Store) DeletePlatform(ctx context.Context, id int64) (icon string, err 
   `CountPlatformGames`, `DeletePlatformRow`, `CountPlatformsWithIcon`, `ListPlatformsWithCount`. Saem
   `EnsurePCPlatform` e `GetPlatformIDByName`.
 
-## 5. Importadores [PLT-026, PLT-028, PLT-029]
+## 5. Importadores [PLT-025, PLT-026, PLT-028, PLT-029]
 
 - `importers.PlatformPC` é renomeada para `PlatformWindows = "Windows"`; Steam (`steam.go`) e Epic (`epic.go`) usam a
-  nova. `agent.toStoreGame` usa `PlatformWindows` para candidato sem plataforma (Steam/Epic legados no fio).
+  nova no candidato (é o que o scan mostra). `agent.toStoreGame` usa `PlatformWindows` para candidato sem plataforma
+  (Steam/Epic legados no fio).
+- **Apply de Steam e Epic pela chave (PLT-026):** para candidato de fonte `steam` ou `epic`, e para candidato sem
+  plataforma, o apply não resolve pelo nome: usa `store.EnsureWindowsPlatformID` (§4), como o `game.add`. O nome
+  "Windows" do candidato é só exibição. No scan, a marcação de "já existe" (IMP-006) dessas fontes também usa a
+  plataforma de chave `windows`, por `store.WindowsPlatformID` (sem criar; se ela não existe, a comparação por título
+  fica sem plataforma, como hoje quando o nome não resolve). `importStore` ganha os dois métodos. As demais fontes (LaunchBox,
+  pasta, arquivo com plataforma escolhida) continuam pela resolução por nome (PLT-025).
 - LaunchBox: `platformOf` deixa de traduzir `Windows`; o candidato leva o nome do XML. Como o nome canônico do seed é
   `Windows`, a resolução cai na plataforma `windows`. `copyLaunchBoxImages` continua passando `c.Platform`, que agora é
   sempre o nome do XML: a pasta `Images\Windows\...` passa a ser lida (PLT-028). Teste com fixture em `Images\Windows`.
@@ -219,7 +241,7 @@ de PLT-030). Valor não confirmado fica fora do mapa.
 
 ## 8. Agente e IPC [PLT-011..PLT-024]
 
-Contrato v0.11.0 (delta em `contracts/ipc-delta.openrpc.json`):
+Contrato v0.11.0 ([contracts/ipc.openrpc.json](contracts/ipc.openrpc.json), arquivo completo):
 
 | Método | Entrada | Saída | Erros |
 |---|---|---|---|
@@ -263,12 +285,17 @@ func (s *Store) RemovePlatformIcon(rel string) error
 `RemovePlatformIcon` só apaga dentro de `<media>\platforms\` (confere com `filepath.Rel`, como `mediaURL`), para que um
 valor estranho no banco nunca apague arquivo fora dali.
 
-## 9. Desktop e UI [PLT-009, PLT-010, PLT-015..PLT-023, PLT-032]
+## 9. Desktop e UI [PLT-009, PLT-010, PLT-012, PLT-015..PLT-023, PLT-032]
 
 - `cmd/arcadia`: bindings `PlatformUpdate(id, name, category)`, `PlatformSetIcon(id, path *string)`,
   `PlatformDelete(id)`, `PickPlatformIcon()` (filtro "Imagens (*.png;*.jpg;*.jpeg)", ARCHITECTURE §11). A view de
   plataforma ganha `seedKey`, `iconUrl` (de `iconPath` por `mediaURL`, que já só aceita caminho dentro de
   `data\media`) e `gameCount`. `AddPlatform` devolve também `created`.
+- `PlatformSetIcon` traduz o `data.reason` do `-32602` para o texto de PLT-012 (`not-absolute` → "Informe o caminho
+  completo do arquivo.", `not-found` → "Arquivo não encontrado.", `not-a-file` → "O caminho não é um arquivo.",
+  `too-large` → "O arquivo passa de 2 MB.", `unsupported` → "O arquivo não é uma imagem PNG ou JPEG.") e devolve esse
+  texto como erro; o diálogo só o mostra no `role="alert"`. Um `-32602` sem `reason` conhecido segue a tradução
+  genérica de hoje.
 - `frontend/src/assets/platforms/*.svg` (13 + `generic.svg`, contrato §2) e `components/PlatformIcon.tsx`:
   `iconUrl` → `<img src={iconUrl}>`; senão `seedKey` conhecido → SVG embutido; senão genérico (PLT-009, PLT-010).
 - `components/PlatformsDialog.tsx`, no molde do `EmulatorsDialog`: lista (ícone, nome, categoria, nº de jogos, seletor
@@ -292,11 +319,13 @@ valor estranho no banco nunca apague arquivo fora dali.
   caminho fora de `platforms\`.
 - `agent`: handlers com store real em `t.TempDir()` e pasta de mídia temporária: setIcon/restaurar/trocar com arquivo
   compartilhado (PLT-011..PLT-013), delete -32013 com `data` (PLT-021), `created` (PLT-016), sem notificação (PLT-024),
-  apply de Steam/Epic/LaunchBox em `windows` (PLT-026, PLT-028), `platformCategoryFor` (PLT-029).
+  apply de Steam/Epic pela chave `windows` mesmo com outra plataforma chamada "Windows" (PLT-026), LaunchBox pelo nome
+  (PLT-028), `platformCategoryFor` (PLT-029).
 - `importers`: Steam/Epic com `PlatformWindows`; LaunchBox mantém `Windows`; `LaunchBoxImages` acha `Images\Windows`.
 - `scrapers`: `PlatformID` (13 chaves, desconhecida, provedor sem valor); IGDB e Steam Store devolvem "Windows" (PLT-031).
 - `ipc`: teste de contrato v0.11.0 (campos novos, `created`, -32013).
-- `cmd/arcadia`: `iconUrl` dentro e fora de `data\media`; bindings chamam os métodos certos.
+- `cmd/arcadia`: `iconUrl` dentro e fora de `data\media`; bindings chamam os métodos certos; `PlatformSetIcon` traduz
+  cada `reason` para o texto de PLT-012.
 - `frontend` (Vitest): `PlatformIcon` (3 casos), `PlatformsDialog` (lista, criar com nome repetido, editar, excluir
   bloqueado e com confirmação, emulador padrão), `FilterPanel` sem plataformas vazias.
 - Manual: PLT-023 (diálogo e seletor nativo), conferência visual dos 13 ícones, ids do IGDB na API (PLT-030), e uma

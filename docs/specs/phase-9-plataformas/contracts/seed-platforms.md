@@ -16,7 +16,7 @@ um teste da store compara o banco migrado com `domain.SeedPlatforms` para que os
 | `gba` | Nintendo Game Boy Advance | `handheld` | `gba.svg` | GBA | 24 |
 | `gamecube` | Nintendo GameCube | `console` | `gamecube.svg` | GC | 21 |
 | `switch` | Nintendo Switch | `console` | `switch.svg` | NSW | 130 |
-| `switch2` | Nintendo Switch 2 | `console` | `switch2.svg` | NS2 | 508 (a confirmar) |
+| `switch2` | Nintendo Switch 2 | `console` | `switch2.svg` | NS2 | 508 |
 | `wii` | Nintendo Wii | `console` | `wii.svg` | Wii | 5 |
 | `ps1` | Sony Playstation | `console` | `ps1.svg` | PS1 | 7 |
 | `ps2` | Sony Playstation 2 | `console` | `ps2.svg` | PS2 | 8 |
@@ -25,9 +25,8 @@ um teste da store compara o banco migrado com `domain.SeedPlatforms` para que os
 
 - Os nomes canônicos seguem a grafia do LaunchBox (`Sony Playstation`, não `PlayStation`), para que a importação do
   LaunchBox caia direto nas plataformas do seed.
-- **IGDB:** todos os valores são conferidos na API (`POST /v4/platforms`, `fields id,name,slug; where id = (...)`)
-  antes da aprovação das tarefas; o de Switch 2 não foi confirmado ao escrever esta spec. Um valor que não se confirmar
-  fica fora da tabela ("sem identificador", PLT-030) até ser corrigido.
+- **IGDB:** os 13 valores foram conferidos na API (`POST /v4/platforms`, `fields id,name,slug`) em 2026-11-13 (T02),
+  incluindo o do Switch 2 (508, "Nintendo Switch 2").
 - A chave do seed é estável: nunca muda de significado e nunca é reutilizada (como os IDs de requisito).
 
 ## 2. Ícones

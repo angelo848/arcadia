@@ -1,8 +1,10 @@
 # Fase 9 — Plataformas: tarefas
 
-- **Status:** rascunho, aguardando aprovação das tarefas.
+- **Status:** aprovado pelo usuário (2026-11-13), com as decisões dos pontos em aberto 1 (PLT-026 pela chave) e 2
+  (textos de PLT-012).
 - **Requisitos:** [requirements.md](requirements.md) · **Design:** [design.md](design.md) · **Contratos:**
-  [contracts/seed-platforms.md](contracts/seed-platforms.md), `contracts/ipc.openrpc.json` (v0.11.0, gerado na T01)
+  [contracts/seed-platforms.md](contracts/seed-platforms.md), [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json)
+  (v0.11.0, gerado na T01)
 - **ADRs:** 0006, 0010, 0012, 0015, 0026 (seed com chave estável), 0027 (nome único sem maiúsculas).
 
 ## Resumo
@@ -27,6 +29,10 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
 ## T01 — Contrato IPC v0.11.0 completo
 - Requisitos: PLT-014, PLT-016, PLT-018, PLT-019, PLT-011, PLT-012, PLT-013, PLT-020, PLT-021, PLT-024
 - **Responsável:** spec-writer (só `docs/specs/`).
+- **Feita (2026-11-13):** `contracts/ipc.openrpc.json` criado e `design.md` atualizado. Os métodos novos ficam entre
+  `platform.add` e `library.catalog`; `ImportCandidate.platform` passa a citar Windows (PLT-026, PLT-028). Falta só
+  apagar `contracts/ipc-delta.openrpc.json` (o spec-writer não tem como apagar arquivo; fica com a sessão principal,
+  no commit da T01).
 - **Arquivos:**
   - criar `docs/specs/phase-9-plataformas/contracts/ipc.openrpc.json`: cópia de
     `docs/specs/phase-8-estatisticas/contracts/ipc.openrpc.json` (v0.10.0) com o delta aplicado. Itens:
@@ -141,7 +147,9 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   - `internal/store/catalog.go`: resolução, criação, update, ícone, exclusão e `PlatformByID`.
   - `internal/store/import_apply.go`: `EnsurePlatformID` passa a usar `AddPlatform` e `PlatformIDByName` passa a usar
     `ResolvePlatform`; as assinaturas não mudam.
-  - `internal/store/games.go`: `AddGame` resolve pela chave `windows` (design §4); sai `pcPlatformName`.
+  - `internal/store/games.go`: `AddGame` resolve pela chave `windows` com a variante interna de
+    `EnsureWindowsPlatformID` na sua transação (design §4); sai `pcPlatformName`.
+  - `internal/store/catalog.go` (ou `platforms.go`): `EnsureWindowsPlatformID` e `WindowsPlatformID` (design §4).
   - `internal/store/queries/games.sql`: saem `EnsurePCPlatform` e `GetPlatformIDByName`; rodar `sqlc generate`.
   - `internal/agent/library.go`: adaptação mínima de `handlePlatformAdd` ao novo retorno (ignora `created` até a T11).
 - **Assinaturas:**
@@ -159,6 +167,9 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   func (s *Store) SetPlatformIcon(ctx context.Context, id int64, icon string) (p Platform, previous string, err error)
   func (s *Store) PlatformIconInUse(ctx context.Context, icon string) (bool, error)
   func (s *Store) DeletePlatform(ctx context.Context, id int64) (icon string, err error)
+  // PLT-026, PLT-027: by seed key "windows", never by name.
+  func (s *Store) EnsureWindowsPlatformID(ctx context.Context) (int64, error)       // creates ("Windows", pc, "windows") when missing
+  func (s *Store) WindowsPlatformID(ctx context.Context) (int64, bool, error)       // read only (scan)
   ```
 - **Arquivos (test-writer):** `internal/store/platforms_test.go` (novo). Ajustes pela nova assinatura de `AddPlatform` e
   por "PC" → "Windows":
@@ -186,7 +197,10 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   - `PLT-027/AddGame vai para a plataforma de chave windows renomeada`
   - `PLT-027/AddGame recria Windows (pc, windows) quando ela foi excluída`
   - `PLT-027/AddGame grava a chave numa Windows sem chave inserida à mão`
-  - `PLT-026/EnsurePlatformID("Windows") devolve a plataforma de chave windows renomeada`
+  - `PLT-027/AddGame vai para a de chave windows mesmo existindo outra chamada Windows`
+  - `PLT-026/EnsureWindowsPlatformID devolve a de chave windows renomeada mesmo existindo outra chamada Windows`
+  - `PLT-026/EnsureWindowsPlatformID recria Windows (pc, windows) quando ela foi excluída`
+  - `PLT-026/WindowsPlatformID não cria quando a chave windows não existe`
   - `PLT-014/PlatformByID traz GameCount`
 - **Dependência:** T05.
 
@@ -218,16 +232,25 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   - `internal/importers/types.go`: `PlatformPC` é renomeada para `PlatformWindows = "Windows"`;
   - `internal/importers/steam.go` e `internal/importers/epic.go`;
   - `internal/importers/launchbox.go`: `platformOf` deixa de traduzir `Windows`;
-  - `internal/agent/imports.go`: `toStoreGame` usa `PlatformWindows`. `platformCategoryFor` usa `domain.SeedByName`
-    primeiro e depois a regra atual (LaunchBox → `console`, resto → `pc`).
-- **Assinatura:** `const PlatformWindows = "Windows"` (sai `PlatformPC`).
+  - `internal/agent/imports.go`: `importStore` ganha `EnsureWindowsPlatformID(ctx) (int64, error)` e
+    `WindowsPlatformID(ctx) (int64, bool, error)`. `toStoreGame`: candidato de fonte `steam` ou `epic`, ou sem
+    plataforma (exceto `file`/`folder`, que continuam erro), usa `EnsureWindowsPlatformID` (não resolve pelo nome);
+    as demais fontes seguem `EnsurePlatformID`. `candidateExists`: para `steam`/`epic` usa `WindowsPlatformID`.
+    `platformCategoryFor` usa `domain.SeedByName` primeiro e depois a regra atual (LaunchBox → `console`, resto → `pc`).
+- **Assinaturas:** `const PlatformWindows = "Windows"` (sai `PlatformPC`); `importStore` com os dois métodos acima
+  (os fakes de `importStore` nos testes ganham os dois).
 - **Arquivos (test-writer):** ajustes em `internal/importers/steam_test.go` (≈ linha 70), `epic_test.go` (≈ 28),
   `launchbox_test.go` (≈ 59, 163), `internal/agent/platform_category_test.go` e `internal/agent/imports_test.go`
   (≈ linha 103). Casos novos em `internal/importers/launchbox_images_test.go`, `internal/agent/imports_test.go` e
   `internal/agent/import_images_test.go`.
 - **Testes:**
   - `PLT-026/Steam e Epic geram candidato com plataforma Windows`
-  - `PLT-026/apply de Steam vai para a plataforma de chave windows renomeada` (store real em `t.TempDir()`)
+  - `PLT-026/apply de Steam vai para a plataforma de chave windows mesmo existindo outra chamada Windows` (store real
+    em `t.TempDir()`: a `windows` renomeada para "PC" e uma "Windows" sem chave criada antes)
+  - `PLT-026/apply de Epic recria Windows (pc, windows) quando a de chave windows foi excluída` (store real)
+  - `PLT-026/scan de Steam marca já existe pela plataforma de chave windows`
+  - `PLT-028/apply do LaunchBox com plataforma Windows resolve pelo nome` (com a `windows` renomeada, cai na outra
+    "Windows"; store real)
   - `PLT-028/LaunchBox mantém a plataforma Windows do XML`
   - `PLT-028/copyLaunchBoxImages lê Images\Windows\... para um jogo Windows` (fixture)
   - `PLT-029/platformCategoryFor: nome do seed usa a categoria do seed; LaunchBox fora do seed é console; outras fontes pc`
@@ -367,7 +390,7 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
 - **Dependências:** T06, T07, T10.
 
 ## T12 — Desktop: bindings e views de plataforma
-- Requisitos: PLT-011, PLT-013, PLT-016, PLT-018, PLT-019, PLT-020, PLT-021, PLT-023, PLT-024
+- Requisitos: PLT-011, PLT-012, PLT-013, PLT-016, PLT-018, PLT-019, PLT-020, PLT-021, PLT-023, PLT-024
 - **Arquivos (implementer):**
   - `cmd/arcadia/library.go`: `PlatformView` ganha `SeedKey *string \`json:"seedKey"\``, `IconURL string \`json:"iconUrl"\``
     e `GameCount int64 \`json:"gameCount"\``. `platformView` passa a ser `func (a *App) platformView(p ipc.Platform) PlatformView`,
@@ -379,7 +402,10 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   type PlatformAddView struct { Platform PlatformView `json:"platform"`; Created bool `json:"created"` }
   func (a *App) AddPlatform(name, category string) (PlatformAddView, error)
   func (a *App) PlatformUpdate(id int64, name, category string) (PlatformView, error)
-  func (a *App) PlatformSetIcon(id int64, path *string) (PlatformView, error) // nil → "path": null (map params, like PlatformSetEmulator)
+  func (a *App) PlatformSetIcon(id int64, path *string) (PlatformView, error) // nil → "path": null (map params, like PlatformSetEmulator);
+      // -32602 with data.reason → the PLT-012 text (not-absolute "Informe o caminho completo do arquivo.", not-found
+      // "Arquivo não encontrado.", not-a-file "O caminho não é um arquivo.", too-large "O arquivo passa de 2 MB.",
+      // unsupported "O arquivo não é uma imagem PNG ou JPEG."); unknown reason → today's generic translation
   func (a *App) PlatformDelete(id int64) error // -32013 → "Esta plataforma tem N jogo(s). Mova-os para outra plataforma ou exclua-os antes."
   func (a *App) PickPlatformIcon() (string, error) // filter "Imagens (*.png;*.jpg;*.jpeg)"; "" = cancelled
   ```
@@ -389,6 +415,7 @@ copiado para `data\media\platforms\`. Importadores e scrapers passam a usar "Win
   - `PLT-011/iconUrl de iconPath dentro de data\media é /media/platforms/...`
   - `PLT-011/iconPath fora de data\media vira iconUrl vazio`
   - `PLT-013/PlatformSetIcon(nil) envia path null`
+  - `PLT-012/PlatformSetIcon traduz cada reason para o texto` (tabela com os 5 `reason`)
   - `PLT-016/AddPlatform devolve created`
   - `PLT-018/PlatformUpdate chama platform.update com id, name, category`
   - `PLT-021/PlatformDelete com -32013 devolve a mensagem com N`
@@ -520,7 +547,7 @@ depende da T02) → T11 → T12 → T13 → (T14, T15) → T16.
 | PLT-009 | T13, T16 (visual) |
 | PLT-010 | T13 |
 | PLT-011 | T01, T07, T10, T11, T12, T13 |
-| PLT-012 | T01, T07, T10, T11 |
+| PLT-012 | T01, T07, T10, T11, T12 |
 | PLT-013 | T01, T07, T10, T11, T12, T14 |
 | PLT-014 | T01, T04, T05, T06, T10, T11 |
 | PLT-015 | T14 |
@@ -554,10 +581,11 @@ Todos os 32 requisitos têm tarefa.
 
 ## Pontos em aberto (do planner)
 
-1. **PLT-025 × PLT-026.** Se a plataforma de chave `windows` foi renomeada (ex.: "PC") e outra, sem chave, passou a se
-   chamar "Windows", a resolução por nome manda Steam/Epic para a outra, contra PLT-026. O plano segue PLT-025; a
-   alternativa é Steam/Epic resolverem pela chave, como o `game.add` (PLT-027).
-2. **Textos dos motivos de PLT-012 na UI** não estão na spec (só os códigos `reason`).
+1. ~~**PLT-025 × PLT-026.**~~ **Resolvido (2026-11-13):** Steam, Epic e candidato sem plataforma vão pela chave
+   `windows` (`store.EnsureWindowsPlatformID`), como o `game.add`; PLT-025 ganhou a exceção explícita. O LaunchBox
+   continua pelo nome (PLT-028). Ver T06 e T08.
+2. ~~**Textos dos motivos de PLT-012 na UI.**~~ **Resolvido (2026-11-13):** textos por `reason` em PLT-012, traduzidos
+   pelo binding `PlatformSetIcon` (design §9, T12).
 3. **`platform.setEmulator`** passa a devolver o `Platform` completo (`store.PlatformByID`, fora do design §4).
 4. **`media.ErrTooLarge`** não existe hoje; a T07 cria o sentinela.
 5. **`COLLATE NOCASE` só iguala maiúsculas ASCII**; `domain.SeedByName` deve seguir a mesma regra.

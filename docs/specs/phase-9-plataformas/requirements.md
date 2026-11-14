@@ -130,8 +130,18 @@ usuário salva, então o agente copia o arquivo para `data\media\platforms\<hash
 ### PLT-012 — Arquivo de ícone recusado
 Dado um caminho que não é absoluto, não existe, é uma pasta, passa de 2 MB ou não é PNG nem JPEG (pelo conteúdo, não
 pela extensão), quando o usuário pede para usá-lo como ícone, então recebe `-32602` com o motivo, nenhum arquivo é
-criado em `data\media\platforms\` e o ícone da plataforma não muda.
-· verificação: teste no agente (tabela de casos).
+criado em `data\media\platforms\` e o ícone da plataforma não muda. A UI mostra o texto do motivo:
+
+| `reason` | Texto |
+|---|---|
+| `not-absolute` | "Informe o caminho completo do arquivo." |
+| `not-found` | "Arquivo não encontrado." |
+| `not-a-file` | "O caminho não é um arquivo." |
+| `too-large` | "O arquivo passa de 2 MB." |
+| `unsupported` | "O arquivo não é uma imagem PNG ou JPEG." |
+
+· verificação: teste no agente (tabela de casos); teste do binding do desktop (cada `reason` vira o texto).
+· alterado em 2026-11-13: textos da UI por motivo (decisão do usuário na aprovação das tarefas).
 
 ### PLT-013 — Restaurar o ícone padrão
 Dado uma plataforma com ícone personalizado, quando o usuário escolhe "Restaurar padrão", então a plataforma fica sem
@@ -219,14 +229,20 @@ catálogo por conta própria.
 Dado um nome de plataforma vindo de uma importação ou de `platform.add`, quando o agente procura a plataforma, então
 usa, nesta ordem: (1) a plataforma com o mesmo nome; (2) se o nome é o nome canônico de uma chave do seed, a plataforma
 com essa chave, mesmo que tenha sido renomeada; (3) senão cria uma plataforma nova (com PLT-017). O scan da importação
-usa os passos 1 e 2 sem criar nada (IMP-001, IMP-006).
+usa os passos 1 e 2 sem criar nada (IMP-001, IMP-006). Exceção: os jogos da Steam e da Epic, os candidatos sem
+plataforma e o `game.add` não resolvem por nome; vão pela chave `windows` (PLT-026, PLT-027).
 · verificação: teste na store (plataforma renomeada, excluída e inexistente).
+· alterado em 2026-11-13: exceção explícita para Steam, Epic e `game.add` (decisão do usuário na aprovação das tarefas).
 
 ### PLT-026 — Steam, Epic e arquivo `.exe` em Windows
 Dado um candidato da Steam (IMP-002) ou da Epic (IMP-003), quando o scan roda, então a plataforma do candidato é
-"Windows". Dado a confirmação, então o jogo vai para a plataforma de chave `windows` (PLT-025), mesmo que o usuário a
-tenha renomeado.
-· verificação: testes dos importadores e do apply no agente.
+"Windows". Dado a confirmação desse candidato (ou de um candidato sem plataforma), então o jogo vai para a plataforma
+de chave `windows` pela chave, não pelo nome, como o `game.add` (PLT-027): mesmo que ela tenha sido renomeada e outra
+plataforma se chame "Windows", o jogo vai para a de chave `windows`; se ela foi excluída, é recriada como "Windows",
+categoria `pc`, com a chave `windows`. No scan, a marcação de "já existe" (IMP-006) desses candidatos também usa a
+plataforma de chave `windows`, sem criar nada.
+· verificação: testes dos importadores e do apply no agente (store real).
+· alterado em 2026-11-13: resolução pela chave `windows` em vez do nome (decisão do usuário na aprovação das tarefas).
 
 ### PLT-027 — Jogo adicionado por executável em Windows
 Dado um executável adicionado por `game.add` (GAM-001), quando o jogo é gravado, então ele vai para a plataforma de
