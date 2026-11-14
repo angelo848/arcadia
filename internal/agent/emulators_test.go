@@ -3,10 +3,13 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"maps"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
+	"github.com/arcadia-launcher/arcadia/internal/media"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 )
 
@@ -23,7 +26,11 @@ func emulatorHandlersFor(t *testing.T) (map[string]ipc.Handler, *store.Store, in
 	if err != nil {
 		t.Fatalf("EnsureWindowsPlatformID: %v", err)
 	}
-	return emulatorHandlers(st, quietLog()), st, win
+	// platform.setEmulator moved to platformHandlers in phase 9 (T11, PLT-022).
+	h := emulatorHandlers(st, quietLog())
+	mediaRoot := filepath.Join(t.TempDir(), "media")
+	maps.Copy(h, platformHandlers(newPlatformService(st, media.New(mediaRoot, nil), mediaRoot, os.Stat, quietLog())))
+	return h, st, win
 }
 
 func rawJSON(t *testing.T, v any) json.RawMessage {
@@ -70,10 +77,20 @@ func TestEmulatorHandlers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AddEmulator: %v", err)
 		}
-		if _, err := h[ipc.MethodPlatformSetEmulator](t.Context(), rawJSON(t, map[string]any{
+		out, err := h[ipc.MethodPlatformSetEmulator](t.Context(), rawJSON(t, map[string]any{
 			"platformId": pc, "emulatorId": added.ID,
-		})); err != nil {
+		}))
+		if err != nil {
 			t.Fatalf("setEmulator set: %v", err)
+		}
+		// PLT-022: the result is the complete Platform (v0.11.0), not only the ids.
+		res, ok := out.(ipc.PlatformResult)
+		if !ok {
+			t.Fatalf("setEmulator result is %T, want ipc.PlatformResult", out)
+		}
+		if res.Platform.ID != pc || res.Platform.Name != "Windows" || res.Platform.EmulatorID == nil ||
+			*res.Platform.EmulatorID != added.ID || res.Platform.SeedKey == nil || *res.Platform.SeedKey != "windows" {
+			t.Errorf("setEmulator platform = %+v, want Windows (seedKey windows) with emulatorId %d", res.Platform, added.ID)
 		}
 		defaultOf := func() *int64 {
 			plats, err := st.Platforms(t.Context())

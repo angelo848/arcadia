@@ -75,7 +75,7 @@ maiúsculas (`COLLATE NOCASE`).
 |---|---|
 | existe plataforma com o mesmo nome | essa plataforma |
 | nome é canônico da chave K e existe plataforma com `seed_key = K` | essa plataforma (mesmo renomeada) |
-| nome é canônico da chave K e não há plataforma com `seed_key = K` | cria com nome enviado (cortado), categoria do seed e `seed_key = K` (só quando a criação é permitida) |
+| nome é canônico da chave K e não há plataforma com `seed_key = K` | cria com o nome canônico, categoria do seed e `seed_key = K` (só quando a criação é permitida) |
 | nenhum dos casos | cria com nome e categoria enviados, `seed_key = NULL` (só quando a criação é permitida) |
 
 O scan da importação nunca cria (devolve "não encontrada"). `game.add` (PLT-027) resolve direto pela chave `windows`.

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
+	"github.com/arcadia-launcher/arcadia/internal/media"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
@@ -275,6 +277,9 @@ func newGamesHarness(t *testing.T, stat func(string) (fs.FileInfo, error)) *game
 		t.Fatalf("mkdir: %v", err)
 	}
 	h.handlers = gameHandlers(h.gs, h.tr, h.clock, stat, slog.New(h.logs))
+	// platform.list, platform.add and library.catalog moved to platformHandlers in phase 9 (T11).
+	mediaRoot := filepath.Join(dir, "media")
+	maps.Copy(h.handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, nil), mediaRoot, stat, slog.New(h.logs))))
 	for _, m := range []string{ipc.MethodGameAdd, ipc.MethodGameList, ipc.MethodGameLaunch, ipc.MethodSessionCurrent} {
 		if h.handlers[m] == nil {
 			t.Fatalf("gameHandlers has no handler for %q", m)
@@ -2082,8 +2087,4 @@ func (s *recordingGameStore) UpdateEmulator(ctx context.Context, id int64, name,
 
 func (s *recordingGameStore) DeleteEmulator(ctx context.Context, id int64) error {
 	return s.inner.DeleteEmulator(ctx, id)
-}
-
-func (s *recordingGameStore) SetPlatformEmulator(ctx context.Context, platformID int64, emulatorID *int64) error {
-	return s.inner.SetPlatformEmulator(ctx, platformID, emulatorID)
 }

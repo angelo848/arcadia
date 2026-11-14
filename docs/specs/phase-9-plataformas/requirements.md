@@ -176,7 +176,9 @@ devolve essa plataforma com `created: false`, EDT-008).
 ### PLT-017 — Nome do seed recupera a chave
 Dado uma chave do seed sem plataforma (a plataforma foi excluída), quando uma plataforma é criada com o nome canônico
 dessa chave (pelo diálogo, por `platform.add` ou por uma importação), então ela ganha a chave do seed (e com ela o
-ícone embutido e o identificador nos provedores) e a categoria do seed, em vez da categoria enviada.
+ícone embutido e o identificador nos provedores), a categoria do seed, em vez da categoria enviada, e o nome canônico
+do seed, em vez da grafia enviada ("nintendo wii" vira "Nintendo Wii").
+· alterado em 2026-11-14: o nome gravado é o canônico (a grafia enviada não é mantida).
 · verificação: teste na store.
 
 ### PLT-018 — Renomear plataforma

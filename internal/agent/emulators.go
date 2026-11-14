@@ -25,7 +25,6 @@ type emulatorStore interface {
 	AddEmulator(ctx context.Context, name, exePath, argsTemplate string) (store.Emulator, error)
 	UpdateEmulator(ctx context.Context, id int64, name, exePath, argsTemplate string) (store.Emulator, error)
 	DeleteEmulator(ctx context.Context, id int64) error
-	SetPlatformEmulator(ctx context.Context, platformID int64, emulatorID *int64) error
 }
 
 // emulatorHandlers returns the handlers of the emulator methods (contract v0.8.0).
@@ -42,9 +41,6 @@ func emulatorHandlers(st emulatorStore, log *slog.Logger) map[string]ipc.Handler
 		},
 		ipc.MethodEmulatorDelete: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleEmulatorDelete(ctx, st, log, params)
-		},
-		ipc.MethodPlatformSetEmulator: func(ctx context.Context, params json.RawMessage) (any, error) {
-			return handlePlatformSetEmulator(ctx, st, log, params)
 		},
 	}
 }
@@ -95,22 +91,6 @@ func handleEmulatorDelete(ctx context.Context, st emulatorStore, log *slog.Logge
 		return nil, emulatorError("emulator.delete", err, log)
 	}
 	return ipc.EmulatorDeletedResult{ID: p.ID}, nil
-}
-
-func handlePlatformSetEmulator(ctx context.Context, st emulatorStore, log *slog.Logger, params json.RawMessage) (any, error) {
-	var p ipc.PlatformSetEmulatorParams
-	if rpcErr := decodeOrInvalid(params, &p); rpcErr != nil {
-		return nil, rpcErr
-	}
-	var emu *int64
-	if p.EmulatorID.Present && !p.EmulatorID.Null {
-		v := p.EmulatorID.Value
-		emu = &v
-	}
-	if err := st.SetPlatformEmulator(ctx, p.PlatformID, emu); err != nil {
-		return nil, emulatorError("platform.setEmulator", err, log)
-	}
-	return ipc.PlatformResult{Platform: ipc.Platform{ID: p.PlatformID, EmulatorID: emu}}, nil
 }
 
 // decodeOrInvalid decodes the params of a method, or returns -32602 when they are absent

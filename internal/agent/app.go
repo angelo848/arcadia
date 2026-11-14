@@ -259,6 +259,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	// data\media. The queue runs in its own goroutine, below, and is waited for at shutdown.
 	httpClient := &http.Client{Timeout: mediaHTTPTimeout}
 	mediaRoot := filepath.Join(p.Root, "media")
+	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
 	keys := scrapers.NewKeys(credentialStore{})
 	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log)
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}

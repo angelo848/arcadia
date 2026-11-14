@@ -115,6 +115,7 @@ func (s *Store) AddPlatform(ctx context.Context, name string, category domain.Pl
 		if seed, isSeed := domain.SeedByName(clean); isSeed {
 			key = sql.NullString{String: seed.Key, Valid: true}
 			cat = seed.Category
+			clean = seed.Name
 		}
 		id, err := q.InsertSeedPlatform(ctx, dbgen.InsertSeedPlatformParams{Name: clean, Category: string(cat), SeedKey: key})
 		if err != nil {

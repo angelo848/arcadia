@@ -153,20 +153,6 @@ func (s *recordingGameStore) UpdateGame(ctx context.Context, id int64, p store.G
 	return s.inner.UpdateGame(ctx, id, p, at)
 }
 
-// Platforms, AddPlatform and Catalog forward to the real store. T22 adds them to
-// gameStore [IPC-048, IPC-049].
-func (s *recordingGameStore) Platforms(ctx context.Context) ([]store.Platform, error) {
-	return s.inner.Platforms(ctx)
-}
-
-func (s *recordingGameStore) AddPlatform(ctx context.Context, name string, category domain.PlatformCategory) (store.Platform, bool, error) {
-	return s.inner.AddPlatform(ctx, name, category)
-}
-
-func (s *recordingGameStore) Catalog(ctx context.Context) (store.Catalog, error) {
-	return s.inner.Catalog(ctx)
-}
-
 // seededSession describes a session written through the store: it starts at
 // gamesT0+start and, unless open, ends after active. domain.Outcome decides
 // whether it is ended or discarded [STO-012, STO-014].
