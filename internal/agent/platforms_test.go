@@ -7,11 +7,14 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -672,6 +675,118 @@ func TestPlatformHandlers(t *testing.T) {
 		resultInto(t, h.call(t, ipc.MethodPlatformSetEmulator, map[string]any{"platformId": p.ID, "emulatorId": nil}), &out)
 		if out.Platform.EmulatorID != nil {
 			t.Errorf("emulatorId after null = %d, want null", *out.Platform.EmulatorID)
+		}
+	})
+}
+
+type fakeInfo struct {
+	mode fs.FileMode
+	size int64
+}
+
+func (f fakeInfo) Name() string       { return "weird" }
+func (f fakeInfo) Size() int64        { return f.size }
+func (f fakeInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f fakeInfo) Sys() any           { return nil }
+
+type spyIconFiles struct{ imports int }
+
+func (s *spyIconFiles) ImportPlatformIcon(context.Context, string) (string, error) {
+	s.imports++
+	return "", errors.New("must not be called")
+}
+func (s *spyIconFiles) RemovePlatformIcon(string) error { return nil }
+
+func TestPlatformParamsContract(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PLT-013/setIcon sem o membro path é -32602 e o ícone não muda", func(t *testing.T) {
+		t.Parallel()
+		h := newPlatHarness(t)
+		p := h.add(t, "Amiga", "console").Platform
+		good := h.setIconOK(t, p.ID, h.pngFile(t, "good.png", 5))
+		wantError(t, h.call(t, ipc.MethodPlatformSetIcon, map[string]any{"platformId": p.ID}), ipc.CodeInvalidParams, "")
+		if got := h.must(t, p.ID); got.IconPath == nil || *got.IconPath != *good.IconPath {
+			t.Errorf("iconPath = %v, want %s unchanged", got.IconPath, *good.IconPath)
+		}
+		if _, err := os.Stat(*good.IconPath); err != nil {
+			t.Errorf("icon file: %v, want it kept", err)
+		}
+	})
+
+	t.Run("PLT-011/platform.setIcon com platformId ausente ou < 1 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h := newPlatHarness(t)
+		for name, params := range map[string]map[string]any{
+			"ausente":  {"path": nil},
+			"zero":     {"platformId": 0, "path": nil},
+			"negativo": {"platformId": -3, "path": nil},
+		} {
+			if resp := h.call(t, ipc.MethodPlatformSetIcon, params); resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+				t.Errorf("%s: response = %+v, want -32602", name, resp)
+			}
+		}
+	})
+
+	t.Run("PLT-020/platform.delete com id ausente ou < 1 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h := newPlatHarness(t)
+		for name, params := range map[string]map[string]any{
+			"ausente":  {},
+			"zero":     {"id": 0},
+			"negativo": {"id": -1},
+		} {
+			if resp := h.call(t, ipc.MethodPlatformDelete, params); resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+				t.Errorf("%s: response = %+v, want -32602", name, resp)
+			}
+		}
+	})
+
+	t.Run("PLT-022/platform.setEmulator com platformId ausente ou < 1 é -32602", func(t *testing.T) {
+		t.Parallel()
+		h := newPlatHarness(t)
+		for name, params := range map[string]map[string]any{
+			"ausente":  {"emulatorId": nil},
+			"zero":     {"platformId": 0, "emulatorId": nil},
+			"negativo": {"platformId": -2, "emulatorId": nil},
+		} {
+			if resp := h.call(t, ipc.MethodPlatformSetEmulator, params); resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+				t.Errorf("%s: response = %+v, want -32602", name, resp)
+			}
+		}
+	})
+
+	t.Run("PLT-022/platform.setEmulator com emulador inexistente devolve -32001 Emulador não encontrado.", func(t *testing.T) {
+		t.Parallel()
+		h := newPlatHarness(t)
+		p := h.add(t, "Amiga", "console").Platform
+		wantError(t, h.call(t, ipc.MethodPlatformSetEmulator, map[string]any{"platformId": p.ID, "emulatorId": 999999}),
+			platformNotFound, msgEmulatorIDNotFound)
+		wantError(t, h.call(t, ipc.MethodPlatformSetEmulator, map[string]any{"platformId": 999999, "emulatorId": nil}),
+			platformNotFound, msgPlatformNotFound)
+	})
+
+	t.Run("PLT-012/setIcon com arquivo não regular é -32602 not-a-file sem tentar ler", func(t *testing.T) {
+		t.Parallel()
+		for name, mode := range map[string]fs.FileMode{"pipe": fs.ModeNamedPipe, "device": fs.ModeDevice} {
+			h := newPlatHarness(t)
+			p := h.add(t, "Amiga", "console").Platform
+			spy := &spyIconFiles{}
+			stat := func(string) (fs.FileInfo, error) { return fakeInfo{mode: mode, size: 10}, nil }
+			handlers := platformHandlers(newPlatformService(h.st, spy, h.mediaRoot, stat, quietLog()))
+			src := filepath.Join(h.dir, "weird.png")
+			resp := callHandlers(t, t.Context(), handlers, ipc.MethodPlatformSetIcon,
+				mustJSON(t, map[string]any{"platformId": p.ID, "path": src}))
+			data := wantError(t, resp, ipc.CodeInvalidParams, "")
+			var reason string
+			if err := json.Unmarshal(data["reason"], &reason); err != nil || reason != ipc.IconReasonNotAFile {
+				t.Errorf("%s: data.reason = %s, want %q", name, data["reason"], ipc.IconReasonNotAFile)
+			}
+			if spy.imports != 0 {
+				t.Errorf("%s: ImportPlatformIcon called %d time(s), want 0", name, spy.imports)
+			}
 		}
 	})
 }

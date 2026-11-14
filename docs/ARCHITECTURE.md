@@ -171,7 +171,8 @@ Duas situações cobertas:
 ## 5. Modelo de dados (resumo)
 
 ```
-platform(id, name, category[pc|console|arcade|handheld], icon, emulator_id?)
+platform(id, name [único sem diferenciar maiúsculas, ADR 0027], category[pc|console|arcade|handheld], icon,
+         emulator_id?, seed_key? [chave estável das plataformas do seed, ADR 0026])
 game(id, platform_id, title, sort_title, release_date, description, install_dir,
      launch_type[exe|uri|emulator], launch_target, launch_args, working_dir,
      rating, favorite, hidden,

@@ -35,6 +35,7 @@ import {
 } from './lib/games'
 import {
   libraryGamesKey,
+  libraryKeys,
   useCatalog,
   useDeleteGame,
   useGame,
@@ -390,7 +391,10 @@ export default function App() {
       {keying && <ProviderKeysDialog onClose={() => setKeying(false)} />}
       {importing && (
         <ImportDialog
-          onImported={() => void qc.invalidateQueries({ queryKey: libraryGamesKey })}
+          onImported={() => {
+            void qc.invalidateQueries({ queryKey: libraryGamesKey })
+            void qc.invalidateQueries({ queryKey: libraryKeys.catalog })
+          }}
           onClose={() => setImporting(false)}
         />
       )}

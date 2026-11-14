@@ -582,6 +582,36 @@ func TestMigration8(t *testing.T) {
 	})
 }
 
+func TestMigration8TrimsNames(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PLT-005/PLT-006/nome com espaços nas pontas é aparado e AddPlatform não duplica", func(t *testing.T) {
+		t.Parallel()
+		var id int64
+		path := versionSevenFile(t, func(t *testing.T, db *sql.DB) {
+			id = m8Platform(t, db, " Sega Genesis ", "console", nil, "")
+		})
+		s := openStore(t, path, true)
+		got, ok := m8ByID(m8Platforms(t, s.DB()), id)
+		if !ok {
+			t.Fatalf("platform %d disappeared", id)
+		}
+		if got.Name != "Sega Genesis" {
+			t.Errorf("name = %q, want %q", got.Name, "Sega Genesis")
+		}
+		p, created, err := s.AddPlatform(t.Context(), "sega genesis", domain.CategoryConsole)
+		if err != nil {
+			t.Fatalf("AddPlatform: %v", err)
+		}
+		if created || p.ID != id {
+			t.Errorf("AddPlatform = (id %d, created %v), want the existing id %d with created=false", p.ID, created, id)
+		}
+		if c := m8Count(m8Platforms(t, s.DB()), "Sega Genesis"); c != 1 {
+			t.Errorf("platforms named Sega Genesis = %d, want 1", c)
+		}
+	})
+}
+
 func TestPlatformGameCount(t *testing.T) {
 	t.Parallel()
 

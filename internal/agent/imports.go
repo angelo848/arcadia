@@ -234,7 +234,11 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	if useWindows {
 		platformName = importers.PlatformWindows
 	}
-	platformID, ok := platforms[platformName]
+	cacheKey := "name:" + platformName
+	if useWindows {
+		cacheKey = "key:windows"
+	}
+	platformID, ok := platforms[cacheKey]
 	if !ok {
 		if useWindows {
 			platformID, err = st.EnsureWindowsPlatformID(ctx)
@@ -244,7 +248,7 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 		if err != nil {
 			return store.ImportGame{}, fmt.Errorf("platform %q: %w", platformName, err)
 		}
-		platforms[platformName] = platformID
+		platforms[cacheKey] = platformID
 	}
 	modes := make([]domain.PlayMode, 0, len(c.PlayModes))
 	for _, m := range c.PlayModes {

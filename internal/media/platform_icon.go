@@ -50,10 +50,14 @@ func (s *Store) ImportPlatformIcon(ctx context.Context, src string) (string, err
 		return "", fmt.Errorf("media: pasta das plataformas: %w", err)
 	}
 	abs := filepath.Join(s.root, rel)
-	if _, err := os.Stat(abs); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(abs); err == nil {
+		// already imported (same content)
+	} else if errors.Is(err, os.ErrNotExist) {
 		if err := writeAtomic(abs, data); err != nil {
 			return "", err
 		}
+	} else {
+		return "", fmt.Errorf("media: verificar ícone existente: %w", err)
 	}
 	return rel, nil
 }

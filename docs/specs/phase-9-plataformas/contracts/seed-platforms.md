@@ -61,6 +61,8 @@ maiúsculas (`COLLATE NOCASE`).
 | 8 | — | `CREATE UNIQUE INDEX platform_seed_key_uidx ON platform (seed_key) WHERE seed_key IS NOT NULL` |
 
 - O passo 2 roda antes do 3..5 para que cada nome tenha no máximo uma linha quando o seed é aplicado.
+- Depois do passo 2, os nomes com espaços nas pontas são aparados (`name = trim(name)`), para que a resolução por nome
+  e o índice do passo 7 valham para eles.
 - Passo 2, herança de emulador: vale a primeira outra linha, por ordem de id, que **tenha** emulador.
 - Passo 6: os ids das linhas inseridas ficam acima do maior id que existia antes da migração, para que o SQLite não
   reaproveite o id de uma plataforma apagada na fusão. Em banco vazio os ids ficam 1..13 (`windows` = 1).

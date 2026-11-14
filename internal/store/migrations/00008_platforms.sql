@@ -47,6 +47,9 @@ WHERE EXISTS (
     SELECT 1 FROM platform l
     WHERE trim(l.name) = trim(platform.name) COLLATE NOCASE AND l.id < platform.id);
 
+-- Names of the surviving rows are stored trimmed (the unique index below compares the stored value).
+UPDATE platform SET name = trim(name) WHERE name <> trim(name);
+
 -- Step 3 (PLT-003): "PC" and "Windows" both exist: games go to Windows, which inherits the emulator.
 UPDATE platform
 SET emulator_id = (SELECT pc.emulator_id FROM platform pc WHERE trim(pc.name) = 'PC' COLLATE NOCASE)

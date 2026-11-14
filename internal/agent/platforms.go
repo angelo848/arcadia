@@ -78,8 +78,10 @@ func platformNotFoundError() *ipc.Error {
 // fail maps a store error of a platform method to the contract; anything else is internal.
 func (s *platformService) fail(method string, err error) error {
 	switch {
-	case errors.Is(err, store.ErrPlatformNotFound), errors.Is(err, store.ErrEmulatorNotFound):
+	case errors.Is(err, store.ErrPlatformNotFound):
 		return platformNotFoundError()
+	case errors.Is(err, store.ErrEmulatorNotFound):
+		return ipc.NewError(codeEmulatorNotFound, msgEmulatorIDNotFound)
 	case errors.Is(err, store.ErrPlatformNameTaken), errors.Is(err, domain.ErrInvalidField):
 		return platformInvalid()
 	}
@@ -165,6 +167,9 @@ func (s *platformService) setIcon(ctx context.Context, params json.RawMessage) (
 	if rpcErr := decodeOrInvalid(params, &p); rpcErr != nil {
 		return nil, rpcErr
 	}
+	if p.PlatformID < 1 || !p.Path.Present {
+		return nil, platformInvalid()
+	}
 	s.iconMu.Lock()
 	defer s.iconMu.Unlock()
 
@@ -178,7 +183,7 @@ func (s *platformService) setIcon(ctx context.Context, params json.RawMessage) (
 		switch {
 		case err != nil:
 			return nil, iconInvalid(ipc.IconReasonNotFound)
-		case info.IsDir():
+		case !info.Mode().IsRegular():
 			return nil, iconInvalid(ipc.IconReasonNotAFile)
 		case info.Size() > media.MaxPlatformIconBytes:
 			return nil, iconInvalid(ipc.IconReasonTooLarge)
@@ -228,6 +233,9 @@ func (s *platformService) delete(ctx context.Context, params json.RawMessage) (a
 	if rpcErr := decodeOrInvalid(params, &p); rpcErr != nil {
 		return nil, rpcErr
 	}
+	if p.ID < 1 {
+		return nil, platformInvalid()
+	}
 	s.iconMu.Lock()
 	defer s.iconMu.Unlock()
 	icon, err := s.st.DeletePlatform(ctx, p.ID)
@@ -249,6 +257,9 @@ func (s *platformService) setEmulator(ctx context.Context, params json.RawMessag
 	var p ipc.PlatformSetEmulatorParams
 	if rpcErr := decodeOrInvalid(params, &p); rpcErr != nil {
 		return nil, rpcErr
+	}
+	if p.PlatformID < 1 {
+		return nil, platformInvalid()
 	}
 	var emu *int64
 	if p.EmulatorID.Present && !p.EmulatorID.Null {

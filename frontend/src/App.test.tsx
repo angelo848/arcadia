@@ -826,6 +826,44 @@ describe('App: atualização depois de escrita (UI-042)', () => {
   })
 })
 
+describe('App: importação recarrega o catálogo (PLT-032)', () => {
+  it('PLT-032/depois de importar o catálogo é recarregado e a plataforma com jogos aparece no filtro', async () => {
+    const extra = {
+      ImportScan: vi.fn(() =>
+        Promise.resolve({
+          candidates: [
+            {
+              source: 'steam', title: 'Counter-Strike 2', platform: 'Windows', launchType: 'uri',
+              launchTarget: 'steam://rungameid/730', installDir: '', developers: [], publishers: [], genres: [],
+              year: null, description: '', playModes: [], playedSeconds: null, lastPlayed: null, exists: false,
+            },
+          ],
+          warnings: [],
+        }),
+      ),
+      ImportApply: vi.fn(() => Promise.resolve({ applied: [{ gameId: 11, title: 'Counter-Strike 2' }], skipped: [] })),
+    }
+    Object.assign(app, extra)
+    app.ListGames.mockResolvedValue(page([game()]))
+    renderApp()
+    await findRow('Hollow Knight')
+    await waitFor(() => expect(app.Catalog).toHaveBeenCalledTimes(1))
+    await flush()
+    const catalog0 = app.Catalog.mock.calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Counter-Strike 2/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
+    await waitFor(() => expect(extra.ImportApply).toHaveBeenCalledTimes(1))
+    await within(dialog).findByText('Importados: 1')
+    await flush()
+
+    expect(app.Catalog.mock.calls.length).toBeGreaterThan(catalog0)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // UI-008 visible errors and pending Jogar
 // ---------------------------------------------------------------------------

@@ -567,6 +567,43 @@ func TestImportPlatformsRealStore(t *testing.T) {
 		}
 	})
 
+	t.Run("PLT-026/PLT-028/um apply com Steam e LaunchBox Windows não mistura o cache, em qualquer ordem", func(t *testing.T) {
+		t.Parallel()
+		lb := importers.Candidate{Source: importers.SourceLaunchBox, Title: "Starfield", Platform: importers.PlatformWindows,
+			LaunchType: importers.LaunchExe, LaunchTarget: `C:\s.exe`}
+		orders := map[string][]importers.Candidate{
+			"steam primeiro":     {steam, lb},
+			"launchbox primeiro": {lb, steam},
+		}
+		for name, cs := range orders {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				st := openImportRealStore(t)
+				p, ok := importPlatformByKey(t, st, "windows")
+				if !ok {
+					t.Fatal("seed platform windows missing")
+				}
+				if _, err := st.UpdatePlatform(t.Context(), p.ID, "Meu PC", domain.CategoryPC); err != nil {
+					t.Fatalf("UpdatePlatform: %v", err)
+				}
+				res, err := st.DB().ExecContext(t.Context(), `INSERT INTO platform (name, category) VALUES ('Windows', 'pc')`)
+				if err != nil {
+					t.Fatalf("insert Windows: %v", err)
+				}
+				impostor, _ := res.LastInsertId()
+				if r := apply(t, st, cs...); len(r.Applied) != 2 {
+					t.Fatalf("result = %+v, want 2 applied", r)
+				}
+				if g := importedGame(t, st, "Counter-Strike 2"); g.PlatformID != p.ID {
+					t.Errorf("Steam platform id = %d, want %d (key windows)", g.PlatformID, p.ID)
+				}
+				if g := importedGame(t, st, "Starfield"); g.PlatformID != impostor {
+					t.Errorf("LaunchBox platform id = %d, want %d (named Windows)", g.PlatformID, impostor)
+				}
+			})
+		}
+	})
+
 	t.Run("PLT-029/apply do LaunchBox cria Nintendo 3DS excluída como handheld com a chave", func(t *testing.T) {
 		t.Parallel()
 		st := openImportRealStore(t)
