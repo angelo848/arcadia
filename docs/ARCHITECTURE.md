@@ -310,3 +310,18 @@ As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
 - **Modais** usam o componente `Modal` (tamanhos `large`, `medium`, `compact`; cabeçalho e rodapé fixos, corpo com
   rolagem, foco preso). Com um modal aberto o Big Box fica suspenso.
 - A UI continua sem influenciar o tempo de jogo; a fase não alterou agente, tracker nem IPC.
+
+### Ajustes da nova interface e imagens do LaunchBox (fase 10.1)
+
+- **Grade e lista** têm margem interna (`GRID_INSET`) e reservam o espaço da barra de rolagem (`scrollbar-gutter`);
+  o contorno de foco e de seleção não é mais cortado. A barra de rolagem é fina e usa tokens `--arc-scrollbar-*`;
+  controles clicáveis ganham cursor de mão por regra global em `index.css`.
+- **Carrossel** do painel: imagem em destaque e faixa de miniaturas, com as setas agindo a partir da miniatura
+  focada. **Cartão sem capa** usa outra imagem do jogo (tela de título, tela de seleção, screenshot, banner,
+  fundo), com `useCardImages`; sem mudança de IPC.
+- **Limites de imagem por tipo** ficam numa tabela do domínio (`domain.MediaKindLimit`, [ADR 0030](adr/0030-limites-de-imagem-por-tipo-como-tabela-do-dominio.md)):
+  capa 2, screenshot 10, fundo 2, tela de título 2, tela de seleção 2, banner 2. O importador do LaunchBox
+  (`internal/importers/launchbox_images.go`) lê as pastas de imagem pelo mapa fixo da spec, com prioridade e
+  nomes `Título-NN` ou `Título.<GUID>-NN`; o agente copia respeitando o limite e contando o que o jogo já tem, e
+  registra no log as pastas de imagem não lidas. Tipos que exigiriam um `kind` novo ficam para a fase 12.
+- **Importação em lotes** de 25 candidatos por chamada de `import.apply`, com progresso na janela de importação.
