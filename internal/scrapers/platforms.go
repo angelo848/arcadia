@@ -1,5 +1,7 @@
 package scrapers
 
+import "strconv"
+
 // igdbPlatformIDs maps a seed platform key to its IGDB platform id
 // (contracts/seed-platforms.md §1).
 var igdbPlatformIDs = map[string]string{
@@ -26,4 +28,29 @@ func PlatformID(seedKey, provider string) (string, bool) {
 	}
 	id, ok := igdbPlatformIDs[seedKey]
 	return id, ok
+}
+
+// igdbSeedKeys is the inverse of igdbPlatformIDs, keyed by the numeric IGDB id.
+var igdbSeedKeys = func() map[int64]string {
+	m := make(map[int64]string, len(igdbPlatformIDs))
+	for key, id := range igdbPlatformIDs {
+		n, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			continue
+		}
+		m[n] = key
+	}
+	return m
+}()
+
+// SeedKeysForIGDB maps IGDB platform ids to seed platform keys, keeping the order of ids.
+// Ids outside the table are ignored; the result is never nil.
+func SeedKeysForIGDB(ids []int64) []string {
+	keys := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if key, ok := igdbSeedKeys[id]; ok {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
