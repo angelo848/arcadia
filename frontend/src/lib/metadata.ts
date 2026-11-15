@@ -64,7 +64,7 @@ export function applyResultLabel(queued: number, skippedByLimit: number): string
 }
 
 // The kinds of image a provider can offer (MID-004).
-export type MediaKind = 'cover' | 'screenshot' | 'title' | 'banner' | 'background' | 'select'
+export type MediaKind = 'cover' | 'screenshot' | 'title' | 'banner' | 'background' | 'select' | 'video'
 
 // ProviderKeyView says whether a key is registered; the key itself is never shown (MID-001).
 export type ProviderKeyView = { provider: KeyProviderId; configured: boolean }
@@ -87,6 +87,12 @@ export const mediaKindLabels: Record<MediaKind, string> = {
   banner: 'Banner',
   background: 'Fundo',
   select: 'Tela de seleção',
+  video: 'Vídeo',
+}
+
+// videoOf returns the first video of the game, if any [VID-023].
+export function videoOf(items: MediaItemView[]): MediaItemView | undefined {
+  return items.find((m) => m.kind === 'video')
 }
 
 // The order the details carousel shows the kinds in [AJU-009].
@@ -98,7 +104,7 @@ export function orderMedia(items: MediaItemView[]): MediaItemView[] {
     const i = carouselKindOrder.indexOf(k)
     return i < 0 ? carouselKindOrder.length : i
   }
-  return items.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m.kind) - rank(b.m.kind) || a.i - b.i).map((x) => x.m)
+  return items.filter((m) => m.kind !== 'video').map((m, i) => ({ m, i })).sort((a, b) => rank(a.m.kind) - rank(b.m.kind) || a.i - b.i).map((x) => x.m)
 }
 
 // The kinds a card falls back to when the game has no cover [AJU-015].

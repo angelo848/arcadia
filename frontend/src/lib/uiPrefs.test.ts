@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeFacetCount,
+  readBigBoxTheme,
   readFiltersOpen,
+  writeBigBoxTheme,
   readLibraryView,
   writeFiltersOpen,
   writeLibraryView,
@@ -85,5 +87,34 @@ describe('uiPrefs', () => {
     expect(
       activeFacetCount({ version: 1, genreIds: [1], statuses: ['playing'], favorite: false, text: 'x', platformIds: [4] }),
     ).toBe(3)
+  })
+})
+
+// alterado em 2026-11-15 (fase 13)
+describe('uiPrefs: tema do Big Box', () => {
+  it('BBX-023/valor ausente, desconhecido ou de tema indisponível vira faixa', () => {
+    const s = memoryStorage()
+    expect(readBigBoxTheme(s)).toBe('faixa')
+    for (const v of ['', 'xyz', 'mosaico', 'roda']) {
+      s.data.set('arcadia.bigBoxTheme', v)
+      expect(readBigBoxTheme(s), v).toBe('faixa')
+    }
+    s.data.set('arcadia.bigBoxTheme', 'faixa')
+    expect(readBigBoxTheme(s)).toBe('faixa')
+  })
+
+  it('BBX-023/a escolha fica em localStorage na chave arcadia.bigBoxTheme', () => {
+    const w = memoryStorage()
+    writeBigBoxTheme('faixa', w)
+    expect(w.data.get('arcadia.bigBoxTheme')).toBe('faixa')
+    window.localStorage.removeItem('arcadia.bigBoxTheme')
+    writeBigBoxTheme('faixa')
+    expect(window.localStorage.getItem('arcadia.bigBoxTheme')).toBe('faixa')
+    expect(readBigBoxTheme()).toBe('faixa')
+  })
+
+  it('BBX-023/storage indisponível não quebra', () => {
+    expect(readBigBoxTheme(throwing)).toBe('faixa')
+    expect(() => writeBigBoxTheme('faixa', throwing)).not.toThrow()
   })
 })

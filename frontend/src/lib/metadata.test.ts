@@ -9,6 +9,7 @@ import {
   orderMedia,
   providersLabel,
   scoreLabel,
+  videoOf,
 } from './metadata'
 import type {
   MediaItemView,
@@ -208,5 +209,29 @@ describe('carrossel e imagem do cartão', () => {
   it('AJU-015/lista vazia dá undefined; thumbUrl vazio usa url', () => {
     expect(cardImageOf([])).toBeUndefined()
     expect(cardImageOf([item(1, 'cover', '')])).toEqual({ url: '/m/1', fit: 'contain' })
+  })
+})
+
+// alterado em 2026-11-15 (fase 13): tipo de mídia `video` (VID-023)
+describe('tipo de mídia video', () => {
+  const item = (id: number, kind: string): MediaItemView =>
+    ({ id, kind, provider: 'p', path: '', thumbPath: '', url: `/m/${id}`, thumbUrl: `/t/${id}` }) as MediaItemView
+
+  it('VID-023/orderMedia descarta vídeo e mantém a ordem dos outros', () => {
+    const input = [item(1, 'banner'), item(2, 'video'), item(3, 'cover'), item(4, 'video'), item(5, 'screenshot')]
+    expect(orderMedia(input).map((m) => m.id)).toEqual([3, 5, 1])
+    expect(input.map((m) => m.id)).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('VID-023/cardImageOf ignora vídeo mesmo sem outra imagem', () => {
+    expect(cardImageOf([item(1, 'video')])).toBeUndefined()
+    expect(cardImageOf([item(1, 'video'), item(2, 'banner')])).toEqual({ url: '/t/2', fit: 'cover' })
+    expect(cardFallbackOrder).not.toContain('video')
+  })
+
+  it('VID-023/videoOf devolve o primeiro vídeo ou undefined', () => {
+    expect(videoOf([item(1, 'cover'), item(2, 'video'), item(3, 'video')])?.id).toBe(2)
+    expect(videoOf([item(1, 'cover')])).toBeUndefined()
+    expect(videoOf([])).toBeUndefined()
   })
 })

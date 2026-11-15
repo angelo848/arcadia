@@ -247,6 +247,28 @@ describe('GameDetailsPanel', () => {
     expect(within(region).getByText(/1 de 2/)).toBeInTheDocument()
   })
 
+  // alterado em 2026-11-15 (fase 13): a janela normal ignora vídeo (VID-023)
+  it('VID-023/jogo só com vídeo: o carrossel não aparece e o contador não o inclui', async () => {
+    install({ media: [media(1, 'video')] })
+    renderPanel()
+    await loaded()
+    await waitFor(() => expect(app.MediaList).toHaveBeenCalledWith(10))
+    await settle()
+    expect(screen.queryByRole('region', { name: 'Imagens' })).toBeNull()
+    expect(screen.queryByText(/1 de 1/)).toBeNull()
+  })
+
+  it('VID-023/jogo com capa e vídeo: o carrossel mostra só a capa', async () => {
+    install({ media: [media(1, 'video'), media(2, 'cover')] })
+    renderPanel()
+    await loaded()
+    const region = await screen.findByRole('region', { name: 'Imagens' })
+    await waitFor(() => expect(region.querySelector('img')).toHaveAttribute('src', '/media/2.jpg'))
+    expect(within(region).getByText(/1 de 1/)).toBeInTheDocument()
+    expect(region.querySelector('video')).toBeNull()
+    expect(region.querySelector('img[src="/media/1.jpg"]')).toBeNull()
+  })
+
   it('UIX-027/Jogar chama onPlay(G) uma vez e Jogar sem contar tempo chama onPlayUntracked(G) uma vez', async () => {
     install()
     const { props } = renderPanel()

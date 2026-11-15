@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-/* Theme tokens (UIX-006): components use the utilities below, never raw palette colors. */
+/* Theme tokens (UIX-006): components use the utilities below, never raw palette colors.
+   The Big Box Faixa tokens (BBX-025, BBX-026) are nested inside so every literal stays in the theme block (AJU-005). */
 [data-theme="dark"] {
   --arc-bg: #16181d;
   --arc-surface: #1e2128;
@@ -25,6 +26,19 @@
   --arc-scrollbar-track: transparent;
   --arc-scrollbar-thumb: #3a404d;
   --arc-scrollbar-thumb-hover: #6b7587;
+
+  [data-bigbox-theme="faixa"] {
+    --arc-bb-bg: #0b0d12;
+    --arc-bb-bg-2: #161a22;
+    --arc-bb-scrim: #000000d9;
+    --arc-bb-text: #f2f4f8;
+    --arc-bb-text-muted: #c9ced8;
+    --arc-bb-accent: #1f6feb;
+    --arc-bb-on-accent: #ffffff;
+    --arc-bb-surface: #1e2128;
+    --arc-bb-focus: #79b8ff;
+    --arc-bb-danger: #ff8a84;
+  }
 }
 
 /* Themed scrollbars (AJU-004, AJU-005). */
@@ -96,6 +110,16 @@
   --color-focus: var(--arc-focus);
   --color-overlay: var(--arc-overlay);
   --color-placeholder: var(--arc-placeholder);
+  --color-bb-bg: var(--arc-bb-bg);
+  --color-bb-bg-2: var(--arc-bb-bg-2);
+  --color-bb-scrim: var(--arc-bb-scrim);
+  --color-bb-text: var(--arc-bb-text);
+  --color-bb-text-muted: var(--arc-bb-text-muted);
+  --color-bb-accent: var(--arc-bb-accent);
+  --color-bb-on-accent: var(--arc-bb-on-accent);
+  --color-bb-surface: var(--arc-bb-surface);
+  --color-bb-focus: var(--arc-bb-focus);
+  --color-bb-danger: var(--arc-bb-danger);
 }
 
 /* Library side columns (UIX-005). */

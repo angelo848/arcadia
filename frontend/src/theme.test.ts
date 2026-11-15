@@ -142,6 +142,91 @@ describe('theme', () => {
   })
 })
 
+// ---- Phase 13 (BBX-025, BBX-026): tokens do Big Box, tema Faixa ----
+const bbTokens: Record<string, string> = {
+  '--arc-bb-bg': 'bb-bg',
+  '--arc-bb-bg-2': 'bb-bg-2',
+  '--arc-bb-scrim': 'bb-scrim',
+  '--arc-bb-text': 'bb-text',
+  '--arc-bb-text-muted': 'bb-text-muted',
+  '--arc-bb-accent': 'bb-accent',
+  '--arc-bb-on-accent': 'bb-on-accent',
+  '--arc-bb-surface': 'bb-surface',
+  '--arc-bb-focus': 'bb-focus',
+  '--arc-bb-danger': 'bb-danger',
+}
+const faixaBlock = block(css, /\[data-bigbox-theme=["']faixa["']\]\s*\{/)
+const bb = (name: string): string => {
+  const m = new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(faixaBlock)
+  return m ? m[1].trim() : ''
+}
+
+type RGBA = [number, number, number, number]
+function parseColor(v: string): RGBA {
+  const hex = /^#([0-9a-fA-F]{3,8})$/.exec(v)
+  if (hex) {
+    let h = hex[1]
+    if (h.length <= 4) h = [...h].map((c) => c + c).join('')
+    const n = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16))
+    const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1
+    return [n[0], n[1], n[2], a]
+  }
+  const f = /^rgba?\(([^)]+)\)$/.exec(v)
+  if (f) {
+    const p = f[1].split(/[\s,/]+/).filter(Boolean).map((x) => (x.endsWith('%') ? parseFloat(x) / 100 : parseFloat(x)))
+    return [p[0], p[1], p[2], p[3] ?? 1]
+  }
+  throw new Error(`cor não reconhecida: ${v}`)
+}
+const toHex = (c: number[]) => '#' + c.slice(0, 3).map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')
+function over(top: RGBA, base: string): string {
+  const b = parseColor(base)
+  return toHex([0, 1, 2].map((i) => top[i] * top[3] + b[i] * (1 - top[3])))
+}
+const solid = (name: string) => toHex(parseColor(bb(name)))
+
+describe('theme: tokens do Big Box (fase 13)', () => {
+  it('BBX-025/cada um dos tokens (bg, bg-2, scrim, text, text-muted, accent, on-accent, surface, focus, danger) tem valor sob [data-bigbox-theme="faixa"] e utilitário em @theme inline', () => {
+    expect(faixaBlock).not.toBe('')
+    for (const [name, util] of Object.entries(bbTokens)) {
+      expect(bb(name), `valor de ${name}`).not.toBe('')
+      const re = new RegExp(`--color-${util}\\s*:\\s*var\\(${name}\\)\\s*;`)
+      expect(re.test(themeInline), `--color-${util}: var(${name})`).toBe(true)
+    }
+  })
+
+  it('BBX-026/text, text-muted e danger ≥ 4,5:1 sobre o scrim composto sobre branco e sobre preto', () => {
+    const scrim = parseColor(bb('--arc-bb-scrim'))
+    for (const base of ['#ffffff', '#000000']) {
+      const bg = over(scrim, base)
+      for (const t of ['--arc-bb-text', '--arc-bb-text-muted', '--arc-bb-danger']) {
+        const r = contrast(solid(t), bg)
+        expect(r, `${t} sobre scrim/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('BBX-026/on-accent sobre accent ≥ 4,5:1', () => {
+    expect(contrast(solid('--arc-bb-on-accent'), solid('--arc-bb-accent'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('BBX-026/text sobre surface ≥ 4,5:1', () => {
+    expect(contrast(solid('--arc-bb-text'), solid('--arc-bb-surface'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('BBX-026/focus ≥ 3:1 contra o scrim composto nos dois casos', () => {
+    const scrim = parseColor(bb('--arc-bb-scrim'))
+    for (const base of ['#ffffff', '#000000']) {
+      const r = contrast(solid('--arc-bb-focus'), over(scrim, base))
+      expect(r, `focus sobre scrim/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('BBX-026/o scrim tem alfa ≥ 0,72 na zona do texto', () => {
+    expect(parseColor(bb('--arc-bb-scrim'))[3]).toBeGreaterThanOrEqual(0.72)
+  })
+})
+
 // ---- Phase 10.1 (AJU-004, AJU-005, AJU-008) ----
 const plainCss = css.replace(/\/\*[\s\S]*?\*\//g, '')
 

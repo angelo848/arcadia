@@ -1,3 +1,4 @@
+import { resolveTheme } from '../bigbox/themes/registry'
 import type { FilterSpec } from './filters'
 
 // Local UI preferences; they never go to the agent [UI-030, UIX-012, UIX-020].
@@ -21,6 +22,29 @@ export function writeLibraryView(v: LibraryView, storage?: Pick<Storage, 'setIte
   try {
     const s = storage ?? window.localStorage
     s.setItem(VIEW_KEY, v)
+  } catch {
+    // Storage unavailable: the preference is not kept.
+  }
+}
+
+export type BigBoxThemeId = 'faixa' | 'mosaico' | 'roda'
+
+const BIGBOX_THEME_KEY = 'arcadia.bigBoxTheme'
+
+// readBigBoxTheme: only the available themes are accepted; anything else is 'faixa' [BBX-023].
+export function readBigBoxTheme(storage?: Pick<Storage, 'getItem'>): BigBoxThemeId {
+  try {
+    const s = storage ?? window.localStorage
+    return resolveTheme(s.getItem(BIGBOX_THEME_KEY)).id
+  } catch {
+    return 'faixa'
+  }
+}
+
+export function writeBigBoxTheme(id: BigBoxThemeId, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    const s = storage ?? window.localStorage
+    s.setItem(BIGBOX_THEME_KEY, id)
   } catch {
     // Storage unavailable: the preference is not kept.
   }

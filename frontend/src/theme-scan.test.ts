@@ -70,6 +70,17 @@ describe('varredura do tema', () => {
     expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
   })
 
+  it('BBX-025/a varredura de UIX-006 passa a incluir frontend/src/bigbox/ (nenhuma classe de cor da paleta nem cor literal)', () => {
+    const own = files.filter(([p]) => p.startsWith('./bigbox/'))
+    expect(own.length, 'há .tsx em bigbox/ na varredura').toBeGreaterThan(0)
+    const hits: string[] = []
+    for (const [path, src] of own) {
+      for (const m of src.matchAll(palette)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      for (const m of src.matchAll(literalColor)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
+  })
+
   it('UIX-006/nenhum .tsx usa classe de paleta do Tailwind (padrão de design §3)', () => {
     const hits = scan(palette)
     expect(hits, `classes de paleta:\n${hits.join('\n')}`).toEqual([])
