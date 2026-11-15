@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // fileSource is the single-file importer (IMP-004): the user picks one file, of any
@@ -48,14 +47,14 @@ func (fileSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 		return res, nil
 	}
 	name := filepath.Base(in.Path)
-	ext := filepath.Ext(name)
-	title := strings.TrimSpace(strings.TrimSuffix(name, ext))
+	stem, ext := SplitExt(name)
+	title := NormalizeTitle(stem, false)
 	if title == "" {
 		res.Warnings = append(res.Warnings, "Arquivo: nome vazio")
 		return res, nil
 	}
 	launch := LaunchEmulator
-	if runnableExts[strings.ToLower(ext)] {
+	if runnableExts["."+ext] {
 		launch = LaunchExe
 	}
 	res.Candidates = append(res.Candidates, Candidate{
@@ -64,6 +63,9 @@ func (fileSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 		LaunchType:   launch,
 		LaunchTarget: in.Path,
 		InstallDir:   filepath.Dir(in.Path),
+		File:         name,
+		Extension:    ext,
+		Discs:        1,
 	})
 	return res, nil
 }
