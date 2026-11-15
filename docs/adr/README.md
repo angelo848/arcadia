@@ -44,3 +44,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0028](0028-biblioteca-em-tres-colunas-sem-pagina-do-jogo.md) | Biblioteca em três colunas e fim da página do jogo | aceito |
 | [0029](0029-tema-por-variaveis-css.md) | Tema por variáveis CSS | aceito |
 | [0030](0030-limites-de-imagem-por-tipo-como-tabela-do-dominio.md) | Limites de imagem por tipo como tabela do domínio | aceito |
+| [0031](0031-avisos-de-mudanca-em-segundo-plano-como-notificacoes-de-invalidacao.md) | Avisos de mudança em segundo plano como notificações de invalidação | aceito |

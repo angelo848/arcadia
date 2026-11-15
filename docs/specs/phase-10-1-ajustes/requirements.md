@@ -226,6 +226,9 @@ primeira ou a última passa ao destaque e recebe o foco.
 foco numa miniatura diferente da destacada).
 
 ### AJU-013 — Troca de jogo e imagens que falham
+· alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-009): "ou G recebe imagens novas" deixa de voltar à
+primeira imagem; imagens novas do mesmo jogo mantêm a imagem em destaque (IMG-009). A troca de jogo continua levando à
+primeira.
 Dado o carrossel de G com a imagem k em destaque, quando o jogo em foco passa a H (ou G recebe imagens novas, UIX-033),
 então a primeira imagem de H fica em destaque e a faixa volta ao início. Dado uma imagem em destaque que falha ao
 carregar, então o placeholder aparece no lugar dela; dado uma miniatura que falha, então o placeholder aparece só naquela
@@ -370,6 +373,9 @@ e toda cor nova é um token `--arc-*` (AJU-005).
 
 ### AJU-028 — Onde a fase mexe
 · alterado em 2026-11-14: sem a parte de IPC e de completar existentes (decisão 1 do usuário).
+· alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-013): o critério vale para o diff da fase 10.1; a
+fase 10.2 acrescenta a notificação `media.changed` ao IPC (v0.12.0) e muda `internal/ipc`, `internal/agent` e o repasse
+de `cmd/arcadia` (sem binding novo).
 Dado o diff da fase, então não há mudança em `internal/tracker`, em `cmd/fake-game`, em `internal/ipc`, nos bindings de
 `cmd/arcadia`, no contrato IPC (continua a v0.11.0) nem em migração ou query do banco (`internal/store/queries`); as
 mudanças em Go ficam em `internal/importers` (pastas e nomes do LaunchBox), `internal/domain` (tabela de limites) e
@@ -405,6 +411,8 @@ visível, a importação inteira termina (em lotes) e os jogos do LaunchBox pass
 - **Capas em lote no IPC** (limitação 3 da fase 10): a escolha da substituta (AJU-015) usa a mesma leitura por cartão de
   hoje; um método em lote continua para depois.
 - **Aviso de imagens novas** quando a fila de mídia termina (limitação 2 da fase 10).
+  · alterado em 2026-11-14: tratado na fase 10.2 ([phase-10-2-imagens-ao-vivo](../phase-10-2-imagens-ao-vivo/requirements.md)),
+  com um aviso por imagem gravada, agrupado por jogo.
 
 ## Limitações conhecidas
 

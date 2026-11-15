@@ -369,6 +369,8 @@ Critérios acrescentados após a revisão (2026-11-14):
   aparece no modal de B.
 
 ### UIX-033 — Buscar metadados
+· alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-011): as imagens baixadas pela fila depois de
+aplicar aparecem no carrossel e no cartão conforme chegam (`media.changed`), sem trocar o jogo em foco.
 Dado G em foco, quando o usuário toca "Buscar metadados", então abre o diálogo de busca de metadados de G (MID-002..MID-004,
 tamanho médio). Depois de aplicar um candidato, o painel mostra os dados novos e o carrossel lê a lista de mídia de novo.
 · verificação: teste de componente.
@@ -528,6 +530,8 @@ Critério acrescentado após a revisão (2026-11-14):
 ### UIX-047 — Sem mudança no agente, no tracker e no IPC
 · alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-028): vale para a fase 10; na fase 10.1, agente, domínio e
 importadores mudam; o tracker e o IPC (v0.11.0) continuam sem mudança.
+· alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-013): na fase 10.2, o IPC ganha a notificação
+`media.changed` (v0.12.0, só acréscimo) e o agente e o repasse do desktop mudam; o tracker continua sem mudança.
 Dado o diff da fase, então não há mudança em `internal/` nem no contrato IPC (continua a v0.11.0 da fase 9), e nenhum
 binding novo é criado em `cmd/arcadia`; a única mudança em Go é a das opções da janela (UIX-001, UIX-002).
 · verificação: revisão do diff; o teste de contrato do IPC continua passando sem alteração.
@@ -572,6 +576,8 @@ A confirmar na aprovação; não geram requisito nem teste.
    para jogos importados a partir dela; os já importados ganham as imagens na reimportação com a base limpa.
 2. **Imagens que chegam depois:** a fila de mídia (MID-005) não avisa a UI quando termina; o carrossel e a capa mostram as
    imagens novas na próxima leitura (trocar de jogo em foco, reconexão ou nova busca).
+   · alterado em 2026-11-14: resolvida na fase 10.2 ([phase-10-2-imagens-ao-vivo](../phase-10-2-imagens-ao-vivo/requirements.md),
+   IMG-001..IMG-011). A reconexão, citada aqui, não relia a lista de mídia; passa a reler (IMG-010).
 3. **Uma leitura por cartão:** a capa de cada cartão carregado continua vindo de um `MediaList` por jogo (como hoje). Em
    bibliotecas grandes, rolar rápido dispara muitas leituras; um método de capas em lote precisaria de mudança no IPC.
 4. **Contagem da plataforma sem filtros:** o número ao lado de cada plataforma não muda com os outros filtros (decisão c).

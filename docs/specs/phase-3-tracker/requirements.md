@@ -436,6 +436,8 @@ Dado que "Jogar" ou "Salvar" falha, então a mensagem de DSK-011 aparece num avi
 botão daquele jogo mostra "Iniciando…" e fica desabilitado.
 
 ### UI-009 — Recarga ao reconectar
+· alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-010): a reconexão também relê as listas de mídia já
+carregadas.
 Dado que o indicador passa de "Desconectado" para "Conectado", então a UI recarrega a lista de jogos e a sessão atual.
 
 ### UI-010 — Estado vazio e carregamento
