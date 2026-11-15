@@ -34,4 +34,25 @@ func TestMediaKindLimit(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("VID-002/MediaKindLimit(video) = 1 e os demais valores não mudam (cover 1, screenshot 10, background/title/select/banner 2, desconhecido 0)", func(t *testing.T) {
+		t.Parallel()
+		want := map[string]int{
+			"video":      1,
+			"cover":      1,
+			"screenshot": 10,
+			"background": 2,
+			"title":      2,
+			"select":     2,
+			"banner":     2,
+			"Video":      0,
+			"logo":       0,
+			"":           0,
+		}
+		for kind, n := range want {
+			if got := domain.MediaKindLimit(kind); got != n {
+				t.Errorf("MediaKindLimit(%q) = %d, want %d", kind, got, n)
+			}
+		}
+	})
 }

@@ -220,7 +220,7 @@ func TestMigration8(t *testing.T) {
 	t.Run("PLT-001/banco vazio fica com as 13 plataformas iguais a domain.SeedPlatforms", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 8)
+		requireGooseVersion(t, s, 9) // alterado em 2026-11-15 (fase 13): migração 00009
 
 		rows := m8Platforms(t, s.DB())
 		if len(rows) != len(domain.SeedPlatforms) || len(rows) != 13 {
