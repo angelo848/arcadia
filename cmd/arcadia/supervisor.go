@@ -235,6 +235,13 @@ func (s *supervisor) handleNote(ctx context.Context, n ipc.Notification) {
 			return
 		}
 		s.cfg.Emit(sessionChangedEvent, v)
+	case ipc.MethodMediaChanged:
+		v, err := decodeMediaChanged(n.Params)
+		if err != nil {
+			s.cfg.Log.Warn("media.changed com parâmetros inválidos", "error", err.Error())
+			return
+		}
+		s.cfg.Emit(mediaChangedEvent, v)
 	case ipc.MethodShutdown:
 		if s.state == stateQuitting {
 			return

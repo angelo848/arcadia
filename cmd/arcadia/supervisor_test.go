@@ -1599,6 +1599,111 @@ func collectEmits(h *supHarness) []supEmit {
 	return got
 }
 
+// T06 (docs/specs/phase-10-2-imagens-ao-vivo/tasks.md): media.changed -> media:changed.
+const msgMediaChangedInvalid = "media.changed com parâmetros inválidos"
+
+func TestSupervisorMediaChanged(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IMG-005/media.changed {gameId: 42} emite media:changed com MediaChangedView{GameID: 42}", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		h.client.send(t, ipc.Notification{Method: ipc.MethodMediaChanged, Params: json.RawMessage(`{"gameId":42}`)})
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 1 {
+			t.Fatalf("emitted %#v, want exactly one media:changed", got)
+		}
+		if got[0].event != mediaChangedEvent {
+			t.Errorf("event = %q, want %q", got[0].event, "media:changed")
+		}
+		if v, ok := got[0].data.(MediaChangedView); !ok || v.GameID != 42 {
+			t.Errorf("data = %#v, want MediaChangedView{GameID: 42}", got[0].data)
+		}
+		if n := h.logs.countLevel(slog.LevelWarn); n != 0 {
+			t.Errorf("Warn records = %d, want 0; log:\n%s", n, h.logs.dump())
+		}
+	})
+
+	t.Run("IMG-005/params ausentes, JSON inválido, {}, gameId null, 0, -3, 1.5 e \"7\": um Warn cada e nada emitido", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		bad := []json.RawMessage{
+			nil,
+			json.RawMessage(`{bad`),
+			json.RawMessage(`{}`),
+			json.RawMessage(`{"gameId":null}`),
+			json.RawMessage(`{"gameId":0}`),
+			json.RawMessage(`{"gameId":-3}`),
+			json.RawMessage(`{"gameId":1.5}`),
+			json.RawMessage(`{"gameId":"7"}`),
+		}
+		for _, p := range bad {
+			h.client.send(t, ipc.Notification{Method: ipc.MethodMediaChanged, Params: p})
+		}
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		if got := collectEmits(h); len(got) != 0 {
+			t.Errorf("emitted %#v, want nothing", got)
+		}
+		if n := len(h.logs.find(0, slog.LevelWarn, msgMediaChangedInvalid)); n != len(bad) {
+			t.Errorf("%q logged %d times, want %d; log:\n%s", msgMediaChangedInvalid, n, len(bad), h.logs.dump())
+		}
+	})
+
+	t.Run("IMG-005/o repasse não chama nenhum método do agente, não chama Quit e o supervisor continua conectado", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+		before := len(h.client.methodCalls())
+
+		h.client.send(t, ipc.Notification{Method: ipc.MethodMediaChanged, Params: json.RawMessage(`{"gameId":7}`)})
+		select {
+		case e := <-h.emits:
+			if e.event != mediaChangedEvent {
+				t.Fatalf("event = %q, want %q", e.event, mediaChangedEvent)
+			}
+		case <-time.After(testTimeout):
+			t.Fatal("media:changed not emitted")
+		}
+		if h.isDone() {
+			t.Error("supervisor stopped after media.changed")
+		}
+		if !h.client.Connected() {
+			t.Error("client no longer connected")
+		}
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		if after := len(h.client.methodCalls()); after != before {
+			t.Errorf("agent methods called %d times after media.changed, want 0: %v", after-before, h.client.methodCalls())
+		}
+		if n := h.quitN.Load(); n != 0 {
+			t.Errorf("Quit called %d times", n)
+		}
+		if n := h.ens.n.Load(); n != 1 {
+			t.Errorf("Ensure called %d times, want 1 (no relaunch)", n)
+		}
+	})
+
+	t.Run("IMG-005/mediaChangedEvent é \"media:changed\"", func(t *testing.T) {
+		t.Parallel()
+		if mediaChangedEvent != "media:changed" {
+			t.Errorf("mediaChangedEvent = %q, want %q", mediaChangedEvent, "media:changed")
+		}
+	})
+}
+
 func TestSupervisorSessionChanged(t *testing.T) {
 	t.Parallel()
 
