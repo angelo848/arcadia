@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AgentConflict } from './components/AgentConflict'
 import { AgentIndicator } from './components/AgentIndicator'
@@ -201,15 +201,22 @@ export default function App() {
   const importBlocks = importing && importBusy
   const anyModalOpen = importBlocks || emulating || platformsOpen || keying || dialog !== null
   const lastBatchState = useRef<string | null>(null)
+  // attention blinks the header indicator once, when the batch gets ready while another modal is open [MET-067].
+  const [batchAttention, setBatchAttention] = useState(false)
   // Only the change searching -> ready opens the confirmation by itself; a first read of ready (reopening
   // the app) does not. With another modal open, or the import window busy, the window does not open:
-  // the header indicator shows the state [MET-067].
-  useEffect(() => {
+  // the header indicator blinks instead [MET-067]. Layout effect: the blink flag lands in the same commit as the
+  // "ready" indicator, so the indicator never shows without it.
+  useLayoutEffect(() => {
     const prev = lastBatchState.current
     lastBatchState.current = batchState
-    if (prev === 'searching' && batchState === 'ready' && !anyModalOpen) {
-      setImporting(false)
-      setReviewing(true)
+    if (prev === 'searching' && batchState === 'ready') {
+      if (anyModalOpen) {
+        setBatchAttention(true)
+      } else {
+        setImporting(false)
+        setReviewing(true)
+      }
     }
   }, [batchState, anyModalOpen])
   // The statistics page replaces the library while it is open (phase 8).
@@ -423,6 +430,8 @@ export default function App() {
           <MetadataBatchChip
             status={metadataBatch.status}
             interrupted={metadataBatch.interrupted}
+            attention={batchAttention}
+            onAttentionEnd={() => setBatchAttention(false)}
             onOpenReview={() => setReviewing(true)}
             onCancel={() => void metadataBatch.cancel().catch((e: unknown) => setError(errorMessage(e)))}
             onDiscard={() => void metadataBatch.discard().catch((e: unknown) => setError(errorMessage(e)))}
@@ -444,6 +453,7 @@ export default function App() {
           }}
           onClose={() => setImporting(false)}
           onBusyChange={setImportBusy}
+          onBatchStarted={() => void metadataBatch.refresh().catch((e: unknown) => setError(errorMessage(e)))}
         />
       )}
       {reviewing && metadataBatch.status !== null && (

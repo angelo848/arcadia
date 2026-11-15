@@ -378,6 +378,17 @@ describe('MetadataReviewDialog', () => {
     expect(screen.queryByText(/sem correspondência/)).toBeNull()
   })
 
+  it('MET-063/contador conta como "sem correspondência" as linhas nenhum que têm alternativas', async () => {
+    // A "nenhum" row with alternatives is not a match, so it is counted too (MET-063, MET-053).
+    const withAlternatives = rowOf(16, 'none', [cand('Alternativa 16', 2003, 'PC', 0.5)], -1)
+    installApp([...fixture(), withAlternatives])
+    renderReview()
+    await loaded(16)
+
+    // Same 13 selectable rows; 2 without alternatives plus the 1 with them = 3 without a match.
+    expect(screen.getByText('9 de 13 jogos selecionados (3 sem correspondência)')).toBeInTheDocument()
+  })
+
   it('MET-064/Aplicar selecionados envia só as linhas marcadas com o índice da alternativa e fecha', async () => {
     installApp(fixture())
     const onApply = vi.fn(async () => undefined)

@@ -77,9 +77,11 @@ function parseEvent(p: unknown): BatchEventPayload | null {
 // useMetadataBatch follows the batch of the agent: one metadata:batch subscription, reads the status when the state changes [MET-055].
 // interrupted turns true when there was a batch and the agent now reports none (restart) [MET-067].
 // connected is the agent connection of the caller: a reconnection reads the state again [MET-055].
+// refresh reads the state now (e.g. after a batch was started by another window) [MET-053].
 export function useMetadataBatch(connected = true): {
   status: BatchStatusView | null
   interrupted: boolean
+  refresh(): Promise<void>
   start(ids: number[]): Promise<void>
   cancel(): Promise<void>
   discard(): Promise<void>
@@ -106,9 +108,8 @@ export function useMetadataBatch(connected = true): {
     }
     const next = res.batch ?? null
     const prev = current.current
-    if (next === null && prev !== null) {
-      setInterrupted(true)
-    }
+    // The notice turns on once, when the batch disappears; the read after it turns it off [MET-067].
+    setInterrupted(next === null && prev !== null)
     commit(next)
     if (next !== null && next.state === 'done' && prev?.state !== 'done') {
       invalidateAfterDone(qc)
@@ -189,7 +190,7 @@ export function useMetadataBatch(connected = true): {
     [refresh],
   )
 
-  return { status, interrupted, start, cancel, discard, apply }
+  return { status, interrupted, refresh, start, cancel, discard, apply }
 }
 
 // loadBatchRows reads every row of a batch in pages of 100 until next is null [MET-057].
@@ -235,12 +236,12 @@ export function chooseCandidate(r: ReviewRow, choice: number): ReviewRow {
 }
 
 // reviewCounts: selectable = rows with a selected item (candidates and choice >= 0; "Nenhum" is not selectable),
-// checked = marked rows, none = rows without candidates [MET-063].
+// checked = marked rows, none = rows with confidence "none", with or without candidates [MET-063].
 export function reviewCounts(rows: ReviewRow[]): { selectable: number; checked: number; none: number } {
   return {
     selectable: rows.filter((r) => r.row.candidates.length > 0 && r.choice >= 0).length,
     checked: rows.filter((r) => r.checked).length,
-    none: rows.filter((r) => r.row.candidates.length === 0).length,
+    none: rows.filter((r) => r.row.confidence === 'none').length,
   }
 }
 

@@ -767,8 +767,14 @@ describe('invariantes da UI', () => {
     fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'file' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Escolher arquivo' }))
     await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Arquivo' })).toHaveValue('C:\\Games\\alfa.bin'))
+    // Plataforma antes de ler, como no IMV-081 (sem ela "Obter dados" fica desabilitado).
+    const filePlatform = within(dialog).getByRole('combobox', { name: 'Plataforma do arquivo' }) as HTMLSelectElement
+    fireEvent.change(filePlatform, { target: { value: filePlatform.options[filePlatform.options.length - 1].value } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
     await within(dialog).findByRole('checkbox', { name: 'Selecionar Jogo 0' })
+    // "Nome para busca" vazio desabilita "Obter dados": preenche o nome do arquivo.
+    fireEvent.change(within(dialog).getByLabelText('Nome para busca'), { target: { value: 'Jogo Alfa' } })
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Obter dados' })).toBeEnabled())
     fireEvent.click(within(dialog).getByRole('button', { name: 'Obter dados' }))
     fireEvent.click(await within(dialog).findByRole('radio', { name: /Jogo Alfa/ }))
     await flush()

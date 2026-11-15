@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import type { MetadataCandidateView } from './lib/metadata'
 import type { BatchRowView, BatchStatusView } from './lib/metadataBatch'
+import type { ImportCandidate } from './lib/imports'
 
 // App-level tests of the batch of unified metadata (phase 12, T38; MET-053..067): the header indicator,
 // the automatic opening of the confirmation window, and the invalidations at the end of the apply.
@@ -78,6 +79,8 @@ function install() {
       return Promise.resolve()
     }),
     ImportScan: vi.fn(() => Promise.resolve({ candidates: [], warnings: [] })),
+    ImportApply: vi.fn(() => Promise.resolve({ applied: [], skipped: [] })),
+    PickFolder: vi.fn(() => Promise.resolve('')),
   }
   const w = window as unknown as { go?: unknown; runtime?: unknown }
   w.go = { main: { App: app } }
@@ -328,6 +331,29 @@ describe('MET-067 abertura automática e indicador', () => {
     expect(screen.getAllByText('A busca de metadados foi interrompida. Use Buscar metadados no jogo.')).toHaveLength(1)
   })
 
+  it('MET-067/com outro modal aberto, o indicador pisca uma vez ao chegar em ready (data-attention) e a janela não abre', async () => {
+    batch = batchOf({ state: 'searching', done: 1 })
+    reviewRows = [row(10, 'Hollow Knight')]
+    renderApp()
+    await waitConnected()
+    openHeader('Provedores')
+    expect(screen.getByRole('dialog', { name: 'Chaves dos provedores' })).toBeInTheDocument()
+
+    batch = batchOf({ state: 'ready', done: 3 })
+    announce(batch)
+
+    await findChip(/Revisar metadados \(3\)/)
+    const mark = document.querySelector('[data-attention]')
+    expect(mark).toHaveAttribute('data-attention', 'true')
+    expect(reviewDialog()).toBeNull()
+
+    // The highlight ends once (animationend); the same state read again does not blink again.
+    fireEvent.animationEnd(mark as Element)
+    await waitFor(() => expect(document.querySelector('[data-attention]')).toBeNull())
+    announce(batch)
+    expect(document.querySelector('[data-attention]')).toBeNull()
+  })
+
   it('MET-067/reconexão relê o estado (MET-055)', async () => {
     batch = batchOf({ state: 'searching', done: 1 })
     renderApp()
@@ -341,6 +367,70 @@ describe('MET-067 abertura automática e indicador', () => {
 
     await findChip('Aplicando metadados 2/3')
     expect(app.MetadataBatchStatus.mock.calls.length).toBeGreaterThan(reads)
+  })
+})
+
+// folderCandidate is a candidate of the "Pasta" source, as ImportScan returns it (IMV-016).
+function folderCandidate(file: string, title: string): ImportCandidate {
+  return {
+    source: 'folder',
+    title,
+    platform: '',
+    launchType: 'emulator',
+    launchTarget: `E:\\Games\\ps1\\${file}`,
+    installDir: 'E:\\Games\\ps1',
+    developers: [],
+    publishers: [],
+    genres: [],
+    year: null,
+    description: '',
+    playModes: [],
+    playedSeconds: null,
+    lastPlayed: null,
+    exists: false,
+    file,
+    extension: 'cue',
+    discs: 1,
+  }
+}
+
+describe('MET-050 e MET-053 busca iniciada pela janela de importação', () => {
+  it('MET-053/depois de batchStart pelo ImportDialog, o indicador mostra "Buscando metadados 0/n" sem esperar notificação', async () => {
+    batch = null
+    app.ImportScan.mockResolvedValueOnce({
+      candidates: [folderCandidate('Spyro.cue', 'Spyro'), folderCandidate('Crash.cue', 'Crash')],
+      warnings: [],
+    })
+    app.PickFolder.mockResolvedValueOnce('E:\\Games\\ps1')
+    app.ImportApply.mockResolvedValueOnce({
+      applied: [
+        { gameId: 10, title: 'Spyro' },
+        { gameId: 11, title: 'Crash' },
+      ],
+      skipped: [],
+    })
+    // The agent creates the batch and answers the status read; no metadata:batch notification is emitted.
+    app.MetadataBatchStart.mockImplementationOnce((ids: number[]) => {
+      batch = batchOf({ state: 'searching', done: 0, total: ids.length })
+      return Promise.resolve({ batchId: 7, total: ids.length })
+    })
+    renderApp()
+    await waitConnected()
+
+    openHeader('Importar')
+    const dialog = importDialog() as HTMLElement
+    fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'folder' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Escolher pasta' }))
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Pasta' })).toHaveValue('E:\\Games\\ps1'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    await within(dialog).findByRole('table')
+    // The box needs the provider keys, read when the dialog opens; wait for it before importing.
+    await waitFor(() => expect(within(dialog).getByRole('checkbox', { name: 'Buscar metadados e imagens' })).toBeEnabled())
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
+
+    await waitFor(() => expect(app.MetadataBatchStart).toHaveBeenCalledWith([10, 11]))
+    expect(await screen.findByText('Buscando metadados 0/2', undefined, { timeout: 3000 })).toBeInTheDocument()
   })
 })
 

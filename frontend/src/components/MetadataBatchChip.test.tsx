@@ -25,6 +25,7 @@ function props(over: Partial<MetadataBatchChipProps> = {}): MetadataBatchChipPro
     onCancel: vi.fn(),
     onDiscard: vi.fn(),
     onCloseSummary: vi.fn(),
+    onAttentionEnd: vi.fn(),
     ...over,
   }
 }
@@ -162,6 +163,35 @@ describe('MetadataBatchChip', () => {
     render(<MetadataBatchChip {...p} />)
 
     expect(screen.getAllByText('A busca de metadados foi interrompida. Use Buscar metadados no jogo.')).toHaveLength(1)
+  })
+
+  it('MET-067/aviso de interrupção some quando interrupted volta a false (já exibido)', () => {
+    const p = props({ status: null, interrupted: true })
+    const { rerender } = render(<MetadataBatchChip {...p} />)
+    expect(screen.getByText('A busca de metadados foi interrompida. Use Buscar metadados no jogo.')).toBeInTheDocument()
+
+    rerender(<MetadataBatchChip {...p} interrupted={false} />)
+
+    expect(screen.queryByText(/foi interrompida/)).toBeNull()
+  })
+
+  it('MET-067/attention true marca o indicador com data-attention="true" e animationend avisa o fim, uma vez', () => {
+    const p = props({ status: status({ state: 'ready', done: 3, total: 3 }), attention: true })
+    const { container } = render(<MetadataBatchChip {...p} />)
+
+    const mark = container.querySelector('[data-attention]')
+    expect(mark).toHaveAttribute('data-attention', 'true')
+
+    fireEvent.animationEnd(mark as Element)
+
+    expect(p.onAttentionEnd).toHaveBeenCalledTimes(1)
+    expect(p.onOpenReview).not.toHaveBeenCalled()
+  })
+
+  it('MET-067/sem attention não há marcação de destaque', () => {
+    const { container } = render(<MetadataBatchChip {...props({ status: status({ state: 'ready', done: 3, total: 3 }) })} />)
+
+    expect(container.querySelector('[data-attention]')).toBeNull()
   })
 
   it('MET-067/sem interrupção e sem busca não mostra o aviso', () => {

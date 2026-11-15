@@ -35,13 +35,16 @@ export type ImportDialogProps = {
   // onBusyChange reports every change of the busy state, and false when the dialog unmounts,
   // so the App knows whether an import is running (MET-053, MET-060).
   onBusyChange?: (busy: boolean) => void
+  // onBatchStarted runs after the metadata batch of the import was started with success (MET-053),
+  // so the App reads the batch state at once.
+  onBatchStarted?: () => void
 }
 
 // ImportDialog imports games from another launcher in two steps: it reads the
 // source and shows the review rows, then writes only the ones the user checked
 // [IMP-001, IMV-040]. Candidates already in the library are shown and cannot be
 // checked [IMP-006]. It is modal with focus trapped inside, like DeleteDialog [UI-041].
-export function ImportDialog({ onImported, onClose, onBusyChange }: ImportDialogProps): JSX.Element {
+export function ImportDialog({ onImported, onClose, onBusyChange, onBatchStarted }: ImportDialogProps): JSX.Element {
   const [source, setSource] = useState<ImportSource>('steam')
   const [path, setPath] = useState('')
   // platformChoice is the user's pick; null means the default (IMV-061).
@@ -255,11 +258,14 @@ export function ImportDialog({ onImported, onClose, onBusyChange }: ImportDialog
     }
     // The batch starts only after the import is written; its failure does not undo the import (MET-051).
     if (applied.length > 0 && withSearch) {
-      void batch.start(applied.map((a) => a.gameId)).catch((e: unknown) => {
-        if (mounted.current) {
-          setError((prev) => (prev === null ? messageOf(e) : `${prev} ${messageOf(e)}`))
-        }
-      })
+      void batch
+        .start(applied.map((a) => a.gameId))
+        .then(() => onBatchStarted?.())
+        .catch((e: unknown) => {
+          if (mounted.current) {
+            setError((prev) => (prev === null ? messageOf(e) : `${prev} ${messageOf(e)}`))
+          }
+        })
     }
     if (!mounted.current) {
       return
@@ -510,7 +516,7 @@ export function ImportDialog({ onImported, onClose, onBusyChange }: ImportDialog
             <button
               type="button"
               onClick={() => void searchFileMeta()}
-              disabled={busy || metaBusy || keys === null || noKeys || noPlatform}
+              disabled={busy || metaBusy || keys === null || noKeys || noPlatform || searchName.trim() === ''}
               aria-describedby={noKeys ? searchNoteId : undefined}
               className="rounded bg-raised px-4 py-1.5 text-sm text-fg hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
             >

@@ -1117,6 +1117,20 @@ describe('ImportDialog · nome para busca e Obter dados do arquivo avulso (fase 
     expect(obterDados()).toBeDisabled()
   })
 
+  it('MET-041/Obter dados desativado com Nome para busca vazio ou só espaços, e ativo com texto', async () => {
+    await importFile([spyro()])
+    await waitFor(() => expect(obterDados()).toBeEnabled())
+
+    fireEvent.change(nameBox(), { target: { value: '' } })
+    expect(obterDados()).toBeDisabled()
+
+    fireEvent.change(nameBox(), { target: { value: '   ' } })
+    expect(obterDados()).toBeDisabled()
+
+    fireEvent.change(nameBox(), { target: { value: 'Spyro' } })
+    expect(obterDados()).toBeEnabled()
+  })
+
   it.each<[string, ImportSource]>([
     ['Pasta', 'folder'],
     ['Steam', 'steam'],

@@ -1,12 +1,15 @@
-import type { JSX } from 'react'
+import { useCallback, useRef, type JSX } from 'react'
 import type { BatchStatusView } from '../lib/metadataBatch'
 
 // Indicator of the metadata batch in the header of the main window (phase 12, T38; MET-066, MET-067).
 // It shows nothing without a batch, except the one-time notice of an interrupted search (agent restart).
+// attention blinks the indicator once (CSS data-attention, tokens --arc-*); onAttentionEnd runs when the blink ends.
 
 export type MetadataBatchChipProps = {
   status: BatchStatusView | null
   interrupted: boolean
+  attention?: boolean
+  onAttentionEnd?: () => void
   onOpenReview: () => void
   onCancel: () => void
   onDiscard: () => void
@@ -21,20 +24,49 @@ const primaryButton =
   'rounded bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover'
 
 export function MetadataBatchChip(p: MetadataBatchChipProps): JSX.Element | null {
-  const { status, interrupted } = p
+  const { status, interrupted, attention = false, onAttentionEnd } = p
+
+  // The latest callback, so the root listener below is attached once per root element.
+  const endNotify = useRef(onAttentionEnd)
+  endNotify.current = onAttentionEnd
+
+  // The blink ends on animationend of the root itself. A native listener is used: React's onAnimationEnd
+  // maps to the vendor name in some DOMs, and the root is the only element that blinks.
+  const attentionRef = useCallback((el: HTMLElement | null) => {
+    if (el === null) {
+      return undefined
+    }
+    const onEnd = (e: Event) => {
+      if (e.target === el) {
+        endNotify.current?.()
+      }
+    }
+    el.addEventListener('animationend', onEnd)
+    return () => el.removeEventListener('animationend', onEnd)
+  }, [])
+
+  // The attention marks the root of whatever state is shown.
+  const rootAttention = {
+    'data-attention': attention ? 'true' : undefined,
+    ref: attentionRef,
+  }
 
   if (status === null) {
     if (!interrupted) {
       return null
     }
-    return <p className="text-sm text-muted">{interruptedText}</p>
+    return (
+      <p className="text-sm text-muted" {...rootAttention}>
+        {interruptedText}
+      </p>
+    )
   }
 
   const { state, done, total } = status
 
   if (state === 'searching') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" {...rootAttention}>
         <span className="text-sm text-fg">{`Buscando metadados ${done}/${total}`}</span>
         <button type="button" onClick={p.onCancel} className={chipButton}>
           Cancelar
@@ -45,7 +77,7 @@ export function MetadataBatchChip(p: MetadataBatchChipProps): JSX.Element | null
 
   if (state === 'ready' || state === 'cancelled') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" {...rootAttention}>
         <button type="button" onClick={p.onOpenReview} className={primaryButton}>
           {`Revisar metadados (${total})`}
         </button>
@@ -58,7 +90,7 @@ export function MetadataBatchChip(p: MetadataBatchChipProps): JSX.Element | null
 
   if (state === 'applying') {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" {...rootAttention}>
         <span className="text-sm text-fg">{`Aplicando metadados ${done}/${total}`}</span>
         <button type="button" onClick={p.onCancel} className={chipButton}>
           Cancelar
@@ -72,7 +104,7 @@ export function MetadataBatchChip(p: MetadataBatchChipProps): JSX.Element | null
   const applied = result?.applied ?? 0
   const imagesQueued = result?.imagesQueued ?? 0
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" {...rootAttention}>
       <span className="text-sm text-fg">
         {`Metadados aplicados em ${applied} jogos; ${imagesQueued} imagens na fila; ${status.failed} falharam`}
       </span>

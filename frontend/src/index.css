@@ -126,6 +126,24 @@
   max-height: 80vh;
 }
 
+/* Attention highlight of the metadata batch indicator (phase 12, MET-067): one short blink, then it ends. */
+@keyframes arc-attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--arc-accent);
+    background-color: var(--arc-surface-3);
+  }
+}
+
+[data-attention="true"] {
+  animation: arc-attention 0.9s ease-in-out 1;
+  border-radius: 0.375rem;
+}
+
 /* Big Box (phase 8): the library in full screen, with large text. */
 .big-box {
   font-size: 1.25rem;

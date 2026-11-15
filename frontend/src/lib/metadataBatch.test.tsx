@@ -215,10 +215,38 @@ describe('useMetadataBatch', () => {
     await waitFor(() => expect(result.current.interrupted).toBe(true))
     expect(result.current.status).toBeNull()
 
-    // Outra leitura null não desfaz o aviso.
+    // A leitura seguinte zera o aviso: ele já foi exibido (MET-067).
     emit('metadata:batch', { batchId: 7, state: 'applying', done: 0, total: 10, failed: 0 })
-    await settle()
-    expect(result.current.interrupted).toBe(true)
+    await waitFor(() => expect(result.current.interrupted).toBe(false))
+  })
+
+  it('MET-067/o aviso de interrupção aparece uma vez e some na leitura seguinte (zera interrupted)', async () => {
+    app.MetadataBatchStatus.mockResolvedValueOnce({ batch: status({ state: 'searching' }) })
+    app.MetadataBatchStatus.mockResolvedValue({ batch: null })
+    const qc = newClient()
+    // Every render records the flag, so the test can count how many times the notice turned on.
+    const seen: boolean[] = []
+    const { result } = renderHook(
+      () => {
+        const h = useMetadataBatch()
+        seen.push(h.interrupted)
+        return h
+      },
+      { wrapper: wrapperFor(qc) },
+    )
+    await waitFor(() => expect(result.current.status?.state).toBe('searching'))
+
+    // O agente reiniciou: a leitura volta null e o aviso liga uma vez.
+    emit('metadata:batch', { batchId: 7, state: 'ready', done: 0, total: 10, failed: 0 })
+    await waitFor(() => expect(result.current.interrupted).toBe(true))
+
+    // A leitura seguinte (outro evento, mesmo sem batch) zera o aviso: ele já foi exibido.
+    emit('metadata:batch', { batchId: 7, state: 'applying', done: 0, total: 10, failed: 0 })
+    await waitFor(() => expect(result.current.interrupted).toBe(false))
+
+    const turnedOn = seen.filter((v, i) => v && (i === 0 || !seen[i - 1])).length
+    expect(turnedOn).toBe(1)
+    expect(result.current.status).toBeNull()
   })
 
   it('MET-067/start com falha não muda o estado', async () => {
@@ -372,6 +400,17 @@ describe('buildReviewRows e marcação', () => {
 
     const withUnmarked = rs.map((r) => (r.row.gameId === 1 ? chooseCandidate(r, -1) : r))
     expect(reviewCounts(withUnmarked)).toEqual({ selectable: 12, checked: 8, none: 2 })
+  })
+
+  it('MET-063/reviewCounts.none conta a confiança none, inclusive linhas que têm alternativas', () => {
+    const rs = buildReviewRows([
+      row(1, 'none', -1, []),
+      row(2, 'none', -1, [cand('Alternativa', 0.5)]),
+      row(3, 'match', 0, [cand('Achado')]),
+    ])
+
+    expect(reviewCounts(rs).none).toBe(2)
+    expect(reviewCounts(rs)).toEqual({ selectable: 1, checked: 1, none: 2 })
   })
 
   it('MET-064/toChoices só as marcadas, na ordem', () => {
