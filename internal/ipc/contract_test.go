@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-9-plataformas contract (v0.11.0)
-// supersedes phase-8-estatisticas (v0.10.0) [IPC-041].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-9-plataformas", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-10-2-imagens-ao-vivo contract (v0.12.0)
+// supersedes phase-9-plataformas (v0.11.0) [IPC-041, IMG-013].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-10-2-imagens-ao-vivo", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-9-plataformas/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -54,6 +54,9 @@ type openRPC struct {
 			DefaultSort string   `json:"defaultSort"`
 			SortValues  []string `json:"sortValues"`
 		} `json:"x-library"`
+		Media *struct {
+			MediaChangedWindowMs *int `json:"mediaChangedWindowMs"`
+		} `json:"x-media"`
 	} `json:"info"`
 	Methods []struct {
 		Name         string `json:"name"`
@@ -62,9 +65,10 @@ type openRPC struct {
 			Name     string `json:"name"`
 			Required bool   `json:"required"`
 			Schema   struct {
-				Ref  string   `json:"$ref"`
-				Type string   `json:"type"`
-				Enum []string `json:"enum"`
+				Ref     string   `json:"$ref"`
+				Type    string   `json:"type"`
+				Enum    []string `json:"enum"`
+				Minimum *float64 `json:"minimum"`
 			} `json:"schema"`
 		} `json:"params"`
 		Result struct {
@@ -285,6 +289,7 @@ var phase6Methods = map[string]bool{
 	ipc.MethodEmulatorDelete:      false,
 	ipc.MethodPlatformSetEmulator: false,
 	ipc.MethodSessionChanged:      true,
+	ipc.MethodMediaChanged:        true,
 	ipc.MethodProviderKeyStatus:   false,
 	ipc.MethodProviderSetKey:      false,
 	ipc.MethodProviderDeleteKey:   false,
@@ -544,10 +549,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.11.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.12.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.11.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.11.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.12.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.12.0\"", contractPath, c.Info.Version)
 		}
 	})
 

@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-9-plataformas/contracts/ipc.openrpc.json (v0.11.0, which supersedes
-// the phase-8-estatisticas v0.10.0, the phase-7-midia v0.9.0, the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
+// docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json (v0.12.0, which supersedes
+// the phase-9-plataformas v0.11.0, the phase-8-estatisticas v0.10.0, the phase-7-midia v0.9.0, the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
 // the phase-4-pause v0.5.0, phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0
 // contracts kept in their specs as history).
 package ipc
@@ -55,7 +55,17 @@ const (
 	// Phase 6 (contract v0.7.0): import.scan reads, import.apply writes [IMP-001].
 	MethodImportScan  = "import.scan"
 	MethodImportApply = "import.apply"
+
+	// MethodMediaChanged is the server-to-client notification that the media
+	// list of a game changed (v0.12.0) [IMG-001].
+	MethodMediaChanged = "media.changed"
 )
+
+// MediaChangedParams are the params of the media.changed notification
+// [IMG-001, IMG-004].
+type MediaChangedParams struct {
+	GameID int64 `json:"gameId"`
+}
 
 // JSON-RPC 2.0 error codes.
 const (
