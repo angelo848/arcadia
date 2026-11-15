@@ -22,6 +22,10 @@ const maxImportCandidates = 500
 // maxScanPlatformRunes bounds the platform name of import.scan (contract v0.13.0 [IMV-071]).
 const maxScanPlatformRunes = 100
 
+// maxScanResultBytes bounds the candidates of a file or folder import.scan (contract v0.13.0
+// x-import.maxScanResultBytes [IMV-019, IMV-070]): 900 KiB, under the 1 MiB frame limit.
+const maxScanResultBytes = 900 << 10
+
 // importStore is the part of *store.Store the import handlers use.
 type importStore interface {
 	PlatformIDByName(ctx context.Context, name string) (int64, bool, error)
@@ -121,7 +125,39 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 		}
 		out.Candidates = append(out.Candidates, toIPCCandidate(c, exists))
 	}
+	if p.Source == ipc.ImportSourceFile || p.Source == ipc.ImportSourceFolder {
+		kept, warning := capScanResult(out.Candidates)
+		out.Candidates = kept
+		if warning != "" {
+			out.Warnings = append(out.Warnings, warning)
+		}
+	}
 	return out, nil
+}
+
+// capScanResult keeps the prefix of candidates whose JSON, plus one separator byte each,
+// fits in maxScanResultBytes. It never cuts a candidate in half and keeps the order. When it
+// cuts, the warning gives the total found and the number shown (import-rules.md §6, IMV-019).
+func capScanResult(cands []ipc.ImportCandidate) ([]ipc.ImportCandidate, string) {
+	used := 0
+	for i, c := range cands {
+		b, err := json.Marshal(c)
+		if err != nil {
+			// Candidates hold only plain fields, so this is unreachable; cut before it to be safe.
+			return cands[:i], capWarning(len(cands), i)
+		}
+		size := len(b) + 1
+		if used+size > maxScanResultBytes {
+			return cands[:i], capWarning(len(cands), i)
+		}
+		used += size
+	}
+	return cands, ""
+}
+
+// capWarning is the warning text of a cut scan result (import-rules.md §5).
+func capWarning(total, shown int) string {
+	return fmt.Sprintf("Pasta: %d jogos encontrados; mostrando %d (limite do tamanho da lista). Importe os demais por subpasta", total, shown)
 }
 
 // validateScanParams rejects the new import.scan parameters before any read: titleFrom

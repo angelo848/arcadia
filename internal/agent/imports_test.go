@@ -1027,6 +1027,213 @@ func TestImportScanOptions(t *testing.T) {
 	})
 }
 
+// importQueryCount runs a COUNT query on the real store and returns the value.
+func importQueryCount(t *testing.T, st *store.Store, query string) int64 {
+	t.Helper()
+	var n int64
+	if err := st.DB().QueryRowContext(t.Context(), query).Scan(&n); err != nil {
+		t.Fatalf("count %q: %v", query, err)
+	}
+	return n
+}
+
+// v2Candidate is a file-source candidate on the Sony Playstation platform with its own launch target.
+func v2Candidate(title, target string) ipc.ImportCandidate {
+	return ipc.ImportCandidate{
+		Source: ipc.ImportSourceFile, Title: title, Platform: "Sony Playstation",
+		LaunchType: "emulator", LaunchTarget: target, InstallDir: `E:\roms`,
+		Developers: []string{}, Publishers: []string{}, Genres: []string{}, PlayModes: []string{},
+	}
+}
+
+// applyV2 runs import.apply with the real store and returns its typed result.
+func applyV2(t *testing.T, st *store.Store, cands ...ipc.ImportCandidate) ipc.ImportApplyResult {
+	t.Helper()
+	h := importHandlers(st, fakeLocations{}, testClock(), nil, nil, quietLog())[ipc.MethodImportApply]
+	out, err := h(t.Context(), rawParams(t, ipc.ImportApplyParams{Candidates: cands}))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	return out.(ipc.ImportApplyResult)
+}
+
+// scanFolderV2 runs import.scan of the folder source over a spy that returns cands unchanged.
+func scanFolderV2(t *testing.T, st importStore, cands []importers.Candidate) ipc.ImportScanResult {
+	t.Helper()
+	spy := &spyImportSource{id: "folder", res: importers.Result{Candidates: cands}}
+	res, err := scanV2(t, st, map[string]importers.Source{ipc.ImportSourceFolder: spy},
+		ipc.ImportScanParams{Source: ipc.ImportSourceFolder, Path: t.TempDir(), Platform: "Sony Playstation"})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	return res
+}
+
+// TestImportApplyV2 covers import.apply with the v2 candidates: the title edited by the user is
+// written (IMV-072), the repeated scan and apply do not duplicate groups of discs (IMV-031), the
+// install_dir rule points to the folder of the main file (IMV-016), and nothing is tracked (IMV-081).
+func TestImportApplyV2(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IMV-072/título editado é gravado aparado", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		res := applyV2(t, st, v2Candidate("  Jogo Editado  ", `E:\roms\editado.bin`))
+		if len(res.Applied) != 1 || len(res.Skipped) != 0 {
+			t.Fatalf("result = %+v, want 1 applied", res)
+		}
+		importedGame(t, st, "Jogo Editado")
+	})
+
+	t.Run("IMV-072/o resumo usa o título gravado", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		res := applyV2(t, st, v2Candidate("\tResumo Final\t", `E:\roms\resumo.bin`))
+		if len(res.Applied) != 1 || res.Applied[0].Title != "Resumo Final" {
+			t.Errorf("applied = %+v, want the written title \"Resumo Final\"", res.Applied)
+		}
+	})
+
+	t.Run("IMV-072/título vazio recusa só aquele candidato como failed", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		res := applyV2(t, st,
+			v2Candidate("   ", `E:\roms\vazio.bin`),
+			v2Candidate("Jogo Bom", `E:\roms\bom.bin`))
+		if len(res.Applied) != 1 || res.Applied[0].Title != "Jogo Bom" {
+			t.Errorf("applied = %+v, want only Jogo Bom", res.Applied)
+		}
+		if len(res.Skipped) != 1 || res.Skipped[0].Reason != "failed" {
+			t.Errorf("skipped = %+v, want one failed", res.Skipped)
+		}
+	})
+
+	t.Run("IMV-072/título com mais de 200 caracteres recusa como failed", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		res := applyV2(t, st,
+			v2Candidate(strings.Repeat("a", 201), `E:\roms\longo.bin`),
+			v2Candidate(strings.Repeat("a", 200), `E:\roms\limite.bin`))
+		if len(res.Applied) != 1 || len(res.Applied[0].Title) != 200 {
+			t.Errorf("applied = %+v, want the 200-rune title only", res.Applied)
+		}
+		if len(res.Skipped) != 1 || res.Skipped[0].Reason != "failed" {
+			t.Errorf("skipped = %+v, want the 201-rune title failed", res.Skipped)
+		}
+	})
+
+	t.Run("IMV-072/file, extension, discs e discFiles são aceitos e ignorados", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		c := v2Candidate("Final Fantasy VIII", `E:\roms\ff8.cue`)
+		c.File = `04. Final Fantasy VIII\FF8 (Disc 1).cue`
+		c.Extension = "cue"
+		c.Discs = 2
+		c.DiscFiles = []string{`04. Final Fantasy VIII\FF8 (Disc 1).cue`, `04. Final Fantasy VIII\FF8 (Disc 2).cue`}
+		res := applyV2(t, st, c)
+		if len(res.Applied) != 1 || len(res.Skipped) != 0 {
+			t.Fatalf("result = %+v, want 1 applied", res)
+		}
+		g := importedGame(t, st, "Final Fantasy VIII")
+		if g.LaunchTarget != `E:\roms\ff8.cue` {
+			t.Errorf("launch target = %q, want the one of the candidate", g.LaunchTarget)
+		}
+		if n := importTableCounts(t, st)["game"]; n != 1 {
+			t.Errorf("games = %d, want 1", n)
+		}
+	})
+
+	t.Run("IMV-031/scan, apply, scan: tudo exists, inclusive grupos de disco, e o apply recusa com duplicate", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		disco := importers.Candidate{Source: importers.SourceFolder, Title: "Final Fantasy VIII", Platform: "Sony Playstation",
+			LaunchType:   importers.LaunchEmulator,
+			LaunchTarget: `E:\ps1\04. Final Fantasy VIII\Final Fantasy VIII (USA) (Disc 1)\Final Fantasy VIII (USA) (Disc 1).cue`,
+			InstallDir:   `E:\ps1\04. Final Fantasy VIII\Final Fantasy VIII (USA) (Disc 1)`,
+			File:         `04. Final Fantasy VIII (USA)\Final Fantasy VIII (USA) (Disc 1)\Final Fantasy VIII (USA) (Disc 1).cue`,
+			Extension:    "cue", Discs: 2,
+			DiscFiles: []string{
+				`04. Final Fantasy VIII (USA)\Final Fantasy VIII (USA) (Disc 1)\Final Fantasy VIII (USA) (Disc 1).cue`,
+				`04. Final Fantasy VIII (USA)\Final Fantasy VIII (USA) (Disc 2)\Final Fantasy VIII (USA) (Disc 2).cue`,
+			}}
+		solo := importers.Candidate{Source: importers.SourceFolder, Title: "Spyro - Year of the Dragon", Platform: "Sony Playstation",
+			LaunchType: importers.LaunchEmulator, LaunchTarget: `E:\ps1\31. Spyro\Spyro - Year of the Dragon (USA).cue`,
+			InstallDir: `E:\ps1\31. Spyro`, File: `31. Spyro\Spyro - Year of the Dragon (USA).cue`, Extension: "cue", Discs: 1}
+		cands := []importers.Candidate{disco, solo}
+
+		first := scanFolderV2(t, st, cands)
+		if len(first.Candidates) != 2 || first.Candidates[0].Exists || first.Candidates[1].Exists {
+			t.Fatalf("first scan = %+v, want 2 new candidates", first.Candidates)
+		}
+		if res := applyV2(t, st, first.Candidates...); len(res.Applied) != 2 {
+			t.Fatalf("apply = %+v, want 2 applied", res)
+		}
+		second := scanFolderV2(t, st, cands)
+		for _, c := range second.Candidates {
+			if !c.Exists {
+				t.Errorf("second scan: %q exists = false, want true", c.Title)
+			}
+		}
+		res := applyV2(t, st, second.Candidates...)
+		if len(res.Applied) != 0 || len(res.Skipped) != 2 {
+			t.Fatalf("second apply = %+v, want 2 skipped", res)
+		}
+		for _, s := range res.Skipped {
+			if s.Reason != "duplicate" {
+				t.Errorf("skipped %q reason = %q, want duplicate", s.Title, s.Reason)
+			}
+		}
+		if n := importTableCounts(t, st)["game"]; n != 2 {
+			t.Errorf("games = %d, want 2 (no group written twice)", n)
+		}
+	})
+
+	t.Run("IMV-016/a regra de rastreio install_dir gravada aponta para a pasta do arquivo principal", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		mainDir := `E:\ps1\04. Final Fantasy VIII\Final Fantasy VIII (USA) (Disc 1)`
+		c := importers.Candidate{Source: importers.SourceFolder, Title: "Final Fantasy VIII", Platform: "Sony Playstation",
+			LaunchType: importers.LaunchEmulator, LaunchTarget: mainDir + `\Final Fantasy VIII (USA) (Disc 1).cue`,
+			InstallDir: mainDir, File: `04. Final Fantasy VIII\Final Fantasy VIII (USA) (Disc 1)\Final Fantasy VIII (USA) (Disc 1).cue`,
+			Extension: "cue", Discs: 1}
+		scanned := scanFolderV2(t, st, []importers.Candidate{c})
+		if res := applyV2(t, st, scanned.Candidates...); len(res.Applied) != 1 {
+			t.Fatalf("apply = %+v, want 1 applied", res)
+		}
+		var rule string
+		if err := st.DB().QueryRowContext(t.Context(),
+			`SELECT r.value FROM tracking_rule r JOIN game g ON g.id = r.game_id WHERE g.title = ? AND r.kind = 'install_dir'`,
+			"Final Fantasy VIII").Scan(&rule); err != nil {
+			t.Fatalf("read install_dir rule: %v", err)
+		}
+		if rule != mainDir {
+			t.Errorf("install_dir rule = %q, want the folder of the main file %q", rule, mainDir)
+		}
+	})
+
+	t.Run("IMV-081/importar não cria sessão rastreada nem chama o tracker", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		secs := int64(60)
+		last := "2025-01-22T03:00:08Z"
+		c := v2Candidate("Jogo Jogado", `E:\roms\jogado.bin`)
+		c.PlayedSeconds = &secs
+		c.LastPlayed = &last
+		before := importTableCounts(t, st)
+		res := applyV2(t, st, c)
+		if len(res.Applied) != 1 {
+			t.Fatalf("apply = %+v, want 1 applied", res)
+		}
+		if n := importQueryCount(t, st, `SELECT COUNT(*) FROM play_session WHERE source = 'tracked'`); n != 0 {
+			t.Errorf("tracked sessions = %d, want 0", n)
+		}
+		after := importTableCounts(t, st)
+		if after["game"] != before["game"]+1 {
+			t.Errorf("games %d -> %d, want one more", before["game"], after["game"])
+		}
+	})
+}
+
 // TestImportCandidateExistsScope covers the platform used by the "already exists" check (IMV-030, IMV-063).
 func TestImportCandidateExistsScope(t *testing.T) {
 	t.Parallel()
