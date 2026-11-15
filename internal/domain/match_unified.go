@@ -259,8 +259,14 @@ func confersPlatform(m Member, key string) bool {
 }
 
 // platformTrap is the platform rule of MET-007: some member lists platforms, none confirms the
-// library platform.
+// library platform; or the group came from the unfiltered second IGDB query, which traps it whatever
+// the other members say (match-rules §1).
 func platformTrap(members []Member, lib string) bool {
+	for _, m := range members {
+		if m.Provider == "igdb" && !m.PlatformConfirmed {
+			return true
+		}
+	}
 	listed := false
 	for _, m := range members {
 		if len(m.PlatformKeys) == 0 {
@@ -272,6 +278,12 @@ func platformTrap(members []Member, lib string) bool {
 		}
 	}
 	return listed
+}
+
+// GameSimilarity is the Dice of the match keys of two members in thousandths. buildGroups uses it to
+// pick, among the groups a candidate can join, the closest one (the oldest wins a tie) [MET-005].
+func GameSimilarity(a, b Member) int {
+	return thousandths(diceKeys(MatchKey(a.Title), MatchKey(b.Title)))
 }
 
 // thousandths converts a ratio to thousandths, rounded, so thresholds compare as integers.

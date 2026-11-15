@@ -155,6 +155,7 @@ func TestIGDB(t *testing.T) {
 func TestSteamGridDB(t *testing.T) {
 	t.Parallel()
 
+	// alterado em 2026-11-15: Media pede grids (retrato, static) e heroes (background).
 	t.Run("MID-002/busca e capas com cabeçalho Bearer", func(t *testing.T) {
 		t.Parallel()
 		srv, _ := newServer(t, map[string]func(http.ResponseWriter, *http.Request){
@@ -164,7 +165,8 @@ func TestSteamGridDB(t *testing.T) {
 				}
 				jsonAnswer(`{"success":true,"data":[{"id":123,"name":"Celeste","release_date":1514764800}]}`)(w, r)
 			},
-			"GET /grids/game/123": jsonAnswer(`{"success":true,"data":[{"url":"https://cdn.example.test/grid.png","width":600,"height":900}]}`),
+			"GET /grids/game/123":  jsonAnswer(`{"success":true,"data":[{"url":"https://cdn.example.test/grid.png","width":600,"height":900}]}`),
+			"GET /heroes/game/123": jsonAnswer(`{"success":true,"data":[{"url":"https://cdn.example.test/hero.jpg"}]}`),
 		})
 		p := scrapers.NewSteamGridDB(scrapers.SGDBConfig{Key: "key", APIBase: srv.URL, HTTP: srv.Client()})
 
@@ -173,8 +175,9 @@ func TestSteamGridDB(t *testing.T) {
 			t.Fatalf("Search = %+v, %v", cands, err)
 		}
 		media, err := p.Media(context.Background(), "123")
-		if err != nil || len(media) != 1 || media[0].Kind != "cover" || media[0].URL != "https://cdn.example.test/grid.png" {
-			t.Errorf("Media = %+v, %v", media, err)
+		if err != nil || len(media) != 2 || media[0].Kind != "cover" || media[0].URL != "https://cdn.example.test/grid.png" ||
+			media[1].Kind != "background" || media[1].URL != "https://cdn.example.test/hero.jpg" {
+			t.Errorf("Media = %+v, %v; want cover e background (alterado em 2026-11-15)", media, err)
 		}
 	})
 
