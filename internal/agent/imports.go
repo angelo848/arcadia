@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/importers"
@@ -18,9 +19,13 @@ import (
 // maxImportCandidates bounds one import.apply request (contract v0.7.0).
 const maxImportCandidates = 500
 
+// maxScanPlatformRunes bounds the platform name of import.scan (contract v0.13.0 [IMV-071]).
+const maxScanPlatformRunes = 100
+
 // importStore is the part of *store.Store the import handlers use.
 type importStore interface {
 	PlatformIDByName(ctx context.Context, name string) (int64, bool, error)
+	ResolvePlatform(ctx context.Context, name string) (store.Platform, bool, error) // PLT-025 steps 1 and 2; carries SeedKey
 	ImportDuplicate(ctx context.Context, launchType, launchTarget, title string, platformID int64) (bool, error)
 	EnsurePlatformID(ctx context.Context, name string, category domain.PlatformCategory) (int64, error)
 	EnsureWindowsPlatformID(ctx context.Context) (int64, error)
@@ -62,6 +67,7 @@ func importHandlers(st importStore, loc importLocations, clock domain.Clock,
 // handleImportScan reads one source and returns its candidates with the warnings
 // (IMP-001, IMP-008). It writes nothing. A candidate already in the library is
 // marked exists (IMP-006). An unreadable source is a warning, not an error.
+// The parameters are validated before any source is read (IMV-071).
 func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 	sources map[string]importers.Source, log *slog.Logger, params json.RawMessage) (any, error) {
 	if params == nil {
@@ -75,6 +81,9 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 	if !ok {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
+	if err := validateScanParams(p); err != nil {
+		return nil, err
+	}
 	input := importers.ScanInput{Path: p.Path}
 	switch p.Source {
 	case ipc.ImportSourceFile, ipc.ImportSourceFolder, ipc.ImportSourceLaunchBox:
@@ -86,6 +95,11 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 	case ipc.ImportSourceEpic:
 		input.Path = locationOrEmpty(loc.EpicManifestsPath)
 	}
+	opts, platformID, err := scanOptions(ctx, st, p)
+	if err != nil {
+		return nil, fmt.Errorf("import.scan: %w", err)
+	}
+	input.Folder = opts
 
 	res, err := src.Scan(ctx, input)
 	if err != nil {
@@ -101,13 +115,61 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 		Warnings:   append([]string{}, res.Warnings...),
 	}
 	for _, c := range res.Candidates {
-		exists, err := candidateExists(ctx, st, c)
+		exists, err := candidateExists(ctx, st, c, platformID)
 		if err != nil {
 			return nil, fmt.Errorf("import.scan: %w", err)
 		}
 		out.Candidates = append(out.Candidates, toIPCCandidate(c, exists))
 	}
 	return out, nil
+}
+
+// validateScanParams rejects the new import.scan parameters before any read: titleFrom
+// is "", "file" or "folder" (exact comparison) and platform has at most 100 runes [IMV-071].
+func validateScanParams(p ipc.ImportScanParams) error {
+	switch p.TitleFrom {
+	case "", ipc.ImportTitleFromFile, ipc.ImportTitleFromFolder:
+	default:
+		return ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	if utf8.RuneCountInString(p.Platform) > maxScanPlatformRunes {
+		return ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+	}
+	return nil
+}
+
+// scanOptions derives the folder options of a file or folder scan and the id of the platform
+// the user picked, without writing (IMV-030). The platform class comes from its seed key: the
+// key windows reads executables, any other key reads console files, and no key, an empty name
+// or an unknown name reads both lists with id 0. Launcher sources ignore the parameters.
+func scanOptions(ctx context.Context, st importStore, p ipc.ImportScanParams) (importers.FolderOptions, int64, error) {
+	if p.Source != ipc.ImportSourceFile && p.Source != ipc.ImportSourceFolder {
+		return importers.FolderOptions{}, 0, nil
+	}
+	opts := importers.FolderOptions{
+		TitleFrom:      importers.TitleFromFile,
+		FirstLevelOnly: p.Recursive != nil && !*p.Recursive,
+	}
+	if p.TitleFrom == ipc.ImportTitleFromFolder {
+		opts.TitleFrom = importers.TitleFromFolder
+	}
+	if p.Platform == "" {
+		return opts, 0, nil
+	}
+	pl, ok, err := st.ResolvePlatform(ctx, p.Platform)
+	if err != nil {
+		return importers.FolderOptions{}, 0, fmt.Errorf("platform %q: %w", p.Platform, err)
+	}
+	if !ok {
+		return opts, 0, nil
+	}
+	switch {
+	case pl.SeedKey == domain.SeedKeyWindows:
+		opts.Kind = importers.KindExecutables
+	case pl.SeedKey != "":
+		opts.Kind = importers.KindConsole
+	}
+	return opts, pl.ID, nil
 }
 
 // locationOrEmpty returns the folder of a launcher, or "" when it is not found.
@@ -119,9 +181,11 @@ func locationOrEmpty(f func() (string, error)) string {
 	return path
 }
 
-// candidateExists checks the library for a candidate without writing: by launch
-// target, and by title on the PC platform when that platform exists (IMP-006).
-func candidateExists(ctx context.Context, st importStore, c importers.Candidate) (bool, error) {
+// candidateExists checks the library for a candidate without writing: by launch target,
+// and by title on a platform: the key windows one for Steam and Epic (PLT-026), the platform
+// picked for the scan for file and folder candidates (IMV-030), and the one named by the
+// candidate for LaunchBox (IMP-006).
+func candidateExists(ctx context.Context, st importStore, c importers.Candidate, scanPlatformID int64) (bool, error) {
 	var platformID int64
 	switch {
 	case c.Source == importers.SourceSteam || c.Source == importers.SourceEpic:
@@ -132,6 +196,8 @@ func candidateExists(ctx context.Context, st importStore, c importers.Candidate)
 		if ok {
 			platformID = id
 		}
+	case c.Source == importers.SourceFile || c.Source == importers.SourceFolder:
+		platformID = scanPlatformID
 	case c.Platform != "":
 		id, ok, err := st.PlatformIDByName(ctx, c.Platform)
 		if err != nil {
@@ -161,6 +227,10 @@ func toIPCCandidate(c importers.Candidate, exists bool) ipc.ImportCandidate {
 		Description:  c.Description,
 		PlayModes:    nonNilStrings(c.PlayModes),
 		Exists:       exists,
+		File:         c.File,
+		Extension:    c.Extension,
+		Discs:        c.Discs,
+		DiscFiles:    c.DiscFiles,
 	}
 	if c.Played != nil {
 		seconds := c.Played.Seconds
