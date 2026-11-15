@@ -660,4 +660,185 @@ describe('invariantes da UI', () => {
     const unknown = called.filter((n) => !phase9.has(n) && !phase12Reads.has(n))
     expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
   })
+
+  it('MET-080/obter dados, escolher opção, marcar a caixa, importar, acompanhar o progresso, confirmar, cancelar e descartar chamam só MetadataSearch, MetadataApply, MetadataBatch*, ImportScan, ImportApply, PickFile, PickFolder, ProviderKeyStatus e leituras; nenhum LaunchGame, LaunchGameUntracked, ToggleSession, Pause nem Resume', async () => {
+    const handlers = new Map<string, Set<(...d: unknown[]) => void>>()
+    ;(window as unknown as { runtime: unknown }).runtime = {
+      EventsOn: vi.fn((name: string, cb: (...d: unknown[]) => void) => {
+        const set = handlers.get(name) ?? new Set()
+        handlers.set(name, set)
+        set.add(cb)
+        return () => set.delete(cb)
+      }),
+    }
+    const emit = (name: string, ...data: unknown[]) =>
+      act(() => {
+        for (const cb of handlers.get(name) ?? []) cb(...data)
+      })
+
+    // The batch the fake agent holds (MET-052); the UI reads it through MetadataBatchStatus.
+    type FakeBatch = {
+      batchId: number
+      state: string
+      total: number
+      done: number
+      failed: number
+      warnings: string[]
+      result?: unknown
+    }
+    let batch: FakeBatch | null = null
+    // notify is the metadata:batch event that tells the UI the batch changed (MET-055).
+    const notify = () => {
+      if (batch) emit('metadata:batch', { batchId: batch.batchId, state: batch.state, done: batch.done, total: batch.total, failed: batch.failed })
+    }
+    const option = (title: string) => ({
+      refs: [{ provider: 'igdb', providerId: `igdb-${title}` }],
+      title,
+      year: 2001,
+      platform: 'Windows',
+      score: 90,
+    })
+    const candidates = Array.from({ length: 2 }, (_, i) => ({
+      source: 'folder',
+      title: `Jogo ${i}`,
+      platform: 'Windows',
+      launchType: 'exe',
+      launchTarget: `E:\\Games\\ps1\\jogo${i}.bin`,
+      installDir: '',
+      file: `jogo${i}.bin`,
+      extension: 'bin',
+      developers: [],
+      publishers: [],
+      genres: [],
+      year: null,
+      description: '',
+      playModes: [],
+      playedSeconds: null,
+      lastPlayed: null,
+      exists: false,
+    }))
+    const rows = [40, 41].map((gameId, i) => ({
+      gameId,
+      title: `Jogo ${i}`,
+      platform: 'Windows',
+      confidence: 'match',
+      selected: 0,
+      candidates: [option(`Jogo ${i} (oficial)`), option(`Jogo ${i} (outra edição)`)],
+    }))
+
+    overrides.ProviderKeyStatus = (provider) => ({ provider, configured: true })
+    overrides.PickFile = () => 'C:\\Games\\alfa.bin'
+    overrides.PickFolder = () => 'E:\\Games\\ps1'
+    overrides.MetadataSearch = () => ({ candidates: [option('Jogo Alfa')], confidence: 'match', warnings: [] })
+    overrides.ImportScan = () => ({ candidates, warnings: [] })
+    overrides.ImportApply = () => ({
+      applied: [
+        { gameId: 40, title: 'Jogo 0' },
+        { gameId: 41, title: 'Jogo 1' },
+      ],
+      skipped: [],
+    })
+    overrides.MetadataBatchStart = (ids: unknown) => {
+      const n = (ids as number[]).length
+      batch = { batchId: 7, state: 'searching', total: n, done: 0, failed: 0, warnings: [] }
+      return { batchId: 7, total: n }
+    }
+    overrides.MetadataBatchStatus = () => ({ batch })
+    overrides.MetadataBatchResults = () => ({ rows, total: rows.length, next: null })
+    overrides.MetadataBatchCancel = () => {
+      if (batch) batch = { ...batch, state: 'cancelled' }
+      return 'cancelled'
+    }
+    overrides.MetadataBatchApply = () => {
+      if (batch) batch = { ...batch, state: 'applying', done: 0 }
+      return 1
+    }
+    overrides.MetadataBatchDiscard = () => {
+      batch = null
+    }
+
+    renderApp()
+    await findCard('Hades')
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Importar' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // Obter dados e escolher uma opção na fonte Arquivo (MET-042).
+    fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'file' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Escolher arquivo' }))
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Arquivo' })).toHaveValue('C:\\Games\\alfa.bin'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    await within(dialog).findByRole('checkbox', { name: 'Selecionar Jogo 0' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Obter dados' }))
+    fireEvent.click(await within(dialog).findByRole('radio', { name: /Jogo Alfa/ }))
+    await flush()
+
+    // Pasta com a caixa marcada, lote de busca e importação.
+    fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'folder' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Escolher pasta' }))
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Pasta' })).toHaveValue('E:\\Games\\ps1'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    await within(dialog).findByRole('checkbox', { name: 'Selecionar Jogo 0' })
+    const box = within(dialog).getByRole('checkbox', { name: 'Buscar metadados e imagens' })
+    expect(box).toBeChecked()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
+    await waitFor(() => expect(calls('MetadataBatchStart')).toHaveLength(1))
+    expect(calls('MetadataBatchStart')).toEqual([[[40, 41]]])
+
+    // Acompanhar o progresso e fechar a janela de importação; o indicador segue no cabeçalho.
+    batch = { ...(batch as FakeBatch), done: 1 }
+    notify()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await screen.findByText('Buscando metadados 1/2')).toBeInTheDocument()
+
+    // Cancelar a busca no meio.
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Cancelar' }))
+    await waitFor(() => expect(calls('MetadataBatchCancel')).toHaveLength(1))
+    expect(calls('MetadataBatchCancel')).toEqual([[7]])
+    notify()
+
+    // Confirmar: revisar, desmarcar um jogo e aplicar os marcados.
+    fireEvent.click(await within(topBar()).findByRole('button', { name: 'Revisar metadados (2)' }))
+    const review = (await screen.findByRole('dialog', { name: 'Confirmar metadados' })) as HTMLElement
+    fireEvent.click(await within(review).findByRole('checkbox', { name: 'Selecionar Jogo 1' }))
+    fireEvent.click(within(review).getByRole('button', { name: 'Aplicar selecionados' }))
+    await waitFor(() => expect(calls('MetadataBatchApply')).toHaveLength(1))
+    expect(calls('MetadataBatchApply')).toEqual([[7, [{ gameId: 40, candidate: 0 }]]])
+    await flush()
+
+    // Resumo do lote e descarte (MET-066).
+    batch = { batchId: 7, state: 'done', total: 2, done: 2, failed: 0, warnings: [], result: { applied: 1, imagesQueued: 0, imagesSkippedByLimit: 0, failedTitles: [] } }
+    notify()
+    fireEvent.click(await within(topBar()).findByRole('button', { name: 'Fechar' }))
+    await waitFor(() => expect(calls('MetadataBatchDiscard')).toHaveLength(1))
+    expect(calls('MetadataBatchDiscard')).toEqual([[7]])
+    await flush()
+
+    // Nenhum lançamento, sessão ou pausa; só as ações da fase 12, importação e leituras.
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', 'ToggleSession', 'PauseSession', 'ResumeSession']) {
+      expect(calls(n), n).toHaveLength(0)
+    }
+    const allowed = new Set([
+      'MetadataSearch',
+      'MetadataApply',
+      'MetadataBatchStart',
+      'MetadataBatchStatus',
+      'MetadataBatchResults',
+      'MetadataBatchApply',
+      'MetadataBatchCancel',
+      'MetadataBatchDiscard',
+      'ImportScan',
+      'ImportApply',
+      'PickFile',
+      'PickFolder',
+      'ProviderKeyStatus',
+    ])
+    const called = Array.from(spies.entries())
+      .filter(([, spy]) => spy.mock.calls.length > 0)
+      .map(([name]) => name)
+    const outside = called.filter((n) => !allowed.has(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats)/.test(n))
+    expect(outside, `bindings fora da lista da fase 12`).toEqual([])
+    const writesOutside = writeCalls().filter((n) => !allowed.has(n))
+    expect(writesOutside, 'escritas fora das ações da fase 12').toEqual([])
+  })
 })

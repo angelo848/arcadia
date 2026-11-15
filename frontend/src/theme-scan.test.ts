@@ -59,6 +59,17 @@ describe('varredura do tema', () => {
     expect(missing, `.tsx fora da varredura: ${missing.join(', ')}`).toEqual([])
   })
 
+  it('MET-060/MetadataOptions.tsx, MetadataReviewDialog.tsx, MetadataBatchChip.tsx e MetadataDialog.tsx sem cores literais', () => {
+    const own = files.filter(([p]) => /\/(MetadataOptions|MetadataReviewDialog|MetadataBatchChip|MetadataDialog)\.tsx$/.test(p))
+    expect(own.length, 'MetadataOptions, MetadataReviewDialog, MetadataBatchChip e MetadataDialog na varredura').toBe(4)
+    const hits: string[] = []
+    for (const [path, src] of own) {
+      for (const m of src.matchAll(palette)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      for (const m of src.matchAll(literalColor)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
+  })
+
   it('UIX-006/nenhum .tsx usa classe de paleta do Tailwind (padrão de design §3)', () => {
     const hits = scan(palette)
     expect(hits, `classes de paleta:\n${hits.join('\n')}`).toEqual([])
