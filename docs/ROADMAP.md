@@ -79,6 +79,10 @@ plataforma), `internal/importers` (constante `PlatformPC`), `frontend` (diálogo
 
 ## Fase 11 — Importação v2 (pontos 1 e 7, e a janela de revisão)
 
+> **Status:** spec aprovada em [phase-11-importacao-v2](specs/phase-11-importacao-v2/requirements.md) (51 requisitos,
+> IMV-*; [ADR 0032](adr/0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md)). Os itens "A decidir"
+> abaixo foram resolvidos lá.
+
 **Entrega**
 - **Normalização de título**: remove marcações de ROM entre parênteses e colchetes (`(U)`, `(USA)`, `(Rev 1)`,
   `[!]`, `[b1]`, `(Disc 2)`), troca `_` e `.` por espaço, move o artigo final (`Legend of Zelda, The` →

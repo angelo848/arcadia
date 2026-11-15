@@ -45,3 +45,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0029](0029-tema-por-variaveis-css.md) | Tema por variáveis CSS | aceito |
 | [0030](0030-limites-de-imagem-por-tipo-como-tabela-do-dominio.md) | Limites de imagem por tipo como tabela do domínio | aceito |
 | [0031](0031-avisos-de-mudanca-em-segundo-plano-como-notificacoes-de-invalidacao.md) | Avisos de mudança em segundo plano como notificações de invalidação | aceito |
+| [0032](0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md) | Leitura de pasta por extensões fechadas e resultado limitado ao teto do IPC | aceito |

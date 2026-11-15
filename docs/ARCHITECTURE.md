@@ -244,6 +244,13 @@ type MetadataProvider interface {
 5. Executáveis avulsos (arrastar e soltar)
 6. **Importar biblioteca do LaunchBox** (`Data\Platforms\*.xml`) incluindo tempo jogado e mídias — migração sem dor.
 
+**Importação v2 (fase 11, [spec](specs/phase-11-importacao-v2/requirements.md), [ADR 0032](adr/0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md)):**
+a fonte "Pasta" lê subpastas (até 8 níveis e 20.000 itens) só com extensões de jogo escolhidas pela chave da plataforma;
+agrupa discos do mesmo jogo num candidato; propõe títulos normalizados (sem `(USA)`, `[!]`, `_`, artigo final movido para o
+começo) sem alterar o nome do arquivo; e o usuário revisa e edita tudo numa janela com caixas de seleção antes de importar
+(o `import.apply` grava o título recebido). O `import.scan` devolve até 900 KiB por causa do teto de 1 MiB por mensagem do
+IPC (v0.13.0, só acréscimos). A plataforma do arquivo é um select, com "Windows" por padrão.
+
 ---
 
 ## 8. Estratégia de testes

@@ -59,6 +59,11 @@ vira `launch_type = emulator`, com alvo = caminho do arquivo; o emulador é o da
 depois da importação. O título é o nome do arquivo sem extensão. Arquivo inexistente, caminho vazio ou pasta vazia
 devolvem aviso. Os candidatos ficam sem plataforma definida; a plataforma é escolhida na confirmação, para arquivo e pasta.
 Reintroduzido na fase 8 por pedido do usuário (a fonte Pasta tinha sido removida antes).
+· alterado em 2026-11-15 (docs/specs/phase-11-importacao-v2, IMV-010..IMV-019, IMV-032): a parte da **pasta** ("primeiro nível",
+"sem filtro por extensão", "subpastas não são lidas", título = nome sem extensão, pasta escolhida como pasta de instalação)
+é substituída pela leitura recursiva com lista de extensões, título normalizado, discos agrupados e limites; a parte do
+**arquivo** (qualquer tipo, `exe` × `emulator`, avisos) continua, com título normalizado. A plataforma passa a ser enviada
+pela janela (select) já na leitura, e não só na confirmação.
 
 ### IMP-005 — LaunchBox
 Dado a pasta `Data\Platforms` do LaunchBox, quando leio os `*.xml` de plataforma, então cada `<Game>` vira candidato com
@@ -70,6 +75,8 @@ houver `PlayCount` e `LastPlayedDate`, então a sessão de IMP-007 é proposta; 
 Dado um candidato que já existe na biblioteca (mesmo `appid` ou `AppName`, mesmo caminho de executável, ou mesmo título
 e plataforma sem diferença de maiúsculas), então ele aparece marcado "já existe" e não é gravado de novo. Rodar a mesma
 importação duas vezes não duplica nenhum jogo.
+· alterado em 2026-11-15 (docs/specs/phase-11-importacao-v2, IMV-030): o scan de arquivo e de pasta recebe a plataforma
+escolhida e confere também título + plataforma (com o título proposto); a regra não muda.
 
 ### IMP-007 — Tempo jogado importado
 Dado um candidato com tempo jogado (LaunchBox), quando o usuário confirma, então é gravada uma sessão de origem `import`
@@ -88,6 +95,9 @@ lido além dos manifestos e do `.exe` de primeiro nível. Os caminhos importados
 Dado o botão "Importar", quando o usuário escolhe uma fonte, então a UI mostra os candidatos com caixas de seleção, a
 marcação "já existe" (IMP-006) e o aviso de cada fonte (IMP-008). "Importar selecionados" fica desabilitado sem
 nenhum marcado e sem candidatos válidos. · verificação: manual (UI).
+· substituído em 2026-11-15 (docs/specs/phase-11-importacao-v2, IMV-040..IMV-052): a lista de candidatos vira a janela de
+revisão (todas as linhas marcadas por padrão, título editável, arquivo, extensão, disco, contador); o selo "já existe" e o
+aviso por fonte continuam; "Importar selecionados" continua desabilitado sem linha marcada válida.
 
 ---
 
