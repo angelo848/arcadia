@@ -1602,6 +1602,170 @@ func collectEmits(h *supHarness) []supEmit {
 // T06 (docs/specs/phase-10-2-imagens-ao-vivo/tasks.md): media.changed -> media:changed.
 const msgMediaChangedInvalid = "media.changed com parâmetros inválidos"
 
+// msgBatchChangedInvalid is the Warn of an invalid metadata.batchChanged (MET-072, as IMG-005).
+const msgBatchChangedInvalid = "metadata.batchChanged com parâmetros inválidos"
+
+// batchChangedNote is a metadata.batchChanged notification with the given raw params.
+func batchChangedNote(raw json.RawMessage) ipc.Notification {
+	return ipc.Notification{Method: ipc.MethodMetadataBatchChanged, Params: raw}
+}
+
+// TestSupervisorMetadataBatch is T30 (metadata.batchChanged -> metadata:batch) at supervisor level.
+func TestSupervisorMetadataBatch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MET-072/evento válido é emitido com os cinco campos", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		h.client.send(t, batchChangedNote(json.RawMessage(`{"batchId":1763217600000,"state":"searching","done":12,"total":80,"failed":1}`)))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 1 {
+			t.Fatalf("emitted %#v, want exactly one metadata:batch", got)
+		}
+		if got[0].event != metadataBatchEvent {
+			t.Errorf("event = %q, want %q", got[0].event, "metadata:batch")
+		}
+		want := MetadataBatchChangedView{BatchID: 1763217600000, State: "searching", Done: 12, Total: 80, Failed: 1}
+		if v, ok := got[0].data.(MetadataBatchChangedView); !ok || v != want {
+			t.Errorf("data = %#v, want %+v", got[0].data, want)
+		}
+		if n := h.logs.countLevel(slog.LevelWarn); n != 0 {
+			t.Errorf("Warn records = %d, want 0; log:\n%s", n, h.logs.dump())
+		}
+	})
+
+	t.Run("MET-072/params ausentes, JSON inválido, campo ausente, não inteiro, batchId 0, inteiro negativo e state desconhecido: um Warn cada e nada emitido", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		bad := []json.RawMessage{
+			nil,
+			json.RawMessage(`{bad`),
+			json.RawMessage(`{"state":"searching","done":1,"total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"done":1,"total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"state":"searching","total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"state":"searching","done":1,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"state":"searching","done":1,"total":2}`),
+			json.RawMessage(`{"batchId":1.5,"state":"searching","done":1,"total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"state":"searching","done":"1","total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":0,"state":"searching","done":1,"total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":-3,"state":"searching","done":1,"total":2,"failed":0}`),
+			json.RawMessage(`{"batchId":1,"state":"running","done":1,"total":2,"failed":0}`),
+		}
+		for _, p := range bad {
+			h.client.send(t, batchChangedNote(p))
+		}
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		if got := collectEmits(h); len(got) != 0 {
+			t.Errorf("emitted %#v, want nothing", got)
+		}
+		if n := len(h.logs.find(0, slog.LevelWarn, msgBatchChangedInvalid)); n != len(bad) {
+			t.Errorf("%q logged %d times, want %d; log:\n%s", msgBatchChangedInvalid, n, len(bad), h.logs.dump())
+		}
+	})
+
+	t.Run("MET-072/o repasse não chama o agente, não chama Quit e não muda o estado do supervisor", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+		before := len(h.client.methodCalls())
+
+		h.client.send(t, batchChangedNote(json.RawMessage(`{"batchId":7,"state":"applying","done":3,"total":10,"failed":0}`)))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		if got := collectEmits(h); len(got) != 1 || got[0].event != metadataBatchEvent {
+			t.Fatalf("emitted %#v, want one metadata:batch", got)
+		}
+		if after := len(h.client.methodCalls()); after != before {
+			t.Errorf("agent methods called %d times for metadata.batchChanged, want 0: %v", after-before, h.client.methodCalls())
+		}
+		if n := h.quitN.Load(); n != 0 {
+			t.Errorf("Quit called %d times, want 0", n)
+		}
+		if n := h.ens.n.Load(); n != 1 {
+			t.Errorf("Ensure calls = %d, want 1 (startup only)", n)
+		}
+		if h.sup.state != stateConnected {
+			t.Errorf("state = %v, want stateConnected", h.sup.state)
+		}
+		if h.sup.failures != 0 {
+			t.Errorf("failures = %d, want 0", h.sup.failures)
+		}
+	})
+
+	t.Run("MET-072/repasse nos dois sentidos: notificações viram eventos antes e depois de uma queda e a reconexão não duplica nem repete", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		h.client.send(t, batchChangedNote(json.RawMessage(`{"batchId":5,"state":"searching","done":1,"total":80,"failed":0}`)))
+		h.clock.Advance(stableConnection)
+		p := pendingWaiters(h.clock)
+		from := h.logs.len()
+		h.client.deliver(t, false) // drop without agent.shutdown
+		h.logs.wait(t, from, slog.LevelWarn, msgDropped)
+		waitWaiters(t, h.clock, p+1)
+
+		h.client.deliver(t, true) // the connection comes back on its own
+		h.logs.wait(t, from, slog.LevelInfo, msgReconnected)
+		h.client.send(t, batchChangedNote(json.RawMessage(`{"batchId":5,"state":"ready","done":80,"total":80,"failed":0}`)))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 2 {
+			t.Fatalf("emitted %#v, want exactly two metadata:batch (before and after the reconnection)", got)
+		}
+		first, ok1 := got[0].data.(MetadataBatchChangedView)
+		second, ok2 := got[1].data.(MetadataBatchChangedView)
+		if got[0].event != metadataBatchEvent || got[1].event != metadataBatchEvent || !ok1 || !ok2 {
+			t.Fatalf("emitted %#v, want two metadata:batch views", got)
+		}
+		if first.State != "searching" || first.Done != 1 || second.State != "ready" || second.Done != 80 {
+			t.Errorf("order/values = %+v then %+v, want searching(1) then ready(80)", first, second)
+		}
+		if n := h.ens.n.Load(); n != 1 {
+			t.Errorf("Ensure calls = %d, want 1 (the reconnection does not relaunch)", n)
+		}
+	})
+
+	t.Run("MET-072/media.changed continua repassado, na ordem, junto com metadata.batchChanged", func(t *testing.T) {
+		t.Parallel()
+		h := newSupHarness(t, supOptions{})
+		h.start(t)
+		h.connectOK(t)
+
+		h.client.send(t, ipc.Notification{Method: ipc.MethodMediaChanged, Params: json.RawMessage(`{"gameId":42}`)})
+		h.client.send(t, batchChangedNote(json.RawMessage(`{"batchId":5,"state":"done","done":2,"total":2,"failed":0}`)))
+		h.client.finishNotes()
+		h.waitDone(t)
+
+		got := collectEmits(h)
+		if len(got) != 2 {
+			t.Fatalf("emitted %#v, want media:changed then metadata:batch", got)
+		}
+		if got[0].event != mediaChangedEvent || got[1].event != metadataBatchEvent {
+			t.Errorf("events = %q then %q, want %q then %q", got[0].event, got[1].event, mediaChangedEvent, metadataBatchEvent)
+		}
+		if v, ok := got[0].data.(MediaChangedView); !ok || v.GameID != 42 {
+			t.Errorf("media data = %#v, want MediaChangedView{GameID: 42}", got[0].data)
+		}
+	})
+}
+
 func TestSupervisorMediaChanged(t *testing.T) {
 	t.Parallel()
 

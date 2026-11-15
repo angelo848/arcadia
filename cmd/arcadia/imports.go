@@ -40,6 +40,8 @@ type ImportCandidateView struct {
 	Extension     string   `json:"extension,omitempty"`
 	Discs         int      `json:"discs,omitempty"`
 	DiscFiles     []string `json:"discFiles,omitempty"`
+	// SearchName is the name proposed for the metadata search; file source only [MET-040].
+	SearchName string `json:"searchName,omitempty"`
 }
 
 // ImportScanOptions are the optional params of ImportScan, used by the file and folder
@@ -161,6 +163,7 @@ func importCandidateView(c ipc.ImportCandidate) ImportCandidateView {
 		Year: c.Year, Description: c.Description, PlayModes: c.PlayModes,
 		PlayedSeconds: c.PlayedSeconds, LastPlayed: c.LastPlayed, Exists: c.Exists,
 		File: c.File, Extension: c.Extension, Discs: c.Discs, DiscFiles: c.DiscFiles,
+		SearchName: c.SearchName,
 	}
 }
 
@@ -172,5 +175,6 @@ func importCandidateWire(c ImportCandidateView) ipc.ImportCandidate {
 		Year: c.Year, Description: c.Description, PlayModes: c.PlayModes,
 		PlayedSeconds: c.PlayedSeconds, LastPlayed: c.LastPlayed, Exists: c.Exists,
 		File: c.File, Extension: c.Extension, Discs: c.Discs, DiscFiles: c.DiscFiles,
+		SearchName: c.SearchName,
 	}
 }

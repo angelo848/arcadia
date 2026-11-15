@@ -30,6 +30,10 @@ const (
 	msgProviderNoKey       = "A chave deste provedor não está cadastrada. Cadastre-a nas configurações de provedores."
 	msgProviderUnavailable = "O provedor não respondeu agora. Tente de novo."
 	msgMediaJobNotFound    = "Esse download já não está na fila."
+	// Unified metadata search (phase 12, contract v0.14.0).
+	msgBatchNotFound   = "Essa busca de metadados não existe mais."
+	msgBatchBusy       = "Já existe uma busca de metadados em andamento."
+	msgBatchWrongState = "A busca de metadados não está nessa etapa."
 )
 
 // ADM-003: a game that needs more elevation than the agent has fails with
@@ -114,6 +118,12 @@ func userError(err error, log *slog.Logger) error {
 			return errors.New(msgProviderUnavailable)
 		case ipc.CodeMediaJobNotFound:
 			return errors.New(msgMediaJobNotFound)
+		case ipc.CodeBatchNotFound:
+			return errors.New(msgBatchNotFound)
+		case ipc.CodeBatchBusy:
+			return errors.New(msgBatchBusy)
+		case ipc.CodeBatchWrongState:
+			return errors.New(msgBatchWrongState)
 		case ipc.CodeInvalidParams:
 			logBindingError(log, err)
 			return errors.New(msgInvalidData)
