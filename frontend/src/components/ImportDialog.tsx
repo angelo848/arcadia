@@ -32,13 +32,16 @@ export type ImportDialogProps = {
   // onImported runs after at least one game was written, so the library reloads (IMP-010).
   onImported: () => void
   onClose: () => void
+  // onBusyChange reports every change of the busy state, and false when the dialog unmounts,
+  // so the App knows whether an import is running (MET-053, MET-060).
+  onBusyChange?: (busy: boolean) => void
 }
 
 // ImportDialog imports games from another launcher in two steps: it reads the
 // source and shows the review rows, then writes only the ones the user checked
 // [IMP-001, IMV-040]. Candidates already in the library are shown and cannot be
 // checked [IMP-006]. It is modal with focus trapped inside, like DeleteDialog [UI-041].
-export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.Element {
+export function ImportDialog({ onImported, onClose, onBusyChange }: ImportDialogProps): JSX.Element {
   const [source, setSource] = useState<ImportSource>('steam')
   const [path, setPath] = useState('')
   // platformChoice is the user's pick; null means the default (IMV-061).
@@ -46,6 +49,18 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const [titleFrom, setTitleFrom] = useState<'file' | 'folder'>('file')
   const [subfolders, setSubfolders] = useState(true)
   const [busy, setBusy] = useState(false)
+  // The latest callback, so the unmount report does not depend on the render that mounted it.
+  const busyNotify = useRef(onBusyChange)
+  busyNotify.current = onBusyChange
+  useEffect(() => {
+    busyNotify.current?.(busy)
+  }, [busy])
+  useEffect(
+    () => () => {
+      busyNotify.current?.(false)
+    },
+    [],
+  )
   const [rows, setRows] = useState<ReviewRow[] | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const [result, setResult] = useState<ImportApplyResult | null>(null)

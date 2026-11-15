@@ -76,7 +76,8 @@ function parseEvent(p: unknown): BatchEventPayload | null {
 
 // useMetadataBatch follows the batch of the agent: one metadata:batch subscription, reads the status when the state changes [MET-055].
 // interrupted turns true when there was a batch and the agent now reports none (restart) [MET-067].
-export function useMetadataBatch(): {
+// connected is the agent connection of the caller: a reconnection reads the state again [MET-055].
+export function useMetadataBatch(connected = true): {
   status: BatchStatusView | null
   interrupted: boolean
   start(ids: number[]): Promise<void>
@@ -89,6 +90,7 @@ export function useMetadataBatch(): {
   const [interrupted, setInterrupted] = useState(false)
   const current = useRef<BatchStatusView | null>(null)
   const alive = useRef(false)
+  const wasConnected = useRef(connected)
 
   const commit = useCallback((b: BatchStatusView | null) => {
     current.current = b
@@ -138,6 +140,15 @@ export function useMetadataBatch(): {
       }
     }
   }, [refresh, commit])
+
+  // A reconnection reads the state again, as the other hooks do on reconnect (MET-055, UI-009).
+  useEffect(() => {
+    const was = wasConnected.current
+    wasConnected.current = connected
+    if (!was && connected) {
+      void refresh().catch(() => undefined)
+    }
+  }, [connected, refresh])
 
   const start = useCallback(
     async (ids: number[]): Promise<void> => {

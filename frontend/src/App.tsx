@@ -18,7 +18,9 @@ import { LibraryGrid } from './components/LibraryGrid'
 import { LibraryList } from './components/LibraryList'
 import { LibraryStates } from './components/LibraryStates'
 import { LibraryToolbar } from './components/LibraryToolbar'
+import { MetadataBatchChip } from './components/MetadataBatchChip'
 import { MetadataDialog } from './components/MetadataDialog'
+import { MetadataReviewDialog } from './components/MetadataReviewDialog'
 import { PanelEmpty } from './components/PanelEmpty'
 import { Sidebar } from './components/Sidebar'
 import { SessionPanel } from './components/SessionPanel'
@@ -42,6 +44,7 @@ import {
   useUpdateGame,
 } from './lib/library'
 import { readLibraryView, writeLibraryView, type LibraryView } from './lib/libraryView'
+import { useMetadataBatch } from './lib/metadataBatch'
 import type { PendingLaunch } from './lib/pendingLaunch'
 import { focusedGameId, initialSelection, selectionReducer, type SelectionEvent } from './lib/selection'
 
@@ -176,6 +179,9 @@ export default function App() {
   useSessionEvents()
   useMediaEvents()
   useReloadOnReconnect(connected)
+  // The metadata batch of the agent: the header indicator and the confirmation window [MET-055, MET-066, MET-067].
+  const metadataBatch = useMetadataBatch(connected)
+  const batchState = metadataBatch.status?.state ?? null
 
   const launch = useLaunchGame()
   const untracked = useLaunchGameUntracked()
@@ -184,9 +190,28 @@ export default function App() {
   // Last failed action's message [UI-008, UI-020, UI-028, UI-041].
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  // importBusy is true while the import window runs a scan or an import (MET-053, MET-060).
+  const [importBusy, setImportBusy] = useState(false)
   const [emulating, setEmulating] = useState(false)
   const [platformsOpen, setPlatformsOpen] = useState(false)
   const [keying, setKeying] = useState(false)
+  // The confirmation window of the metadata batch [MET-064].
+  const [reviewing, setReviewing] = useState(false)
+  // An idle import window does not block the confirmation: it is closed when the confirmation opens.
+  const importBlocks = importing && importBusy
+  const anyModalOpen = importBlocks || emulating || platformsOpen || keying || dialog !== null
+  const lastBatchState = useRef<string | null>(null)
+  // Only the change searching -> ready opens the confirmation by itself; a first read of ready (reopening
+  // the app) does not. With another modal open, or the import window busy, the window does not open:
+  // the header indicator shows the state [MET-067].
+  useEffect(() => {
+    const prev = lastBatchState.current
+    lastBatchState.current = batchState
+    if (prev === 'searching' && batchState === 'ready' && !anyModalOpen) {
+      setImporting(false)
+      setReviewing(true)
+    }
+  }, [batchState, anyModalOpen])
   // The statistics page replaces the library while it is open (phase 8).
   const [showingStats, setShowingStats] = useState(false)
   // Big Box: the library in full screen, driven by the gamepad or the keyboard (phase 8).
@@ -395,6 +420,14 @@ export default function App() {
           <button type="button" onClick={() => setImporting(true)} className={topButton}>
             Importar
           </button>
+          <MetadataBatchChip
+            status={metadataBatch.status}
+            interrupted={metadataBatch.interrupted}
+            onOpenReview={() => setReviewing(true)}
+            onCancel={() => void metadataBatch.cancel().catch((e: unknown) => setError(errorMessage(e)))}
+            onDiscard={() => void metadataBatch.discard().catch((e: unknown) => setError(errorMessage(e)))}
+            onCloseSummary={() => void metadataBatch.discard().catch((e: unknown) => setError(errorMessage(e)))}
+          />
           <AgentIndicator status={agent} elevated={elevation.data ?? undefined} />
         </div>
       </header>
@@ -410,6 +443,15 @@ export default function App() {
             void qc.invalidateQueries({ queryKey: libraryKeys.catalog })
           }}
           onClose={() => setImporting(false)}
+          onBusyChange={setImportBusy}
+        />
+      )}
+      {reviewing && metadataBatch.status !== null && (
+        <MetadataReviewDialog
+          batch={metadataBatch.status}
+          onClose={() => setReviewing(false)}
+          onApply={metadataBatch.apply}
+          onDiscard={metadataBatch.discard}
         />
       )}
       {focusedId !== null && (
