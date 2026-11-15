@@ -169,13 +169,15 @@ de cada um, descarta URL já vista e escolhe até `vagas`. O que sobrou das ofer
 
 | Caso | `have` | `active` | Ofertas | Escolhidas | `skippedByLimit` |
 |---|---|---|---|---|---|
-| jogo vazio, Windows | — | — | SGDB 3 capas; IGDB 1 capa | 2 capas SGDB | 2 |
-| jogo vazio, console | — | — | IGDB 1 capa; SGDB 3 capas | IGDB, 1ª SGDB | 2 |
+| jogo vazio, Windows | — | — | SGDB 3 capas; IGDB 1 capa | 1ª capa SGDB | 3 |
+| jogo vazio, console | — | — | IGDB 1 capa; SGDB 3 capas | capa do IGDB | 3 |
 | 9 screenshots | `screenshot: 9` | — | IGDB 5 | 1 | 4 |
-| 2 capas | `cover: 2` | — | SGDB 2 | 0 | 2 |
+| 1 capa | `cover: 1` | — | SGDB 2 | 0 | 2 |
 | 8 screenshots + 2 jobs pendentes | `screenshot: 8` | `screenshot: 2` | IGDB 5 | 0 | 5 |
 | mesma URL em IGDB e Steam | — | — | IGDB `u1`, Steam `u1` e `u2` | `u1`, `u2` | 0 |
 | tipo desconhecido (`title`) | — | — | oferta `title` | 0 (tipo fora de MET-025) | — (não conta) |
+
+Alterado em 2026-11-15 (capa = 1): `MediaKindLimit("cover")` passou de 2 para 1; as linhas de capa acima foram recalculadas (antes: Windows 2 capas SGDB, skipped 2; console IGDB e 1ª SGDB, skipped 2; "2 capas" com `cover: 2`).
 
 ## 5. Termo de busca e nome para busca (MET-004, MET-040)
 

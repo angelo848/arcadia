@@ -135,7 +135,7 @@ confirmação), `frontend` (`ImportDialog`).
 - **Mídia completa por provedor** (achados na conferência da fase 9):
   - IGDB hoje traz só screenshots; passa a trazer também a **capa** (campo `cover` do jogo, endpoint `/covers`).
   - SteamGridDB hoje traz só capas; passa a trazer também **screenshots de gameplay**.
-  - **Limite de imagens por tipo** ao importar: screenshot de gameplay no máximo 10, capa no máximo 2, fanart no
+  - **Limite de imagens por tipo** ao importar: screenshot de gameplay no máximo 10, capa no máximo 1, fanart no
     máximo 2. Vale para a união dos provedores (a busca unificada escolhe as melhores até o limite) e para o que já
     existe no jogo (decidir na spec se o limite conta as imagens atuais).
 

@@ -34,7 +34,7 @@ marcados `· verificação: manual`. IDs removidos (AJU-023, AJU-024) ficam no d
 | 2 | "Jogar" maior, "Jogar sem contar tempo" visível, cursor de mão | **Entra** (AJU-006..AJU-008) | Só CSS e marcação. A causa do cursor é do Tailwind 4 (o preflight põe `cursor: default` em `button`), então a correção é global. |
 | 3 | Jogo sem capa usa outra imagem dele | **Entra** (AJU-015..AJU-017) | Só frontend: a grade já lê `media.list` por jogo (todas as imagens, não só a capa). **Sem mudança de IPC nem de agente.** |
 | 4 | Importação do LaunchBox não traz todas as imagens | **Entra** (AJU-018..AJU-022, AJU-025) | É bug: `Box - Front` e as pastas de loja não são lidas (ver achados no design §7). O mapa de pastas é só no agente. Jogos já importados **não** são completados (o usuário reimporta, ver "Contexto"). |
-| 4a | Limites por tipo (screenshot ≤ 10, capa ≤ 2, fanart ≤ 2) | **Entra só para o LaunchBox** (AJU-020) | O mapa novo traz mais capas e screenshots; sem o limite, o número de imagens por jogo cresce sem controle. A tabela fica no domínio para a fase 12 reusar nos provedores. |
+| 4a | Limites por tipo (screenshot ≤ 10, capa ≤ 1 (alterado em 2026-11-15 (capa = 1); era 2), fanart ≤ 2) | **Entra só para o LaunchBox** (AJU-020) | O mapa novo traz mais capas e screenshots; sem o limite, o número de imagens por jogo cresce sem controle. A tabela fica no domínio para a fase 12 reusar nos provedores. |
 | 4b | Clear Logo, caixa 3D, verso, cartucho, disco, flyers, arcade | **Fica para a fase 12** | Pede tipos de mídia novos (migração da restrição `CHECK` de `media.kind`, rótulos, uso na UI); casa com os logos do SteamGridDB da fase 12. |
 | 5 | Barra de rolagem fina, no tema, em todas as áreas | **Entra** (AJU-004, AJU-005) | Só CSS global com tokens novos. |
 
@@ -48,7 +48,7 @@ marcados `· verificação: manual`. IDs removidos (AJU-023, AJU-024) ficam no d
    v0.11.0, sem campo novo em `import.apply`. O usuário vai limpar a base e reimportar tudo do LaunchBox.
 2. **Ordem da imagem do cartão sem capa:** tela de título → tela de seleção → screenshot (gameplay) → banner → fundo,
    preenchendo a área 2:3 com corte das bordas (`object-fit: cover`). (AJU-015, AJU-016)
-3. **Limites por tipo já nesta fase, só para o LaunchBox, contando as imagens que o jogo já tem:** capa 2, screenshot 10,
+3. **Limites por tipo já nesta fase, só para o LaunchBox, contando as imagens que o jogo já tem:** capa 1 (alterado em 2026-11-15 (capa = 1); era 2), screenshot 10,
    fundo 2, tela de título 2, tela de seleção 2, banner 2. (AJU-020; ADR 0030 proposto)
 4. **Nomes com GUID existem:** o usuário confirmou que há arquivos `.jpg` com o ID do jogo no nome na pasta do LaunchBox.
    AJU-021 é requisito firme; o formato exato do nome é conferido contra a pasta real antes de implementar.
@@ -302,13 +302,14 @@ do cartão, AJU-015).
 `Steam Poster\Jogo-01.jpg`: a primeira capa é a da raiz de `Box - Front`).
 
 ### AJU-020 — Limite de imagens por tipo
-Dado a cópia das imagens do LaunchBox de um jogo, então são gravadas no máximo: capa 2, screenshot 10, fundo 2, tela de
+Dado a cópia das imagens do LaunchBox de um jogo, então são gravadas no máximo: capa 1, screenshot 10, fundo 2, tela de
 título 2, tela de seleção 2, banner 2 (decisão 3 do usuário). O limite conta as imagens que o jogo já tem daquele tipo no
 início da cópia, de qualquer provedor, e só as efetivamente gravadas (uma imagem repetida pelo hash, MID-004, não conta e
 não ocupa vaga). Imagens que o jogo já tinha além do limite não são apagadas. A tabela de limites fica no domínio, para a
 fase 12 usar nos provedores. Substitui o limite de 5 por tipo de MID-010.
-· verificação: teste com árvore temporária (12 screenshots → 10; 3 capas iguais pelo conteúdo → 1; jogo com 2 capas já
-gravadas antes da cópia → nenhuma capa nova).
+· verificação: teste com árvore temporária (12 screenshots → 10; 3 capas iguais pelo conteúdo → 1; jogo com 1 capa já
+gravada antes da cópia → nenhuma capa nova).
+· alterado em 2026-11-15 (capa = 1): limite de capa de 2 para 1; antes, "jogo com 2 capas já gravadas".
 
 ### AJU-021 — Nome do arquivo com o ID do jogo
 Dado o título T de um jogo (com os caracteres trocados por `_` como em MID-010), então são aceitos os arquivos
@@ -430,6 +431,6 @@ visível, a importação inteira termina (em lotes) e os jogos do LaunchBox pass
 A sessão principal escreve (a spec só o referencia). Numeração a partir de 0030.
 
 1. **0030 — Limites de imagem por tipo como tabela única do domínio:** `internal/domain` guarda o máximo de imagens por
-   tipo de mídia (capa 2, screenshot 10, fundo 2, demais 2), contado sobre o que o jogo já tem e só sobre o que é gravado
+   tipo de mídia (capa 1 (alterado em 2026-11-15 (capa = 1); era 2), screenshot 10, fundo 2, demais 2), contado sobre o que o jogo já tem e só sobre o que é gravado
    de fato; toda fonte de imagens (LaunchBox agora, provedores na fase 12) passa por ela. Registra também que o
    LaunchBox é lido por um mapa fixo pasta → tipo, com prioridade.

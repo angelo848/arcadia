@@ -10,7 +10,7 @@ Dois números diferentes em dois lugares acabariam divergindo.
 
 ## Decisão
 - Os limites por tipo ficam numa tabela única em `internal/domain/media_limits.go` (`MediaKindLimit(kind)`):
-  capa 2, screenshot 10, fundo 2, tela de título 2, tela de seleção 2, banner 2.
+  capa 1, screenshot 10, fundo 2, tela de título 2, tela de seleção 2, banner 2 (a capa passou de 2 para 1 em 2026-11-15).
 - A cópia de imagens conta as imagens que o jogo já tem (via `ListMedia`, em memória) antes de aplicar o limite.
   Sem consulta nova ao store e sem mudança de IPC.
 - O mapa das pastas de imagem do LaunchBox para os tipos de mídia do Arcadia, com prioridade entre pastas, é fixo

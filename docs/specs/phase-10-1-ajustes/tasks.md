@@ -38,9 +38,9 @@
 - Requisitos: AJU-020. **implementer:** `internal/domain/media_limits.go`.
 ```go
 // MediaKindLimit is the most images a game keeps of one kind from an automatic source [AJU-020, ADR 0030].
-func MediaKindLimit(kind string) int // cover 2, screenshot 10, background 2, title 2, select 2, banner 2; unknown 0
+func MediaKindLimit(kind string) int // cover 1, screenshot 10, background 2, title 2, select 2, banner 2; unknown 0 (alterado em 2026-11-15 (capa = 1))
 ```
-- **test-writer:** `internal/domain/media_limits_test.go`: `AJU-020/cover 2, screenshot 10, background 2, title 2, select 2, banner 2`; `AJU-020/tipo desconhecido ("logo", "") dá 0`.
+- **test-writer:** `internal/domain/media_limits_test.go`: `AJU-020/cover 1, screenshot 10, background 2, title 2, select 2, banner 2`; `AJU-020/tipo desconhecido ("logo", "") dá 0`.
 - Dependência: nenhuma.
 
 ## T03 — Pastas, ordem, nome com GUID e pastas não mapeadas (importador do LaunchBox)
@@ -62,7 +62,7 @@ func UnmappedLaunchBoxFolders(root, platform string) []string          // subpas
 ## T04 — Cópia com limite que conta o que o jogo já tem
 - Requisitos: AJU-020, AJU-018, AJU-026. **implementer:** `internal/agent/import_images.go`: a interface `st` ganha `ListMedia`; `CopyLaunchBox` conta `have[kind]` em memória; para cada ref, se `have[kind] >= domain.MediaKindLimit(kind)` pula sem ler o arquivo, senão `files.Import` + `AddMedia` e, se gravou, `have[kind]++`; falha de arquivo vai ao log e segue; `ListMedia` com erro devolve o erro sem copiar nada. Assinatura de `CopyLaunchBox` não muda.
 - **test-writer:** `internal/agent/import_images_test.go` (SQLite em `t.TempDir()`):
-  - `AJU-020/12 screenshots distintos gravam 10`; `AJU-020/3 capas iguais pelo conteúdo gravam 1 e não ocupam vagas; uma 4ª distinta grava (total 2)`; `AJU-020/jogo com 2 capas já gravadas não recebe capa nova; screenshots continuam`; `AJU-020/jogo com 3 capas antes continua com 3 (nada é apagado)`; `AJU-020/arquivo acima do limite não é lido`; `AJU-020/ListMedia com erro devolve o erro e não grava nada`
+  - `AJU-020/12 screenshots distintos gravam 10`; `AJU-020/3 capas iguais pelo conteúdo gravam 1 e não ocupam vagas; uma 4ª distinta não grava (total 1)`; `AJU-020/jogo com 1 capa já gravada não recebe capa nova; screenshots continuam` (alterado em 2026-11-15 (capa = 1): eram total 2 e 2 capas já gravadas); `AJU-020/jogo com 3 capas antes continua com 3 (nada é apagado)`; `AJU-020/arquivo acima do limite não é lido`; `AJU-020/ListMedia com erro devolve o erro e não grava nada`
   - `AJU-018/import.apply: candidato "já existe" não recebe imagens`; `AJU-026/import.apply com imagens do LaunchBox não cria sessão`
 - Dependências: T02, T03.
 

@@ -125,8 +125,8 @@ func SelectImages(offers []Offer, have, active map[string]int, windows bool) (pi
 var providerPriority = /* table by kind and platform class */
 ```
 - **test-writer:** `images_test.go` (tabela de `match-rules.md` §4.2):
-  - `MET-020/jogo vazio Windows: 2 capas do SteamGridDB, skipped 2`; `MET-020/jogo vazio console: IGDB primeiro, depois a 1ª do SteamGridDB`; `MET-020/screenshot: IGDB antes da Steam Store nos dois casos`; `MET-020/background: SteamGridDB antes do IGDB`; `MET-020/mesma URL em IGDB e Steam entra uma vez`; `MET-020/ordem de cada provedor preservada`;
-  - `MET-021/9 de 10 screenshots: 1 vaga, skipped 4`; `MET-021/2 capas: nenhuma vaga`; `MET-021/8 screenshots e 2 jobs ativos: 0, skipped 5`; `MET-021/active conta e concluído já está em have`; `MET-021/have e active negativos ou ausentes tratam como 0`;
+  - `MET-020/jogo vazio Windows: 1 capa do SteamGridDB, skipped 3`; `MET-020/jogo vazio console: só a capa do IGDB (IGDB primeiro), skipped 3` (alterado em 2026-11-15 (capa = 1): eram 2 capas, skipped 2, e IGDB mais a 1ª do SteamGridDB); `MET-020/screenshot: IGDB antes da Steam Store nos dois casos`; `MET-020/background: SteamGridDB antes do IGDB`; `MET-020/mesma URL em IGDB e Steam entra uma vez`; `MET-020/ordem de cada provedor preservada`;
+  - `MET-021/9 de 10 screenshots: 1 vaga, skipped 4`; `MET-021/1 capa: nenhuma vaga` (alterado em 2026-11-15 (capa = 1): era 2 capas); `MET-021/8 screenshots e 2 jobs ativos: 0, skipped 5`; `MET-021/active conta e concluído já está em have`; `MET-021/have e active negativos ou ausentes tratam como 0`;
   - `MET-025/tipo title, banner e select oferecidos não entram e não contam em skipped`.
 - Dependência: nenhuma.
 
@@ -324,7 +324,7 @@ func (g *gameLocks) lock(gameID int64) (unlock func())
 ```
 `windows` de `SelectImages` = a plataforma do jogo tem chave `windows` (`GameDetail`/`ResolvePlatform`); sem plataforma = `false`. `scrape.apply` e `media.queue` montam um `Offer` com o provedor; `ScrapeApplyResult.Queued` continua o enfileirado; `MediaQueueResult.Queued` idem.
 - **test-writer:** `scrape_limits_test.go` (store real) e ajuste de `scrape_test.go`/`media_changed_test.go` (o fake de `scrapeStore` ganha o método):
-  - `MET-021/jogo vazio recebe até o limite por tipo`; `MET-021/jogo com 9 de 10 screenshots recebe 1`; `MET-021/jogo com 2 capas não recebe capa`; `MET-021/jobs pendentes e em andamento contam, falhos e cancelados não`; `MET-021/imagens de qualquer origem (LaunchBox) contam`; `MET-021/nada é apagado`;
+  - `MET-021/jogo vazio recebe até o limite por tipo`; `MET-021/jogo com 9 de 10 screenshots recebe 1`; `MET-021/jogo com 1 capa não recebe capa` (alterado em 2026-11-15 (capa = 1): eram 2 capas); `MET-021/jobs pendentes e em andamento contam, falhos e cancelados não`; `MET-021/imagens de qualquer origem (LaunchBox) contam`; `MET-021/nada é apagado`;
   - `MET-022/metadata.apply-via-queueImages, scrape.apply, media.queue e a aplicação do lote usam a mesma função: mesmo jogo com 1 vaga de screenshot enfileira 1 em cada caminho` (um caso por caminho; os de metadata e lote entram nas T21 e T27 reaproveitando este helper); `MET-022/media.queue com tipos explícitos limita cada tipo pedido`; `MET-022/scrape.apply passa pelo limite`;
   - `MET-023/dois pedidos concorrentes do mesmo jogo não passam do limite (-race)`; `MET-023/jogos diferentes não se bloqueiam (um lock preso não atrasa o outro)`; `MET-023/o lock é liberado em erro do store`; `MET-023/mapa de locks não vaza entradas depois de liberar`;
   - `MET-024/queued e skippedByLimit contados`; `MET-024/queue.Notify só é chamado quando enfileirou`.
@@ -677,7 +677,7 @@ Textos: "Buscando metadados k/n" (searching, com "Cancelar"), "Revisar metadados
 - Requisitos: MET-083 (`· verificação: manual`). **Responsável:** sessão principal com o usuário. Pré-requisito: T40 verde, `wails build` gerado, chaves do IGDB e do SteamGridDB cadastradas.
 - **Roteiro:**
   1. Importar jogos, fonte "Pasta", plataforma Sony Playstation, `E:\Games\emulators roms\ps1` com subpastas, caixa "Buscar metadados e imagens" marcada: os jogos entram e aparecem na biblioteca de imediato; o indicador mostra "Buscando metadados k/n".
-  2. Ao terminar, a janela "Confirmar metadados" abre sozinha com os "prováveis" marcados e os demais desmarcados; trocar uma alternativa (a linha marca e vira "escolhido por você"), desmarcar um jogo, "Aplicar selecionados": capas e screenshots chegam aos cartões e ao painel conforme baixam, sem passar do limite por tipo (conferir nenhum jogo com mais de 2 capas ou 10 screenshots).
+  2. Ao terminar, a janela "Confirmar metadados" abre sozinha com os "prováveis" marcados e os demais desmarcados; trocar uma alternativa (a linha marca e vira "escolhido por você"), desmarcar um jogo, "Aplicar selecionados": capas e screenshots chegam aos cartões e ao painel conforme baixam, sem passar do limite por tipo (conferir nenhum jogo com mais de 1 capa (alterado em 2026-11-15 (capa = 1); eram 2) ou 10 screenshots).
   3. Repetir com `n64` e com uma pasta de PC na plataforma Windows (Steam Store e SteamGridDB entram; conferir `agent.log` sem `Error`, sem rajada de 429).
   4. Importar um `.exe` avulso: ver o nome sugerido, "Obter dados" lista opções, escolher uma, importar: o jogo vem com os dados. Em outro `.exe`, escolher "Nenhuma": importa sem dados.
   5. Cancelar uma busca no meio e revisar o que veio (indicador "Revisar metadados (n)"); descartar.

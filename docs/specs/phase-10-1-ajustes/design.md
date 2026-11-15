@@ -195,7 +195,7 @@ de Steam/Epic, o LaunchBox costuma baixar `Steam Poster`/`Epic Games Poster` em 
 // internal/domain/media_limits.go
 // MediaKindLimit is the most images a game keeps of one kind from an automatic source [AJU-020, ADR 0030].
 // Unknown kinds give 0.
-func MediaKindLimit(kind string) int // cover 2, screenshot 10, background 2, title 2, select 2, banner 2
+func MediaKindLimit(kind string) int // cover 1, screenshot 10, background 2, title 2, select 2, banner 2 (alterado em 2026-11-15 (capa = 1))
 
 // internal/importers/launchbox_images.go
 // launchBoxFolders lists folder -> kind in priority order inside each kind [AJU-018].
@@ -254,7 +254,7 @@ export async function applyImportInLots(
 "Importando k de N…"; botão de fechar desativado durante os lotes (UIX-039).
 
 Concorrência: lotes sequenciais dentro de um único `async` do diálogo; nenhum timer. O agente processa um lote por
-chamada como hoje (uma transação por jogo). Um lote de 25 jogos com até 20 imagens cada (limites somados) fica bem dentro
+chamada como hoje (uma transação por jogo). Um lote de 25 jogos com até 19 imagens cada (limites somados; alterado em 2026-11-15 (capa = 1): eram 20) fica bem dentro
 dos 60 s em disco local; se não ficar, o tamanho do lote é a constante a ajustar.
 
 ## 9. Invariantes, testes e riscos [AJU-026..AJU-029]

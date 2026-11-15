@@ -327,7 +327,7 @@ As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
   focada. **Cartão sem capa** usa outra imagem do jogo (tela de título, tela de seleção, screenshot, banner,
   fundo), com `useCardImages`; sem mudança de IPC.
 - **Limites de imagem por tipo** ficam numa tabela do domínio (`domain.MediaKindLimit`, [ADR 0030](adr/0030-limites-de-imagem-por-tipo-como-tabela-do-dominio.md)):
-  capa 2, screenshot 10, fundo 2, tela de título 2, tela de seleção 2, banner 2. O importador do LaunchBox
+  capa 1, screenshot 10, fundo 2, tela de título 2, tela de seleção 2, banner 2 (a capa passou de 2 para 1 em 2026-11-15). O importador do LaunchBox
   (`internal/importers/launchbox_images.go`) lê as pastas de imagem pelo mapa fixo da spec, com prioridade e
   nomes `Título-NN` ou `Título.<GUID>-NN`; o agente copia respeitando o limite e contando o que o jogo já tem, e
   registra no log as pastas de imagem não lidas. Tipos que exigiriam um `kind` novo ficam para a fase 12.

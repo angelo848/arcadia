@@ -49,7 +49,7 @@ Resolvem os itens "A decidir" do roadmap. O usuário pode trocar qualquer uma an
    leva da ordem de 6 a 9 minutos de busca (IGDB e SteamGridDB em paralelo), em segundo plano. A Steam Store, a mais lenta, só é
    consultada no lote quando os outros não acharam um "provável" (MET-015).
 4. **O limite de imagens por tipo conta as imagens que o jogo já tem e as já enfileiradas** (mesma regra que o ADR 0030 deu à
-   cópia do LaunchBox). Um jogo que já tem 2 capas não ganha capa nova; nada é apagado para dar lugar.
+   cópia do LaunchBox). Um jogo que já tem 1 capa não ganha capa nova; nada é apagado para dar lugar (alterado em 2026-11-15 (capa = 1); era 2).
 5. **SteamGridDB não tem screenshot de gameplay.** O roadmap supõe "screenshots de gameplay" no SteamGridDB, mas a API v2
    oferece capas (`grids`), heróis (`heroes`), logos e ícones, não screenshots (conferir na API real na tarefa, como se fez com os
    ids do IGDB). Esta spec entrega do SteamGridDB a **capa** (só retrato) e o **herói como fundo** (`background`, fanart, limite
@@ -229,10 +229,11 @@ SteamGridDB, IGDB. A mesma URL oferecida duas vezes entra uma vez. Os tipos `tit
 · verificação: teste de unidade de `scrapers.SelectImages` (ordem por tipo e por classe de plataforma; URL repetida).
 
 ### MET-021 — O limite conta as imagens atuais e as enfileiradas
+· alterado em 2026-11-15 (capa = 1): `MediaKindLimit("cover")` passou de 2 para 1; a fórmula não muda.
 Dado um jogo e um tipo, então o número de imagens novas escolhidas é `max(0, domain.MediaKindLimit(tipo) − imagens atuais do tipo −
 jobs pendentes ou em andamento do tipo)`. Jobs concluídos já contam nas imagens atuais; jobs falhos ou cancelados não contam.
 Imagens de qualquer origem (LaunchBox, provedores) contam; nada é apagado.
-· verificação: teste de unidade de `SelectImages` (jogo vazio; com 9 de 10 screenshots; com 2 capas; com jobs pendentes);
+· verificação: teste de unidade de `SelectImages` (jogo vazio; com 9 de 10 screenshots; com 1 capa; com jobs pendentes);
 teste do agente com store real.
 
 ### MET-022 — Todo caminho da fila passa pelo limite
@@ -603,7 +604,7 @@ por tipo; repito com `n64` e com uma pasta de PC na plataforma Windows. Importo 
 4. **Um lote grande demora minutos** (decisão 3); o usuário continua usando o Arcadia, e a aplicação das escolhas também roda
    em segundo plano.
 5. **A miniatura da linha vem de um host de terceiro** pelo navegador embutido; sem internet ela cai no placeholder.
-6. **Jogo importado por outro caminho e já com 2 capas** não ganha capa nova (decisão 4).
+6. **Jogo importado por outro caminho e já com 1 capa** não ganha capa nova (decisão 4; alterado em 2026-11-15 (capa = 1); era 2).
 
 ## Perguntas ao usuário
 
@@ -618,7 +619,7 @@ Cada uma tem uma recomendação, já usada nos requisitos acima.
 4. **Linhas "em dúvida" desmarcadas** na janela de confirmação, contra "todas marcadas" do roadmap (decisão 6)?
    Recomendação: desmarcadas; marcar à mão é um clique, e metadados errados em 30 jogos são trabalho para desfazer.
 5. **O limite de imagens conta as atuais e as enfileiradas** e nada é apagado (decisão 4)? Recomendação: sim. Alternativa:
-   limitar só o que entra por busca, ignorando as atuais (pode chegar a 12 capas após buscas repetidas).
+   limitar só o que entra por busca, ignorando as atuais (pode chegar a 12 capas após buscas repetidas; alterado em 2026-11-15 (capa = 1): o limite de capa agora é 1, o exemplo de 12 permanece só como ilustração do crescimento sem controle).
 6. **Caixa "Buscar metadados e imagens" marcada por padrão**, só na fonte "Pasta" (MET-050)? Recomendação: marcada (o pedido é que
    a busca "não seja um passo que o usuário precise lembrar"), e só em Pasta nesta fase.
 7. **Prioridade da capa:** Windows com SteamGridDB primeiro; consoles com IGDB (arte oficial da caixa) primeiro
