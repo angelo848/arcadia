@@ -4,8 +4,8 @@
   (v0.12.0), que continua sendo o contrato completo até a tarefa abaixo.
 - **Requisitos:** IMV-024, IMV-030, IMV-070..IMV-073 ([requirements.md](../requirements.md)).
 - **Natureza:** só acréscimo. Nenhum método, parâmetro obrigatório, resultado, esquema existente ou erro da v0.12.0 muda
-  (a pergunta 7 dos requisitos propõe corrigir duas divergências antigas à parte; sem aprovação dela, ficam como estão).
-- **Tarefa (planner):** gravar o contrato completo `docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json` v0.13.0 =
+  (as duas correções aprovadas, `launchType` com `emulator` e `lastPlayed` string RFC 3339, estão feitas no JSON v0.13.0).
+- **Feito (T01):** contrato completo gravado em `docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json` v0.13.0 =
   v0.12.0 + os pontos abaixo, e apontar o teste de contrato de `internal/ipc` (`contract_test.go`) para ele; o teste que compara
   com a versão anterior (`contract_phase10_2_test.go`) ganha um irmão da fase 11 que confere "só acréscimo".
 
