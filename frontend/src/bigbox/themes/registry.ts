@@ -1,17 +1,20 @@
 import type { ComponentType } from 'react'
+import { Faixa } from './faixa/Faixa'
+import type { BigBoxThemeProps } from './types'
+
+export type { BigBoxThemeProps }
 
 export type BigBoxThemeDef = {
   id: 'faixa' | 'mosaico' | 'roda'
   name: string
   available: boolean
   axis: 'horizontal' | 'vertical'
-  // The Faixa component arrives in T37; until then it is absent.
-  Component?: ComponentType
+  Component?: ComponentType<BigBoxThemeProps>
 }
 
 // Mutable on purpose: tests register a fake theme [BBX-024].
 export const BIGBOX_THEMES: BigBoxThemeDef[] = [
-  { id: 'faixa', name: 'Faixa', available: true, axis: 'horizontal' },
+  { id: 'faixa', name: 'Faixa', available: true, axis: 'horizontal', Component: Faixa },
   { id: 'mosaico', name: 'Mosaico (preparado)', available: false, axis: 'horizontal' },
   { id: 'roda', name: 'Roda (preparado)', available: false, axis: 'horizontal' },
 ]

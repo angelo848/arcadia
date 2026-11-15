@@ -1,0 +1,203 @@
+import { act, fireEvent, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  ART_FADE_MS,
+  BackgroundStage,
+  VIDEO_DELAY_MS,
+  VIDEO_FADE_MS,
+  type BackgroundStageProps,
+} from './BackgroundStage'
+
+// Assumed markup: art layers are <img data-testid="bb-art">; the single video is <video data-testid="bb-video">;
+// the no-art fallback is data-testid="bb-gradient" (inline style/class using var(--arc-bb-bg) and var(--arc-bb-bg-2)).
+const base: BackgroundStageProps = {
+  gameId: 1,
+  artUrl: 'http://media/1/bg.jpg',
+  videoUrl: 'http://media/1/v.mp4',
+  active: true,
+  sound: false,
+  failed: false,
+  onVideoError: () => {},
+  onVideoVisible: () => {},
+}
+
+const videos = (c: HTMLElement) => c.querySelectorAll('video')
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+})
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+describe('BackgroundStage', () => {
+  it('BBX-011/com vídeo e foco parado 2.000 ms um único video muted, loop e playsInline passa a tocar sobre a arte', () => {
+    const { container } = render(<BackgroundStage {...base} />)
+    expect(videos(container)).toHaveLength(0)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS - 1) })
+    expect(videos(container)).toHaveLength(0)
+    act(() => { vi.advanceTimersByTime(1) })
+    const v = container.querySelector('video') as HTMLVideoElement
+    expect(v).not.toBeNull()
+    expect(v.muted).toBe(true)
+    expect(v.loop).toBe(true)
+    expect(v.hasAttribute('playsinline') || v.playsInline).toBe(true)
+    expect(v.getAttribute('src')).toBe('http://media/1/v.mp4')
+    expect(container.querySelector('img[data-testid="bb-art"]')).not.toBeNull()
+  })
+
+  it('BBX-011/troca de foco antes de 2.000 ms: nada toca e a contagem recomeça no jogo novo', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(1500) })
+    rerender(<BackgroundStage {...base} gameId={2} artUrl="http://media/2/bg.jpg" videoUrl="http://media/2/v.mp4" />)
+    act(() => { vi.advanceTimersByTime(1500) })
+    expect(videos(container)).toHaveLength(0)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('http://media/2/v.mp4')
+  })
+
+  it('BBX-011/troca de foco com vídeo tocando: o vídeo para e o src é removido', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect(videos(container)).toHaveLength(1)
+    rerender(<BackgroundStage {...base} gameId={2} videoUrl="http://media/2/v.mp4" />)
+    expect(videos(container)).toHaveLength(0)
+    expect(container.innerHTML).not.toContain('http://media/1/v.mp4')
+  })
+
+  it('BBX-011/active=false (Detalhes) nunca toca', () => {
+    const { container } = render(<BackgroundStage {...base} active={false} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 3) })
+    expect(videos(container)).toHaveLength(0)
+  })
+
+  it('BBX-011/active=false com vídeo tocando o desmonta', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    rerender(<BackgroundStage {...base} active={false} />)
+    expect(videos(container)).toHaveLength(0)
+  })
+
+  it('BBX-011/jogo sem vídeo: nunca há video', () => {
+    const { container } = render(<BackgroundStage {...base} videoUrl={null} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 2) })
+    expect(videos(container)).toHaveLength(0)
+  })
+
+  it('BBX-011/nunca há mais de um elemento video', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} />)
+    for (let id = 1; id <= 4; id++) {
+      rerender(<BackgroundStage {...base} gameId={id} videoUrl={`http://media/${id}/v.mp4`} />)
+      expect(videos(container).length).toBeLessThanOrEqual(1)
+      act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+      expect(videos(container)).toHaveLength(1)
+    }
+  })
+
+  it('BBX-011/transições de 300 ms (arte) e 400 ms (vídeo)', () => {
+    expect(ART_FADE_MS).toBe(300)
+    expect(VIDEO_FADE_MS).toBe(400)
+    expect(VIDEO_DELAY_MS).toBe(2000)
+    const { container } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    const vid = container.querySelector('[data-testid="bb-video"]') as HTMLElement
+    expect(art.style.transition).toContain('opacity')
+    expect(art.style.transition).toContain('300ms')
+    expect(vid.style.transition).toContain('opacity')
+    expect(vid.style.transition).toContain('400ms')
+  })
+
+  it('BBX-012/evento error volta à arte e chama onVideoError', () => {
+    const onVideoError = vi.fn()
+    const { container } = render(<BackgroundStage {...base} onVideoError={onVideoError} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    fireEvent.error(container.querySelector('video') as HTMLVideoElement)
+    expect(onVideoError).toHaveBeenCalledWith(1)
+    expect(container.querySelector('img[data-testid="bb-art"]')).not.toBeNull()
+  })
+
+  it('BBX-012/failed=true não tenta de novo até o foco sair do jogo', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} failed />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 3) })
+    expect(videos(container)).toHaveLength(0)
+    // focus moves to another game (failed cleared by the reducer): plays again
+    rerender(<BackgroundStage {...base} gameId={2} videoUrl="http://media/2/v.mp4" failed={false} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect(videos(container)).toHaveLength(1)
+  })
+
+  it('BBX-013/sound=false: muted; sound=true: não muted', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect((container.querySelector('video') as HTMLVideoElement).muted).toBe(true)
+    rerender(<BackgroundStage {...base} sound />)
+    expect((container.querySelector('video') as HTMLVideoElement).muted).toBe(false)
+  })
+
+  it('BBX-013/onVideoVisible(true) só com o vídeo tocando', () => {
+    const onVideoVisible = vi.fn()
+    const { rerender } = render(<BackgroundStage {...base} onVideoVisible={onVideoVisible} />)
+    expect(onVideoVisible).not.toHaveBeenCalledWith(true)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect(onVideoVisible).toHaveBeenLastCalledWith(true)
+    rerender(<BackgroundStage {...base} gameId={2} onVideoVisible={onVideoVisible} videoUrl="http://media/2/v.mp4" />)
+    expect(onVideoVisible).toHaveBeenLastCalledWith(false)
+  })
+
+  it('BBX-010/arte trocada faz a transição de 300 ms entre as duas', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} videoUrl={null} />)
+    rerender(<BackgroundStage {...base} gameId={2} artUrl="http://media/2/bg.jpg" videoUrl={null} />)
+    const arts = Array.from(container.querySelectorAll('[data-testid="bb-art"]')) as HTMLElement[]
+    expect(arts.map((a) => a.getAttribute('src'))).toContain('http://media/2/bg.jpg')
+    expect(arts.length).toBeLessThanOrEqual(2)
+    arts.forEach((a) => expect(a.style.transition).toContain('300ms'))
+    act(() => { vi.advanceTimersByTime(ART_FADE_MS) })
+    const after = Array.from(container.querySelectorAll('[data-testid="bb-art"]'))
+    expect(after.map((a) => a.getAttribute('src'))).toEqual(['http://media/2/bg.jpg'])
+  })
+
+  it('BBX-010/sem arte: gradiente de tokens', () => {
+    const { container } = render(<BackgroundStage {...base} artUrl={null} videoUrl={null} />)
+    expect(container.querySelector('img[data-testid="bb-art"]')).toBeNull()
+    const g = container.querySelector('[data-testid="bb-gradient"]') as HTMLElement
+    const css = `${g.getAttribute('style') ?? ''} ${g.className}`
+    expect(css).toMatch(/--arc-bb-bg\b/)
+    expect(css).toMatch(/--arc-bb-bg-2/)
+  })
+
+  it('BBX-011/o elemento é desmontado ao sair do Big Box', () => {
+    const { container, unmount } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect(videos(container)).toHaveLength(1)
+    // jsdom queues its own setImmediate when muted is set; only the component's setTimeout counts.
+    const created: unknown[] = []
+    const cleared: unknown[] = []
+    const realSet = globalThis.setTimeout
+    const realClear = globalThis.clearTimeout
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((...a: Parameters<typeof setTimeout>) => {
+      const id = realSet(...a)
+      created.push(id)
+      return id
+    }) as typeof setTimeout)
+    vi.spyOn(globalThis, 'clearTimeout').mockImplementation(((id?: Parameters<typeof clearTimeout>[0]) => {
+      cleared.push(id)
+      return realClear(id)
+    }) as typeof clearTimeout)
+    unmount()
+    expect(videos(container)).toHaveLength(0)
+    for (const id of created) expect(cleared).toContain(id)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 2) })
+    expect(videos(container)).toHaveLength(0)
+  })
+
+  it('BBX-010/a arte é decorativa (aria-hidden) e não há som sem ação', () => {
+    const { container } = render(<BackgroundStage {...base} />)
+    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    expect(art.getAttribute('alt') ?? '').toBe('')
+    expect(art.closest('[aria-hidden="true"]')).not.toBeNull()
+  })
+})

@@ -76,6 +76,11 @@ describe('UIX-048 página do jogo removida', () => {
       if (path === selfPath || /\.test\.tsx?$/.test(path)) {
         continue
       }
+      // alterado em 2026-11-15 (fase 13): the new Big Box (src/bigbox/) legitimately has the "Detalhes"
+      // button (BBX-009) and the "Voltar" hint (hints.ts); the ban holds everywhere else.
+      if (path.startsWith('./bigbox/')) {
+        continue
+      }
       if (path !== './components/StatsPage.tsx' && /\bVoltar\b/.test(text)) {
         offenders.push(`${path} tem o botão Voltar`)
       }
