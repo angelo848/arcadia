@@ -7,7 +7,34 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
+
+const cancelPendingVideoJobs = `-- name: CancelPendingVideoJobs :execrows
+UPDATE media_job SET state = 'failed', last_error = 'cancelado'
+WHERE kind = 'video' AND state = 'pending'
+`
+
+func (q *Queries) CancelPendingVideoJobs(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelPendingVideoJobs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const cancelRunningVideoJobs = `-- name: CancelRunningVideoJobs :execrows
+UPDATE media_job SET state = 'failed', last_error = 'cancelado'
+WHERE kind = 'video' AND state = 'running'
+`
+
+func (q *Queries) CancelRunningVideoJobs(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelRunningVideoJobs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 const countActiveMediaJobsByKind = `-- name: CountActiveMediaJobsByKind :many
 SELECT kind, COUNT(*) AS n FROM media_job WHERE game_id = ? AND state IN ('pending','running') GROUP BY kind
@@ -264,6 +291,33 @@ func (q *Queries) ListMediaJobsByState(ctx context.Context, state string) ([]Med
 	return items, nil
 }
 
+const listRunningVideoJobIDs = `-- name: ListRunningVideoJobIDs :many
+SELECT id FROM media_job WHERE kind = 'video' AND state = 'running' ORDER BY id
+`
+
+func (q *Queries) ListRunningVideoJobIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listRunningVideoJobIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resetRunningMediaJobs = `-- name: ResetRunningMediaJobs :execrows
 UPDATE media_job SET state = 'pending' WHERE state = 'running'
 `
@@ -300,4 +354,150 @@ func (q *Queries) SetMediaJobState(ctx context.Context, arg SetMediaJobStatePara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const videoCandidateByGame = `-- name: VideoCandidateByGame :one
+SELECT g.id, p.seed_key,
+       (EXISTS (SELECT 1 FROM media m WHERE m.game_id = g.id AND m.kind = 'video')
+        OR EXISTS (SELECT 1 FROM media_job j WHERE j.game_id = g.id AND j.kind = 'video'
+                   AND j.state IN ('pending','running'))) AS has_video
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+WHERE g.id = ?
+`
+
+type VideoCandidateByGameRow struct {
+	ID       int64
+	SeedKey  sql.NullString
+	HasVideo interface{}
+}
+
+func (q *Queries) VideoCandidateByGame(ctx context.Context, id int64) (VideoCandidateByGameRow, error) {
+	row := q.db.QueryRowContext(ctx, videoCandidateByGame, id)
+	var i VideoCandidateByGameRow
+	err := row.Scan(&i.ID, &i.SeedKey, &i.HasVideo)
+	return i, err
+}
+
+const videoCandidatesAll = `-- name: VideoCandidatesAll :many
+SELECT g.id, p.seed_key,
+       (EXISTS (SELECT 1 FROM media m WHERE m.game_id = g.id AND m.kind = 'video')
+        OR EXISTS (SELECT 1 FROM media_job j WHERE j.game_id = g.id AND j.kind = 'video'
+                   AND j.state IN ('pending','running'))) AS has_video
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+ORDER BY g.id
+`
+
+type VideoCandidatesAllRow struct {
+	ID       int64
+	SeedKey  sql.NullString
+	HasVideo interface{}
+}
+
+func (q *Queries) VideoCandidatesAll(ctx context.Context) ([]VideoCandidatesAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, videoCandidatesAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VideoCandidatesAllRow{}
+	for rows.Next() {
+		var i VideoCandidatesAllRow
+		if err := rows.Scan(&i.ID, &i.SeedKey, &i.HasVideo); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const videoCandidatesByPlatform = `-- name: VideoCandidatesByPlatform :many
+SELECT g.id, p.seed_key,
+       (EXISTS (SELECT 1 FROM media m WHERE m.game_id = g.id AND m.kind = 'video')
+        OR EXISTS (SELECT 1 FROM media_job j WHERE j.game_id = g.id AND j.kind = 'video'
+                   AND j.state IN ('pending','running'))) AS has_video
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+WHERE g.platform_id = ?
+ORDER BY g.id
+`
+
+type VideoCandidatesByPlatformRow struct {
+	ID       int64
+	SeedKey  sql.NullString
+	HasVideo interface{}
+}
+
+func (q *Queries) VideoCandidatesByPlatform(ctx context.Context, platformID int64) ([]VideoCandidatesByPlatformRow, error) {
+	rows, err := q.db.QueryContext(ctx, videoCandidatesByPlatform, platformID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VideoCandidatesByPlatformRow{}
+	for rows.Next() {
+		var i VideoCandidatesByPlatformRow
+		if err := rows.Scan(&i.ID, &i.SeedKey, &i.HasVideo); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const videoGameInfoRow = `-- name: VideoGameInfoRow :one
+
+SELECT g.title, g.release_date, p.seed_key
+FROM game g
+JOIN platform p ON p.id = g.platform_id
+WHERE g.id = ?
+`
+
+type VideoGameInfoRowRow struct {
+	Title       string
+	ReleaseDate sql.NullString
+	SeedKey     sql.NullString
+}
+
+// Video jobs (phase 13, VID-002..VID-008).
+func (q *Queries) VideoGameInfoRow(ctx context.Context, id int64) (VideoGameInfoRowRow, error) {
+	row := q.db.QueryRowContext(ctx, videoGameInfoRow, id)
+	var i VideoGameInfoRowRow
+	err := row.Scan(&i.Title, &i.ReleaseDate, &i.SeedKey)
+	return i, err
+}
+
+const videoJobCounts = `-- name: VideoJobCounts :one
+SELECT
+  CAST(COALESCE(SUM(state = 'pending'), 0) AS INTEGER) AS pending,
+  CAST(COALESCE(SUM(state = 'running'), 0) AS INTEGER) AS running,
+  CAST(COALESCE(SUM(state = 'failed' AND last_error <> 'cancelado'), 0) AS INTEGER) AS failed
+FROM media_job
+WHERE kind = 'video'
+`
+
+type VideoJobCountsRow struct {
+	Pending int64
+	Running int64
+	Failed  int64
+}
+
+func (q *Queries) VideoJobCounts(ctx context.Context) (VideoJobCountsRow, error) {
+	row := q.db.QueryRowContext(ctx, videoJobCounts)
+	var i VideoJobCountsRow
+	err := row.Scan(&i.Pending, &i.Running, &i.Failed)
+	return i, err
 }
