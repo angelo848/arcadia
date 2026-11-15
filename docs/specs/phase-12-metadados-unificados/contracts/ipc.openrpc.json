@@ -1,0 +1,4274 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "arcadia agent IPC",
+    "version": "0.14.0",
+    "description": "JSON-RPC 2.0 over NDJSON on the named pipe \\\\.\\pipe\\arcadia-agent-<SID>, served by `arcadia.exe --agent`. Supersedes docs/specs/phase-8-estatisticas/contracts/ipc.openrpc.json (v0.10.0). v0.11.0 (phase 9, platforms): Platform gains seedKey, iconPath and gameCount [PLT-014]; platform.add returns created [PLT-016]; new platform.update [PLT-018, PLT-019], platform.setIcon [PLT-011..PLT-013] and platform.delete [PLT-020, PLT-021]; PlatformResult is shared by platform.setEmulator, platform.update and platform.setIcon; new errors PlatformNotFound (-32001) and PlatformInUse (-32013). None of the platform writes sends a notification [PLT-024, IPC-050]. Everything else is unchanged from v0.10.0. Supersedes docs/specs/phase-9-plataformas/contracts/ipc.openrpc.json (v0.11.0). v0.12.0 (phase 10.2, live images): new server-to-client notification media.changed {gameId}, sent by the media queue after a download stores a new image, coalesced per game [IMG-001..IMG-004]; new x-media block. Everything else is unchanged from v0.11.0. Supersedes docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json (v0.12.0). v0.13.0 (phase 11, import v2): import.scan takes the optional params platform, titleFrom and recursive [IMV-030, IMV-017, IMV-011]; ImportCandidate gains the optional fields file, extension, discs and discFiles [IMV-024]; new x-import block; ImportCandidate.launchType lists emulator and lastPlayed is an RFC 3339 string (corrections of v0.12.0 divergences). import.apply and everything else are unchanged from v0.12.0. Supersedes docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json (v0.13.0). v0.14.0 (phase 12, unified metadata): new methods metadata.search, metadata.apply, metadata.batchStart, metadata.batchStatus, metadata.batchResults, metadata.batchApply, metadata.batchCancel and metadata.batchDiscard [MET-001, MET-030, MET-052..MET-058, MET-064]; new server-to-client notification metadata.batchChanged {batchId, state, done, total, failed} [MET-054]; ImportCandidate gains the optional field searchName [MET-040]; new errors BatchNotFound (-32014), BatchBusy (-32015) and BatchWrongState (-32016); new x-metadata block. scrape.search, scrape.apply and media.queue are obsolete (still served, same behaviour; the image limit of MET-022 now applies to them). Everything else is unchanged from v0.13.0.",
+    "x-limits": {
+      "maxMessageBytes": 1048576,
+      "heartbeatIntervalSeconds": 5,
+      "clientBackoff": {
+        "initialMs": 250,
+        "factor": 2,
+        "maxMs": 5000,
+        "jitter": false,
+        "resetOnConnect": true
+      },
+      "clientNotificationBuffer": 16,
+      "shutdownDrainMs": 500,
+      "maxGameTitleRunes": 200,
+      "maxNameRunes": 100,
+      "maxDescriptionRunes": 10000,
+      "maxFilterTextRunes": 200,
+      "maxFilterIds": 50,
+      "yearMin": 1900,
+      "yearMax": 2100,
+      "defaultGameListLimit": 200,
+      "maxGameListLimit": 500,
+      "defaultSessionListLimit": 50,
+      "maxSessionListLimit": 200
+    },
+    "x-tracking": {
+      "description": "Agent constants (not configurable yet, not part of the wire), unchanged from v0.5.0 [SES-003..SES-013, DOM-008, PAU-004, PWR-005].",
+      "gracePeriodSeconds": 15,
+      "minCountedSessionSeconds": 30,
+      "sessionHeartbeatSeconds": 30,
+      "jobPollSeconds": 5,
+      "maxConcurrentSessions": 1,
+      "pauseToggleDebounceMs": 300,
+      "powerHandlerTimeoutMs": 1500,
+      "pauseHandlerTimeoutMs": 5000
+    },
+    "x-library": {
+      "description": "Library constants (not part of the wire) [LIB-001..LIB-002, FTS-005, EDT-001, EDT-003].",
+      "defaultSort": "title",
+      "sortValues": [
+        "title",
+        "lastPlayed",
+        "totalPlayed",
+        "year"
+      ],
+      "searchDebounceMs": 300
+    },
+    "x-media": {
+      "description": "Agent constants of the media queue (not part of the wire) [IMG-003].",
+      "mediaChangedWindowMs": 500
+    },
+    "x-import": {
+      "description": "Agent constants of the folder import (not part of the wire) [IMV-018, IMV-019].",
+      "maxScanDepth": 8,
+      "maxScanItems": 20000,
+      "maxScanResultBytes": 921600
+    },
+    "x-metadata": {
+      "description": "Agent and domain constants of the unified metadata search (not part of the wire) [MET-006..MET-011, MET-053..MET-057].",
+      "maxSearchCandidates": 10,
+      "maxRowCandidates": 5,
+      "matchAuto": 0.85,
+      "matchMinSimilarity": 0.8,
+      "matchMargin": 0.05,
+      "matchDoubt": 0.6,
+      "matchAlternative": 0.4,
+      "matchCap": 0.79,
+      "searchTimeoutMs": 20000,
+      "gameSearchTimeoutMs": 15000,
+      "requestIntervalMs": {
+        "igdb": 334,
+        "steamgriddb": 500,
+        "steamstore": 2000
+      },
+      "batchWorkers": 3,
+      "maxBatchGames": 1000,
+      "maxBatchChoices": 1000,
+      "defaultResultsLimit": 100,
+      "maxResultsLimit": 200,
+      "maxResultBytes": 921600,
+      "progressWindowMs": 500,
+      "providerCooldownMs": [
+        30000,
+        60000,
+        120000
+      ],
+      "providerMaxFailures": 3,
+      "maxStatusWarnings": 10,
+      "maxFailedTitles": 10
+    }
+  },
+  "methods": [
+    {
+      "name": "agent.ping",
+      "summary": "Liveness check [IPC-001]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "pong",
+        "schema": {
+          "type": "object",
+          "required": [
+            "pong"
+          ],
+          "properties": {
+            "pong": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        }
+      ]
+    },
+    {
+      "name": "agent.status",
+      "summary": "Agent identity and uptime [IPC-001, AGT-004]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "status",
+        "schema": {
+          "$ref": "#/components/schemas/AgentStatus"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        }
+      ]
+    },
+    {
+      "name": "agent.heartbeat",
+      "summary": "Server-to-client notification every 5 s (no id, no response) [IPC-004]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "uptimeSeconds",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "none",
+        "schema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "agent.shutdown",
+      "summary": "Server-to-client notification sent once to every connection when the agent starts an orderly shutdown, and as the first message of any connection accepted while draining (no id, no response). A client that receives it must not restart the agent [EXE-013..EXE-017]. From this point game.launch, game.launchUntracked and game.delete are refused or not applied as described in their methods [AGT-011, SES-033]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "reason",
+          "required": true,
+          "description": "quit: tray \"Sair\"; session-end: WM_ENDSESSION; signal: Ctrl+C/SIGTERM; other: the tray loop ended on its own, or Serve ended with an error [EXE-016, EXE-026]",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "session-end",
+              "signal",
+              "other"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "none",
+        "schema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "game.add",
+      "summary": "Adds an exe game to the library; the agent writes the row and its game_fts row in the same transaction. Adding the same path again creates another, distinct game (no duplicate check) [IPC-020, IPC-021, GAM-001..GAM-003, FTS-002]. The game goes to the platform of seed key windows, created (Windows, pc) when missing [PLT-027].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "path",
+          "required": true,
+          "description": "Absolute path of an existing regular file ending in .exe (case-insensitive). Stored as filepath.Clean(path).",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "title",
+          "required": false,
+          "description": "Trimmed; absent or empty after trimming means the default title (file name without .exe) [DOM-009, GAM-003]. More than maxGameTitleRunes after trimming is -32602.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "game",
+        "schema": {
+          "$ref": "#/components/schemas/Game"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InvalidExecutable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.list",
+      "summary": "Paged, filtered and sorted list of games [IPC-042, IPC-043, LIB-001, LIB-002, FLT-001..FLT-008]. Without params (or {}) it returns the first 200 games of the empty filter ordered by title. Replaces the parameterless v0.5.0 method [IPC-023 is superseded by IPC-042]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "filter",
+          "required": false,
+          "description": "FilterSpec; absent means the whole library [FLT-008]",
+          "schema": {
+            "$ref": "#/components/schemas/FilterSpec"
+          }
+        },
+        {
+          "name": "sort",
+          "required": false,
+          "description": "Default title [LIB-001]",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "title",
+              "lastPlayed",
+              "totalPlayed",
+              "year"
+            ]
+          }
+        },
+        {
+          "name": "offset",
+          "required": false,
+          "description": "Default 0 [LIB-002]",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "limit",
+          "required": false,
+          "description": "Default 200, between 1 and 500 [LIB-002]",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      ],
+      "result": {
+        "name": "page",
+        "schema": {
+          "$ref": "#/components/schemas/GameListResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.get",
+      "summary": "Full detail of one game, with genres, developers, publishers and play modes [IPC-044, STO-026]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "detail",
+        "schema": {
+          "$ref": "#/components/schemas/GameDetailResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.update",
+      "summary": "Edits the metadata of a game as a patch: an absent member is unchanged, null clears only completedAt and year. Works with the game in a session (the session is untouched). Atomic: any invalid member changes nothing. updated_at changes only when a field really changed [IPC-045, IPC-052, EDT-001..EDT-007, STO-028]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "title",
+          "required": false,
+          "description": "Trimmed; empty or more than maxGameTitleRunes is -32602 (no default here) [EDT-001]",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "platformId",
+          "required": false,
+          "description": "Must be an existing platform id [EDT-002]",
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "status",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/GameStatus"
+          }
+        },
+        {
+          "name": "favorite",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "completedAt",
+          "required": false,
+          "description": "YYYY-MM-DD or null (clears); stored as UTC midnight [EDT-001]",
+          "schema": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "name": "description",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "year",
+          "required": false,
+          "description": "1900..2100 or null (clears release_date) [EDT-003]",
+          "schema": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "name": "developers",
+          "required": false,
+          "description": "Replaces the set; names reuse the catalog case-insensitively [EDT-004]",
+          "schema": {
+            "$ref": "#/components/schemas/NameList"
+          }
+        },
+        {
+          "name": "publishers",
+          "required": false,
+          "description": "Replaces the set [EDT-004]",
+          "schema": {
+            "$ref": "#/components/schemas/NameList"
+          }
+        },
+        {
+          "name": "genres",
+          "required": false,
+          "description": "Replaces the set [EDT-004]",
+          "schema": {
+            "$ref": "#/components/schemas/NameList"
+          }
+        },
+        {
+          "name": "playModes",
+          "required": false,
+          "description": "Replaces the set; exact names of DOM-014 [EDT-004]",
+          "schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayModeName"
+            },
+            "uniqueItems": true,
+            "maxItems": 5
+          }
+        },
+        {
+          "name": "launchType",
+          "required": false,
+          "description": "exe or uri [EDT-010]",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "exe",
+              "uri"
+            ]
+          }
+        },
+        {
+          "name": "launchTarget",
+          "required": false,
+          "description": "Non-empty, at most 2000 runes; an absolute path for exe [EDT-010]",
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        {
+          "name": "launchArgs",
+          "required": false,
+          "description": "At most 2000 runes, may be empty [EDT-010]",
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        {
+          "name": "emulatorId",
+          "required": false,
+          "description": "Null clears the game emulator; an unknown id is -32001 [EMU-002].",
+          "schema": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "detail",
+        "schema": {
+          "$ref": "#/components/schemas/GameDetailResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.delete",
+      "summary": "Removes a game with its sessions and pauses (cascade), its link rows and its game_fts row [DEL-001]. Refused with SessionActive while the game has a session in running, grace or paused, or a tracked launch of it in progress; nothing changes then [DEL-002, DEL-003]. A process started by game.launchUntracked is not affected [DEL-005]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "deleted",
+        "schema": {
+          "$ref": "#/components/schemas/GameDeletedResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/SessionActive"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.launch",
+      "summary": "Launches the game inside a new Job Object and opens a tracked session; returns once the process was resumed. The existence of the game is checked before the active session; an active session is running, grace or paused [SES-031]. If the handler deadline (10 s) expires first, the result is -32603 [IPC-024, IPC-025, SES-001, SES-002, SES-012] A game with launch_type uri opens its URI and waits for the adopted process [RUL-003].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "session",
+        "schema": {
+          "$ref": "#/components/schemas/Session"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/SessionActive"
+        },
+        {
+          "$ref": "#/components/errors/LaunchFailed"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "game.launchUntracked",
+      "summary": "Launches the game as a plain detached process (\"Sem contar tempo\"): no Job Object, no play_session row, no session.changed [IPC-033, IPC-034, IPC-035, SES-032..SES-034, ADR 0019]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "launched",
+        "schema": {
+          "$ref": "#/components/schemas/LaunchedProcess"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/SessionActive"
+        },
+        {
+          "$ref": "#/components/errors/LaunchFailed"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "session.current",
+      "summary": "The active session (running, paused or grace), or null. activeMs/activeSeconds are measured at asOf; they do not advance in paused or grace [IPC-026, IPC-031, IPC-036]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "current",
+        "schema": {
+          "type": "object",
+          "required": [
+            "session"
+          ],
+          "properties": {
+            "session": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Session"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        }
+      ]
+    },
+    {
+      "name": "session.pause",
+      "summary": "Explicitly pauses the active session (reason `ui`). Idempotent; refused with SessionNotPausable in grace or without a session [IPC-038, SES-035, SES-037]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "current",
+        "schema": {
+          "$ref": "#/components/schemas/SessionResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/SessionNotPausable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "session.resume",
+      "summary": "Explicitly resumes a paused session (any pause reason). Idempotent; refused with SessionNotPausable in grace or without a session [IPC-039, SES-036, SES-037]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "current",
+        "schema": {
+          "$ref": "#/components/schemas/SessionResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/SessionNotPausable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "session.list",
+      "summary": "Sessions of one game, newest first (started_at, then id), including discarded and the open one [IPC-047, STO-027]",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "limit",
+          "required": false,
+          "description": "Default 50, between 1 and 200",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      ],
+      "result": {
+        "name": "page",
+        "schema": {
+          "$ref": "#/components/schemas/SessionListResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.list",
+      "summary": "All platforms ordered by name without regard to case, then id [IPC-048, PLT-014].",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "platforms",
+        "schema": {
+          "type": "object",
+          "required": [
+            "platforms"
+          ],
+          "properties": {
+            "platforms": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Platform"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.add",
+      "summary": "Resolves the name (PLT-025: same name without regard to case, then the canonical name of a seed key) and returns that platform with created=false, the category sent being ignored; otherwise creates it (with the seed key and seed category when the name is canonical, PLT-017) and returns created=true [IPC-048, EDT-008, PLT-016].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "category",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/PlatformCategory"
+          }
+        }
+      ],
+      "result": {
+        "name": "platform",
+        "schema": {
+          "type": "object",
+          "required": [
+            "platform",
+            "created"
+          ],
+          "properties": {
+            "platform": {
+              "$ref": "#/components/schemas/Platform"
+            },
+            "created": {
+              "type": "boolean",
+              "description": "false when an existing platform was returned [PLT-016]."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.update",
+      "summary": "Renames a platform and sets its category [PLT-018, PLT-019]. Games stay by platform_id; seedKey, icon and emulatorId do not change. A name equal (without regard to case) to another platform's is -32602; changing only the case of its own name is accepted.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "description": "DOM-015: 1..100 runes after trimming."
+          }
+        },
+        {
+          "name": "category",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/PlatformCategory"
+          }
+        }
+      ],
+      "result": {
+        "name": "platform",
+        "schema": {
+          "$ref": "#/components/schemas/PlatformResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/PlatformNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.setIcon",
+      "summary": "Copies an image file into data\\media\\platforms\\<sha256>.<ext> and makes it the icon of the platform; path null returns the platform to its default icon (seed or generic). The previous custom file is deleted unless another platform uses it [PLT-011, PLT-012, PLT-013].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "platformId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "path",
+          "required": true,
+          "schema": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Absolute path of a PNG or JPEG file of at most 2 MB (by content)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "platform",
+        "schema": {
+          "$ref": "#/components/schemas/PlatformResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams",
+          "description": "Also for a path that is not absolute, does not exist, is a folder, exceeds 2 MB or is not PNG/JPEG; data.reason is one of not-absolute, not-found, not-a-file, too-large, unsupported [PLT-012]."
+        },
+        {
+          "$ref": "#/components/errors/PlatformNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.delete",
+      "summary": "Deletes a platform without games, and its custom icon file unless another platform uses it [PLT-020]. A platform with games (hidden ones included) is -32013 and nothing is deleted [PLT-021]. Emulators are never deleted.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "deleted",
+        "schema": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/PlatformNotFound"
+        },
+        {
+          "$ref": "#/components/errors/PlatformInUse"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "library.catalog",
+      "summary": "Options for the editor and the filters: platforms, genre names, company names and the five play modes [IPC-049, STO-030, PLT-014]",
+      "paramStructure": "either",
+      "params": [],
+      "result": {
+        "name": "catalog",
+        "schema": {
+          "$ref": "#/components/schemas/Catalog"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "session.changed",
+      "summary": "Server-to-client notification (no id, no response) sent to every connection once per session transition [IPC-027, IPC-037]. Library writes never cause it [IPC-050]",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "session",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Session"
+          }
+        }
+      ],
+      "result": {
+        "name": "none",
+        "schema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "media.changed",
+      "summary": "Server-to-client notification (no id, no response) sent to every connection when the media queue stores a new image of a game [IMG-001]. Coalesced per game: the first change is sent at once and opens a window of x-media.mediaChangedWindowMs; changes inside the window are sent once when it ends [IMG-003]. Not sent for failed, cancelled, interrupted or duplicate (same hash) downloads, nor by scrape.apply, media.queue, media.cancel, import.apply, game.delete or platform writes [IMG-002, IPC-050]. Delivery is best effort: a full connection queue drops it (IPC-017); clients reload media lists on reconnect [IMG-010].",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "none",
+        "schema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "metadata.batchChanged",
+      "summary": "Server-to-client notification (no id, no response) sent to every connection while a metadata batch runs in the background: at once when its state changes by itself (searching -> ready, applying -> done), and, for counter-only changes, at most once per x-metadata.progressWindowMs (the first at once, the following folded into one at the end of the window) [MET-054]. Carries only the state and counters, never game data (ADR 0031). Not sent because of metadata.batchStart, batchApply, batchCancel or batchDiscard [IPC-050]. Delivery is best effort: a full connection queue drops it (IPC-017); clients read metadata.batchStatus on reconnect [MET-055].",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "state",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BatchState"
+          }
+        },
+        {
+          "name": "done",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "total",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "failed",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "none",
+        "schema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "import.scan",
+      "summary": "Reads one import source and returns its candidates without writing anything [IMP-001, IMP-002..IMP-006, IMP-008, IMP-009, IMV-010..IMV-024, IMV-030]. Unreadable sources and missing libraries are warnings, not errors [IMP-008]. For the folder source it reads subfolders, proposes normalized titles, joins the discs of a game into one candidate and returns at most x-import.maxScanResultBytes of candidates, with a warning when it cuts the list [IMV-019].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ImportScanParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "scan",
+        "schema": {
+          "$ref": "#/components/schemas/ImportScanResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "import.apply",
+      "summary": "Writes the selected candidates, one transaction per game; a failing candidate is skipped and the others go on [IMP-001, IMP-006, IMP-007, IMP-008]. Nothing is launched and no tracked session is created [IMP-009].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ImportApplyParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "apply",
+        "schema": {
+          "$ref": "#/components/schemas/ImportApplyResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "emulator.list",
+      "summary": "Lists the emulators, ordered by name without regard to case [EMU-001].",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "emulators",
+        "schema": {
+          "$ref": "#/components/schemas/EmulatorListResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "emulator.add",
+      "summary": "Adds an emulator; a name taken without regard to case is -32602 [EMU-001].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "exePath",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        {
+          "name": "argsTemplate",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      ],
+      "result": {
+        "name": "emulator",
+        "schema": {
+          "$ref": "#/components/schemas/EmulatorResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "emulator.update",
+      "summary": "Changes an emulator; an unknown id is -32001 [EMU-001].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "exePath",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        {
+          "name": "argsTemplate",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      ],
+      "result": {
+        "name": "emulator",
+        "schema": {
+          "$ref": "#/components/schemas/EmulatorResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "emulator.delete",
+      "summary": "Deletes an emulator; platforms and games keep their rows with the reference cleared; no game is deleted [EMU-002].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "deleted",
+        "schema": {
+          "$ref": "#/components/schemas/EmulatorDeletedResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "platform.setEmulator",
+      "summary": "Sets the default emulator of a platform; null clears it [EMU-002]. Returns the full Platform [PLT-022].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "platformId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "emulatorId",
+          "required": true,
+          "schema": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "platform",
+        "schema": {
+          "$ref": "#/components/schemas/PlatformResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "provider.keyStatus",
+      "summary": "Tells whether the key of a provider is registered; never returns the key [MID-001].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "schema": {
+          "$ref": "#/components/schemas/ProviderKeyStatusResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "provider.setKey",
+      "summary": "Stores the key of a provider in the Credential Manager; IGDB also takes the secret [MID-001].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb"
+            ]
+          }
+        },
+        {
+          "name": "key",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        {
+          "name": "secret",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 512
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "schema": {
+          "$ref": "#/components/schemas/ProviderKeyStatusResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "provider.deleteKey",
+      "summary": "Removes the key of a provider; a missing key is not an error [MID-001].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "schema": {
+          "$ref": "#/components/schemas/ProviderKeyStatusResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "scrape.search",
+      "summary": "Obsolete (use metadata.search; still served, same behaviour; the image limit of MET-022 applies). Searches a provider for the game and scores each candidate [MID-002].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb",
+              "steamstore"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "search",
+        "schema": {
+          "$ref": "#/components/schemas/ScrapeSearchResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/ProviderUnavailable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ],
+      "deprecated": true
+    },
+    {
+      "name": "scrape.apply",
+      "summary": "Obsolete (use metadata.apply; still served, same behaviour; the image limit of MET-022 applies). Applies the metadata of a candidate to the game and queues its images [MID-003, MID-004].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb",
+              "steamstore"
+            ]
+          }
+        },
+        {
+          "name": "providerId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "replace",
+          "required": true,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "apply",
+        "schema": {
+          "$ref": "#/components/schemas/ScrapeApplyResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/ProviderUnavailable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ],
+      "deprecated": true
+    },
+    {
+      "name": "metadata.search",
+      "summary": "Searches every applicable provider at once and returns one scored list with the confidence of the best item [MET-001..MET-009].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "title",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "platform",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "year",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "const": 0
+              },
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              }
+            ],
+            "description": "0 or 1900..2100."
+          }
+        }
+      ],
+      "result": {
+        "name": "search",
+        "schema": {
+          "$ref": "#/components/schemas/MetadataSearchResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/ProviderUnavailable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "metadata.apply",
+      "summary": "Applies the text (priority igdb, steamstore; only empty fields unless replace) and queues the images of one unified candidate, within the per-kind image limit [MET-030..MET-033, MET-021]. No notification of its own; images arrive by media.changed [IMG-001, IPC-050].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "refs",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/MetadataRef"
+            },
+            "description": "No repeated provider."
+          }
+        },
+        {
+          "name": "replace",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      ],
+      "result": {
+        "name": "apply",
+        "schema": {
+          "$ref": "#/components/schemas/MetadataApplyResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/ProviderUnavailable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchStart",
+      "summary": "Starts the background search over games already written (the titles stored are the ones searched). Returns at once; progress comes by metadata.batchChanged [MET-052, MET-053].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameIds",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "start",
+        "schema": {
+          "type": "object",
+          "required": [
+            "batchId",
+            "total"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "batchId": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/BatchBusy"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchStatus",
+      "summary": "The current batch or null. Safety net for dropped notifications and reconnects [MET-055].",
+      "paramStructure": "by-name",
+      "params": [],
+      "result": {
+        "name": "status",
+        "schema": {
+          "type": "object",
+          "required": [
+            "batch"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "batch": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BatchStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchResults",
+      "summary": "One page of the rows of a ready or cancelled batch; fewer than limit rows when the page would pass maxResultBytes [MET-057].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 100
+          }
+        }
+      ],
+      "result": {
+        "name": "results",
+        "schema": {
+          "type": "object",
+          "required": [
+            "rows",
+            "total",
+            "next"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/BatchRow"
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "next": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/BatchNotFound"
+        },
+        {
+          "$ref": "#/components/errors/BatchWrongState"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchApply",
+      "summary": "Accepts the user's choices and applies them in the background; returns at once [MET-064, MET-065].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "choices",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/BatchChoice"
+            },
+            "description": "gameId distinct; candidate within the row's list; gameId present in the search."
+          }
+        }
+      ],
+      "result": {
+        "name": "apply",
+        "schema": {
+          "type": "object",
+          "required": [
+            "accepted"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/BatchNotFound"
+        },
+        {
+          "$ref": "#/components/errors/BatchWrongState"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchCancel",
+      "summary": "Cancels a search (keeps the rows already found) or an application (keeps what was applied); no-op in the other states [MET-056, MET-066].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "cancel",
+        "schema": {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "$ref": "#/components/schemas/BatchState"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/BatchNotFound"
+        }
+      ]
+    },
+    {
+      "name": "metadata.batchDiscard",
+      "summary": "Frees a ready, cancelled or done batch [MET-058].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "batchId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "discard",
+        "schema": {
+          "type": "object",
+          "required": [
+            "discarded"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "discarded": {
+              "const": true
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/BatchNotFound"
+        },
+        {
+          "$ref": "#/components/errors/BatchWrongState"
+        }
+      ]
+    },
+    {
+      "name": "media.list",
+      "summary": "Lists the images of a game with their absolute paths [MID-004, MID-006].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "media",
+        "schema": {
+          "$ref": "#/components/schemas/MediaListResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "media.queue",
+      "summary": "Obsolete (use metadata.apply; still served, same behaviour; the image limit of MET-022 applies). Queues the images of a provider for a game without changing its metadata [MID-005].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "gameId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        {
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb",
+              "steamstore"
+            ]
+          }
+        },
+        {
+          "name": "providerId",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "kinds",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "cover",
+                "screenshot",
+                "title",
+                "banner",
+                "background",
+                "select"
+              ]
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "queue",
+        "schema": {
+          "$ref": "#/components/schemas/MediaQueueResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/GameNotFound"
+        },
+        {
+          "$ref": "#/components/errors/ProviderNoKey"
+        },
+        {
+          "$ref": "#/components/errors/ProviderUnavailable"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ],
+      "deprecated": true
+    },
+    {
+      "name": "media.cancel",
+      "summary": "Cancels a queued or running download [MID-005].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "jobId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "cancel",
+        "schema": {
+          "$ref": "#/components/schemas/MediaCancelResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/MediaJobNotFound"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "stats.summary",
+      "summary": "Time per game and per platform in a period, read only [EST-001, EST-003, EST-004, EST-005, EST-006].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "period",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/StatsPeriod"
+          }
+        }
+      ],
+      "result": {
+        "name": "summary",
+        "schema": {
+          "$ref": "#/components/schemas/StatsSummaryResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    },
+    {
+      "name": "stats.weekly",
+      "summary": "Time per week for the last weeks, local time, Monday first, read only [EST-002, EST-006].",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "weeks",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 52
+          }
+        }
+      ],
+      "result": {
+        "name": "weekly",
+        "schema": {
+          "$ref": "#/components/schemas/StatsWeeklyResult"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/InvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/InternalError"
+        }
+      ]
+    }
+  ],
+  "components": {
+    "schemas": {
+      "AgentStatus": {
+        "type": "object",
+        "required": [
+          "version",
+          "pid",
+          "startedAt",
+          "dataDir",
+          "uptimeSeconds"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "From -ldflags -X main.version; \"dev\" when not set [AGT-004]"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339, UTC"
+          },
+          "dataDir": {
+            "type": "string",
+            "description": "Absolute Root resolved by the agent [DSK-006]"
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameStatus": {
+        "type": "string",
+        "enum": [
+          "not_played",
+          "playing",
+          "completed",
+          "abandoned",
+          "backlog"
+        ],
+        "description": "Validated in domain (DOM-012); no CHECK in the database (ADR 0012)."
+      },
+      "PlayModeName": {
+        "type": "string",
+        "enum": [
+          "single",
+          "multi_local",
+          "multi_online",
+          "coop_local",
+          "coop_online"
+        ],
+        "description": "DOM-014"
+      },
+      "PlayModeGroup": {
+        "type": "string",
+        "enum": [
+          "all",
+          "single",
+          "multi",
+          "coop"
+        ],
+        "description": "DOM-014: multi = multi_local or multi_online; coop = coop_local or coop_online; all = any mode, including none"
+      },
+      "PlatformCategory": {
+        "type": "string",
+        "enum": [
+          "pc",
+          "console",
+          "arcade",
+          "handheld"
+        ],
+        "description": "DOM-015"
+      },
+      "NameList": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxItems": 50,
+        "description": "Trimmed, at most 100 runes each (DOM-016); case-insensitive duplicates are removed [EDT-004]"
+      },
+      "IdList": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "uniqueItems": true,
+        "maxItems": 50
+      },
+      "FilterSpec": {
+        "type": "object",
+        "description": "Serializable filter [FLT-001]. Facets with lists match any of their items; the facets are combined with AND [FLT-002]. The same object will back smart playlists (out of scope now). version is required.",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "platformIds": {
+            "$ref": "#/components/schemas/IdList"
+          },
+          "genreIds": {
+            "$ref": "#/components/schemas/IdList"
+          },
+          "developerIds": {
+            "$ref": "#/components/schemas/IdList"
+          },
+          "publisherIds": {
+            "$ref": "#/components/schemas/IdList"
+          },
+          "playMode": {
+            "$ref": "#/components/schemas/PlayModeGroup",
+            "description": "Default all [FLT-003]"
+          },
+          "yearFrom": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "yearTo": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameStatus"
+            },
+            "uniqueItems": true,
+            "maxItems": 5,
+            "description": "Empty means any [FLT-005]"
+          },
+          "favorite": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "played": {
+            "type": "string",
+            "enum": [
+              "any",
+              "played",
+              "notPlayed"
+            ],
+            "description": "Default any; played = play_count > 0 [FLT-006]"
+          },
+          "playSecondsMin": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "playSecondsMax": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Free text, FTS5 over title, description, developer and publisher; blank means no filter [FTS-005, FLT-007]"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Platform": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "emulatorId",
+          "seedKey",
+          "iconPath",
+          "gameCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/PlatformCategory"
+          },
+          "emulatorId": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default emulator of the platform, null when none (EMU-002)."
+          },
+          "seedKey": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable key of a seed platform (contracts/seed-platforms.md), null for other platforms. Readers tolerate unknown keys (ADR 0012) and show the generic icon [PLT-009, PLT-010, PLT-014]."
+          },
+          "iconPath": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absolute path of the custom icon inside data\\media\\platforms, null when the platform uses its default icon [PLT-011, PLT-014]."
+          },
+          "gameCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of games of the platform, hidden ones included [PLT-014, PLT-021]."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Game": {
+        "type": "object",
+        "description": "Summary of a game; the item of game.list and the result of game.add [IPC-042, IPC-020]",
+        "required": [
+          "id",
+          "title",
+          "platformId",
+          "platform",
+          "path",
+          "status",
+          "favorite",
+          "year",
+          "totalPlaySeconds",
+          "playCount",
+          "firstPlayedAt",
+          "lastPlayedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "platformId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "platform": {
+            "type": "string",
+            "description": "Platform name"
+          },
+          "path": {
+            "type": "string",
+            "description": "game.launch_target (absolute, cleaned)"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GameStatus"
+          },
+          "favorite": {
+            "type": "boolean"
+          },
+          "year": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From release_date (DOM-013); null when there is no date"
+          },
+          "totalPlaySeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sum of active_seconds of the game's ended sessions; paused time is never included [STO-016]"
+          },
+          "playCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "firstPlayedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPlayedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameDetail": {
+        "type": "object",
+        "description": "Game plus the fields of the game page [STO-026]. Lists are never null. No media (phase 7).",
+        "required": [
+          "id",
+          "title",
+          "platformId",
+          "platform",
+          "path",
+          "status",
+          "favorite",
+          "year",
+          "totalPlaySeconds",
+          "playCount",
+          "firstPlayedAt",
+          "lastPlayedAt",
+          "description",
+          "completedAt",
+          "developers",
+          "publishers",
+          "genres",
+          "playModes",
+          "launchType",
+          "launchArgs",
+          "emulatorId"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "platformId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "platform": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GameStatus"
+          },
+          "favorite": {
+            "type": "boolean"
+          },
+          "year": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1900,
+                "maximum": 2100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalPlaySeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "playCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "firstPlayedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPlayedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "completedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date (UTC) of completed_at"
+          },
+          "developers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publishers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "playModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayModeName"
+            }
+          },
+          "launchType": {
+            "type": "string",
+            "enum": [
+              "exe",
+              "uri"
+            ],
+            "description": "EDT-010: exe or uri."
+          },
+          "launchArgs": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "EDT-010: launch arguments, may be empty."
+          },
+          "emulatorId": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The game's own emulator, null to use the platform default (EMU-002)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameListResult": {
+        "type": "object",
+        "required": [
+          "games",
+          "total",
+          "offset"
+        ],
+        "properties": {
+          "games": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Game"
+            },
+            "description": "Never null; [] when the page is empty [LIB-003]"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Games passing the filter, not only this page [LIB-002]"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameDetailResult": {
+        "type": "object",
+        "required": [
+          "game"
+        ],
+        "properties": {
+          "game": {
+            "$ref": "#/components/schemas/GameDetail"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameDeletedResult": {
+        "type": "object",
+        "required": [
+          "gameId"
+        ],
+        "properties": {
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "gameId",
+          "title",
+          "state",
+          "startedAt",
+          "endedAt",
+          "activeSeconds",
+          "activeMs",
+          "asOf",
+          "tracking"
+        ],
+        "description": "Snapshot of a live session. activeMs and asOf come from the same agent clock reading [IPC-031]. A live display anchors on activeMs and advances it with the client's own monotonic clock in running only [UI-014, UI-022]. Display-only: the recorded time is the agent's.",
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the game when the session was opened"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "paused",
+              "grace",
+              "ended",
+              "discarded"
+            ],
+            "description": "ended/discarded only appear in session.changed [DOM-007, DOM-008, DOM-010]"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "floor(activeMs / 1000)"
+          },
+          "activeMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Time spent in running up to asOf, in milliseconds, truncated [IPC-031]"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 UTC with three fraction digits [IPC-031]"
+          },
+          "tracking": {
+            "type": "string",
+            "enum": [
+              "job",
+              "process"
+            ],
+            "description": "job: process tree in a Job Object; process: game process adopted by the watcher, no Job Object (RUL-005)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionItem": {
+        "type": "object",
+        "description": "A session as listed on the game page [STO-027]. Durations of closed sessions come from the agent; the UI only formats them [UI-038].",
+        "required": [
+          "sessionId",
+          "gameId",
+          "state",
+          "startedAt",
+          "endedAt",
+          "activeSeconds",
+          "endReason"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "paused",
+              "grace",
+              "ended",
+              "discarded"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null while the session is open"
+          },
+          "activeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endReason": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "exited",
+                  "agent-shutdown",
+                  "recovered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionListResult": {
+        "type": "object",
+        "required": [
+          "sessions",
+          "total",
+          "offset"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionItem"
+            },
+            "description": "Never null"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "gameId",
+          "title"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 while the launch is still being prepared, or when only a tracked launch of the game is pending [DEL-002]"
+          },
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionResult": {
+        "type": "object",
+        "required": [
+          "session"
+        ],
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LaunchedProcess": {
+        "type": "object",
+        "required": [
+          "pid"
+        ],
+        "properties": {
+          "pid": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Process id of the executable started by game.launchUntracked; informational, the agent keeps no state about it [DEL-005]"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CatalogItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "Catalog": {
+        "type": "object",
+        "required": [
+          "platforms",
+          "genres",
+          "companies",
+          "playModes"
+        ],
+        "properties": {
+          "platforms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Platform"
+            }
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "description": "Itens {id, name}, ordenados sem diferenciar maiúsculas (alterado em 2026-11-12: FilterSpec filtra por id)"
+          },
+          "companies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "description": "Itens {id, name}, ordenados sem diferenciar maiúsculas (alterado em 2026-11-12)"
+          },
+          "playModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayModeName"
+            },
+            "minItems": 5,
+            "maxItems": 5
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportSource": {
+        "type": "string",
+        "enum": [
+          "steam",
+          "epic",
+          "file",
+          "folder",
+          "launchbox"
+        ],
+        "description": "Import origin (IMP-002..IMP-005; file and folder are IMP-004)."
+      },
+      "ImportCandidate": {
+        "type": "object",
+        "required": [
+          "source",
+          "title",
+          "launchType",
+          "launchTarget"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ImportSource"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Empty for folder candidates: chosen at apply (IMP-004). Steam and Epic use Windows (PLT-026); LaunchBox uses the platform name of its XML (PLT-028)."
+          },
+          "launchType": {
+            "type": "string",
+            "enum": [
+              "exe",
+              "uri",
+              "emulator"
+            ]
+          },
+          "launchTarget": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "installDir": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "developers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "publishers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "year": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "playModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayModeName"
+            }
+          },
+          "playedSeconds": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "LaunchBox PlayTime (seconds). Null or 0: no session (IMP-007)."
+          },
+          "lastPlayed": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC instant of the last play (IMP-007)."
+          },
+          "exists": {
+            "type": "boolean",
+            "description": "Set by import.scan only: the game is already in the library (IMP-006)."
+          },
+          "file": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "File and folder sources: path of the main file relative to the chosen folder, with backslashes (the file name for the file source) [IMV-024]."
+          },
+          "extension": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "Lowercase extension of the main file without the dot, \"\" when it has none [IMV-024]."
+          },
+          "discs": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of discs of the game (1 when single) [IMV-021, IMV-024]."
+          },
+          "discFiles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "description": "Relative paths of the disc files in disc order; present only when discs >= 2 [IMV-021, IMV-024]."
+          },
+          "searchName": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "File source only: the name proposed for the metadata search, from the file name or the nearest non-generic parent folder [MET-040, contracts/match-rules.md §5.2]. Absent for the other sources. import.apply accepts and ignores it."
+          }
+        }
+      },
+      "ImportScanParams": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ImportSource"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Folder for folder and launchbox sources; ignored for steam and epic."
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Platform name chosen for the file and folder sources. Resolved without creating anything (PLT-025 steps 1 and 2): its seed key picks the extensions read (windows = executables, other seed key = console games, none or not found = both) and the exists mark also checks title + platform [IMV-013, IMV-030]. Ignored by steam, epic and launchbox."
+          },
+          "titleFrom": {
+            "type": "string",
+            "enum": [
+              "file",
+              "folder"
+            ],
+            "default": "file",
+            "description": "Folder source only: the proposed title comes from the file name (default) or from the first-level subfolder that holds the file [IMV-017]. Ignored by the other sources."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Folder source only: read the subfolders (up to x-import.maxScanDepth). false reads the first level only [IMV-010, IMV-011]. Absent means true. Ignored by the other sources."
+          }
+        }
+      },
+      "ImportScanResult": {
+        "type": "object",
+        "required": [
+          "candidates",
+          "warnings"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportCandidate"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        }
+      },
+      "ImportApplyParams": {
+        "type": "object",
+        "required": [
+          "candidates"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/ImportCandidate"
+            }
+          },
+          "launchboxPath": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Folder DataPlatforms of LaunchBox, the one the scan read. When set, the images of the LaunchBox candidates are copied (MID-010)."
+          }
+        }
+      },
+      "ImportApplyResult": {
+        "type": "object",
+        "required": [
+          "applied",
+          "skipped"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "gameId",
+                "title"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "gameId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "title",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "duplicate",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Emulator": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "exePath",
+          "argsTemplate"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "exePath": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Absolute path of the emulator executable (EMU-001)."
+          },
+          "argsTemplate": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Markers {rom} and {dir} only (EMU-001)."
+          }
+        }
+      },
+      "EmulatorListResult": {
+        "type": "object",
+        "required": [
+          "emulators"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "emulators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Emulator"
+            }
+          }
+        }
+      },
+      "EmulatorResult": {
+        "type": "object",
+        "required": [
+          "emulator"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "emulator": {
+            "$ref": "#/components/schemas/Emulator"
+          }
+        }
+      },
+      "EmulatorDeletedResult": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "PlatformResult": {
+        "type": "object",
+        "description": "Result of platform.setEmulator, platform.update and platform.setIcon.",
+        "required": [
+          "platform"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/Platform"
+          }
+        }
+      },
+      "ProviderKeyStatus": {
+        "type": "object",
+        "required": [
+          "provider",
+          "configured"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb"
+            ]
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether a key is registered. The key itself is never returned (MID-001)."
+          }
+        }
+      },
+      "ProviderKeyStatusResult": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ProviderKeyStatus"
+          }
+        }
+      },
+      "ScrapeCandidate": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "title",
+          "platform",
+          "year",
+          "score",
+          "accepted"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Match score of MID-002."
+          },
+          "accepted": {
+            "type": "boolean",
+            "description": "True when the score reaches the threshold (0.80)."
+          }
+        }
+      },
+      "ScrapeSearchResult": {
+        "type": "object",
+        "required": [
+          "candidates"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScrapeCandidate"
+            }
+          }
+        }
+      },
+      "ScrapeApplyResult": {
+        "type": "object",
+        "required": [
+          "detail",
+          "queued"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GameDetail"
+          },
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MediaItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "provider",
+          "path",
+          "thumbPath"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cover",
+              "screenshot",
+              "title",
+              "banner",
+              "background",
+              "select"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Absolute path of the image in the data folder, media subfolder."
+          },
+          "thumbPath": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Absolute path of the thumbnail, or an empty string."
+          }
+        }
+      },
+      "MediaListResult": {
+        "type": "object",
+        "required": [
+          "media"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaItem"
+            }
+          }
+        }
+      },
+      "MediaQueueResult": {
+        "type": "object",
+        "required": [
+          "queued"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MediaCancelResult": {
+        "type": "object",
+        "required": [
+          "cancelled"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StatsPeriod": {
+        "type": "string",
+        "enum": [
+          "7d",
+          "30d",
+          "365d",
+          "all"
+        ],
+        "description": "Period of the summary, ending now (EST-004)."
+      },
+      "StatsSummaryParams": {
+        "type": "object",
+        "required": [
+          "period"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/StatsPeriod"
+          }
+        }
+      },
+      "StatsGame": {
+        "type": "object",
+        "required": [
+          "gameId",
+          "title",
+          "platform",
+          "sessions",
+          "activeSeconds",
+          "importedSeconds",
+          "lastPlayedAt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "activeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "importedSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The part of activeSeconds imported from LaunchBox (EST-005)."
+          },
+          "lastPlayedAt": {
+            "type": "string",
+            "description": "RFC 3339 UTC of the last session start, or an empty string."
+          }
+        }
+      },
+      "StatsPlatform": {
+        "type": "object",
+        "required": [
+          "platformId",
+          "name",
+          "activeSeconds",
+          "importedSeconds"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "platformId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "activeSeconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "importedSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "StatsSummaryResult": {
+        "type": "object",
+        "required": [
+          "games",
+          "platforms",
+          "totalSeconds",
+          "importedSeconds"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "games": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsGame"
+            }
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsPlatform"
+            }
+          },
+          "totalSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "importedSeconds": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "StatsWeeklyParams": {
+        "type": "object",
+        "required": [
+          "weeks"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "weeks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 52
+          }
+        }
+      },
+      "StatsWeek": {
+        "type": "object",
+        "required": [
+          "start",
+          "seconds",
+          "current"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Monday of the week, YYYY-MM-DD, local time."
+          },
+          "seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StatsWeeklyResult": {
+        "type": "object",
+        "required": [
+          "weeks"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "weeks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsWeek"
+            }
+          }
+        }
+      },
+      "MetadataRef": {
+        "type": "object",
+        "required": [
+          "provider",
+          "providerId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "igdb",
+              "steamgriddb",
+              "steamstore"
+            ]
+          },
+          "providerId": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$"
+          }
+        }
+      },
+      "MetadataCandidate": {
+        "type": "object",
+        "required": [
+          "refs",
+          "title",
+          "year",
+          "platform",
+          "score"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "refs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/MetadataRef"
+            }
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 = unknown."
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Name of the library platform when it matches; otherwise the canonical name of the first known platform of the candidate; \"\" when unknown [MET-008]."
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "thumbUrl": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "https URL of a small cover on images.igdb.com, cdn.cloudflare.steamstatic.com or cdn2.steamgriddb.com; absent otherwise [MET-068]."
+          }
+        }
+      },
+      "MetadataConfidence": {
+        "type": "string",
+        "enum": [
+          "match",
+          "doubt",
+          "none"
+        ]
+      },
+      "MetadataSearchResult": {
+        "type": "object",
+        "required": [
+          "candidates",
+          "confidence",
+          "warnings"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/MetadataCandidate"
+            }
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/MetadataConfidence"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        }
+      },
+      "MetadataApplyResult": {
+        "type": "object",
+        "required": [
+          "detail",
+          "queued",
+          "skippedByLimit"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/GameDetail"
+          },
+          "queued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skippedByLimit": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "BatchState": {
+        "type": "string",
+        "enum": [
+          "searching",
+          "ready",
+          "cancelled",
+          "applying",
+          "done"
+        ]
+      },
+      "BatchResult": {
+        "type": "object",
+        "required": [
+          "applied",
+          "imagesQueued",
+          "imagesSkippedByLimit",
+          "failedTitles"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "imagesQueued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "imagesSkippedByLimit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failedTitles": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        }
+      },
+      "BatchStatus": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "state",
+          "total",
+          "done",
+          "failed",
+          "warnings"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "batchId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "$ref": "#/components/schemas/BatchState"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "result": {
+            "$ref": "#/components/schemas/BatchResult",
+            "description": "Only in state done [MET-065, MET-066]."
+          }
+        }
+      },
+      "BatchRow": {
+        "type": "object",
+        "required": [
+          "gameId",
+          "title",
+          "platform",
+          "confidence",
+          "selected",
+          "candidates"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/MetadataConfidence"
+          },
+          "selected": {
+            "type": "integer",
+            "minimum": -1,
+            "description": "Index in candidates of the chosen item; -1 when confidence is none [MET-061]."
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/MetadataCandidate"
+            }
+          }
+        }
+      },
+      "BatchChoice": {
+        "type": "object",
+        "required": [
+          "gameId",
+          "candidate"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "gameId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "candidate": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index in the candidates of that game's row [MET-064]."
+          }
+        }
+      }
+    },
+    "errors": {
+      "ParseError": {
+        "code": -32700,
+        "message": "Parse error"
+      },
+      "InvalidRequest": {
+        "code": -32600,
+        "message": "Invalid Request"
+      },
+      "MethodNotFound": {
+        "code": -32601,
+        "message": "Method not found"
+      },
+      "InvalidParams": {
+        "code": -32602,
+        "message": "Invalid params",
+        "description": "Also used for every domain rule that a param breaks (title, year, name, category, FilterSpec, limits) [IPC-043, IPC-052]. For platform.setIcon, data is {reason} with reason in not-absolute, not-found, not-a-file, too-large, unsupported [PLT-012]."
+      },
+      "InternalError": {
+        "code": -32603,
+        "message": "Internal error"
+      },
+      "GameNotFound": {
+        "code": -32001,
+        "message": "Game not found",
+        "data": {
+          "type": "object",
+          "required": [
+            "gameId"
+          ],
+          "properties": {
+            "gameId": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "PlatformNotFound": {
+        "code": -32001,
+        "message": "Platform not found",
+        "description": "Same code the agent already uses for an unknown emulator or platform in platform.setEmulator (phase 6b) [PLT-018, PLT-011, PLT-020]."
+      },
+      "SessionActive": {
+        "code": -32002,
+        "message": "Session already active",
+        "description": "Used by game.launch, game.launchUntracked and game.delete (DEL-002); for game.delete data.gameId is the game being removed [DEL-002]",
+        "data": {
+          "$ref": "#/components/schemas/SessionRef"
+        }
+      },
+      "LaunchFailed": {
+        "code": -32003,
+        "message": "Launch failed",
+        "data": {
+          "type": "object",
+          "required": [
+            "error"
+          ],
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "winError": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "SessionNotPausable": {
+        "code": -32005,
+        "message": "Session not pausable",
+        "data": {
+          "type": "object",
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "no-session",
+                "grace"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "InvalidExecutable": {
+        "code": -32004,
+        "message": "Invalid executable",
+        "data": {
+          "type": "object",
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "not-absolute",
+                "not-found",
+                "not-a-file",
+                "not-exe"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "ProviderNoKey": {
+        "code": -32010,
+        "message": "Provider key not registered",
+        "data": {
+          "type": "object",
+          "required": [
+            "provider"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "igdb",
+                "steamgriddb"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "ProviderUnavailable": {
+        "code": -32011,
+        "message": "Provider unavailable",
+        "data": {
+          "type": "object",
+          "required": [
+            "provider"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "igdb",
+                "steamgriddb",
+                "steamstore"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "MediaJobNotFound": {
+        "code": -32012,
+        "message": "Media job not found"
+      },
+      "PlatformInUse": {
+        "code": -32013,
+        "message": "Platform has games",
+        "data": {
+          "type": "object",
+          "required": [
+            "platformId",
+            "gameCount"
+          ],
+          "properties": {
+            "platformId": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "gameCount": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "BatchNotFound": {
+        "code": -32014,
+        "message": "Metadata batch not found",
+        "description": "No batch, or the batchId is not the current one (discarded, replaced or lost with an agent restart) [MET-058]."
+      },
+      "BatchBusy": {
+        "code": -32015,
+        "message": "Metadata batch in progress",
+        "data": {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "$ref": "#/components/schemas/BatchState"
+            }
+          }
+        },
+        "description": "metadata.batchStart while a batch is searching, ready, cancelled or applying [MET-052]."
+      },
+      "BatchWrongState": {
+        "code": -32016,
+        "message": "Wrong batch state",
+        "data": {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "$ref": "#/components/schemas/BatchState"
+            }
+          }
+        },
+        "description": "A batch method that does not apply to the current state (batch-state-machine.md §2)."
+      }
+    }
+  }
+}

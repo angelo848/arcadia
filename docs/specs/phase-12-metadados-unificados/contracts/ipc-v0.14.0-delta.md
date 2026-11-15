@@ -1,12 +1,12 @@
 # Contrato IPC v0.14.0 — delta sobre a v0.13.0
 
 - **Base:** [phase-11-importacao-v2/contracts/ipc.openrpc.json](../../phase-11-importacao-v2/contracts/ipc.openrpc.json)
-  (v0.13.0), que continua sendo o contrato completo até a tarefa abaixo.
+  (v0.13.0). O contrato completo v0.14.0 já está em [ipc.openrpc.json](ipc.openrpc.json) (criado na T01).
 - **Requisitos:** MET-040, MET-052..MET-058, MET-064, MET-070..MET-072 ([requirements.md](../requirements.md)).
 - **Natureza:** só acréscimo. Nenhum método, parâmetro obrigatório, resultado, esquema existente ou erro da v0.13.0 muda;
   `scrape.search`, `scrape.apply` e `media.queue` só ganham a palavra "obsoleto" na descrição.
-- **Tarefa (planner):** gravar o contrato completo `docs/specs/phase-12-metadados-unificados/contracts/ipc.openrpc.json`
-  v0.14.0 = v0.13.0 + os pontos abaixo, e apontar o teste de contrato de `internal/ipc` (`contract_test.go`) para ele; o teste
+- **Tarefa (T01, feita):** o contrato completo `docs/specs/phase-12-metadados-unificados/contracts/ipc.openrpc.json`
+  v0.14.0 = v0.13.0 + os pontos abaixo foi gravado; resta (T11) apontar o teste de contrato de `internal/ipc` (`contract_test.go`) para ele; o teste
   que compara com a versão anterior ganha um irmão da fase 12 que confere "só acréscimo" (mais as palavras de obsolescência).
 
 ## 1. `info`
