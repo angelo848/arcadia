@@ -1,7 +1,7 @@
 // Package ipc implements the JSON-RPC 2.0 protocol (NDJSON framing) spoken between
 // arcadia-agent and the desktop UI. The wire contract lives in
-// docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json (v0.13.0, which supersedes
-// the phase-10-2-imagens-ao-vivo v0.12.0, the phase-9-plataformas v0.11.0, the phase-8-estatisticas v0.10.0, the phase-7-midia v0.9.0, the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
+// docs/specs/phase-12-metadados-unificados/contracts/ipc.openrpc.json (v0.14.0, which supersedes
+// the phase-11-importacao-v2 v0.13.0, the phase-10-2-imagens-ao-vivo v0.12.0, the phase-9-plataformas v0.11.0, the phase-8-estatisticas v0.10.0, the phase-7-midia v0.9.0, the phase-6b-emulators v0.8.0 contract, the phase-6-importers v0.7.0, the phase-5-library v0.6.0 contract,
 // the phase-4-pause v0.5.0, phase-3 v0.4.0, single-exe v0.3.0 and phase-2 v0.2.0
 // contracts kept in their specs as history).
 package ipc
@@ -59,6 +59,19 @@ const (
 	// MethodMediaChanged is the server-to-client notification that the media
 	// list of a game changed (v0.12.0) [IMG-001].
 	MethodMediaChanged = "media.changed"
+
+	// Unified metadata methods, added in v0.14.0 [MET-070]; after scrape.apply in the contract.
+	MethodMetadataSearch       = "metadata.search"
+	MethodMetadataApply        = "metadata.apply"
+	MethodMetadataBatchStart   = "metadata.batchStart"
+	MethodMetadataBatchStatus  = "metadata.batchStatus"
+	MethodMetadataBatchResults = "metadata.batchResults"
+	MethodMetadataBatchApply   = "metadata.batchApply"
+	MethodMetadataBatchCancel  = "metadata.batchCancel"
+	MethodMetadataBatchDiscard = "metadata.batchDiscard"
+	// MethodMetadataBatchChanged is the server-to-client notification of a metadata
+	// batch state or counter change (v0.14.0) [MET-054].
+	MethodMetadataBatchChanged = "metadata.batchChanged"
 )
 
 // MediaChangedParams are the params of the media.changed notification
@@ -88,6 +101,11 @@ const (
 	CodeProviderNoKey       = -32010
 	CodeProviderUnavailable = -32011
 	CodeMediaJobNotFound    = -32012
+
+	// Unified metadata batch codes (contract v0.14.0 [MET-070]).
+	CodeBatchNotFound   = -32014
+	CodeBatchBusy       = -32015
+	CodeBatchWrongState = -32016
 )
 
 // Application error messages, exactly as in the contract's components.errors.
@@ -100,6 +118,9 @@ const (
 	MsgProviderNoKey       = "Provider key not registered"
 	MsgProviderUnavailable = "Provider unavailable"
 	MsgMediaJobNotFound    = "Media job not found"
+	MsgBatchNotFound       = "Metadata batch not found"
+	MsgBatchBusy           = "Metadata batch in progress"
+	MsgBatchWrongState     = "Wrong batch state"
 	// MsgInternalError is the message of CodeInternalError, for handlers outside this package.
 	MsgInternalError = msgInternalError
 	// MsgInvalidParams is the exported alias of msgInvalidParams.

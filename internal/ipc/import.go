@@ -52,6 +52,9 @@ type ImportCandidate struct {
 	Extension     string   `json:"extension,omitempty"`
 	Discs         int      `json:"discs,omitempty"`
 	DiscFiles     []string `json:"discFiles,omitempty"`
+	// SearchName is the name proposed for the metadata search; file source only,
+	// omitted otherwise [MET-040] (contract v0.14.0). import.apply ignores it.
+	SearchName string `json:"searchName,omitempty"`
 }
 
 // ImportScanResult is the result of import.scan: candidates and warnings (IMP-008).
