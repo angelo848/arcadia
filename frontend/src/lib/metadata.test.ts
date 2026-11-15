@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  acceptedScore,
   applyResultLabel,
   cardFallbackOrder,
   cardImageOf,
@@ -37,16 +36,9 @@ const candidate = (over: Partial<MetadataCandidateView> = {}): MetadataCandidate
   ...over,
 })
 
-describe('metadata helpers', () => {
-  it('MID-002/a pontuação aparece como porcentagem inteira', () => {
-    expect(scoreLabel(0.95)).toBe('95%')
-    expect(scoreLabel(0.4)).toBe('40%')
-  })
-
-  it('MID-002/o limiar da UI é o mesmo do agente (0,80)', () => {
-    expect(acceptedScore).toBe(0.8)
-  })
-})
+// alterado em 2026-11-15 (docs/specs/phase-12-metadados-unificados, T34): os casos de MID-002 (scoreLabel em porcentagem
+// e acceptedScore 0,80) saíram; a pontuação é coberta por MET-044/scoreLabel e o limiar agora é MET-009 (agente).
+// scrapeSearch, scrapeApply e acceptedScore deixam de existir no módulo.
 
 describe('MET-044 rótulos da lista de opções', () => {
   it('MET-044/providersLabel junta os nomes na ordem igdb, steamgriddb, steamstore com " · "', () => {
@@ -167,6 +159,7 @@ describe('MET-043 chamadas unificadas ao binding', () => {
   })
 })
 
+// AJU-009 e AJU-015 continuam válidos: a fase 12 não os substitui (orderMedia e cardImageOf não mudam).
 describe('carrossel e imagem do cartão', () => {
   const item = (id: number, kind: MediaItemView['kind'], thumbUrl = `/t/${id}`): MediaItemView => ({
     id,

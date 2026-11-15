@@ -630,7 +630,9 @@ describe('invariantes da UI', () => {
       .filter(([, spy]) => spy.mock.calls.length > 0)
       .map(([name]) => name)
     expect(called.length).toBeGreaterThan(3)
-    const unknown = called.filter((n) => !phase9.has(n))
+    // alterado em 2026-11-15 (phase-12-metadados-unificados, T35): leituras da fase 12 permitidas (MET-080); proibições não mudam.
+    const phase12Reads = new Set(['MetadataBatchStatus'])
+    const unknown = called.filter((n) => !phase9.has(n) && !phase12Reads.has(n))
     expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
   })
 
@@ -653,7 +655,9 @@ describe('invariantes da UI', () => {
       .filter(([, spy]) => spy.mock.calls.length > 0)
       .map(([name]) => name)
     expect(called.length).toBeGreaterThan(3)
-    const unknown = called.filter((n) => !phase9.has(n))
+    // alterado em 2026-11-15 (phase-12-metadados-unificados, T35): leituras da fase 12 permitidas (MET-080); proibições não mudam.
+    const phase12Reads = new Set(['MetadataBatchStatus'])
+    const unknown = called.filter((n) => !phase9.has(n) && !phase12Reads.has(n))
     expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
   })
 })

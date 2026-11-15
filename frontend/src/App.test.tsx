@@ -28,8 +28,8 @@ type FakeApp = {
   ResumeSession: Fn
   UpdateGame: Fn
   MediaList: Fn
-  ScrapeSearch: Fn
-  ScrapeApply: Fn
+  MetadataSearch: Fn
+  MetadataApply: Fn
   StatsSummary: Fn
   StatsWeekly: Fn
 }
@@ -88,8 +88,8 @@ function install() {
     ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
     UpdateGame: vi.fn((_id: number, patch: Partial<GameDetailView>) => Promise.resolve(detail(patch))),
     MediaList: vi.fn(() => Promise.resolve({ media: [] })),
-    ScrapeSearch: vi.fn(() => Promise.resolve({ candidates: [] })),
-    ScrapeApply: vi.fn(() => Promise.resolve({ game: detail(), queued: 0 })),
+    MetadataSearch: vi.fn(() => Promise.resolve({ candidates: [], confidence: 'none', warnings: [] })),
+    MetadataApply: vi.fn(() => Promise.resolve({ game: detail(), queued: 0, skippedByLimit: 0 })),
     StatsSummary: vi.fn(() => Promise.resolve({ games: [], platforms: [], totalSeconds: 0, importedSeconds: 0 })),
     StatsWeekly: vi.fn(() => Promise.resolve({ weeks: [] })),
   }
@@ -1089,16 +1089,22 @@ describe('App: jogo em foco, painel, edição e remoção', () => {
     expect(app.GameSessions.mock.calls.length).toBe(sessionReads + 1)
   })
 
-  it('UIX-033/Buscar metadados abre o diálogo de G; depois de aplicar, o painel mostra os dados novos e MediaList(G) é lido de novo', async () => {
+  // alterado em 2026-11-15 (phase-12-metadados-unificados, T34): fluxo novo, Obter dados + MetadataSearch/MetadataApply [MET-043].
+  it('UIX-033/MET-043/Buscar metadados abre o diálogo de G; depois de aplicar, o painel mostra os dados novos e MediaList(G) é lido de novo', async () => {
     let saved = detail({ title: 'Hollow Knight', description: 'Antiga.' })
+    const candidate = {
+      refs: [{ provider: 'igdb', providerId: '7' }],
+      title: 'Hollow Knight',
+      year: 2017,
+      platform: 'PC',
+      score: 0.95,
+    }
     app.ListGames.mockResolvedValue(page([game()]))
     app.GetGame.mockImplementation(() => Promise.resolve(saved))
-    app.ScrapeSearch.mockResolvedValue({
-      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
-    })
-    app.ScrapeApply.mockImplementation(() => {
+    app.MetadataSearch.mockResolvedValue({ candidates: [candidate], confidence: 'match', warnings: [] })
+    app.MetadataApply.mockImplementation(() => {
       saved = { ...saved, description: 'Descrição nova do provedor.' }
-      return Promise.resolve({ game: saved, queued: 1 })
+      return Promise.resolve({ game: saved, queued: 1, skippedByLimit: 0 })
     })
     renderApp()
     const aside = await focusGame('Hollow Knight')
@@ -1106,14 +1112,14 @@ describe('App: jogo em foco, painel, edição e remoção', () => {
 
     fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
     const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
-    await waitFor(() => expect(app.ScrapeSearch).toHaveBeenCalledWith(10, 'igdb'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Obter dados' }))
+    await waitFor(() => expect(app.MetadataSearch).toHaveBeenCalledWith('Hollow Knight', 'Windows', 0))
     const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
     await flush()
     const mediaReads = app.MediaList.mock.calls.length
 
     fireEvent.click(apply[0])
-    await waitFor(() => expect(app.ScrapeApply).toHaveBeenCalledWith(10, 'igdb', '7', false))
+    await waitFor(() => expect(app.MetadataApply).toHaveBeenCalledWith(10, candidate.refs, false))
     await waitFor(() => expect(within(asideOf()).getByText('Descrição nova do provedor.')).toBeInTheDocument())
     await waitFor(() => expect(app.MediaList.mock.calls.length).toBeGreaterThan(mediaReads))
     expect(app.MediaList).toHaveBeenLastCalledWith(10)
@@ -2369,23 +2375,29 @@ describe('App: imagens ao vivo (media:changed)', () => {
     expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('IMG-011/MetadataDialog aberto, ScrapeApply responde queued = 3, chegam três media:changed(G) com a lista crescendo: carrossel e cartão de G mostram as imagens a cada evento, G em foco, diálogo aberto', async () => {
+  // alterado em 2026-11-15 (phase-12-metadados-unificados, T34): fluxo novo, Obter dados + MetadataSearch/MetadataApply [MET-043].
+  it('IMG-011/MET-043/MetadataDialog aberto, MetadataApply responde queued = 3, chegam três media:changed(G) com a lista crescendo: carrossel e cartão de G mostram as imagens a cada evento, G em foco, diálogo aberto', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
     const media: Record<number, MediaItem[]> = {}
     serveMedia(media)
-    app.ScrapeSearch.mockResolvedValue({
-      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
-    })
-    app.ScrapeApply.mockResolvedValue({ game: detail(), queued: 3 })
+    const candidate = {
+      refs: [{ provider: 'igdb', providerId: '7' }],
+      title: 'Hollow Knight',
+      year: 2017,
+      platform: 'PC',
+      score: 0.95,
+    }
+    app.MetadataSearch.mockResolvedValue({ candidates: [candidate], confidence: 'match', warnings: [] })
+    app.MetadataApply.mockResolvedValue({ game: detail(), queued: 3, skippedByLimit: 0 })
     renderApp()
     const aside = await focusGame('Hollow Knight')
 
     fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
     const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Obter dados' }))
     const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
     fireEvent.click(apply[0])
-    await waitFor(() => expect(app.ScrapeApply).toHaveBeenCalledWith(10, 'igdb', '7', false))
+    await waitFor(() => expect(app.MetadataApply).toHaveBeenCalledWith(10, candidate.refs, false))
     await flush()
 
     const all = [mediaItem(1, 'screenshot'), mediaItem(2, 'screenshot'), mediaItem(3, 'screenshot')]
@@ -2400,19 +2412,30 @@ describe('App: imagens ao vivo (media:changed)', () => {
     }
   })
 
-  it('IMG-011/aplicar continua invalidando mediaKey(G)', async () => {
+  // alterado em 2026-11-15 (phase-12-metadados-unificados, T34): fluxo novo, Obter dados + MetadataSearch/MetadataApply [MET-043].
+  it('IMG-011/MET-043/aplicar continua invalidando mediaKey(G)', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
-    app.ScrapeSearch.mockResolvedValue({
-      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
+    app.MetadataSearch.mockResolvedValue({
+      candidates: [
+        {
+          refs: [{ provider: 'igdb', providerId: '7' }],
+          title: 'Hollow Knight',
+          year: 2017,
+          platform: 'PC',
+          score: 0.95,
+        },
+      ],
+      confidence: 'match',
+      warnings: [],
     })
-    app.ScrapeApply.mockResolvedValue({ game: detail(), queued: 3 })
+    app.MetadataApply.mockResolvedValue({ game: detail(), queued: 3, skippedByLimit: 0 })
     const qc = renderApp()
     const aside = await focusGame('Hollow Knight')
     const invalidate = vi.spyOn(qc, 'invalidateQueries')
 
     fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
     const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Obter dados' }))
     const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
     await flush()
     const reads = app.MediaList.mock.calls.length

@@ -69,19 +69,6 @@ export type MediaKind = 'cover' | 'screenshot' | 'title' | 'banner' | 'backgroun
 // ProviderKeyView says whether a key is registered; the key itself is never shown (MID-001).
 export type ProviderKeyView = { provider: KeyProviderId; configured: boolean }
 
-// ScrapeCandidateView is a game a provider found, with its match score (MID-002).
-export type ScrapeCandidateView = {
-  providerId: string
-  title: string
-  platform: string
-  year: number
-  score: number
-  accepted: boolean
-}
-
-// ScrapeApplyView is the game after the metadata was applied and the number of images queued.
-export type ScrapeApplyView = { game: GameDetailView; queued: number }
-
 // MediaItemView is one image of a game; url and thumbUrl are what the page reads (MID-006).
 export type MediaItemView = {
   id: number
@@ -134,9 +121,6 @@ export function cardImageOf(items: MediaItemView[]): CardImage | undefined {
   return undefined
 }
 
-// The matching threshold of MID-002: a candidate at or above it is applied without asking.
-export const acceptedScore = 0.8
-
 // scoreLabel formats a match score as a percentage, for the candidate list.
 export function scoreLabel(score: number): string {
   return `${Math.round(score * 100)}%`
@@ -146,8 +130,6 @@ type WailsApp = {
   ProviderKeyStatus?: (provider: string) => Promise<ProviderKeyView>
   ProviderSetKey?: (provider: string, key: string, secret: string) => Promise<ProviderKeyView>
   ProviderDeleteKey?: (provider: string) => Promise<ProviderKeyView>
-  ScrapeSearch?: (gameId: number, provider: string) => Promise<{ candidates: ScrapeCandidateView[] }>
-  ScrapeApply?: (gameId: number, provider: string, providerId: string, replace: boolean) => Promise<ScrapeApplyView>
   MetadataSearch?: (title: string, platform: string, year: number) => Promise<MetadataSearchView>
   MetadataApply?: (gameId: number, refs: MetadataRefView[], replace: boolean) => Promise<MetadataApplyView>
   MediaList?: (gameId: number) => Promise<{ media: MediaItemView[] }>
@@ -218,17 +200,6 @@ export function setProviderKey(provider: KeyProviderId, key: string, secret = ''
 // deleteProviderKey removes a key (MID-001).
 export function deleteProviderKey(provider: KeyProviderId): Promise<ProviderKeyView> {
   return call<ProviderKeyView>('ProviderDeleteKey', [provider])
-}
-
-// scrapeSearch asks a provider for the game; the candidates come best first (MID-002).
-export async function scrapeSearch(gameId: number, provider: ProviderId): Promise<ScrapeCandidateView[]> {
-  const res = await call<{ candidates: ScrapeCandidateView[] }>('ScrapeSearch', [gameId, provider])
-  return res.candidates
-}
-
-// scrapeApply applies a candidate's metadata and queues its images (MID-003, MID-004).
-export function scrapeApply(gameId: number, provider: ProviderId, providerId: string, replace: boolean): Promise<ScrapeApplyView> {
-  return call<ScrapeApplyView>('ScrapeApply', [gameId, provider, providerId, replace])
 }
 
 // metadataSearch asks every applicable provider at once; year 0 means unknown (MET-043).
