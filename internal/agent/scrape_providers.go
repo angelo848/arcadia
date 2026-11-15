@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"sync"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/scrapers"
@@ -41,9 +42,24 @@ func (c credentialStore) Get(name string) (string, error) {
 
 func (c credentialStore) Delete(name string) error { return c.st.Delete(name) }
 
+// providerLimiters are the three limiters of the agent, one per provider [MET-010].
+type providerLimiters struct{ igdb, sgdb, steam *scrapers.Limiter }
+
 // newProviderFactory returns the function that builds a provider with the keys registered at the
-// moment of the call, so a key saved in the UI is used at once (MID-001).
+// moment of the call, so a key saved in the UI is used at once (MID-001). The limiters are made
+// once here and shared by every provider the function returns [MET-010]. The IGDB provider, and
+// with it its Twitch token, is kept while the key does not change; a new key makes a new one [MET-012].
 func newProviderFactory(keys *scrapers.Keys, client *http.Client, clock domain.Clock) func(name string) (scrapers.MetadataProvider, error) {
+	lim := providerLimiters{
+		igdb:  scrapers.NewLimiter(clock, scrapers.IntervalIGDB),
+		sgdb:  scrapers.NewLimiter(clock, scrapers.IntervalSteamGridDB),
+		steam: scrapers.NewLimiter(clock, scrapers.IntervalSteamStore),
+	}
+	var (
+		mu       sync.Mutex
+		igdb     *scrapers.IGDB
+		igdbKeys [2]string // client id and secret of igdb
+	)
 	return func(name string) (scrapers.MetadataProvider, error) {
 		switch name {
 		case "igdb":
@@ -51,15 +67,21 @@ func newProviderFactory(keys *scrapers.Keys, client *http.Client, clock domain.C
 			if err != nil {
 				return nil, keyError(err)
 			}
-			return scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: id, Secret: secret, HTTP: client, Clock: clock}), nil
+			mu.Lock()
+			defer mu.Unlock()
+			if igdb == nil || igdbKeys != [2]string{id, secret} {
+				igdb = scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: id, Secret: secret, HTTP: client, Clock: clock, Limiter: lim.igdb})
+				igdbKeys = [2]string{id, secret}
+			}
+			return igdb, nil
 		case "steamgriddb":
 			key, err := keys.Value("steamgriddb")
 			if err != nil {
 				return nil, keyError(err)
 			}
-			return scrapers.NewSteamGridDB(scrapers.SGDBConfig{Key: key, HTTP: client}), nil
+			return scrapers.NewSteamGridDB(scrapers.SGDBConfig{Key: key, HTTP: client, Limiter: lim.sgdb}), nil
 		case "steamstore":
-			return scrapers.NewSteamStore(scrapers.SteamConfig{HTTP: client}), nil
+			return scrapers.NewSteamStore(scrapers.SteamConfig{HTTP: client, Limiter: lim.steam}), nil
 		default:
 			return nil, errUnknownProvider
 		}

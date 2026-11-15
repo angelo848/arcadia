@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -22,7 +24,9 @@ type scrapeStore interface {
 	GameDetail(ctx context.Context, id int64) (store.GameDetail, error)
 	ApplyMetadata(ctx context.Context, id int64, f scrapers.Fields, replace bool, at time.Time) (store.GameDetail, error)
 	ListMedia(ctx context.Context, gameID int64) ([]store.MediaRow, error)
+	ActiveMediaJobCounts(ctx context.Context, gameID int64) (map[string]int, error)
 	EnqueueMedia(ctx context.Context, gameID int64, kind, provider, sourceURL string, at time.Time) (int64, error)
+	WindowsPlatformID(ctx context.Context) (int64, bool, error)
 }
 
 // scrapeService runs the metadata and media methods (phase 7, contract v0.9.0). Every write goes
@@ -35,6 +39,50 @@ type scrapeService struct {
 	mediaRoot string
 	clock     domain.Clock
 	log       *slog.Logger
+	locks     gameLocks // serialises the image queueing of each game (MET-023)
+}
+
+// gameLocks is a mutex per game id. An entry exists only while someone holds or waits for the lock,
+// so the map does not grow with the library (MET-023). The zero value is ready to use.
+type gameLocks struct {
+	mu sync.Mutex
+	m  map[int64]*gameLock
+}
+
+// gameLock is one game's mutex with the number of holders and waiters that use it.
+type gameLock struct {
+	mu   sync.Mutex
+	refs int // guarded by gameLocks.mu
+}
+
+// lock takes the lock of gameID and returns the function that releases it. Calling the function more
+// than once is harmless.
+func (g *gameLocks) lock(gameID int64) (unlock func()) {
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = map[int64]*gameLock{}
+	}
+	l := g.m[gameID]
+	if l == nil {
+		l = &gameLock{}
+		g.m[gameID] = l
+	}
+	l.refs++
+	g.mu.Unlock()
+
+	l.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Unlock()
+			g.mu.Lock()
+			l.refs--
+			if l.refs == 0 {
+				delete(g.m, gameID)
+			}
+			g.mu.Unlock()
+		})
+	}
 }
 
 // scrapeHandlers returns the handlers of the metadata and media methods.
@@ -173,11 +221,11 @@ func (s *scrapeService) apply(ctx context.Context, params json.RawMessage) (any,
 	if err != nil {
 		return nil, s.storeError("aplicar metadados", err)
 	}
-	queued, err := s.queueImages(ctx, p.GameID, prov.ID(), images, nil, now)
+	res, err := s.queueImages(ctx, p.GameID, []scrapers.Offer{{Provider: prov.ID(), Media: images}}, nil, now)
 	if err != nil {
 		return nil, s.storeError("enfileirar mídia", err)
 	}
-	return ipc.ScrapeApplyResult{Detail: gameDetailToIPC(d), Queued: queued}, nil
+	return ipc.ScrapeApplyResult{Detail: gameDetailToIPC(d), Queued: res.queued}, nil
 }
 
 // mediaList returns the images of a game with their absolute paths (MID-004, MID-006).
@@ -232,11 +280,11 @@ func (s *scrapeService) mediaQueue(ctx context.Context, params json.RawMessage) 
 	if err != nil {
 		return nil, s.providerError(p.Provider, err)
 	}
-	queued, err := s.queueImages(ctx, p.GameID, prov.ID(), images, kinds, s.clock.Now())
+	res, err := s.queueImages(ctx, p.GameID, []scrapers.Offer{{Provider: prov.ID(), Media: images}}, kinds, s.clock.Now())
 	if err != nil {
 		return nil, s.storeError("enfileirar mídia", err)
 	}
-	return ipc.MediaQueueResult{Queued: queued}, nil
+	return ipc.MediaQueueResult{Queued: res.queued}, nil
 }
 
 // mediaCancel stops a queued or running download (MID-005).
@@ -257,22 +305,72 @@ func (s *scrapeService) mediaCancel(ctx context.Context, params json.RawMessage)
 	return ipc.MediaCancelResult{Cancelled: true}, nil
 }
 
-// queueImages queues the images of the given kinds (all kinds when nil) and wakes the queue.
-func (s *scrapeService) queueImages(ctx context.Context, gameID int64, provider string, images []scrapers.RemoteMedia, kinds map[string]bool, at time.Time) (int, error) {
-	n := 0
-	for _, m := range images {
-		if kinds != nil && !kinds[m.Kind] {
-			continue
-		}
-		if _, err := s.st.EnqueueMedia(ctx, gameID, m.Kind, provider, m.URL, at); err != nil {
-			return n, err
-		}
-		n++
+// queueResult counts the images queueImages put in the queue and the ones left out by the limit (MET-024).
+type queueResult struct{ queued, skipped int }
+
+// queueImages queues the offered images that fit the limit per kind (MET-021, MET-022). Only the kinds
+// in kinds are queued when kinds is not nil; the others are not counted as skipped. The vacancies are
+// the limit minus the images the game has and the jobs active for it. Nothing is deleted. The game's
+// lock is held while counting and enqueueing, never while a provider is asked (MET-023). The queue is
+// woken only when something was queued (MET-024).
+func (s *scrapeService) queueImages(ctx context.Context, gameID int64, offers []scrapers.Offer, kinds map[string]bool, at time.Time) (queueResult, error) {
+	unlock := s.locks.lock(gameID)
+	defer unlock()
+
+	rows, err := s.st.ListMedia(ctx, gameID)
+	if err != nil {
+		return queueResult{}, fmt.Errorf("listar mídia do jogo: %w", err)
 	}
+	have := map[string]int{}
+	for _, r := range rows {
+		have[r.Kind]++
+	}
+	active, err := s.st.ActiveMediaJobCounts(ctx, gameID)
+	if err != nil {
+		return queueResult{}, fmt.Errorf("contar jobs ativos: %w", err)
+	}
+	d, err := s.st.GameDetail(ctx, gameID)
+	if err != nil {
+		return queueResult{}, fmt.Errorf("ler plataforma do jogo: %w", err)
+	}
+	winID, hasWin, err := s.st.WindowsPlatformID(ctx)
+	if err != nil {
+		return queueResult{}, fmt.Errorf("ler plataforma windows: %w", err)
+	}
+	windows := hasWin && winID == d.PlatformID
+
+	if kinds != nil {
+		filtered := make([]scrapers.Offer, 0, len(offers))
+		for _, o := range offers {
+			f := scrapers.Offer{Provider: o.Provider}
+			for _, m := range o.Media {
+				if kinds[m.Kind] {
+					f.Media = append(f.Media, m)
+				}
+			}
+			filtered = append(filtered, f)
+		}
+		offers = filtered
+	}
+
+	picks, skipped := scrapers.SelectImages(offers, have, active, windows)
+	res := queueResult{skipped: skipped}
+	for _, p := range picks {
+		if _, err := s.st.EnqueueMedia(ctx, gameID, p.Kind, p.Provider, p.URL, at); err != nil {
+			s.wakeIfQueued(res.queued)
+			return res, fmt.Errorf("enfileirar %s: %w", p.Kind, err)
+		}
+		res.queued++
+	}
+	s.wakeIfQueued(res.queued)
+	return res, nil
+}
+
+// wakeIfQueued tells the queue to look at the jobs, only when there is something new in it.
+func (s *scrapeService) wakeIfQueued(n int) {
 	if n > 0 {
 		s.queue.Notify()
 	}
-	return n, nil
 }
 
 // game returns the game of id, or the contract's game-not-found error.

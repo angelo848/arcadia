@@ -273,6 +273,7 @@ func toIPCCandidate(c importers.Candidate, exists bool) ipc.ImportCandidate {
 		Extension:    c.Extension,
 		Discs:        c.Discs,
 		DiscFiles:    c.DiscFiles,
+		SearchName:   c.SearchName,
 	}
 	if c.Played != nil {
 		seconds := c.Played.Seconds

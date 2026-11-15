@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +68,7 @@ type scrapeFixture struct {
 	root     string
 	provider *fakeProvider
 	queue    *mediaQueue
+	svc      *scrapeService
 }
 
 func newScrapeFixture(t *testing.T, p *fakeProvider) scrapeFixture {
@@ -100,7 +104,7 @@ func newScrapeFixture(t *testing.T, p *fakeProvider) scrapeFixture {
 		clock:     clock,
 		log:       log,
 	}
-	return scrapeFixture{st: st, keys: keys, handlers: scrapeHandlers(svc), gameID: g.ID, root: root, provider: p, queue: queue}
+	return scrapeFixture{st: st, keys: keys, handlers: scrapeHandlers(svc), gameID: g.ID, root: root, provider: p, queue: queue, svc: svc}
 }
 
 // call runs a handler with the params as JSON and returns its result or error.
@@ -250,4 +254,452 @@ func scrapeJSON(t *testing.T, v any) string {
 		t.Fatalf("marshal: %v", err)
 	}
 	return string(raw)
+}
+
+// ---- MET-021..MET-024 (ADR 0034, design §5.1): the image limit of every queue path ----
+// Alterado em 2026-11-15: os casos acima continuam valendo; estes são novos. Os casos de scrape.apply e
+// media.queue de MID-003/MID-005 não mudam de resultado (há vaga), por isso nenhum deles foi reescrito.
+
+// imageOffer is n remote images of kind offered by provider; the URLs are unique per tag.
+func imageOffer(provider, kind, tag string, n int) scrapers.Offer {
+	out := scrapers.Offer{Provider: provider}
+	for i := range n {
+		out.Media = append(out.Media, scrapers.RemoteMedia{
+			Kind: kind,
+			URL:  fmt.Sprintf("https://cdn.example.test/%s/%s-%d.png", provider, tag, i),
+		})
+	}
+	return out
+}
+
+// storeImages records n images of kind as already stored for gameID, whatever their origin (MET-021).
+func storeImages(t *testing.T, st *store.Store, gameID int64, provider, kind, tag string, n int) {
+	t.Helper()
+	at := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
+	for i := range n {
+		if _, err := st.AddMedia(t.Context(), store.MediaRow{
+			GameID: gameID, Kind: kind, Provider: provider, SourceURL: "https://cdn.example.test/old/" + tag,
+			Hash: fmt.Sprintf("%s-%s-%d", provider, tag, i), Path: fmt.Sprintf("%d/%s-%d.png", gameID, tag, i),
+			ThumbPath: fmt.Sprintf("%d/thumb_%s-%d.jpg", gameID, tag, i), CreatedAt: at,
+		}); err != nil {
+			t.Fatalf("AddMedia: %v", err)
+		}
+	}
+}
+
+// jobSeq makes every queued job's source URL unique.
+var jobSeq atomic.Int64
+
+// enqueueIn queues one download of kind for gameID and leaves it in state: store.JobPending,
+// store.JobRunning, store.JobFailed, or "cancelled" (CancelMediaJob, which the store records as failed).
+func enqueueIn(t *testing.T, st *store.Store, gameID int64, kind, state string) {
+	t.Helper()
+	ctx := t.Context()
+	url := fmt.Sprintf("https://cdn.example.test/job-%d.png", jobSeq.Add(1))
+	id, err := st.EnqueueMedia(ctx, gameID, kind, "igdb", url, time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("EnqueueMedia: %v", err)
+	}
+	switch state {
+	case store.JobPending:
+	case store.JobRunning:
+		err = st.SetMediaJobState(ctx, id, store.JobRunning, 1, "")
+	case store.JobFailed:
+		err = st.SetMediaJobState(ctx, id, store.JobFailed, 3, "falhou")
+	case "cancelled":
+		err = st.CancelMediaJob(ctx, id)
+	default:
+		t.Fatalf("enqueueIn: unknown state %q", state)
+	}
+	if err != nil {
+		t.Fatalf("job %d to %s: %v", id, state, err)
+	}
+}
+
+// activeCounts returns the pending and running jobs of a game by kind (ActiveMediaJobCounts).
+func activeCounts(t *testing.T, st *store.Store, gameID int64) map[string]int {
+	t.Helper()
+	m, err := st.ActiveMediaJobCounts(t.Context(), gameID)
+	if err != nil {
+		t.Fatalf("ActiveMediaJobCounts: %v", err)
+	}
+	return m
+}
+
+// addGame records another game and returns its id.
+func addGame(t *testing.T, st *store.Store, title string) int64 {
+	t.Helper()
+	g, err := st.AddGame(t.Context(), store.NewGame{Title: title, Exe: `C:\` + title + `.exe`, At: time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("AddGame: %v", err)
+	}
+	return g.ID
+}
+
+func TestQueueImagesLimits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MET-021/jogo vazio recebe até o limite por tipo", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{
+			imageOffer("igdb", scrapers.KindScreenshot, "s", 12),
+			imageOffer("igdb", scrapers.KindCover, "c", 3),
+		}, nil, f.svc.clock.Now())
+		if err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if res.queued != 12 || res.skipped != 3 {
+			t.Errorf("result = %+v, want queued 12 (10 screenshots, 2 covers) and skipped 3", res)
+		}
+		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindScreenshot] != 10 || a[scrapers.KindCover] != 2 {
+			t.Errorf("active jobs = %v, want 10 screenshots and 2 covers", a)
+		}
+	})
+
+	t.Run("MET-021/jogo com 9 de 10 screenshots recebe 1 e deixa 2 de fora", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindScreenshot, "old", 9)
+		res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindScreenshot, "s", 3)}, nil, f.svc.clock.Now())
+		if err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if res.queued != 1 || res.skipped != 2 {
+			t.Errorf("result = %+v, want queued 1 and skipped 2", res)
+		}
+	})
+
+	t.Run("MET-021/jogo com 2 capas não recebe capa; capas do LaunchBox contam", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindCover, "old", 2)
+		res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 2)}, nil, f.svc.clock.Now())
+		if err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if res.queued != 0 || res.skipped != 2 {
+			t.Errorf("result = %+v, want queued 0 and skipped 2", res)
+		}
+		if a := activeCounts(t, f.st, f.gameID); len(a) != 0 {
+			t.Errorf("active jobs = %v, want none", a)
+		}
+	})
+
+	// Jobs ativos contam; falhos e cancelados não (MET-021). Com duas capas ofertadas e limite 2.
+	jobCases := []struct {
+		name    string
+		states  []string
+		queued  int
+		skipped int
+	}{
+		{"MET-021/job pendente conta", []string{store.JobPending}, 1, 1},
+		{"MET-021/job em andamento conta", []string{store.JobRunning}, 1, 1},
+		{"MET-021/pendente e em andamento contam juntos", []string{store.JobPending, store.JobRunning}, 0, 2},
+		{"MET-021/job falho não conta", []string{store.JobFailed}, 2, 0},
+		{"MET-021/job cancelado não conta", []string{"cancelled"}, 2, 0},
+	}
+	for _, tc := range jobCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+			for _, s := range tc.states {
+				enqueueIn(t, f.st, f.gameID, scrapers.KindCover, s)
+			}
+			res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 2)}, nil, f.svc.clock.Now())
+			if err != nil {
+				t.Fatalf("queueImages: %v", err)
+			}
+			if res.queued != tc.queued || res.skipped != tc.skipped {
+				t.Errorf("result = %+v, want queued %d and skipped %d", res, tc.queued, tc.skipped)
+			}
+		})
+	}
+
+	t.Run("MET-021/nada é apagado: imagens e jobs atuais ficam como estavam", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindCover, "old-c", 2)
+		storeImages(t, f.st, f.gameID, "steamgriddb", scrapers.KindScreenshot, "old-s", 9)
+		enqueueIn(t, f.st, f.gameID, scrapers.KindScreenshot, store.JobPending)
+		before := activeCounts(t, f.st, f.gameID)
+		res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 3)}, nil, f.svc.clock.Now())
+		if err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if res.queued != 0 || res.skipped != 3 {
+			t.Errorf("result = %+v, want queued 0 and skipped 3", res)
+		}
+		rows, err := f.st.ListMedia(t.Context(), f.gameID)
+		if err != nil || len(rows) != 11 {
+			t.Errorf("ListMedia = %d rows, %v; want 11 kept", len(rows), err)
+		}
+		if after := activeCounts(t, f.st, f.gameID); after[scrapers.KindScreenshot] != before[scrapers.KindScreenshot] {
+			t.Errorf("active jobs changed from %v to %v", before, after)
+		}
+	})
+
+	// MET-024: o resultado conta o que entrou e o que ficou de fora, por tipo.
+	t.Run("MET-024/queued e skipped contados por tipo: tela cheia e capas", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		storeImages(t, f.st, f.gameID, "steamgriddb", scrapers.KindScreenshot, "old", 10)
+		res, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{
+			imageOffer("igdb", scrapers.KindScreenshot, "s", 3),
+			imageOffer("igdb", scrapers.KindCover, "c", 2),
+		}, nil, f.svc.clock.Now())
+		if err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if res.queued != 2 || res.skipped != 3 {
+			t.Errorf("result = %+v, want queued 2 (covers) and skipped 3 (screenshots)", res)
+		}
+	})
+
+	// MET-024: o aviso à fila só sai quando algo foi enfileirado.
+	t.Run("MET-024/queue.Notify só é chamado quando enfileirou", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindCover, "old", 2)
+		if _, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 2)}, nil, f.svc.clock.Now()); err != nil {
+			t.Fatalf("queueImages (full): %v", err)
+		}
+		if n := len(f.queue.wake); n != 0 {
+			t.Errorf("Notify sent %d wake-ups with nothing queued, want 0", n)
+		}
+		other := addGame(t, f.st, "Hades")
+		if _, err := f.svc.queueImages(t.Context(), other, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 1)}, nil, f.svc.clock.Now()); err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		if n := len(f.queue.wake); n != 1 {
+			t.Errorf("wake-ups after queueing = %d, want 1", n)
+		}
+	})
+}
+
+func TestQueuePaths(t *testing.T) {
+	t.Parallel()
+
+	// MET-022: scrape.apply passa pela mesma função e pelo mesmo limite.
+	t.Run("MET-022/mesmo jogo com 1 vaga de screenshot enfileira 1 pelo scrape.apply", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{
+			id:    "igdb",
+			meta:  scrapers.Metadata{Description: "Escalada."},
+			media: imageOffer("igdb", scrapers.KindScreenshot, "s", 3).Media,
+		})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindScreenshot, "old", 9)
+		out, err := f.call(t, ipc.MethodScrapeApply, fmt.Sprintf(`{"gameId":%d,"provider":"igdb","providerId":"7"}`, f.gameID))
+		if err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if q := out.(ipc.ScrapeApplyResult).Queued; q != 1 {
+			t.Errorf("queued = %d, want 1", q)
+		}
+		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindScreenshot] != 1 {
+			t.Errorf("active screenshot jobs = %d, want 1", a[scrapers.KindScreenshot])
+		}
+	})
+
+	// MET-022: media.queue passa pela mesma função e pelo mesmo limite.
+	t.Run("MET-022/mesmo jogo com 1 vaga de screenshot enfileira 1 pelo media.queue", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{
+			id:    "igdb",
+			media: imageOffer("igdb", scrapers.KindScreenshot, "s", 3).Media,
+		})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindScreenshot, "old", 9)
+		out, err := f.call(t, ipc.MethodMediaQueue, fmt.Sprintf(`{"gameId":%d,"provider":"igdb","providerId":"7","kinds":["screenshot"]}`, f.gameID))
+		if err != nil {
+			t.Fatalf("queue: %v", err)
+		}
+		if q := out.(ipc.MediaQueueResult).Queued; q != 1 {
+			t.Errorf("queued = %d, want 1", q)
+		}
+	})
+
+	t.Run("MET-022/media.queue com tipos explícitos limita cada tipo pedido", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{
+			id:    "igdb",
+			media: append(imageOffer("igdb", scrapers.KindCover, "c", 3).Media, imageOffer("igdb", scrapers.KindScreenshot, "s", 3).Media...),
+		})
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindCover, "old-c", 2)
+		storeImages(t, f.st, f.gameID, "launchbox", scrapers.KindScreenshot, "old-s", 9)
+
+		// Só capa pedida: as duas vagas de capa já estão ocupadas.
+		out, err := f.call(t, ipc.MethodMediaQueue, fmt.Sprintf(`{"gameId":%d,"provider":"igdb","providerId":"7","kinds":["cover"]}`, f.gameID))
+		if err != nil {
+			t.Fatalf("queue cover: %v", err)
+		}
+		if q := out.(ipc.MediaQueueResult).Queued; q != 0 {
+			t.Errorf("cover only: queued = %d, want 0 (cover full)", q)
+		}
+
+		// Capa e screenshot pedidas: só a vaga de screenshot entra.
+		out, err = f.call(t, ipc.MethodMediaQueue, fmt.Sprintf(`{"gameId":%d,"provider":"igdb","providerId":"7","kinds":["cover","screenshot"]}`, f.gameID))
+		if err != nil {
+			t.Fatalf("queue both: %v", err)
+		}
+		if q := out.(ipc.MediaQueueResult).Queued; q != 1 {
+			t.Errorf("cover and screenshot: queued = %d, want 1 (one screenshot vacancy)", q)
+		}
+		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindCover] != 0 || a[scrapers.KindScreenshot] != 1 {
+			t.Errorf("active jobs = %v, want only 1 screenshot", a)
+		}
+	})
+}
+
+// gatedCount is a store whose first read of the active jobs waits until a second request reads them
+// too, or a quiet window passes. A request not serialised per game shows up as a second concurrent
+// reader (peak > 1) while the first one is still inside the gate.
+type gatedCount struct {
+	*store.Store
+	arrived chan struct{}
+
+	mu     sync.Mutex
+	reads  int
+	inside int
+	peak   int
+}
+
+func (g *gatedCount) ActiveMediaJobCounts(ctx context.Context, gameID int64) (map[string]int, error) {
+	g.mu.Lock()
+	g.reads++
+	first := g.reads == 1
+	g.inside++
+	g.peak = max(g.peak, g.inside)
+	g.mu.Unlock()
+	defer func() {
+		g.mu.Lock()
+		g.inside--
+		g.mu.Unlock()
+	}()
+	if first {
+		select {
+		case <-g.arrived:
+		case <-time.After(quietWindow):
+		}
+	} else {
+		select {
+		case g.arrived <- struct{}{}:
+		default:
+		}
+	}
+	return g.Store.ActiveMediaJobCounts(ctx, gameID)
+}
+
+// failingEnqueue is a store whose downloads cannot be recorded.
+type failingEnqueue struct{ *store.Store }
+
+func (failingEnqueue) EnqueueMedia(context.Context, int64, string, string, string, time.Time) (int64, error) {
+	return 0, errors.New("disco cheio")
+}
+
+func TestQueueLocks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MET-023/dois pedidos concorrentes do mesmo jogo não passam do limite (-race)", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		gated := &gatedCount{Store: f.st, arrived: make(chan struct{}, 1)}
+		svc := &scrapeService{st: gated, queue: f.queue, clock: f.svc.clock, log: f.svc.log}
+		offers := []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 2)}
+
+		results := make(chan queueResult, 2)
+		errs := make(chan error, 2)
+		var wg sync.WaitGroup
+		for range 2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				res, err := svc.queueImages(t.Context(), f.gameID, offers, nil, f.svc.clock.Now())
+				results <- res
+				errs <- err
+			}()
+		}
+		wg.Wait()
+		close(results)
+		close(errs)
+
+		for err := range errs {
+			if err != nil {
+				t.Errorf("queueImages: %v", err)
+			}
+		}
+		total := 0
+		for res := range results {
+			total += res.queued
+		}
+		if gated.peak != 1 {
+			t.Errorf("concurrent reads of the active jobs = %d, want 1 (serialised per game)", gated.peak)
+		}
+		if total > 2 {
+			t.Errorf("queued %d covers in two requests, want at most 2 (the limit)", total)
+		}
+		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindCover] != total {
+			t.Errorf("active cover jobs = %d, want %d (what was queued)", a[scrapers.KindCover], total)
+		}
+	})
+
+	t.Run("MET-023/jogos diferentes não se bloqueiam (um lock preso não atrasa o outro)", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		other := addGame(t, f.st, "Hades")
+		unlock := f.svc.locks.lock(f.gameID)
+		defer unlock()
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := f.svc.queueImages(t.Context(), other, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 1)}, nil, f.svc.clock.Now())
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("queueImages: %v", err)
+			}
+		case <-time.After(testTimeout):
+			t.Fatalf("game %d waited for the lock held by game %d", other, f.gameID)
+		}
+	})
+
+	t.Run("MET-023/o lock é liberado em erro do store", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		svc := &scrapeService{st: failingEnqueue{f.st}, queue: f.queue, clock: f.svc.clock, log: f.svc.log}
+		if _, err := svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 1)}, nil, f.svc.clock.Now()); err == nil {
+			t.Fatal("queueImages with a failing store: want an error")
+		}
+		done := make(chan struct{})
+		go func() {
+			unlock := svc.locks.lock(f.gameID)
+			unlock()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(testTimeout):
+			t.Fatal("the lock of the game is still held after a store error")
+		}
+	})
+
+	t.Run("MET-023/mapa de locks não vaza entradas depois de liberar", func(t *testing.T) {
+		t.Parallel()
+		f := newScrapeFixture(t, &fakeProvider{id: "igdb"})
+		other := addGame(t, f.st, "Hades")
+		for _, id := range []int64{f.gameID, other, f.gameID} {
+			unlock := f.svc.locks.lock(id)
+			unlock()
+		}
+		if _, err := f.svc.queueImages(t.Context(), f.gameID, []scrapers.Offer{imageOffer("igdb", scrapers.KindCover, "c", 1)}, nil, f.svc.clock.Now()); err != nil {
+			t.Fatalf("queueImages: %v", err)
+		}
+		f.svc.locks.mu.Lock()
+		n := len(f.svc.locks.m)
+		f.svc.locks.mu.Unlock()
+		if n != 0 {
+			t.Errorf("lock map keeps %d entries after release, want 0", n)
+		}
+	})
 }

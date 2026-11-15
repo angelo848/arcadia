@@ -2,6 +2,7 @@ package importers_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -247,6 +248,86 @@ func TestFileScan(t *testing.T) {
 		}
 		if got := res.Candidates[0].Title; got != "(Disc 1)" {
 			t.Errorf("Title = %q, want %q", got, "(Disc 1)")
+		}
+	})
+
+	// makeFile creates dir/…/name (with the folders) and returns the path.
+	makeFile := func(t *testing.T, sub []string, name string) string {
+		t.Helper()
+		dir := filepath.Join(append([]string{t.TempDir()}, sub...)...)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		path := filepath.Join(dir, name)
+		writeFile(t, path, "")
+		return path
+	}
+
+	t.Run("MET-040/Arquivo traz searchName normalizado do nome (Hades.exe, MyGame-Win64-Shipping.exe)", func(t *testing.T) {
+		t.Parallel()
+		cases := map[string]string{
+			"Hades.exe":                 "Hades",
+			"MyGame-Win64-Shipping.exe": "MyGame",
+		}
+		for name, want := range cases {
+			path := makeFile(t, []string{"Games", "Jogo"}, name)
+			res := scan(t, path)
+			if len(res.Candidates) != 1 {
+				t.Fatalf("%s: candidates = %+v, want one", name, res)
+			}
+			if got := res.Candidates[0].SearchName; got != want {
+				t.Errorf("%s: SearchName = %q, want %q", name, got, want)
+			}
+		}
+	})
+
+	t.Run("MET-040/nome genérico usa a pasta pai (game.exe em Some Game; Launcher.exe em Binaries\\Win64)", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			sub  []string
+			file string
+			want string
+		}{
+			{[]string{"Games", "Some Game"}, "game.exe", "Some Game"},
+			{[]string{"Games", "Hades II", "Binaries", "Win64"}, "Launcher.exe", "Hades II"},
+		}
+		for _, c := range cases {
+			path := makeFile(t, c.sub, c.file)
+			res := scan(t, path)
+			if len(res.Candidates) != 1 {
+				t.Fatalf("%s: candidates = %+v, want one", c.file, res)
+			}
+			if got := res.Candidates[0].SearchName; got != c.want {
+				t.Errorf("%s: SearchName = %q, want %q", c.file, got, c.want)
+			}
+		}
+	})
+
+	t.Run("MET-040/título (Title) não muda: só searchName é novo", func(t *testing.T) {
+		t.Parallel()
+		path := makeFile(t, []string{"Games", "Some Game"}, "game.exe")
+
+		res := scan(t, path)
+		if len(res.Candidates) != 1 {
+			t.Fatalf("candidates = %+v, want one", res)
+		}
+		c := res.Candidates[0]
+		if c.Title != "game" || c.SearchName != "Some Game" {
+			t.Errorf("Title = %q, SearchName = %q; want Title %q and SearchName %q", c.Title, c.SearchName, "game", "Some Game")
+		}
+	})
+
+	t.Run("MET-040/launchTarget e installDir intactos com searchName preenchido", func(t *testing.T) {
+		t.Parallel()
+		path := makeFile(t, []string{"Games", "Some Game"}, "game.exe")
+
+		res := scan(t, path)
+		if len(res.Candidates) != 1 {
+			t.Fatalf("candidates = %+v, want one", res)
+		}
+		c := res.Candidates[0]
+		if c.LaunchTarget != path || c.InstallDir != filepath.Dir(path) {
+			t.Errorf("LaunchTarget = %q, InstallDir = %q; want %q and %q", c.LaunchTarget, c.InstallDir, path, filepath.Dir(path))
 		}
 	})
 

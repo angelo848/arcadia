@@ -28,6 +28,22 @@ func (n *mediaNotifier) MediaChanged(gameID int64) {
 	srv.Notify(ipc.MethodMediaChanged, ipc.MediaChangedParams{GameID: gameID})
 }
 
+// batchNotifier bridges the metadata batch to the IPC server [MET-054]. Before set, and after
+// set(nil), BatchChanged is a no-op; it never blocks (ipc.Server.Notify drops on a full queue).
+type batchNotifier struct{ srv atomic.Pointer[ipc.Server] }
+
+// set points the notifier at s (nil detaches it).
+func (n *batchNotifier) set(s *ipc.Server) { n.srv.Store(s) }
+
+// BatchChanged broadcasts metadata.batchChanged with p to every connected client.
+func (n *batchNotifier) BatchChanged(p ipc.MetadataBatchChangedParams) {
+	srv := n.srv.Load()
+	if srv == nil {
+		return
+	}
+	srv.Notify(ipc.MethodMetadataBatchChanged, p)
+}
+
 // set points the notifier at s (nil detaches it).
 func (n *sessionNotifier) set(s *ipc.Server) { n.srv.Store(s) }
 

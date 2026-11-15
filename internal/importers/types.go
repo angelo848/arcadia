@@ -58,6 +58,10 @@ type Candidate struct {
 	Extension string
 	Discs     int
 	DiscFiles []string
+
+	// SearchName is the name proposed for the metadata search; only the file source fills it
+	// (SearchName(path), MET-040). The other sources leave it empty.
+	SearchName string
 }
 
 // Played is the play time LaunchBox records (IMP-007). LastPlay is in UTC.

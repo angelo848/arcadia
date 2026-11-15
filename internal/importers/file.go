@@ -66,6 +66,7 @@ func (fileSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 		File:         name,
 		Extension:    ext,
 		Discs:        1,
+		SearchName:   SearchName(in.Path),
 	})
 	return res, nil
 }

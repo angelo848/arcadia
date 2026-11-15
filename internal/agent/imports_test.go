@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -934,6 +935,100 @@ func TestImportScanV2Params(t *testing.T) {
 			}
 			if len(res.Candidates) != 1 || res.Candidates[0].Title != raw {
 				t.Errorf("%s: title = %+v, want %q unchanged", lc.source, res.Candidates, raw)
+			}
+		}
+	})
+}
+
+// TestImportSearchName covers searchName (MET-040): present in the file source's result and in
+// import.scan, accepted and ignored by import.apply, absent from the other sources, and the
+// launch target and install dir unchanged.
+func TestImportSearchName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MET-040/o scan de arquivo devolve searchName no resultado do IPC", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name       string
+			sub        string // folder below the temp dir ("" for none)
+			file       string
+			wantTitle  string
+			wantSearch string
+		}{
+			{"Hades", "", "Hades.exe", "Hades", "Hades"},
+			{"motor", "", "MyGame-Win64-Shipping.exe", "MyGame-Win64-Shipping", "MyGame"},
+			{"genérico", "Some Game", "game.exe", "game", "Some Game"},
+		}
+		for _, c := range cases {
+			dir := filepath.Join(t.TempDir(), c.sub)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("%s: mkdir: %v", c.name, err)
+			}
+			path := filepath.Join(dir, c.file)
+			if err := os.WriteFile(path, nil, 0o644); err != nil {
+				t.Fatalf("%s: write: %v", c.name, err)
+			}
+			res, err := scanV2(t, newFakeImportStore(),
+				map[string]importers.Source{ipc.ImportSourceFile: importers.File()},
+				ipc.ImportScanParams{Source: ipc.ImportSourceFile, Path: path})
+			if err != nil {
+				t.Fatalf("%s: scan: %v", c.name, err)
+			}
+			if len(res.Candidates) != 1 {
+				t.Fatalf("%s: candidates = %+v, want one", c.name, res.Candidates)
+			}
+			got := res.Candidates[0]
+			if got.SearchName != c.wantSearch {
+				t.Errorf("%s: searchName = %q, want %q", c.name, got.SearchName, c.wantSearch)
+			}
+			if got.Title != c.wantTitle {
+				t.Errorf("%s: title = %q, want %q (title does not change)", c.name, got.Title, c.wantTitle)
+			}
+			if got.LaunchTarget != path || got.InstallDir != dir {
+				t.Errorf("%s: launchTarget = %q, installDir = %q; want %q and %q", c.name, got.LaunchTarget, got.InstallDir, path, dir)
+			}
+		}
+	})
+
+	t.Run("MET-040/import.apply aceita searchName e o ignora", func(t *testing.T) {
+		t.Parallel()
+		st := openImportRealStore(t)
+		cand := v2Candidate("Hades", `E:\roms\Hades.sfc`)
+		cand.SearchName = "Outro Nome Qualquer"
+		res := applyV2(t, st, cand)
+		if len(res.Applied) != 1 {
+			t.Fatalf("applied = %+v, want one (searchName does not block apply)", res)
+		}
+		if g := importedGame(t, st, "Hades"); g.Title != "Hades" {
+			t.Errorf("stored title = %q, want %q (searchName is ignored)", g.Title, "Hades")
+		}
+	})
+
+	t.Run("MET-040/Pasta, Steam, Epic e LaunchBox não trazem searchName (campo vazio e omitido no JSON)", func(t *testing.T) {
+		t.Parallel()
+		folder := importers.Candidate{Source: importers.SourceFolder, Title: "ABZU", LaunchType: importers.LaunchExe,
+			LaunchTarget: `D:\ABZU\ABZU.exe`, InstallDir: `D:\ABZU`}
+		cases := append(launcherScanCases(), launcherScanCase{ipc.ImportSourceFolder, folder})
+		for _, lc := range cases {
+			spy := &spyImportSource{id: lc.source, res: importers.Result{Candidates: []importers.Candidate{lc.cand}}}
+			res, err := scanV2(t, newFakeImportStore(), map[string]importers.Source{lc.source: spy},
+				ipc.ImportScanParams{Source: lc.source, Path: t.TempDir()})
+			if err != nil {
+				t.Fatalf("%s: scan: %v", lc.source, err)
+			}
+			if len(res.Candidates) != 1 || res.Candidates[0].SearchName != "" {
+				t.Fatalf("%s: candidates = %+v, want one with empty searchName", lc.source, res.Candidates)
+			}
+			raw, err := json.Marshal(res.Candidates[0])
+			if err != nil {
+				t.Fatalf("%s: marshal: %v", lc.source, err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatalf("%s: unmarshal: %v", lc.source, err)
+			}
+			if _, ok := fields["searchName"]; ok {
+				t.Errorf("%s: candidate JSON has searchName, want it omitted", lc.source)
 			}
 		}
 	})

@@ -452,4 +452,37 @@ func TestWiredMediaChanged(t *testing.T) {
 			t.Errorf("cancelled job stored %+v, want nothing", items)
 		}
 	})
+
+	// Novos em 2026-11-15 (ADR 0034, MET-022/MET-024): o limite vale também no caminho que acorda a fila.
+	t.Run("MET-022/media.queue com a cota de capas cheia não enfileira, não acorda a fila e não envia media.changed", func(t *testing.T) {
+		w := newMediaWire(t, 1)
+		g := w.games[0]
+		storeImages(t, w.st, g, "launchbox", scrapers.KindCover, "old", 2)
+		w.setMedia("full")
+		var res ipc.MediaQueueResult
+		w.call(t, ipc.MethodMediaQueue, ipc.MediaQueueParams{GameID: g, Provider: "igdb", ProviderID: "7", Kinds: []string{scrapers.KindCover}}, &res)
+		if res.Queued != 0 {
+			t.Fatalf("queued = %d, want 0 (the game already has its 2 covers)", res.Queued)
+		}
+		if jobs := w.pendingJobs(t); len(jobs) != 0 {
+			t.Errorf("pending jobs = %+v, want none", jobs)
+		}
+		expectNoMediaChanged(t, "client 1", w.c1)
+		expectNoMediaChanged(t, "client 2", w.c2)
+	})
+
+	t.Run("MET-024/scrape.apply com 1 vaga de 2 capas enfileira 1 e o aviso sai quando essa imagem grava", func(t *testing.T) {
+		w := newMediaWire(t, 1)
+		g := w.games[0]
+		storeImages(t, w.st, g, "launchbox", scrapers.KindCover, "old", 1)
+		w.setMedia("a", "b")
+		var res ipc.ScrapeApplyResult
+		w.call(t, ipc.MethodScrapeApply, ipc.ScrapeApplyParams{GameID: g, Provider: "igdb", ProviderID: "7"}, &res)
+		if res.Queued != 1 {
+			t.Fatalf("queued = %d, want 1 (one cover vacancy)", res.Queued)
+		}
+		w.imgs.release("a")
+		expectMediaChanged(t, "client 1", w.c1, g)
+		expectMediaChanged(t, "client 2", w.c2, g)
+	})
 }
