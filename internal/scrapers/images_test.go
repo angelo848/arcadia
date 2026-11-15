@@ -55,24 +55,24 @@ func TestSelectImages(t *testing.T) {
 	// MET-020: prioridade entre provedores por tipo e classe de plataforma (match-rules §4.2).
 	priority := []testCase{
 		{
-			name: "MET-020/jogo vazio Windows: 2 capas do SteamGridDB, skipped 2",
+			name: "MET-020/jogo vazio Windows: 1 capa do SteamGridDB, skipped 3 (alterado em 2026-11-15, capa = 1)",
 			offers: []scrapers.Offer{
 				offer(igdb, scrapers.KindCover, "i1"),
 				offer(steamgriddb, scrapers.KindCover, "s1", "s2", "s3"),
 			},
 			windows:     true,
-			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1"), pick(steamgriddb, scrapers.KindCover, "s2")},
-			wantSkipped: 2,
+			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1")},
+			wantSkipped: 3,
 		},
 		{
-			name: "MET-020/jogo vazio console: IGDB primeiro, depois a 1ª do SteamGridDB",
+			name: "MET-020/jogo vazio console: IGDB primeiro, o SteamGridDB fica de fora (alterado em 2026-11-15, capa = 1)",
 			offers: []scrapers.Offer{
 				offer(steamgriddb, scrapers.KindCover, "s1", "s2", "s3"),
 				offer(igdb, scrapers.KindCover, "i1"),
 			},
 			windows:     false,
-			want:        []scrapers.Pick{pick(igdb, scrapers.KindCover, "i1"), pick(steamgriddb, scrapers.KindCover, "s1")},
-			wantSkipped: 2,
+			want:        []scrapers.Pick{pick(igdb, scrapers.KindCover, "i1")},
+			wantSkipped: 3,
 		},
 		{
 			name: "MET-020/screenshot: IGDB antes da Steam Store (Windows)",
@@ -134,8 +134,8 @@ func TestSelectImages(t *testing.T) {
 				offer(steamgriddb, scrapers.KindCover, "s1", "s1", "s2"),
 			},
 			windows:     false,
-			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1"), pick(steamgriddb, scrapers.KindCover, "s2")},
-			wantSkipped: 0,
+			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1")},
+			wantSkipped: 1,
 		},
 		{
 			name: "MET-020/ordem de cada provedor preservada",
@@ -190,20 +190,20 @@ func TestSelectImages(t *testing.T) {
 			wantSkipped: 4,
 		},
 		{
-			name:        "MET-021/have e active ausentes tratam como 0: 3 capas e 2 vagas, skipped 1",
+			name:        "MET-021/have e active ausentes tratam como 0: 3 capas e 1 vaga, skipped 2 (alterado em 2026-11-15, capa = 1)",
 			offers:      []scrapers.Offer{offer(steamgriddb, scrapers.KindCover, "s1", "s2", "s3")},
 			have:        nil,
 			active:      nil,
-			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1"), pick(steamgriddb, scrapers.KindCover, "s2")},
-			wantSkipped: 1,
+			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1")},
+			wantSkipped: 2,
 		},
 		{
-			name:        "MET-021/have e active negativos tratam como 0: não somam vaga, 2 vagas, skipped 1",
+			name:        "MET-021/have e active negativos tratam como 0: não somam vaga, 1 vaga, skipped 2 (alterado em 2026-11-15, capa = 1)",
 			offers:      []scrapers.Offer{offer(steamgriddb, scrapers.KindCover, "s1", "s2", "s3")},
 			have:        map[string]int{scrapers.KindCover: -5},
 			active:      map[string]int{scrapers.KindCover: -1},
-			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1"), pick(steamgriddb, scrapers.KindCover, "s2")},
-			wantSkipped: 1,
+			want:        []scrapers.Pick{pick(steamgriddb, scrapers.KindCover, "s1")},
+			wantSkipped: 2,
 		},
 		{
 			name:        "MET-021/have negativo de screenshot: as 5 do IGDB entram, skipped 0",

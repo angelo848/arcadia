@@ -352,6 +352,14 @@ func (w *mediaWire) setMedia(names ...string) {
 	}
 }
 
+// setKindMedia is setMedia for any kind (cover is limited to 1 per game since 2026-11-15).
+func (w *mediaWire) setKindMedia(kind string, names ...string) {
+	w.provider.media = nil
+	for _, n := range names {
+		w.provider.media = append(w.provider.media, scrapers.RemoteMedia{Kind: kind, URL: w.imgs.url(n)})
+	}
+}
+
 func (w *mediaWire) pendingJobs(t *testing.T) []store.MediaJob {
 	t.Helper()
 	jobs, err := w.st.PendingMediaJobs(t.Context())
@@ -365,7 +373,8 @@ func TestWiredMediaChanged(t *testing.T) {
 	t.Run("IMG-001/scrape.apply: cada imagem gravada chega como media.changed aos dois clientes", func(t *testing.T) {
 		w := newMediaWire(t, 1)
 		g := w.games[0]
-		w.setMedia("a", "b")
+		// alterado em 2026-11-15 (capa = 1): duas imagens de tela, pois o limite de capa agora é 1
+		w.setKindMedia(scrapers.KindScreenshot, "a", "b")
 		var res ipc.ScrapeApplyResult
 		w.call(t, ipc.MethodScrapeApply, ipc.ScrapeApplyParams{GameID: g, Provider: "igdb", ProviderID: "7"}, &res)
 		if res.Queued != 2 {
@@ -411,9 +420,9 @@ func TestWiredMediaChanged(t *testing.T) {
 		expectNoMediaChanged(t, "after scrape.apply", w.c1)
 		expectNoMediaChanged(t, "after scrape.apply", w.c2)
 
-		w.setMedia("y")
+		w.setKindMedia(scrapers.KindScreenshot, "y") // alterado em 2026-11-15 (capa = 1): a capa já está ocupada pelo job "x"
 		var queued ipc.MediaQueueResult
-		w.call(t, ipc.MethodMediaQueue, ipc.MediaQueueParams{GameID: g, Provider: "igdb", ProviderID: "7", Kinds: []string{scrapers.KindCover}}, &queued)
+		w.call(t, ipc.MethodMediaQueue, ipc.MediaQueueParams{GameID: g, Provider: "igdb", ProviderID: "7", Kinds: []string{scrapers.KindScreenshot}}, &queued)
 		w.imgs.waitHit(t, "y")
 		expectNoMediaChanged(t, "after media.queue", w.c1)
 		expectNoMediaChanged(t, "after media.queue", w.c2)
@@ -457,12 +466,12 @@ func TestWiredMediaChanged(t *testing.T) {
 	t.Run("MET-022/media.queue com a cota de capas cheia não enfileira, não acorda a fila e não envia media.changed", func(t *testing.T) {
 		w := newMediaWire(t, 1)
 		g := w.games[0]
-		storeImages(t, w.st, g, "launchbox", scrapers.KindCover, "old", 2)
+		storeImages(t, w.st, g, "launchbox", scrapers.KindCover, "old", 1) // alterado em 2026-11-15 (capa = 1)
 		w.setMedia("full")
 		var res ipc.MediaQueueResult
 		w.call(t, ipc.MethodMediaQueue, ipc.MediaQueueParams{GameID: g, Provider: "igdb", ProviderID: "7", Kinds: []string{scrapers.KindCover}}, &res)
 		if res.Queued != 0 {
-			t.Fatalf("queued = %d, want 0 (the game already has its 2 covers)", res.Queued)
+			t.Fatalf("queued = %d, want 0 (the game already has its 1 cover)", res.Queued)
 		}
 		if jobs := w.pendingJobs(t); len(jobs) != 0 {
 			t.Errorf("pending jobs = %+v, want none", jobs)
@@ -471,11 +480,10 @@ func TestWiredMediaChanged(t *testing.T) {
 		expectNoMediaChanged(t, "client 2", w.c2)
 	})
 
-	t.Run("MET-024/scrape.apply com 1 vaga de 2 capas enfileira 1 e o aviso sai quando essa imagem grava", func(t *testing.T) {
+	t.Run("MET-024/scrape.apply com a vaga de capa (limite 1) enfileira 1 e o aviso sai quando essa imagem grava", func(t *testing.T) {
 		w := newMediaWire(t, 1)
 		g := w.games[0]
-		storeImages(t, w.st, g, "launchbox", scrapers.KindCover, "old", 1)
-		w.setMedia("a", "b")
+		w.setMedia("a", "b") // alterado em 2026-11-15 (capa = 1): sem capa gravada, a única vaga entra
 		var res ipc.ScrapeApplyResult
 		w.call(t, ipc.MethodScrapeApply, ipc.ScrapeApplyParams{GameID: g, Provider: "igdb", ProviderID: "7"}, &res)
 		if res.Queued != 1 {

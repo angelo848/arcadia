@@ -254,8 +254,7 @@ func TestMetadataApply(t *testing.T) {
 		igdb := &metaFetchProv{metaProv: metaProv{id: "igdb", media: []scrapers.RemoteMedia{{Kind: scrapers.KindCover, URL: "https://cdn.example.test/igdb-cover.png"}}}}
 		sgdb := &metaProv{id: "steamgriddb", media: []scrapers.RemoteMedia{{Kind: scrapers.KindCover, URL: "https://cdn.example.test/sgdb-cover.png"}}}
 		f := newMetaFixture(t, map[string]scrapers.MetadataProvider{"igdb": igdb, "steamgriddb": sgdb})
-		// One cover is already stored, so the game has one vacancy of the two covers allowed (MET-021).
-		storeImages(t, f.st, f.gameID, "steamgriddb", scrapers.KindCover, "old", 1)
+		// No cover is stored yet: the game has the one cover vacancy allowed (MET-021, capa = 1, alterado em 2026-11-15).
 		res := applyOK(t, f, ipc.MetadataApplyParams{GameID: f.gameID, Refs: refsOf("7", ipc.MetadataProviderIGDB, ipc.MetadataProviderSteamGridDB)})
 		if res.Queued != 1 {
 			t.Errorf("queued = %d, want 1", res.Queued)
@@ -383,9 +382,9 @@ func TestMetadataApply(t *testing.T) {
 		igdb := &metaFetchProv{metaProv: metaProv{id: "igdb", media: imageOffer("igdb", scrapers.KindCover, "cov", 3).Media}}
 		f := newMetaFixture(t, map[string]scrapers.MetadataProvider{"igdb": igdb})
 		res := applyOK(t, f, ipc.MetadataApplyParams{GameID: f.gameID, Refs: refsOf("7", ipc.MetadataProviderIGDB)})
-		// Two covers fit (MediaKindLimit), the third is left out.
-		if res.Queued != 2 || res.SkippedByLimit != 1 {
-			t.Errorf("queued %d skipped %d, want 2 and 1", res.Queued, res.SkippedByLimit)
+		// One cover fits (MediaKindLimit, capa = 1, alterado em 2026-11-15), the other two are left out.
+		if res.Queued != 1 || res.SkippedByLimit != 2 {
+			t.Errorf("queued %d skipped %d, want 1 and 2", res.Queued, res.SkippedByLimit)
 		}
 		if res.Detail.ID != f.gameID {
 			t.Errorf("detail id = %d, want %d", res.Detail.ID, f.gameID)

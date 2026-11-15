@@ -9,10 +9,10 @@ import (
 func TestMediaKindLimit(t *testing.T) {
 	t.Parallel()
 
-	t.Run("AJU-020/cover 2, screenshot 10, background 2, title 2, select 2, banner 2", func(t *testing.T) {
+	t.Run("AJU-020/cover 1 (alterado em 2026-11-15, capa = 1), screenshot 10, background 2, title 2, select 2, banner 2", func(t *testing.T) {
 		t.Parallel()
 		want := map[string]int{
-			"cover":      2,
+			"cover":      1,
 			"screenshot": 10,
 			"background": 2,
 			"title":      2,

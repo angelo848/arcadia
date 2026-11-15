@@ -6,7 +6,9 @@ func MediaKindLimit(kind string) int {
 	switch kind {
 	case "screenshot":
 		return 10
-	case "cover", "background", "title", "select", "banner":
+	case "cover":
+		return 1
+	case "background", "title", "select", "banner":
 		return 2
 	default:
 		return 0

@@ -245,7 +245,7 @@ func TestLaunchBoxImageLimit(t *testing.T) {
 		}
 	})
 
-	t.Run("AJU-020/3 capas iguais pelo conteúdo gravam 1 e não ocupam vagas; uma 4ª distinta grava (total 2)", func(t *testing.T) {
+	t.Run("AJU-020/3 capas iguais pelo conteúdo gravam 1; uma 4ª distinta fica de fora, capa = 1 (alterado em 2026-11-15) (total 1)", func(t *testing.T) {
 		t.Parallel()
 		lb, st := t.TempDir(), openImgStore(t)
 		id := newGame(t, st)
@@ -256,8 +256,8 @@ func TestLaunchBoxImageLimit(t *testing.T) {
 		writeLBFile(t, lb, "Windows", "Box - Front", "Jogo-04.png", pngVariant(t, 2))
 		n, err := newImporter(t, st, quiet).CopyLaunchBox(t.Context(), id, lb, "Windows", "Jogo")
 		rows, _ := st.ListMedia(t.Context(), id)
-		if err != nil || n != 2 || countKind(rows, "cover") != 2 {
-			t.Errorf("n=%d err=%v covers=%d; want 2", n, err, countKind(rows, "cover"))
+		if err != nil || n != 1 || countKind(rows, "cover") != 1 {
+			t.Errorf("n=%d err=%v covers=%d; want 1", n, err, countKind(rows, "cover"))
 		}
 	})
 

@@ -425,11 +425,11 @@ func TestQueueImagesLimits(t *testing.T) {
 		if err != nil {
 			t.Fatalf("queueImages: %v", err)
 		}
-		if res.queued != 12 || res.skipped != 3 {
-			t.Errorf("result = %+v, want queued 12 (10 screenshots, 2 covers) and skipped 3", res)
+		if res.queued != 11 || res.skipped != 4 {
+			t.Errorf("result = %+v, want queued 11 (10 screenshots, 1 cover, alterado em 2026-11-15, capa = 1) and skipped 4", res)
 		}
-		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindScreenshot] != 10 || a[scrapers.KindCover] != 2 {
-			t.Errorf("active jobs = %v, want 10 screenshots and 2 covers", a)
+		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindScreenshot] != 10 || a[scrapers.KindCover] != 1 {
+			t.Errorf("active jobs = %v, want 10 screenshots and 1 cover", a)
 		}
 	})
 
@@ -462,18 +462,18 @@ func TestQueueImagesLimits(t *testing.T) {
 		}
 	})
 
-	// Jobs ativos contam; falhos e cancelados não (MET-021). Com duas capas ofertadas e limite 2.
+	// Jobs ativos contam; falhos e cancelados não (MET-021). Com duas capas ofertadas e limite 1 (capa = 1, 2026-11-15).
 	jobCases := []struct {
 		name    string
 		states  []string
 		queued  int
 		skipped int
 	}{
-		{"MET-021/job pendente conta", []string{store.JobPending}, 1, 1},
-		{"MET-021/job em andamento conta", []string{store.JobRunning}, 1, 1},
+		{"MET-021/job pendente conta", []string{store.JobPending}, 0, 2}, // alterado em 2026-11-15 (capa = 1)
+		{"MET-021/job em andamento conta", []string{store.JobRunning}, 0, 2},
 		{"MET-021/pendente e em andamento contam juntos", []string{store.JobPending, store.JobRunning}, 0, 2},
-		{"MET-021/job falho não conta", []string{store.JobFailed}, 2, 0},
-		{"MET-021/job cancelado não conta", []string{"cancelled"}, 2, 0},
+		{"MET-021/job falho não conta", []string{store.JobFailed}, 1, 1},
+		{"MET-021/job cancelado não conta", []string{"cancelled"}, 1, 1},
 	}
 	for _, tc := range jobCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -527,8 +527,8 @@ func TestQueueImagesLimits(t *testing.T) {
 		if err != nil {
 			t.Fatalf("queueImages: %v", err)
 		}
-		if res.queued != 2 || res.skipped != 3 {
-			t.Errorf("result = %+v, want queued 2 (covers) and skipped 3 (screenshots)", res)
+		if res.queued != 1 || res.skipped != 4 {
+			t.Errorf("result = %+v, want queued 1 (one cover vacancy) and skipped 4 (3 screenshots, 1 cover; alterado em 2026-11-15, capa = 1)", res)
 		}
 	})
 
@@ -710,8 +710,8 @@ func TestQueueLocks(t *testing.T) {
 		if gated.peak != 1 {
 			t.Errorf("concurrent reads of the active jobs = %d, want 1 (serialised per game)", gated.peak)
 		}
-		if total > 2 {
-			t.Errorf("queued %d covers in two requests, want at most 2 (the limit)", total)
+		if total > 1 {
+			t.Errorf("queued %d covers in two requests, want at most 1 (the limit, alterado em 2026-11-15, capa = 1)", total)
 		}
 		if a := activeCounts(t, f.st, f.gameID); a[scrapers.KindCover] != total {
 			t.Errorf("active cover jobs = %d, want %d (what was queued)", a[scrapers.KindCover], total)

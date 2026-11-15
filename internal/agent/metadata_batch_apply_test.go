@@ -551,10 +551,10 @@ func TestBatchApply(t *testing.T) {
 		id, ids := w.readyBatch(t)
 		batchApplyOK(t, w, id, ids)
 		st := awaitDone(t, w, id)
-		// Each game offers three covers: two fit the limit of MET-021, the third is left out.
+		// Each game offers three covers: one fits the limit of MET-021 (capa = 1, alterado em 2026-11-15), two are left out.
 		r := st.Result
-		if r.Applied != 3 || r.ImagesQueued != 6 || r.ImagesSkippedByLimit != 3 || len(r.FailedTitles) != 0 {
-			t.Errorf("result = %+v, want applied 3, imagesQueued 6, imagesSkippedByLimit 3, no failed title", r)
+		if r.Applied != 3 || r.ImagesQueued != 3 || r.ImagesSkippedByLimit != 6 || len(r.FailedTitles) != 0 {
+			t.Errorf("result = %+v, want applied 3, imagesQueued 3, imagesSkippedByLimit 6, no failed title", r)
 		}
 		if st.Done != 3 || st.Total != 3 || st.Failed != 0 {
 			t.Errorf("counters done %d total %d failed %d, want 3, 3, 0", st.Done, st.Total, st.Failed)
