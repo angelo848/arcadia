@@ -80,6 +80,17 @@ describe('varredura do tema', () => {
     expect(hits, `cores literais:\n${hits.join('\n')}`).toEqual([])
   })
 
+  it('IMV-051/ImportReviewTable.tsx e ImportDialog.tsx sem cores literais', () => {
+    const own = files.filter(([p]) => /\/(ImportReviewTable|ImportDialog)\.tsx$/.test(p))
+    expect(own.length, 'ImportReviewTable.tsx e ImportDialog.tsx na varredura').toBe(2)
+    const hits: string[] = []
+    for (const [path, src] of own) {
+      for (const m of src.matchAll(palette)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      for (const m of src.matchAll(literalColor)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
+  })
+
   it('UIX-040/nenhum className com outline-none sem focus-visible: correspondente', () => {
     const hits: string[] = []
     for (const [path, src] of files) {

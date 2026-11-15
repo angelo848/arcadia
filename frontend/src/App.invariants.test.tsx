@@ -556,6 +556,63 @@ describe('invariantes da UI', () => {
     expect(others, 'outras escritas').toEqual([])
   })
 
+  it('IMV-081/ler pasta, marcar, editar título, escolher plataforma e importar em lotes chamam só ImportScan, ImportApply, PickFile, PickFolder e a leitura do catálogo; nenhum LaunchGame, LaunchGameUntracked, ToggleSession, Pause nem Resume', async () => {
+    // Fonte "Arquivo": título editável e select "Plataforma do arquivo" (IMV-060, IMV-024).
+    const candidates = Array.from({ length: 3 }, (_, i) => ({
+      source: 'file',
+      title: `Jogo ${i}`,
+      platform: 'Windows',
+      launchType: 'exe',
+      launchTarget: `C:\\Games\\jogo${i}.z64`,
+      installDir: '',
+      file: `jogo${i}.z64`,
+      extension: 'z64',
+      developers: [],
+      publishers: [],
+      genres: [],
+      year: null,
+      description: '',
+      playModes: [],
+      playedSeconds: null,
+      lastPlayed: null,
+      exists: false,
+    }))
+    overrides.PickFile = () => 'C:\\Games\\jogo0.z64'
+    overrides.ImportScan = () => ({ candidates, warnings: [] })
+    overrides.ImportApply = () => ({ applied: [], skipped: [] })
+    renderApp()
+    await findCard('Hades')
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Importar' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'file' } })
+    // Escolher arquivo chama PickFile; depois Buscar chama ImportScan.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Escolher arquivo' }))
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Arquivo' })).toHaveValue('C:\\Games\\jogo0.z64'))
+    // Escolher plataforma antes de ler: trocar plataforma depois descarta a lista (IMV-049).
+    const platform = within(dialog).getByRole('combobox', { name: 'Plataforma do arquivo' }) as HTMLSelectElement
+    fireEvent.change(platform, { target: { value: platform.options[platform.options.length - 1].value } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    const box = await within(dialog).findByRole('checkbox', { name: 'Selecionar Jogo 0' })
+    // Marcar e desmarcar.
+    fireEvent.click(box)
+    fireEvent.click(box)
+    // Editar um título.
+    const titleField = within(dialog).getByRole('textbox', { name: 'Título de jogo1.z64' })
+    fireEvent.change(titleField, { target: { value: 'Jogo 1 editado' } })
+    // Importar em lote.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
+    await waitFor(() => expect(calls('ImportApply').length).toBeGreaterThan(0))
+    await flush()
+
+    expect(calls('ImportScan')).toHaveLength(1)
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', 'ToggleSession', 'PauseSession', 'ResumeSession']) {
+      expect(calls(n), n).toHaveLength(0)
+    }
+    const allowed = new Set(['ImportScan', 'ImportApply', 'PickFile', 'PickFolder'])
+    const others = writeCalls().filter((n) => !allowed.has(n))
+    expect(others, 'escritas fora de ImportScan/ImportApply').toEqual([])
+  })
+
   it('AJU-028/as chamadas da UI nas interações da fase 10.1 estão na lista de bindings da fase 9', async () => {
     renderApp()
     await focusGame('Hollow Knight')
