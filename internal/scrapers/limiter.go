@@ -43,6 +43,16 @@ func (l *Limiter) reserve() time.Duration {
 	return slot.Sub(now)
 }
 
+// SetInterval changes the spacing used from the next reservation on; a slot already reserved does not move.
+func (l *Limiter) SetInterval(d time.Duration) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.interval = d
+}
+
 // Wait reserves the caller's slot and blocks until it is due. It returns ctx.Err() when ctx ends
 // first; the reservation is not given back in that case.
 func (l *Limiter) Wait(ctx context.Context) error {
