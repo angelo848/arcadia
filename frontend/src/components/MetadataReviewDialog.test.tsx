@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Profiler } from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MetadataReviewDialog } from './MetadataReviewDialog'
 import type { MetadataReviewDialogProps } from './MetadataReviewDialog'
 import { coverPlaceholderUrl } from './CoverImage'
@@ -31,6 +31,9 @@ function deferred<T = void>() {
 }
 
 const BATCH_ID = 7
+
+// The suite runs ~67 files in parallel on jsdom; the default 1 s wait is too short under load.
+configure({ asyncUtilTimeout: 5000 })
 
 function batchOf(state: BatchStatusView['state'], total = 15): BatchStatusView {
   return { batchId: BATCH_ID, state, total, done: total, failed: 0, warnings: [] }
@@ -112,9 +115,12 @@ function renderReview(over: Over = {}) {
   return { ...render(<MetadataReviewDialog {...props} />), props }
 }
 
-// Waits for the rows to be read and drawn.
-async function loaded(): Promise<void> {
-  await screen.findByRole('checkbox', { name: `Selecionar ${title(1)}` })
+// Waits for the final state: every row drawn, then effects flushed (the header's
+// indeterminate flag is set in an effect, so it is only reliable after the flush).
+async function loaded(count = 15): Promise<void> {
+  await screen.findByRole('checkbox', { name: `Selecionar ${title(1)}` }, { timeout: 5000 })
+  await waitFor(() => expect(allRowBoxes()).toHaveLength(count), { timeout: 5000 })
+  await act(async () => {})
 }
 
 function checkbox(id: number): HTMLInputElement {
@@ -299,9 +305,9 @@ describe('MetadataReviewDialog', () => {
     renderReview()
     await loaded()
 
-    // Indeterminate: 9 of 13 selectable rows are marked.
+    // Indeterminate: 9 of 13 selectable rows are marked (flag set by an effect, so wait for it).
     expect(headerBox().checked).toBe(false)
-    expect(headerBox().indeterminate).toBe(true)
+    await waitFor(() => expect(headerBox().indeterminate).toBe(true))
 
     // All: marks every row with a selected item (13), not the "none" rows.
     fireEvent.click(headerBox())
@@ -321,7 +327,7 @@ describe('MetadataReviewDialog', () => {
     // No selectable row: only "none" rows.
     installApp([noneRow(1), noneRow(2)])
     const first = renderReview({ batch: batchOf('ready', 2) })
-    await loaded()
+    await loaded(2)
     expect(headerBox()).toBeDisabled()
     first.unmount()
     clearApp()
@@ -366,7 +372,7 @@ describe('MetadataReviewDialog', () => {
   it('MET-063/contador sem "(j sem correspondência)" quando não há linha nenhum', async () => {
     installApp([matchRow(1), matchRow(2), matchRow(3)])
     renderReview({ batch: batchOf('ready', 3) })
-    await loaded()
+    await loaded(3)
 
     expect(screen.getByText('3 de 3 jogos selecionados')).toBeInTheDocument()
     expect(screen.queryByText(/sem correspondência/)).toBeNull()

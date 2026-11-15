@@ -686,7 +686,8 @@ describe('invariantes da UI', () => {
       warnings: string[]
       result?: unknown
     }
-    let batch: FakeBatch | null = null
+    // The cast keeps TypeScript from narrowing the variable to null after the initializer.
+    let batch = null as FakeBatch | null
     // notify is the metadata:batch event that tells the UI the batch changed (MET-055).
     const notify = () => {
       if (batch) emit('metadata:batch', { batchId: batch.batchId, state: batch.state, done: batch.done, total: batch.total, failed: batch.failed })
