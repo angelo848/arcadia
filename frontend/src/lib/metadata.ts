@@ -1,4 +1,5 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { GameDetailView } from './library'
 
 // Providers of the metadata search (phase 7, MID-002). Only IGDB and SteamGridDB need a key (MID-001).
@@ -117,6 +118,40 @@ async function call<T>(name: keyof WailsApp, args: unknown[]): Promise<T> {
 }
 
 export const mediaKey = (gameId: number) => ['media', gameId] as const
+
+type WailsRuntime = {
+  EventsOn?: (eventName: string, callback: (...data: unknown[]) => void) => (() => void) | void
+}
+
+const mediaChangedEvent = 'media:changed'
+
+// useMediaEvents invalidates a game's media cache on each media:changed event [IMG-006/007].
+export function useMediaEvents(): void {
+  const qc = useQueryClient()
+
+  useEffect(() => {
+    const on = (window as unknown as { runtime?: WailsRuntime }).runtime?.EventsOn
+    if (!on) {
+      return undefined
+    }
+    const off = on(mediaChangedEvent, (...data: unknown[]) => {
+      const p = data[0]
+      if (typeof p !== 'object' || p === null) {
+        return
+      }
+      const gameId = (p as { gameId?: unknown }).gameId
+      if (typeof gameId !== 'number' || !Number.isInteger(gameId) || gameId < 1) {
+        return
+      }
+      void qc.invalidateQueries({ queryKey: mediaKey(gameId), exact: true })
+    })
+    return () => {
+      if (typeof off === 'function') {
+        off()
+      }
+    }
+  }, [qc])
+}
 
 // providerKeyStatus tells whether a key is registered (MID-001).
 export function providerKeyStatus(provider: KeyProviderId): Promise<ProviderKeyView> {
