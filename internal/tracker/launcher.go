@@ -33,10 +33,13 @@ type LaunchSpec struct {
 // to a job, so that no child can escape tracking.
 type Launcher interface {
 	Prepare(spec LaunchSpec) (Job, error)
-	// LaunchDetached creates the process without a Job Object and without
-	// CREATE_SUSPENDED; it closes hProcess and hThread before returning. The
-	// error is a *LaunchError.
-	LaunchDetached(spec LaunchSpec) (pid uint32, err error)
+	// LaunchDetached starts a game that does not count time [SES-031..034]: it
+	// is created suspended inside a Job Object of its own that only keeps the
+	// tree so that it can be closed by the hotkey (CON-010, CON-011). The job
+	// has no KILL_ON_JOB_CLOSE (ADR 0005), so closing it never kills the game;
+	// no session, no completion port and no goroutine. hProcess and hThread are
+	// closed before returning. The error is a *LaunchError.
+	LaunchDetached(spec LaunchSpec) (job DetachedJob, pid uint32, err error)
 	// OpenURI asks the shell to open uri; it returns no process handle. The
 	// error is a *LaunchError (RUL-003).
 	OpenURI(uri string) error
@@ -73,10 +76,55 @@ type Job interface {
 	Events() <-chan JobEvent
 	// ActiveProcesses returns the number of live processes in the job.
 	ActiveProcesses() (int, error)
+	// RequestClose posts WM_CLOSE to the visible, unowned top-level windows of
+	// the live processes of the tree and returns how many windows got it
+	// (CON-030). It never waits and never kills.
+	RequestClose() (int, error)
+	// Kill terminates every process of the tree (CON-030, CON-008). Unlike
+	// Terminate it is valid after Resume; it never closes the job.
+	Kill() error
 	// Close stops the reader and releases every handle. It never kills
 	// processes and is idempotent.
 	Close() error
 }
+
+// DetachedJob is the Job Object of a game launched without counting time
+// (CON-010, CON-011). The tracker keeps the last one only to close the game by
+// the hotkey; it never records a session.
+type DetachedJob interface {
+	// ActiveProcesses returns the number of live processes in the job.
+	ActiveProcesses() (int, error)
+	// RequestClose posts WM_CLOSE to the visible, unowned top-level windows of
+	// the processes in the job and returns how many windows got it (CON-030).
+	RequestClose() (int, error)
+	// Kill terminates every process in the job; it never closes the job.
+	Kill() error
+	// Close releases the job handle. It never kills and is idempotent; it is
+	// the only owner of the job handle.
+	Close() error
+}
+
+// WindowCloser posts WM_CLOSE to the visible, unowned top-level windows of the
+// given processes and returns how many windows got it (CON-030). An empty set
+// posts nothing and enumerates nothing. It is exported only so that tests can
+// inject one through Config.Closer.
+type WindowCloser interface {
+	PostClose(pids map[uint32]struct{}) (posted int, err error)
+}
+
+// ProcessKiller terminates pid only if its image path is still wantImage
+// (compared without regard to case), so that a recycled PID is never killed
+// (CON-008). It is exported only so that tests can inject one through
+// Config.Killer.
+type ProcessKiller interface {
+	Kill(pid uint32, wantImage string) error
+}
+
+// Internal names used by the platform code.
+type (
+	windowCloser  = WindowCloser
+	processKiller = ProcessKiller
+)
 
 // LaunchError is the error returned when a game cannot be started.
 type LaunchError struct {

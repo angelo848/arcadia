@@ -10,8 +10,10 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
@@ -40,6 +42,9 @@ type scrapeService struct {
 	clock     domain.Clock
 	log       *slog.Logger
 	locks     gameLocks // serialises the image queueing of each game (MET-023)
+
+	// videoCredsChanged is called after the ScreenScraper credentials are saved or removed (VID-017); nil is allowed.
+	videoCredsChanged func()
 }
 
 // gameLocks is a mutex per game id. An entry exists only while someone holds or waits for the lock,
@@ -119,7 +124,13 @@ func (s *scrapeService) setKey(_ context.Context, params json.RawMessage) (any, 
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 	var err error
-	if p.Provider == "igdb" {
+	isSS := isScreenScraperProvider(p.Provider)
+	if isSS {
+		if n := utf8.RuneCountInString(strings.TrimSpace(p.Secret)); n < 1 || n > 512 {
+			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		}
+		err = s.keys.SetPair(p.Provider, p.Key, p.Secret)
+	} else if p.Provider == "igdb" {
 		err = s.keys.SetIGDB(p.Key, p.Secret)
 	} else {
 		err = s.keys.Set(p.Provider, p.Key)
@@ -131,7 +142,16 @@ func (s *scrapeService) setKey(_ context.Context, params json.RawMessage) (any, 
 		s.log.Error("gravar chave de provedor", "provider", p.Provider, "error", err.Error())
 		return nil, ipc.NewError(ipc.CodeInternalError, ipc.MsgInternalError)
 	}
+	if isSS {
+		s.notifyVideoCreds()
+	}
 	return keyResult(p.Provider, s.keys.Configured(p.Provider)), nil
+}
+
+func (s *scrapeService) notifyVideoCreds() {
+	if s.videoCredsChanged != nil {
+		s.videoCredsChanged()
+	}
 }
 
 func (s *scrapeService) deleteKey(_ context.Context, params json.RawMessage) (any, error) {
@@ -145,6 +165,9 @@ func (s *scrapeService) deleteKey(_ context.Context, params json.RawMessage) (an
 	if err := s.keys.Delete(p.Provider); err != nil {
 		s.log.Error("apagar chave de provedor", "provider", p.Provider, "error", err.Error())
 		return nil, ipc.NewError(ipc.CodeInternalError, ipc.MsgInternalError)
+	}
+	if isScreenScraperProvider(p.Provider) {
+		s.notifyVideoCreds()
 	}
 	return keyResult(p.Provider, s.keys.Configured(p.Provider)), nil
 }

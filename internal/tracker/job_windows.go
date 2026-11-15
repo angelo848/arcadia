@@ -76,34 +76,73 @@ func (winLauncher) Prepare(spec LaunchSpec) (Job, error) {
 }
 
 // LaunchDetached starts the game with the same command line, working directory
-// and error mode as Prepare, but outside any job and not suspended. Both
-// handles of PROCESS_INFORMATION are closed before returning.
-func (winLauncher) LaunchDetached(spec LaunchSpec) (uint32, error) {
-	pid, err := launchDetached(spec)
+// and error mode as Prepare, inside a Job Object kept only so that it can be
+// closed (CON-011); see launchDetached. On error everything created is closed
+// (a created process is terminated) and the error is a *LaunchError [SES-034].
+func (winLauncher) LaunchDetached(spec LaunchSpec) (DetachedJob, uint32, error) {
+	j, pid, err := launchDetached(spec)
 	if err != nil {
 		le := &LaunchError{Err: err}
 		var errno windows.Errno
 		if errors.As(err, &errno) {
 			le.WinError = uint32(errno)
 		}
-		return 0, le
+		return nil, 0, le
 	}
-	return pid, nil
+	return j, pid, nil
 }
 
-func launchDetached(spec LaunchSpec) (uint32, error) {
+// launchDetached creates the process suspended, creates a job with
+// JOB_OBJECT_LIMIT_BREAKAWAY_OK only (no KILL_ON_JOB_CLOSE, ADR 0005; no
+// SILENT_BREAKAWAY_OK, ADR 0016), assigns the process to it, resumes it and
+// closes hThread and hProcess. The job handle is the only one kept.
+func launchDetached(spec LaunchSpec) (_ *winDetachedJob, _ uint32, err error) {
 	appName, cmdLine, cwd, err := launchStrings(spec)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	si := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
 	var pi windows.ProcessInformation
-	if err := windows.CreateProcess(appName, &cmdLine[0], nil, nil, false, windows.CREATE_DEFAULT_ERROR_MODE, nil, cwd, &si, &pi); err != nil {
-		return 0, fmt.Errorf("create process %q: %w", spec.Exe, err)
+	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_DEFAULT_ERROR_MODE)
+	if err := windows.CreateProcess(appName, &cmdLine[0], nil, nil, false, flags, nil, cwd, &si, &pi); err != nil {
+		return nil, 0, fmt.Errorf("create process %q: %w", spec.Exe, err)
 	}
 	defer windows.CloseHandle(pi.Process)
 	defer windows.CloseHandle(pi.Thread)
-	return pi.ProcessId, nil
+	resumed := false
+	defer func() {
+		if err != nil && !resumed {
+			// The process never ran game code: kill it before releasing it.
+			_ = windows.TerminateProcess(pi.Process, 1)
+		}
+	}()
+
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create job object: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = windows.CloseHandle(job)
+		}
+	}()
+	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
+	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
+		return nil, 0, fmt.Errorf("set job limits: %w", err)
+	}
+	if err := windows.AssignProcessToJobObject(job, pi.Process); err != nil {
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return nil, 0, fmt.Errorf("assign process to job (is the agent inside a job that forbids nesting?): %w", err)
+		}
+		return nil, 0, fmt.Errorf("assign process to job: %w", err)
+	}
+	if _, err := windows.ResumeThread(pi.Thread); err != nil {
+		return nil, 0, fmt.Errorf("resume thread: %w", err)
+	}
+	resumed = true
+	return &winDetachedJob{job: job, closer: newWindowCloser()}, pi.ProcessId, nil
 }
 
 // launchStrings builds the application name, command line and working
@@ -195,6 +234,7 @@ func prepareJob(spec LaunchSpec) (_ *winJob, err error) {
 		process: pi.Process,
 		thread:  pi.Thread,
 		rootPID: pi.ProcessId,
+		closer:  newWindowCloser(),
 		events:  make(chan JobEvent, eventsBuffer),
 		stop:    make(chan struct{}),
 	}
@@ -220,6 +260,7 @@ type winJob struct {
 	job, port windows.Handle
 	process   windows.Handle // initial process; read by the reader, closed after it exits
 	rootPID   uint32
+	closer    windowCloser // posts WM_CLOSE for RequestClose (CON-030)
 
 	events chan JobEvent
 	stop   chan struct{}
@@ -293,6 +334,86 @@ func (j *winJob) ActiveProcesses() (int, error) {
 		return 0, fmt.Errorf("query job accounting: %w", err)
 	}
 	return int(info.ActiveProcesses), nil
+}
+
+// RequestClose posts WM_CLOSE to the visible, unowned top-level windows of the
+// processes in the job (JobObjectBasicProcessIdList) and returns how many
+// windows got it (CON-030). A process that broke away (ADR 0016) is not in the
+// job and is never asked.
+func (j *winJob) RequestClose() (int, error) {
+	j.mu.Lock()
+	if j.closed {
+		j.mu.Unlock()
+		return 0, errors.New("request close: job closed")
+	}
+	pids, err := jobPIDs(j.job)
+	j.mu.Unlock()
+	if err != nil {
+		return 0, fmt.Errorf("request close: %w", err)
+	}
+	set := make(map[uint32]struct{}, len(pids))
+	for _, p := range pids {
+		set[p] = struct{}{}
+	}
+	return j.closer.PostClose(set)
+}
+
+// Kill terminates every process in the job with exit code 1 (CON-030). It is
+// valid after Resume and never closes the job; Terminate stays reserved for a
+// failed launch. If TerminateJobObject is refused, each process of the job is
+// terminated on its own; the error is reported only if one survives.
+func (j *winJob) Kill() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.closed {
+		return errors.New("kill: job closed")
+	}
+	return killJobTree(j.job)
+}
+
+// killJobTree terminates every process of job with exit code 1, falling back
+// to one process at a time when TerminateJobObject is refused (shared by
+// winJob and winDetachedJob, CON-030, CON-010). The caller holds the lock that
+// keeps job open.
+func killJobTree(job windows.Handle) error {
+	jobErr := windows.TerminateJobObject(job, 1)
+	if jobErr == nil {
+		return nil
+	}
+	pids, err := jobPIDs(job)
+	if err != nil {
+		return fmt.Errorf("kill: terminate job: %w", errors.Join(jobErr, err))
+	}
+	var errs []error
+	for _, pid := range pids {
+		if err := terminatePID(pid); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("kill: terminate job: %w", errors.Join(append([]error{jobErr}, errs...)...))
+	}
+	return nil
+}
+
+// terminatePID terminates a process of the job with exit code 1. A process
+// that already exited is not an error.
+func terminatePID(pid uint32) error {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return nil // gone
+		}
+		return fmt.Errorf("open process %d: %w", pid, err)
+	}
+	defer windows.CloseHandle(h)
+	if err := windows.TerminateProcess(h, 1); err != nil {
+		if ev, _ := windows.WaitForSingleObject(h, 0); ev == windows.WAIT_OBJECT_0 {
+			return nil // it exited meanwhile
+		}
+		return fmt.Errorf("terminate process %d: %w", pid, err)
+	}
+	return nil
 }
 
 // Close stops the reader, waits for it and closes every handle. Closing the

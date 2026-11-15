@@ -2382,6 +2382,8 @@ func TestTrackerLaunchUntracked(t *testing.T) {
 		if _, err := untracked(t, e, spec); err != nil {
 			t.Fatalf("LaunchUntracked: %v", err)
 		}
+		// One game at a time (CON-011): the untracked game must be gone first.
+		e.launcher.detachedJob(t, 0).setActive(0)
 		if _, ok := e.tr.Current(); ok {
 			t.Error("Current reports a session after LaunchUntracked")
 		}

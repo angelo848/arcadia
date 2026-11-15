@@ -1697,3 +1697,317 @@ func TestMachineFeedback(t *testing.T) {
 		})
 	})
 }
+
+// ---- Phase 13: close by controller (docs/specs/phase-13-modo-console, contract session-close-state-machine.md) ----
+
+// toClosing moves a Running machine (started at baseT) to Closing at `when`; the trigger must emit no effects.
+func toClosing(t *testing.T, r running, when time.Time) {
+	t.Helper()
+	wantNoEffects(t, r.m.CloseRequested(when))
+	wantState(t, r.m, tracker.StateClosing)
+}
+
+func wantClosingAt(t *testing.T, m *tracker.Machine, when time.Time, from tracker.State) {
+	t.Helper()
+	got, gotFrom, ok := m.ClosingAt()
+	if !ok || !got.Equal(when) || gotFrom != from {
+		t.Fatalf("ClosingAt() = (%v, %d, %v), want (%v, %d, true)", got, gotFrom, ok, when, from)
+	}
+}
+
+func TestMachineCloseByHotkey(t *testing.T) {
+	t.Parallel()
+	t600 := at(600 * time.Second)
+
+	t.Run("CON-005/Running com 600 s: CloseRequested entra em Closing sem efeitos e CloseDone grava ended_at=T+600s, active 600 s, closed-by-hotkey, ended", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		wantClosingAt(t, r.m, t600, tracker.StateRunning)
+		effs := r.m.CloseDone(at(602 * time.Second))
+		wantKinds(t, effs, tracker.EffEndSession, tracker.EffCloseJob, tracker.EffNotify)
+		wantBefore(t, effs, tracker.EffEndSession, tracker.EffNotify)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, t600, 600*time.Second, domain.EndClosedByHotkey)
+		none(t, effs, tracker.EffTerminateJob, tracker.EffFeedback)
+		wantState(t, r.m, tracker.StateIdle)
+		if _, _, ok := r.m.ClosingAt(); ok {
+			t.Fatal("ClosingAt ok after CloseDone")
+		}
+		if !r.m.Begin(testGameID, testTitle) {
+			t.Fatal("Begin after CloseDone returned false")
+		}
+	})
+
+	t.Run("CON-005/o instante de CloseDone não muda os valores gravados (T+602s e T+603s), só o AsOf", func(t *testing.T) {
+		t.Parallel()
+		for _, now := range []time.Time{at(602 * time.Second), at(603 * time.Second)} {
+			r := newRunning(t)
+			toClosing(t, r, t600)
+			effs := r.m.CloseDone(now)
+			wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, t600, 600*time.Second, domain.EndClosedByHotkey)
+			n := one(t, effs, tracker.EffNotify)
+			if n.State != domain.SessionEnded {
+				t.Fatalf("Notify State = %q, want ended", n.State)
+			}
+			wantSnap(t, n.Session, snap(domain.SessionEnded, 600*time.Second, now, t600))
+		}
+	})
+
+	t.Run("CON-005/20 s de tempo ativo termina discarded", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, at(20*time.Second))
+		effs := r.m.CloseDone(at(23 * time.Second))
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionDiscarded, at(20*time.Second), 20*time.Second, domain.EndClosedByHotkey)
+		n := one(t, effs, tracker.EffNotify)
+		wantSnap(t, n.Session, snap(domain.SessionDiscarded, 20*time.Second, at(23*time.Second), at(20*time.Second)))
+	})
+
+	t.Run("CON-005/CloseRequested fora de Running, Paused e Grace é nil", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name  string
+			setup func(t *testing.T) *tracker.Machine
+			want  tracker.State
+		}{
+			{"Idle", func(*testing.T) *tracker.Machine { return newMachine() }, tracker.StateIdle},
+			{"Launching", func(*testing.T) *tracker.Machine {
+				m := newMachine()
+				m.Begin(testGameID, testTitle)
+				return m
+			}, tracker.StateLaunching},
+			{"Launching depois do insert", func(*testing.T) *tracker.Machine {
+				m := newMachine()
+				m.Begin(testGameID, testTitle)
+				m.Prepared(baseT)
+				m.Inserted(testSessionID)
+				return m
+			}, tracker.StateLaunching},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				m := tc.setup(t)
+				wantNoEffects(t, m.CloseRequested(t600))
+				wantState(t, m, tc.want)
+				if _, _, ok := m.ClosingAt(); ok {
+					t.Fatal("ClosingAt ok outside Closing")
+				}
+			})
+		}
+	})
+
+	t.Run("CON-012/CloseRequested antes de startedAt em Running ou Paused é ignorado", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		wantNoEffects(t, r.m.CloseRequested(at(-time.Second)))
+		wantState(t, r.m, tracker.StateRunning)
+		p := newRunning(t)
+		pausedBy(t, p, at(100*time.Second), domain.PauseHotkey)
+		wantNoEffects(t, p.m.CloseRequested(at(-time.Second)))
+		wantState(t, p.m, tracker.StatePaused)
+	})
+
+	t.Run("CON-006/Paused com 100 s: tempo congelado, EndSession em closeAt com active 100 s", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, at(100*time.Second), domain.PauseHotkey)
+		closeAt := at(130 * time.Second)
+		toClosing(t, r, closeAt)
+		wantClosingAt(t, r.m, closeAt, tracker.StatePaused)
+		effs := r.m.CloseDone(at(133 * time.Second))
+		wantKinds(t, effs, tracker.EffEndSession, tracker.EffCloseJob, tracker.EffNotify)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, closeAt, 100*time.Second, domain.EndClosedByHotkey)
+		wantState(t, r.m, tracker.StateIdle)
+	})
+
+	t.Run("CON-007/Grace: CloseRequested devolve EndSession em graceSince, CloseJob e Notify com AsOf=at, e o GraceTimeout antigo vira obsoleto", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		e := at(100 * time.Second)
+		g := toGrace(t, r.m, e)
+		now := at(105 * time.Second)
+		effs := r.m.CloseRequested(now)
+		wantKinds(t, effs, tracker.EffEndSession, tracker.EffCloseJob, tracker.EffNotify)
+		wantBefore(t, effs, tracker.EffEndSession, tracker.EffNotify)
+		wantEnd(t, one(t, effs, tracker.EffEndSession), domain.SessionEnded, e, 100*time.Second, domain.EndClosedByHotkey)
+		none(t, effs, tracker.EffTerminateJob, tracker.EffFeedback)
+		wantSnap(t, one(t, effs, tracker.EffNotify).Session, snap(domain.SessionEnded, 100*time.Second, now, e))
+		wantState(t, r.m, tracker.StateIdle)
+		wantNoEffects(t, r.m.GraceTimeout(e.Add(domain.SessionGracePeriod), g))
+		wantState(t, r.m, tracker.StateIdle)
+	})
+
+	t.Run("CON-013/CloseUndone em Running: runningSince=closeAt, o tempo da espera passa a contar, devolve armHeartbeat e armPoll", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		effs := r.m.CloseUndone()
+		wantKinds(t, effs, tracker.EffArmHeartbeat, tracker.EffArmPoll)
+		wantArm(t, one(t, effs, tracker.EffArmHeartbeat), domain.SessionHeartbeatInterval)
+		wantArm(t, one(t, effs, tracker.EffArmPoll), domain.JobPollInterval)
+		hb, poll := one(t, effs, tracker.EffArmHeartbeat).Gen, one(t, effs, tracker.EffArmPoll).Gen
+		if hb == r.hbGen || poll == r.pollGen {
+			t.Fatalf("generations not renewed: hb %d (old %d), poll %d (old %d)", hb, r.hbGen, poll, r.pollGen)
+		}
+		wantState(t, r.m, tracker.StateRunning)
+		if _, _, ok := r.m.ClosingAt(); ok {
+			t.Fatal("ClosingAt ok after CloseUndone")
+		}
+		s, ok := r.m.Snapshot(at(610 * time.Second))
+		if !ok || s.State != domain.SessionRunning || s.Active != 610*time.Second {
+			t.Fatalf("Snapshot = %+v ok = %v, want running 610s (no gap)", s, ok)
+		}
+		// The new generations are honored; the old ones are not.
+		wantNoEffects(t, r.m.Heartbeat(at(620*time.Second), r.hbGen))
+		one(t, r.m.Heartbeat(at(620*time.Second), hb), tracker.EffUpdateSession)
+	})
+
+	t.Run("CON-013/CloseUndone em Paused não muda nada", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		pausedBy(t, r, at(100*time.Second), domain.PauseHotkey)
+		toClosing(t, r, at(130*time.Second))
+		r.m.CloseUndone()
+		wantState(t, r.m, tracker.StatePaused)
+		wantReason(t, r.m, domain.PauseHotkey)
+		s, ok := r.m.Snapshot(at(200 * time.Second))
+		if !ok || s.State != domain.SessionPaused || s.Active != 100*time.Second {
+			t.Fatalf("Snapshot = %+v ok = %v, want paused 100s", s, ok)
+		}
+		// The open pause interval still ends normally.
+		effs := r.m.TogglePause(at(160*time.Second), domain.PauseHotkey)
+		wantPauseEnd(t, one(t, effs, tracker.EffResumePause), domain.SessionRunning, at(160*time.Second), 100*time.Second)
+	})
+
+	t.Run("CON-014/nenhum caminho de fechamento emite EffFeedback", func(t *testing.T) {
+		t.Parallel()
+		var all [][]tracker.Effect
+		r := newRunning(t)
+		all = append(all, r.m.CloseRequested(t600), r.m.CloseDone(at(602*time.Second)))
+		p := newRunning(t)
+		pausedBy(t, p, at(100*time.Second), domain.PauseHotkey)
+		all = append(all, p.m.CloseRequested(at(130*time.Second)), p.m.CloseDone(at(133*time.Second)))
+		g := newRunning(t)
+		toGrace(t, g.m, at(100*time.Second))
+		all = append(all, g.m.CloseRequested(at(105*time.Second)))
+		u := newRunning(t)
+		all = append(all, u.m.CloseRequested(t600), u.m.CloseUndone())
+		s := newRunning(t)
+		all = append(all, s.m.CloseRequested(t600), s.m.Stop(at(601*time.Second)))
+		for i, effs := range all {
+			if fb := feedbacks(effs); len(fb) != 0 {
+				t.Fatalf("path %d: feedback = %v, want none", i, fb)
+			}
+		}
+	})
+
+	t.Run("CON-032/Snapshot em Closing é o estado de origem com o tempo de closeAt", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		now := at(602 * time.Second)
+		s, ok := r.m.Snapshot(now)
+		if !ok {
+			t.Fatal("Snapshot ok = false in Closing")
+		}
+		wantSnap(t, s, snap(domain.SessionRunning, 600*time.Second, now, time.Time{}))
+
+		p := newRunning(t)
+		pausedBy(t, p, at(100*time.Second), domain.PauseHotkey)
+		toClosing(t, p, at(130*time.Second))
+		s, ok = p.m.Snapshot(now)
+		if !ok {
+			t.Fatal("Snapshot ok = false in Closing (from Paused)")
+		}
+		wantSnap(t, s, snap(domain.SessionPaused, 100*time.Second, now, time.Time{}))
+	})
+
+	t.Run("CON-032/TogglePause, Pause, Resume, Suspend, Wake e Heartbeat em Closing não geram efeitos", func(t *testing.T) {
+		t.Parallel()
+		for _, from := range []string{"Running", "Paused"} {
+			t.Run(from, func(t *testing.T) {
+				r := newRunning(t)
+				closeAt, origin := t600, tracker.StateRunning
+				if from == "Paused" {
+					pausedBy(t, r, at(100*time.Second), domain.PauseHotkey)
+					closeAt, origin = at(130*time.Second), tracker.StatePaused
+				}
+				toClosing(t, r, closeAt)
+				now := closeAt.Add(time.Second)
+				wantNoEffects(t, r.m.TogglePause(now, domain.PauseHotkey))
+				wantNoEffects(t, r.m.TogglePause(now, domain.PauseGamepad))
+				wantNoEffects(t, r.m.Pause(now))
+				wantNoEffects(t, r.m.Resume(now))
+				wantNoEffects(t, r.m.Suspend(now))
+				wantNoEffects(t, r.m.Wake(now, true))
+				wantNoEffects(t, r.m.Wake(now, false))
+				wantNoEffects(t, r.m.Heartbeat(now, r.hbGen))
+				wantState(t, r.m, tracker.StateClosing)
+				wantClosingAt(t, r.m, closeAt, origin)
+			})
+		}
+	})
+
+	t.Run("CON-032/Poll em Closing só rearma", func(t *testing.T) {
+		t.Parallel()
+		for _, active := range []int{0, 2} {
+			r := newRunning(t)
+			toClosing(t, r, t600)
+			effs := r.m.Poll(at(601*time.Second), r.pollGen, active, nil)
+			wantOrder(t, effs, tracker.EffArmPoll)
+			wantArm(t, effs[0], domain.JobPollInterval)
+			wantState(t, r.m, tracker.StateClosing)
+		}
+	})
+
+	t.Run("CON-032/segundo CloseRequested em Closing não muda nada (closeAt e origem ficam)", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		wantNoEffects(t, r.m.CloseRequested(at(601*time.Second)))
+		wantState(t, r.m, tracker.StateClosing)
+		wantClosingAt(t, r.m, t600, tracker.StateRunning)
+	})
+
+	t.Run("CON-032/Begin em Closing devolve false", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		if r.m.Begin(99, "Other") {
+			t.Fatal("Begin returned true in Closing")
+		}
+		wantState(t, r.m, tracker.StateClosing)
+	})
+
+	t.Run("CON-033/Stop em Closing: ended_at=closeAt, agent-shutdown, CloseJob e nenhum Notify", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		effs := r.m.Stop(at(601 * time.Second))
+		wantOrder(t, effs, tracker.EffEndSession, tracker.EffCloseJob)
+		none(t, effs, tracker.EffNotify, tracker.EffTerminateJob)
+		wantEnd(t, effs[0], domain.SessionEnded, t600, 600*time.Second, domain.EndAgentShutdown)
+		wantState(t, r.m, tracker.StateIdle)
+
+		p := newRunning(t)
+		pausedBy(t, p, at(100*time.Second), domain.PauseHotkey)
+		toClosing(t, p, at(130*time.Second))
+		effs = p.m.Stop(at(131 * time.Second))
+		wantOrder(t, effs, tracker.EffEndSession, tracker.EffCloseJob)
+		wantEnd(t, effs[0], domain.SessionEnded, at(130*time.Second), 100*time.Second, domain.EndAgentShutdown)
+		wantState(t, p.m, tracker.StateIdle)
+	})
+
+	t.Run("CON-005/depois do fim por fechamento, timers da sessão encerrada não emitem nada", func(t *testing.T) {
+		t.Parallel()
+		r := newRunning(t)
+		toClosing(t, r, t600)
+		r.m.CloseDone(at(602 * time.Second))
+		now := at(700 * time.Second)
+		wantNoEffects(t, r.m.Heartbeat(now, r.hbGen))
+		wantNoEffects(t, r.m.Poll(now, r.pollGen, 0, nil))
+		if _, ok := r.m.Snapshot(now); ok {
+			t.Fatal("Snapshot ok after the session ended")
+		}
+	})
+}

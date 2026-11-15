@@ -17,6 +17,10 @@ const (
 	StateRunning
 	StateGrace
 	StatePaused
+	// StateClosing waits for the game to close after the close hotkey
+	// (contracts/session-close-state-machine.md, phase 13). The active time is
+	// frozen at closeAt; nothing is persisted while waiting.
+	StateClosing
 )
 
 // EffectKind identifies a side effect the coordinator must run.
@@ -83,6 +87,11 @@ type Machine struct {
 	pausedAt     time.Time
 	pauseReason  domain.PauseReason
 	accumulated  time.Duration
+
+	// Close by hotkey (CON-005, CON-006): the trigger instant and the state the
+	// session was in. Only meaningful in StateClosing.
+	closeAt   time.Time
+	closeFrom State
 
 	// Timer generations. lastGen is a single monotonic counter so that no
 	// generation is ever reused; 0 means "no timer armed".
@@ -288,6 +297,10 @@ func (m *Machine) Stop(now time.Time) []Effect {
 		end = Effect{Kind: EffEndSession, At: now, Reason: domain.EndAgentShutdown}
 	case StateGrace:
 		end = Effect{Kind: EffEndSession, At: m.graceSince, Reason: domain.EndExited}
+	case StateClosing:
+		// The wait does not count: the session ends at the trigger instant, with
+		// no kill and no notification (CON-033).
+		end = Effect{Kind: EffEndSession, At: m.closeAt, Reason: domain.EndAgentShutdown}
 	default:
 		return nil
 	}
@@ -307,6 +320,13 @@ func (m *Machine) Snapshot(now time.Time) (domain.SessionSnapshot, bool) {
 		return m.snapshot(domain.SessionGrace, now), true
 	case StatePaused:
 		return m.snapshot(domain.SessionPaused, now), true
+	case StateClosing:
+		// The origin state, with the time frozen at closeAt (CON-032).
+		st := domain.SessionRunning
+		if m.closeFrom == StatePaused {
+			st = domain.SessionPaused
+		}
+		return m.snapshot(st, now), true
 	default:
 		return domain.SessionSnapshot{}, false
 	}
@@ -559,4 +579,91 @@ func (m *Machine) SteamStopped(now time.Time) []Effect {
 		{Kind: EffArmGrace, Gen: m.graceGen, Delay: 0},
 		m.notify(domain.SessionGrace, now),
 	}
+}
+
+// CloseRequested applies the close hotkey at the trigger instant at
+// (contracts/session-close-state-machine.md). Running and Paused move to
+// StateClosing with the active time frozen at at and no effects: nothing is
+// persisted or notified while the game is asked to close [CON-005, CON-006].
+// Grace ends the session at once at graceSince (the job is already empty)
+// [CON-007]. Idle, Launching, Closing and instants before startedAt are
+// ignored [CON-012, CON-032]. No path emits feedback [CON-014].
+func (m *Machine) CloseRequested(at time.Time) []Effect {
+	switch m.state {
+	case StateRunning:
+		if at.Before(m.startedAt) {
+			return nil
+		}
+		m.accumulated += elapsed(m.runningSince, at)
+		m.closeFrom = StateRunning
+	case StatePaused:
+		if at.Before(m.startedAt) {
+			return nil
+		}
+		m.closeFrom = StatePaused // the open pause interval stays open
+	case StateGrace:
+		final := domain.Outcome(m.accumulated)
+		endedAt := m.graceSince
+		effs := []Effect{
+			{Kind: EffEndSession, State: final, At: endedAt, Active: m.accumulated, Reason: domain.EndClosedByHotkey},
+			{Kind: EffCloseJob},
+		}
+		n := m.notify(final, at)
+		n.Session.EndedAt = endedAt
+		effs = append(effs, n)
+		m.reset() // graceGen = 0: the pending grace timer becomes stale
+		return effs
+	default:
+		return nil
+	}
+	m.state = StateClosing
+	m.closeAt = at
+	return nil
+}
+
+// CloseDone ends a closing session once its process tree is gone (it exited
+// or was killed): ended_at is closeAt, the reason closed-by-hotkey and the
+// state follows DOM-008 (ended or discarded) [CON-005, CON-006]. now is the
+// AsOf of the end notification. It never emits feedback [CON-014].
+func (m *Machine) CloseDone(now time.Time) []Effect {
+	if m.state != StateClosing {
+		return nil
+	}
+	final := domain.Outcome(m.accumulated)
+	endedAt := m.closeAt
+	effs := []Effect{
+		{Kind: EffEndSession, State: final, At: endedAt, Active: m.accumulated, Reason: domain.EndClosedByHotkey},
+		{Kind: EffCloseJob},
+	}
+	n := m.notify(final, now)
+	n.Session.EndedAt = endedAt
+	effs = append(effs, n)
+	m.reset()
+	return effs
+}
+
+// CloseUndone returns a closing session to its origin state when the game
+// could not be closed [CON-013]. Running counts again from closeAt, so the
+// wait is play time with no gap; Paused keeps its open interval. The heartbeat
+// and the periodic check, which Closing does not re-arm, are re-armed with new
+// generations (tasks.md, finding 2). Nothing is persisted or notified.
+func (m *Machine) CloseUndone() []Effect {
+	if m.state != StateClosing {
+		return nil
+	}
+	m.state = m.closeFrom
+	if m.state == StateRunning {
+		m.runningSince = m.closeAt
+	}
+	m.closeAt, m.closeFrom = time.Time{}, StateIdle
+	return []Effect{m.armHeartbeat(), m.armPoll()}
+}
+
+// ClosingAt returns the trigger instant and the origin state of a closing
+// session; ok is false outside StateClosing.
+func (m *Machine) ClosingAt() (at time.Time, from State, ok bool) {
+	if m.state != StateClosing {
+		return time.Time{}, StateIdle, false
+	}
+	return m.closeAt, m.closeFrom, true
 }

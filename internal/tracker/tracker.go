@@ -61,6 +61,7 @@ const (
 	ctrlWake
 	ctrlLaunchDetached
 	ctrlWithoutGame
+	ctrlClose // CloseByHotkey: answered by handleClose, possibly later (CON-005)
 )
 
 // Claim states of a ctrlWithoutGame request: the owner and the caller race for
@@ -72,10 +73,11 @@ const (
 )
 
 type ctrlResult struct {
-	res  PauseResult
-	snap domain.SessionSnapshot
-	pid  uint32
-	err  error
+	res   PauseResult
+	snap  domain.SessionSnapshot
+	pid   uint32
+	close CloseResult // ctrlClose only
+	err   error
 }
 
 type ctrlReq struct {
@@ -119,6 +121,11 @@ type Config struct {
 	WatchInterval time.Duration
 	// SteamRunning reads the Running signal of a Steam app (STM-001); nil = no signal.
 	SteamRunning func(appID string) (running, present bool, err error)
+	// Closer and Killer replace the window closer and the process killer of
+	// adopted (URI) sessions; nil = the real ones. Test hook for CON-008: they
+	// keep the tests away from PostMessage and TerminateProcess.
+	Closer WindowCloser
+	Killer ProcessKiller
 }
 
 type launchResult struct {
@@ -180,6 +187,17 @@ type Tracker struct {
 	steamRunning func(appID string) (running, present bool, err error) // STM-001 signal reader; nil = none
 	watchEvery   time.Duration                                         // watcher snapshot period
 	lastAt       time.Time                                             // latest event instant applied to m
+	closer       WindowCloser                                          // Config.Closer; nil = real
+	killer       ProcessKiller                                         // Config.Killer; nil = real
+	closeReq     *pendingClose                                         // close by hotkey in progress (CON-005)
+	closeTimer   timer                                                 // CloseTimeout of closeReq (CON-030)
+	closeGen     uint64                                                // last CloseTimeout generation
+	// The job of the last game launched without counting time, kept only so
+	// that the hotkey can close it (CON-010, CON-011); nil = none.
+	detached      DetachedJob
+	detachedGame  int64
+	detachedTitle string
+	detachedPoll  timer // DetachedPoll of an untracked close in progress (CON-010)
 }
 
 // New returns a stopped Tracker; call Start to run it.
@@ -220,6 +238,8 @@ func New(cfg Config) *Tracker {
 		launcher:     cfg.Launcher,
 		procs:        cfg.Processes,
 		steamRunning: cfg.SteamRunning,
+		closer:       cfg.Closer,
+		killer:       cfg.Killer,
 		watchEvery:   watch,
 		notify:       notify,
 		feedback:     feedback,
@@ -246,7 +266,9 @@ func (t *Tracker) Start() {
 	go t.run()
 }
 
-// Launch starts spec and opens its session [SES-001]. It returns
+// Launch starts spec and opens its session [SES-001]. While the untracked game
+// kept by the tracker is alive or being closed it is refused with a
+// *SessionActiveError with sessionId 0 (one game at a time, CON-031). It returns
 // *SessionActiveError, ErrShuttingDown, *LaunchError (every SES-012 failure,
 // store failures with WinError 0) or ctx.Err() if the caller gave up waiting;
 // in the last case the launch still completes in the owner goroutine.
@@ -279,9 +301,11 @@ func (t *Tracker) Launch(ctx context.Context, spec LaunchSpec) (domain.SessionSn
 	}
 }
 
-// LaunchUntracked starts spec without a Job Object and without a session
-// [SES-031..034]. It is refused with *SessionActiveError while a session is
-// open or a launch is in progress, and with ErrShuttingDown after
+// LaunchUntracked starts spec without a session [SES-031..034], inside a Job
+// Object kept only so that the hotkey can close it (CON-010, CON-011). It is
+// refused with *SessionActiveError while a session is open, a launch is in
+// progress or the previous untracked game is still alive or being closed
+// (sessionId 0, one game at a time, CON-031), and with ErrShuttingDown after
 // BeginShutdown or Close. pid is 0 on failure.
 func (t *Tracker) LaunchUntracked(ctx context.Context, spec LaunchSpec) (uint32, error) {
 	if t.isShuttingDown() {
@@ -500,7 +524,19 @@ func (t *Tracker) run() {
 		case req := <-t.launchCh:
 			req.reply <- t.handleLaunch(req.spec)
 		case req := <-t.ctrlCh:
+			if req.kind == ctrlClose {
+				t.handleClose(req) // replies by itself, possibly after the wait
+				continue
+			}
 			req.reply <- t.handleControl(req)
+		case fired := <-t.closeTimer.ch:
+			gen := t.closeTimer.gen
+			t.closeTimer = timer{}
+			t.handleCloseTimeout(t.monotonic(fired), gen)
+		case <-t.detachedPoll.ch:
+			gen := t.detachedPoll.gen
+			t.detachedPoll = timer{}
+			t.handleDetachedPoll(gen)
 		case ev, ok := <-t.events:
 			if !ok {
 				t.events = nil
@@ -546,9 +582,15 @@ func (t *Tracker) shutdown() {
 	now := t.clock.Now()
 	t.applied(now)
 	t.step(ctx, func() []Effect { return t.m.Stop(now) })
+	// A close in progress is not finished: nothing is killed and the pending
+	// CloseByHotkey gets ErrShuttingDown (CON-033).
+	t.answerClose(ctrlResult{err: ErrShuttingDown})
 	if t.job != nil { // unreachable: every end path closes the job
 		t.closeJob()
 	}
+	// The untracked game keeps running: its job is released, never killed
+	// (CON-011, CON-033, ADR 0005).
+	t.releaseDetached()
 }
 
 // step applies one machine event and runs its effects. The session id is read
@@ -591,11 +633,14 @@ func (t *Tracker) publish() {
 // handleLaunch runs the whole launch (Prepare -> StartSession -> Resume) in
 // the owner goroutine, so a concurrent Launch only sees its result [SES-002].
 func (t *Tracker) handleLaunch(spec LaunchSpec) launchResult {
-	if spec.Kind == KindURI {
-		return t.handleLaunchURI(spec)
-	}
 	if t.isShuttingDown() {
 		return launchResult{err: ErrShuttingDown}
+	}
+	if err := t.untrackedBlocksLaunch(); err != nil {
+		return launchResult{err: err}
+	}
+	if spec.Kind == KindURI {
+		return t.handleLaunchURI(spec)
 	}
 	if !t.m.Begin(spec.GameID, spec.Title) {
 		return launchResult{err: &SessionActiveError{Session: activeSession(t.m, t.clock.Now())}}
@@ -680,6 +725,10 @@ func (t *Tracker) handleJobEvent(ev JobEvent) {
 		}
 		t.step(t.work, func() []Effect { return t.m.ProcessAdded(now) })
 	case EventActiveZero:
+		if t.m.State() == StateClosing {
+			t.closeExited(now) // the tree left during the wait (CON-030)
+			return
+		}
 		t.step(t.work, func() []Effect { return t.m.TrackedEmpty(now) })
 	case EventSteamStopped:
 		t.step(t.work, func() []Effect { return t.m.SteamStopped(now) })
@@ -710,9 +759,15 @@ func (t *Tracker) handleControl(req ctrlReq) ctrlResult {
 		if before != StateIdle {
 			return ctrlResult{err: &SessionActiveError{Session: activeSession(t.m, t.clock.Now())}}
 		}
-		pid, err := t.launcher.LaunchDetached(req.spec)
+		if err := t.untrackedBlocksLaunch(); err != nil {
+			return ctrlResult{err: err}
+		}
+		job, pid, err := t.launcher.LaunchDetached(req.spec)
 		if err != nil {
 			return ctrlResult{err: t.launchFailed(req.spec, err).err}
+		}
+		if job != nil {
+			t.detached, t.detachedGame, t.detachedTitle = job, req.spec.GameID, req.spec.Title
 		}
 		t.log.Info("jogo iniciado sem rastrear", slog.Int64("game_id", req.spec.GameID), slog.Uint64("pid", uint64(pid)))
 		return ctrlResult{pid: pid}
@@ -796,6 +851,10 @@ func (t *Tracker) handlePoll(now time.Time, gen uint64) {
 	if err != nil {
 		_, sid, _, _ := t.m.Pending()
 		t.log.Warn("falha ao ler os processos do job", slog.Int64("session_id", sid), slog.Any("error", err))
+	}
+	if err == nil && n == 0 && t.m.State() == StateClosing {
+		t.closeExited(now) // the tree left during the wait (CON-030)
+		return
 	}
 	t.step(t.work, func() []Effect { return t.m.Poll(now, gen, n, err) })
 }
@@ -912,6 +971,7 @@ func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
 			t.step(t.work, t.m.PrepareFailed)
 			return t.launchFailed(spec, err)
 		}
+		t.applyClosers(aj)
 		job = aj
 	}
 	if err := t.launcher.OpenURI(spec.Exe); err != nil {

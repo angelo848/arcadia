@@ -569,6 +569,47 @@ type fakeJob struct {
 	activeErr error
 	resumeErr error
 	closeGate *gate // holds the next Close call only
+	closeN    int   // RequestClose result
+	closeErr  error // RequestClose error
+	killErr   errPlan
+}
+
+// Operation names of the close/kill calls recorded by the fake job.
+const (
+	opRequestClose = "job.RequestClose"
+	opKill         = "job.Kill"
+)
+
+// setCloseResult programs what RequestClose returns (CON-005, CON-008).
+func (j *fakeJob) setCloseResult(n int, err error) {
+	j.mu.Lock()
+	j.closeN, j.closeErr = n, err
+	j.mu.Unlock()
+}
+
+// failKill makes Kill fail times times (negative = always) (CON-013).
+func (j *fakeJob) failKill(err error, times int) {
+	j.mu.Lock()
+	j.killErr = errPlan{err, times}
+	j.mu.Unlock()
+}
+
+// RequestClose records the call and returns the programmed result.
+func (j *fakeJob) RequestClose() (int, error) {
+	j.mu.Lock()
+	n, err := j.closeN, j.closeErr
+	j.mu.Unlock()
+	j.rec.add(call{op: opRequestClose, job: j, err: err})
+	return n, err
+}
+
+// Kill records the call and returns the programmed error.
+func (j *fakeJob) Kill() error {
+	j.mu.Lock()
+	err := j.killErr.next()
+	j.mu.Unlock()
+	j.rec.add(call{op: opKill, job: j, err: err})
+	return err
 }
 
 // blockNextClose holds the next Close call (before it closes anything or is
@@ -668,6 +709,7 @@ type fakeLauncher struct {
 
 	mu         sync.Mutex
 	jobs       []*fakeJob
+	detached   []*fakeDetachedJob
 	prepareErr errPlan
 	detachErr  errPlan
 	openURIErr error    // returned by OpenURI (RUL-003)
@@ -712,16 +754,118 @@ func (l *fakeLauncher) Prepare(spec tracker.LaunchSpec) (tracker.Job, error) {
 	return j, nil
 }
 
-// LaunchDetached records the call and returns detachedPID (no job, no goroutine).
-func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (uint32, error) {
+// LaunchDetached records the call and returns a fakeDetachedJob and detachedPID
+// (T12; no goroutine). Assumed signature:
+//
+//	LaunchDetached(spec LaunchSpec) (DetachedJob, uint32, error)
+func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (tracker.DetachedJob, uint32, error) {
 	l.mu.Lock()
 	err := l.detachErr.next()
 	l.mu.Unlock()
 	l.rec.add(call{op: opDetached, spec: spec, err: err})
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	return detachedPID, nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	d := &fakeDetachedJob{rec: l.rec, active: 1}
+	l.detached = append(l.detached, d)
+	return d, detachedPID, nil
+}
+
+// detachedJob returns the i-th detached job created.
+func (l *fakeLauncher) detachedJob(t *testing.T, i int) *fakeDetachedJob {
+	t.Helper()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if i >= len(l.detached) {
+		t.Fatalf("launcher created %d detached job(s), want index %d", len(l.detached), i)
+	}
+	return l.detached[i]
+}
+
+// Operation names of the calls recorded by fakeDetachedJob (distinct from the
+// ones of fakeJob so that SES-032 keeps asserting "no job.Close").
+const (
+	opDActive       = "detached.ActiveProcesses"
+	opDRequestClose = "detached.RequestClose"
+	opDKill         = "detached.Kill"
+	opDClose        = "detached.Close"
+)
+
+// fakeDetachedJob is the DetachedJob of the fake launcher (T12).
+type fakeDetachedJob struct {
+	rec *recorder
+
+	mu        sync.Mutex
+	active    int
+	activeErr error
+	closeN    int
+	closeErr  error
+	killErr   errPlan
+	closed    int // Close calls
+	killed    int
+}
+
+func (d *fakeDetachedJob) ActiveProcesses() (int, error) {
+	d.mu.Lock()
+	n, err := d.active, d.activeErr
+	d.mu.Unlock()
+	d.rec.add(call{op: opDActive, err: err})
+	return n, err
+}
+
+func (d *fakeDetachedJob) RequestClose() (int, error) {
+	d.mu.Lock()
+	n, err := d.closeN, d.closeErr
+	d.mu.Unlock()
+	d.rec.add(call{op: opDRequestClose, err: err})
+	return n, err
+}
+
+// Kill records the call; a successful Kill empties the job.
+func (d *fakeDetachedJob) Kill() error {
+	d.mu.Lock()
+	err := d.killErr.next()
+	if err == nil {
+		d.active = 0
+	}
+	d.killed++
+	d.mu.Unlock()
+	d.rec.add(call{op: opDKill, err: err})
+	return err
+}
+
+func (d *fakeDetachedJob) Close() error {
+	d.mu.Lock()
+	d.closed++
+	d.mu.Unlock()
+	d.rec.add(call{op: opDClose})
+	return nil
+}
+
+func (d *fakeDetachedJob) setActive(n int) {
+	d.mu.Lock()
+	d.active = n
+	d.mu.Unlock()
+}
+
+func (d *fakeDetachedJob) setCloseResult(n int, err error) {
+	d.mu.Lock()
+	d.closeN, d.closeErr = n, err
+	d.mu.Unlock()
+}
+
+func (d *fakeDetachedJob) failKill(err error, times int) {
+	d.mu.Lock()
+	d.killErr = errPlan{err, times}
+	d.mu.Unlock()
+}
+
+func (d *fakeDetachedJob) closeCalls() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.closed
 }
 
 func (l *fakeLauncher) failDetached(err error, times int) {
@@ -774,6 +918,8 @@ type envConfig struct {
 	real                   tracker.SessionStore
 	procs                  tracker.ProcessLister                  // nil: no adoption (RUL-002)
 	steam                  func(appID string) (bool, bool, error) // Steam signal (STM-001); nil = none
+	closer                 tracker.WindowCloser                   // adopted jobs; nil = real (CON-008)
+	killer                 tracker.ProcessKiller                  // adopted jobs; nil = real (CON-008)
 	watch                  time.Duration                          // watcher period; zero => domain default
 	rules                  []store.TrackingRule                   // returned when real is nil
 	noStart                bool
@@ -820,6 +966,8 @@ func newEnv(t *testing.T, cfg envConfig) *env {
 			}
 		},
 		Processes:     cfg.procs,
+		Closer:        cfg.closer,
+		Killer:        cfg.killer,
 		SteamRunning:  cfg.steam,
 		WatchInterval: cfg.watch,
 		Log:           e.logs.logger(),

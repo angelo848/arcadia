@@ -18,7 +18,12 @@ var errUnknownProvider = errors.New("agent: provedor desconhecido")
 var providerNames = []string{"igdb", "steamgriddb", "steamstore"}
 
 // keyProviderNames are the providers that need a key (MID-001).
-var keyProviderNames = []string{"igdb", "steamgriddb"}
+var keyProviderNames = []string{"igdb", "steamgriddb", "screenscraper", "screenscraperdev"}
+
+// isScreenScraperProvider reports the two ScreenScraper credential entries (SSC-001).
+func isScreenScraperProvider(name string) bool {
+	return name == "screenscraper" || name == "screenscraperdev"
+}
 
 func validProvider(name string) bool { return slices.Contains(providerNames, name) }
 

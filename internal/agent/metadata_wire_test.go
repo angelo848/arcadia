@@ -175,19 +175,30 @@ func TestMetadataPhaseInvariants(t *testing.T) {
 	})
 
 	t.Run("MET-081/internal/tracker e as migrações não ganham arquivo nesta fase", func(t *testing.T) {
-		// Reference list of the files before phase 12 (the phase adds no migration and no tracker file).
-		// It is updated only when the next phase opens; a change here during phase 12 is a MET-081 failure.
+		// Reference list of the files after phase 13 (alterado em 2026-11-15 (fase 13)): phase 12 itself
+		// added no migration and no tracker file; phase 13 added the files below (close.go, closer_*,
+		// detached_windows.go, the close/kill tests and 00009_video.sql). A file beyond this list
+		// is a new change that must be justified by its own phase. MET-081 intent (the batch and the
+		// apply do not write the tracking tables nor import internal/tracker) is checked by the other cases.
 		wantTracker := []string{
-			"adopt_steam_test.go", "adopt_test.go", "adopted_job.go", "adopted_job_test.go", "fakes_test.go",
-			"integration_windows_test.go", "job_other.go", "job_windows.go", "job_windows_test.go", "launcher.go",
-			"machine.go", "machine_test.go", "main_windows_test.go", "match.go", "recover.go", "recover_test.go",
-			"tracker.go", "tracker_test.go", "uri_test.go",
+			"adopt_steam_test.go", "adopt_test.go", "adopted_close_test.go", "adopted_job.go", "adopted_job_test.go",
+			"close.go", "close_const_test.go", "closer_other.go", "closer_windows.go", "closer_windows_test.go",
+			"detached_windows.go", "fakes_test.go", "integration_windows_test.go", "job_kill_windows_test.go",
+			"job_other.go", "job_windows.go", "job_windows_test.go", "launcher.go", "machine.go", "machine_test.go",
+			"main_windows_test.go", "match.go", "process_killer_windows_test.go", "recover.go", "recover_test.go",
+			"tracker.go", "tracker_close_adopted_test.go", "tracker_close_test.go", "tracker_detached_test.go",
+			"tracker_test.go", "uri_test.go",
 		}
 		wantMigrations := []string{
 			"00001_initial.sql", "00002_app_setting.sql", "00003_session_end_reason.sql",
 			"00004_pause_interval_open_uidx.sql", "00005_fts_rebuild.sql", "00006_emulators.sql",
-			"00007_media.sql", "00008_platforms.sql",
+			"00007_media.sql", "00008_platforms.sql", "00009_video.sql",
 		}
+		if len(wantMigrations) != 9 {
+			t.Fatalf("reference has %d migrations, want 9 (SchemaVersion 9)", len(wantMigrations))
+		}
+		slices.Sort(wantTracker)
+		slices.Sort(wantMigrations)
 		for _, c := range []struct {
 			name, dir string
 			want      []string

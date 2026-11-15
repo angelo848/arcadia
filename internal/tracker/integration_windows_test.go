@@ -382,23 +382,25 @@ func TestIntegrationLaunchUntracked(t *testing.T) {
 		}
 	})
 
-	t.Run("TRK-010/nenhum job é criado: IsProcessInJob(filho) é igual ao do processo de teste, e se o teste já estiver num job, o filho não está num job diferente do pai", func(t *testing.T) {
+	t.Run("CON-011/o filho está sempre no job guardado: IsProcessInJob(filho) é verdadeiro, e sem KILL_ON_JOB_CLOSE ele sobrevive ao Close do job", func(t *testing.T) {
 		t.Parallel()
 		sc := newScenario(t)
 		w := newWinEnv(t)
-		pid, h := untracked(t, w, sc, sc.argv("--run", "forever"), sc.dir)
+		_, h := untracked(t, w, sc, sc.argv("--run", "forever"), sc.dir)
 		sc.waitCounts(t, 1, 0)
 
-		parentInJob := testerInJob(t)
-		if childInJob := inAnyJob(t, h); childInJob != parentInJob {
-			t.Errorf("IsProcessInJob(child) = %v, test process = %v, want equal", childInJob, parentInJob)
+		if !inAnyJob(t, h) {
+			t.Error("IsProcessInJob(child) = false, want true (the guarded job)")
 		}
-		if parentInJob {
-			// The child must belong to the parent's own job (inherited).
-			// Nested jobs would not be told apart by this check.
-			if pids, ok := processesInOwnJob(); ok && !pids[pid] {
-				t.Errorf("child %d is not in the job of the test process", pid)
-			}
+		// The flags (BREAKAWAY_OK without KILL_ON_JOB_CLOSE) cannot be read
+		// without the job handle, which the tracker owns; the absence of
+		// KILL_ON_JOB_CLOSE is checked by its effect: Close releases the job
+		// and the game keeps running.
+		if err := w.tr.Close(realCtx(t)); err != nil {
+			t.Fatalf("Tracker.Close: %v", err)
+		}
+		if ev, _ := windows.WaitForSingleObject(h, 300); ev != uint32(windows.WAIT_TIMEOUT) {
+			t.Errorf("child was signalled after the job was closed (wait = %#x)", ev)
 		}
 	})
 
@@ -443,13 +445,20 @@ func TestLaunchDetachedHandles(t *testing.T) {
 		launched := 0
 		launch := func(i int) {
 			t.Helper()
-			if _, err := w.tr.LaunchUntracked(realCtx(t), w.spec(argv, sc.dir)); err != nil {
+			pid, err := w.tr.LaunchUntracked(realCtx(t), w.spec(argv, sc.dir))
+			if err != nil {
 				t.Fatalf("launch %d: LaunchUntracked: %v", i, err)
 			}
 			sc.expect(argv)
 			launched++
 			// The process is short-lived; wait for it so they do not pile up.
+			// The "exit" line is written before the process ends, so wait on
+			// the process handle too: the guarded job must be empty (CON-011).
 			sc.waitCounts(t, launched, launched)
+			if ph, err := windows.OpenProcess(windows.SYNCHRONIZE, false, pid); err == nil {
+				waitProcessExit(t, ph, "launched process")
+				_ = windows.CloseHandle(ph)
+			}
 		}
 		// Warm-up launches first (see TestHandleCount): lazily created
 		// runtime/DLL handles must be part of h0.

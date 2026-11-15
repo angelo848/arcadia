@@ -53,15 +53,23 @@ type fakeLauncher struct {
 }
 
 // LaunchDetached records the spec and returns a fixed pid (or detachedErr).
-func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (uint32, error) {
+func (l *fakeLauncher) LaunchDetached(spec tracker.LaunchSpec) (tracker.DetachedJob, uint32, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.detached = append(l.detached, spec)
 	if l.detachedErr != nil {
-		return 0, l.detachedErr
+		return nil, 0, l.detachedErr
 	}
-	return 4242, nil
+	return fakeDetached{}, 4242, nil
 }
+
+// fakeDetached is a minimal DetachedJob: nothing alive, nothing to close.
+type fakeDetached struct{}
+
+func (fakeDetached) ActiveProcesses() (int, error) { return 0, nil }
+func (fakeDetached) RequestClose() (int, error)    { return 0, nil }
+func (fakeDetached) Kill() error                   { return nil }
+func (fakeDetached) Close() error                  { return nil }
 
 func (l *fakeLauncher) Prepare(spec tracker.LaunchSpec) (tracker.Job, error) {
 	l.mu.Lock()
@@ -125,6 +133,11 @@ func (j *fakeJob) Terminate() error {
 	j.mu.Unlock()
 	return nil
 }
+
+// RequestClose and Kill satisfy tracker.Job (CON-005..CON-008); the agent tests do not use them.
+func (j *fakeJob) RequestClose() (int, error) { return 0, nil }
+
+func (j *fakeJob) Kill() error { return nil }
 
 func (j *fakeJob) Events() <-chan tracker.JobEvent { return j.events }
 
