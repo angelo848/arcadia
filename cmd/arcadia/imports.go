@@ -36,6 +36,18 @@ type ImportCandidateView struct {
 	PlayedSeconds *int64   `json:"playedSeconds"`
 	LastPlayed    *string  `json:"lastPlayed"`
 	Exists        bool     `json:"exists"`
+	File          string   `json:"file,omitempty"`
+	Extension     string   `json:"extension,omitempty"`
+	Discs         int      `json:"discs,omitempty"`
+	DiscFiles     []string `json:"discFiles,omitempty"`
+}
+
+// ImportScanOptions are the optional params of ImportScan, used by the file and folder
+// sources only [IMV-070]. Recursive nil means the agent's default (true).
+type ImportScanOptions struct {
+	Platform  string `json:"platform,omitempty"`
+	TitleFrom string `json:"titleFrom,omitempty"`
+	Recursive *bool  `json:"recursive,omitempty"`
 }
 
 // ImportScanView is the result of ImportScan: the candidates and the warnings.
@@ -64,9 +76,13 @@ type ImportApplyView struct {
 
 // ImportScan reads one import source and returns its candidates without writing
 // anything [IMP-001]. path is used by the folder and launchbox sources only.
-func (a *App) ImportScan(source, path string) (ImportScanView, error) {
+func (a *App) ImportScan(source, path string, opts ImportScanOptions) (ImportScanView, error) {
 	var res ipc.ImportScanResult
-	if err := a.callAgent(ipc.MethodImportScan, importTimeout, ipc.ImportScanParams{Source: source, Path: path}, &res); err != nil {
+	params := ipc.ImportScanParams{
+		Source: source, Path: path, Platform: opts.Platform,
+		TitleFrom: opts.TitleFrom, Recursive: opts.Recursive,
+	}
+	if err := a.callAgent(ipc.MethodImportScan, importTimeout, params, &res); err != nil {
 		return ImportScanView{}, err
 	}
 	out := ImportScanView{Candidates: make([]ImportCandidateView, 0, len(res.Candidates)), Warnings: res.Warnings}
@@ -144,6 +160,7 @@ func importCandidateView(c ipc.ImportCandidate) ImportCandidateView {
 		Developers: c.Developers, Publishers: c.Publishers, Genres: c.Genres,
 		Year: c.Year, Description: c.Description, PlayModes: c.PlayModes,
 		PlayedSeconds: c.PlayedSeconds, LastPlayed: c.LastPlayed, Exists: c.Exists,
+		File: c.File, Extension: c.Extension, Discs: c.Discs, DiscFiles: c.DiscFiles,
 	}
 }
 
@@ -154,5 +171,6 @@ func importCandidateWire(c ImportCandidateView) ipc.ImportCandidate {
 		Developers: c.Developers, Publishers: c.Publishers, Genres: c.Genres,
 		Year: c.Year, Description: c.Description, PlayModes: c.PlayModes,
 		PlayedSeconds: c.PlayedSeconds, LastPlayed: c.LastPlayed, Exists: c.Exists,
+		File: c.File, Extension: c.Extension, Discs: c.Discs, DiscFiles: c.DiscFiles,
 	}
 }
