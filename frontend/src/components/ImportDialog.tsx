@@ -68,7 +68,11 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
     setError(null)
     setResult(null)
     try {
-      const res = await scanImport(source, needsPath(source) ? path : '')
+      const res = await scanImport(source, needsPath(source) ? path : '', {
+        platform: 'Windows',
+        titleFrom: 'file',
+        recursive: true,
+      })
       setCandidates(res.candidates)
       setWarnings(res.warnings)
       setChecked(new Set())
