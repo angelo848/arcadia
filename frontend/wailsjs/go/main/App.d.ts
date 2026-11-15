@@ -43,6 +43,22 @@ export function MediaList(arg1:number):Promise<main.MediaListView>;
 
 export function MediaQueue(arg1:number,arg2:string,arg3:string,arg4:Array<string>):Promise<number>;
 
+export function MetadataApply(arg1:number,arg2:Array<main.MetadataRefView>,arg3:boolean):Promise<main.MetadataApplyView>;
+
+export function MetadataBatchApply(arg1:number,arg2:Array<main.MetadataChoiceView>):Promise<number>;
+
+export function MetadataBatchCancel(arg1:number):Promise<string>;
+
+export function MetadataBatchDiscard(arg1:number):Promise<void>;
+
+export function MetadataBatchResults(arg1:number,arg2:number,arg3:number):Promise<main.MetadataBatchResultsView>;
+
+export function MetadataBatchStart(arg1:Array<number>):Promise<main.MetadataBatchStartView>;
+
+export function MetadataBatchStatus():Promise<main.MetadataBatchStatusView>;
+
+export function MetadataSearch(arg1:string,arg2:string,arg3:number):Promise<main.MetadataSearchView>;
+
 export function PauseSession():Promise<main.SessionView>;
 
 export function PickEmulatorExe():Promise<string>;

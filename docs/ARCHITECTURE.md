@@ -344,3 +344,33 @@ As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
 - No frontend, `useMediaEvents` invalida só `['media', gameId]` (cartão e carrossel leem a mesma chave); a
   reconexão também recarrega as listas de mídia já carregadas. O carrossel mantém a imagem em destaque por id
   quando chegam imagens novas.
+
+### Metadados unificados (fase 12)
+
+Spec em [phase-12-metadados-unificados](specs/phase-12-metadados-unificados/requirements.md); decisões nos
+[ADR 0033](adr/0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md) e
+[0034](adr/0034-limite-de-imagens-conta-atuais-e-enfileiradas.md); IPC v0.14.0 (só acréscimos).
+
+- **Busca unificada:** `metadata.search` consulta em paralelo os provedores aplicáveis à plataforma (IGDB, SteamGridDB,
+  Steam Store; `scrapers.Aggregator` com prazo de 20 s), junta o mesmo jogo em grupos (`domain.SameGame`), pontua
+  (`domain.ScoreGroup`, em milésimos, com travas de marca e de plataforma) e devolve até 10 opções com confiança
+  (`match`, `doubt`, `none`). O usuário não escolhe provedor. `metadata.apply` busca texto e imagens dos provedores
+  escolhidos e grava por campo (IGDB primeiro; campo do usuário preservado, salvo "substituir").
+- **Limites de requisição:** um `scrapers.Limiter` por provedor, criado uma vez na fábrica (`newProviderFactory`) e
+  compartilhado por busca única, lote e aplicação; o IGDB também compartilha o token.
+- **Imagens:** todo caminho que enfileira passa por `queueImages`, que conta as imagens atuais mais os jobs ativos
+  (`Store.ActiveMediaJobCounts`) e nunca apaga; a escolha é de `scrapers.SelectImages` (SteamGridDB traz capa e
+  herói; a API v2 não tem screenshots de gameplay).
+- **Lote após a importação:** com a caixa "Buscar metadados e imagens" (fonte Pasta), depois de `import.apply` a UI
+  chama `metadata.batchStart` com os `gameId` gravados (o título usado é o revisado, já no banco). O job fica só em
+  memória no agente (`metadataService`, um por vez, 3 trabalhadores, saúde por provedor: suspende 30 s, 60 s e
+  desativa na 3ª falha seguida), avisa progresso por `metadata.batchChanged` (só contadores, agrupado numa janela de
+  500 ms, ADR 0031) e é cancelado e esperado no desligamento antes da fila de mídia e do banco.
+- **Confirmação:** o indicador do cabeçalho (`MetadataBatchChip`) mostra o estado; ao chegar em `ready`, a janela
+  "Confirmar metadados" abre sozinha se nenhum outro modal estiver aberto (linhas em dúvida vêm desmarcadas;
+  `metadata.batchResults` em páginas de até 900 KiB). `metadata.batchApply` responde na hora e aplica em segundo
+  plano; as imagens chegam pela fila de mídia e por `media.changed`.
+- **Arquivo avulso:** `searchName` (do executável ou da pasta pai) preenche o campo "Nome para busca".
+- **Limitação conhecida:** o IPC atende uma requisição por vez por conexão; um `metadata.search` ou
+  `metadata.apply` em curso pode atrasar `batchCancel`/`batchStatus` na mesma conexão da UI.
+- A UI nunca influencia o tempo de jogo: nada em `internal/tracker`, `play_session` ou `tracking_rule`.

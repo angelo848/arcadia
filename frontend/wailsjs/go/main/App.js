@@ -82,6 +82,38 @@ export function MediaQueue(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['MediaQueue'](arg1, arg2, arg3, arg4);
 }
 
+export function MetadataApply(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MetadataApply'](arg1, arg2, arg3);
+}
+
+export function MetadataBatchApply(arg1, arg2) {
+  return window['go']['main']['App']['MetadataBatchApply'](arg1, arg2);
+}
+
+export function MetadataBatchCancel(arg1) {
+  return window['go']['main']['App']['MetadataBatchCancel'](arg1);
+}
+
+export function MetadataBatchDiscard(arg1) {
+  return window['go']['main']['App']['MetadataBatchDiscard'](arg1);
+}
+
+export function MetadataBatchResults(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MetadataBatchResults'](arg1, arg2, arg3);
+}
+
+export function MetadataBatchStart(arg1) {
+  return window['go']['main']['App']['MetadataBatchStart'](arg1);
+}
+
+export function MetadataBatchStatus() {
+  return window['go']['main']['App']['MetadataBatchStatus']();
+}
+
+export function MetadataSearch(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MetadataSearch'](arg1, arg2, arg3);
+}
+
 export function PauseSession() {
   return window['go']['main']['App']['PauseSession']();
 }

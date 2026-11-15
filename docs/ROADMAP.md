@@ -108,7 +108,7 @@ confirmação), `frontend` (`ImportDialog`).
 
 ## Fase 12 — Metadados unificados (pontos 6 e 8)
 
-> **Status:** spec aprovada em [phase-12-metadados-unificados](specs/phase-12-metadados-unificados/requirements.md)
+> **Status:** concluída no código (conferência manual MET-083 pendente). Spec em [phase-12-metadados-unificados](specs/phase-12-metadados-unificados/requirements.md)
 > (57 requisitos, MET-*; [ADR 0033](adr/0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md) e
 > [0034](adr/0034-limite-de-imagens-conta-atuais-e-enfileiradas.md)). O ScreenScraper ficou fora; o SteamGridDB traz
 > capa e herói (a API v2 não tem screenshots de gameplay); a janela de confirmação dos matches é separada da janela de

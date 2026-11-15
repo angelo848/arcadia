@@ -324,6 +324,7 @@ export namespace main {
 	    extension?: string;
 	    discs?: number;
 	    discFiles?: string[];
+	    searchName?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ImportCandidateView(source);
@@ -350,6 +351,7 @@ export namespace main {
 	        this.extension = source["extension"];
 	        this.discs = source["discs"];
 	        this.discFiles = source["discFiles"];
+	        this.searchName = source["searchName"];
 	    }
 	}
 	export class ImportScanOptions {
@@ -453,6 +455,324 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.media = this.convertValues(source["media"], MediaItemView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MetadataApplyView {
+	    game: GameDetailView;
+	    queued: number;
+	    skippedByLimit: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataApplyView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.game = this.convertValues(source["game"], GameDetailView);
+	        this.queued = source["queued"];
+	        this.skippedByLimit = source["skippedByLimit"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MetadataBatchResultView {
+	    applied: number;
+	    imagesQueued: number;
+	    imagesSkippedByLimit: number;
+	    failedTitles: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchResultView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.applied = source["applied"];
+	        this.imagesQueued = source["imagesQueued"];
+	        this.imagesSkippedByLimit = source["imagesSkippedByLimit"];
+	        this.failedTitles = source["failedTitles"];
+	    }
+	}
+	export class MetadataRefView {
+	    provider: string;
+	    providerId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataRefView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.providerId = source["providerId"];
+	    }
+	}
+	export class MetadataCandidateView {
+	    refs: MetadataRefView[];
+	    title: string;
+	    year: number;
+	    platform: string;
+	    score: number;
+	    thumbUrl?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataCandidateView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.refs = this.convertValues(source["refs"], MetadataRefView);
+	        this.title = source["title"];
+	        this.year = source["year"];
+	        this.platform = source["platform"];
+	        this.score = source["score"];
+	        this.thumbUrl = source["thumbUrl"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MetadataBatchRowView {
+	    gameId: number;
+	    title: string;
+	    platform: string;
+	    confidence: string;
+	    selected: number;
+	    candidates: MetadataCandidateView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchRowView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.gameId = source["gameId"];
+	        this.title = source["title"];
+	        this.platform = source["platform"];
+	        this.confidence = source["confidence"];
+	        this.selected = source["selected"];
+	        this.candidates = this.convertValues(source["candidates"], MetadataCandidateView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MetadataBatchResultsView {
+	    rows: MetadataBatchRowView[];
+	    total: number;
+	    next?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchResultsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rows = this.convertValues(source["rows"], MetadataBatchRowView);
+	        this.total = source["total"];
+	        this.next = source["next"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class MetadataBatchStartView {
+	    batchId: number;
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchStartView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.batchId = source["batchId"];
+	        this.total = source["total"];
+	    }
+	}
+	export class MetadataBatchView {
+	    batchId: number;
+	    state: string;
+	    total: number;
+	    done: number;
+	    failed: number;
+	    warnings: string[];
+	    result?: MetadataBatchResultView;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.batchId = source["batchId"];
+	        this.state = source["state"];
+	        this.total = source["total"];
+	        this.done = source["done"];
+	        this.failed = source["failed"];
+	        this.warnings = source["warnings"];
+	        this.result = this.convertValues(source["result"], MetadataBatchResultView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class MetadataBatchStatusView {
+	    batch?: MetadataBatchView;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataBatchStatusView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.batch = this.convertValues(source["batch"], MetadataBatchView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class MetadataChoiceView {
+	    gameId: number;
+	    candidate: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataChoiceView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.gameId = source["gameId"];
+	        this.candidate = source["candidate"];
+	    }
+	}
+	
+	export class MetadataSearchView {
+	    candidates: MetadataCandidateView[];
+	    confidence: string;
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MetadataSearchView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.candidates = this.convertValues(source["candidates"], MetadataCandidateView);
+	        this.confidence = source["confidence"];
+	        this.warnings = source["warnings"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
