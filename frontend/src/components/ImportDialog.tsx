@@ -59,12 +59,15 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const platformId = useId()
   const titleFromId = useId()
   const subfoldersId = useId()
+  const noPlatformId = useId()
 
   const catalog = useCatalog()
   const platforms = useMemo(
     () => [...(catalog.data?.platforms ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
     [catalog.data],
   )
+  // The "no platform" message waits for the catalog to load (IMV-062).
+  const noPlatformMessage = !catalog.isPending && platforms.length === 0
   const platform = platformChoice ?? defaultPlatformName(platforms)
 
   const fileLike = source === 'file' || source === 'folder'
@@ -197,8 +200,14 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           Fonte
           <select
             value={source}
+            disabled={busy}
             onChange={(e) => {
-              setSource(e.target.value as ImportSource)
+              const next = e.target.value as ImportSource
+              // A path picked for Arquivo is not a folder for Pasta, and the other way round (IMV-049).
+              if ((source === 'file' && next === 'folder') || (source === 'folder' && next === 'file')) {
+                setPath('')
+              }
+              setSource(next)
               resetList()
             }}
             className={inputClass}
@@ -234,6 +243,7 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
             <select
               id={platformId}
               value={platform ?? ''}
+              aria-describedby={noPlatformMessage ? noPlatformId : undefined}
               disabled={busy || platforms.length === 0}
               onChange={(e) => {
                 setPlatformChoice(e.target.value)
@@ -247,7 +257,11 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
                 </option>
               ))}
             </select>
-            {platforms.length === 0 && <span className="text-xs text-warning">Nenhuma plataforma. Crie uma em Plataformas.</span>}
+            {noPlatformMessage && (
+              <span id={noPlatformId} className="text-xs text-warning">
+                Nenhuma plataforma. Crie uma em Plataformas.
+              </span>
+            )}
           </div>
         )}
 
@@ -340,8 +354,8 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
           <p>Importados: {result.applied.length}</p>
           {result.skipped.length > 0 && (
             <ul className="mt-1 flex flex-col gap-0.5 text-muted">
-              {result.skipped.map((s) => (
-                <li key={s.title}>
+              {result.skipped.map((s, i) => (
+                <li key={i}>
                   {s.title}: {skipReasonLabels[s.reason] ?? s.reason}
                 </li>
               ))}

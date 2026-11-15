@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   pickFile: vi.fn(),
   pickFolder: vi.fn(),
   platforms: [] as PlatformView[],
+  loading: false,
 }))
 
 vi.mock('../lib/imports', async (importOriginal) => {
@@ -30,7 +31,11 @@ vi.mock('../lib/library', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/library')>()
   return {
     ...actual,
-    useCatalog: () => ({ data: { platforms: mocks.platforms, genres: [], companies: [], playModes: [] } }),
+    // While loading there is no data yet (IMV-062: the message waits for the catalog).
+    useCatalog: () =>
+      mocks.loading
+        ? { data: undefined, isPending: true, isLoading: true }
+        : { data: { platforms: mocks.platforms, genres: [], companies: [], playModes: [] } },
   }
 })
 
@@ -90,12 +95,14 @@ function renderDialog() {
   const onImported = vi.fn()
   const onClose = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
+  // tree is a function so each rerender gets a new element and React really re-renders.
+  const tree = () => (
     <QueryClientProvider client={client}>
       <ImportDialog onImported={onImported} onClose={onClose} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
-  return { onImported, onClose }
+  const view = render(tree())
+  return { onImported, onClose, rerender: () => view.rerender(tree()) }
 }
 
 function chooseSource(source: ImportSource) {
@@ -158,6 +165,7 @@ describe('ImportDialog', () => {
     mocks.pickFile.mockReset()
     mocks.pickFolder.mockReset()
     mocks.platforms = [N64, SONY, WINDOWS]
+    mocks.loading = false
     // applyImportInLots reaches the binding through window, not through the mocked export.
     ;(window as unknown as { go?: unknown }).go = {
       main: { App: { ImportApply: (c: unknown, p: unknown) => mocks.apply(c, p) } },
@@ -557,6 +565,115 @@ describe('ImportDialog', () => {
     await scanAndWait()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Ler subpastas' }))
     expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('IMV-049/o select Fonte fica desativado durante a leitura', async () => {
+    mocks.scan.mockReturnValue(new Promise(() => {}))
+    renderDialog()
+    fireEvent.click(buscar())
+    expect(screen.getByLabelText('Fonte')).toBeDisabled()
+  })
+
+  it('IMV-049/o select Fonte fica desativado durante a gravação', async () => {
+    mocks.scan.mockResolvedValue({ candidates: [steamCandidate('Um')], warnings: [] })
+    mocks.apply.mockReturnValue(new Promise(() => {}))
+    renderDialog()
+    await scanAndWait()
+    fireEvent.click(importar())
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1))
+    expect(screen.getByLabelText('Fonte')).toBeDisabled()
+  })
+
+  it('IMV-049/IMV-017/trocar entre Arquivo e Pasta limpa o caminho: campo vazio e Buscar desativado', async () => {
+    mocks.pickFile.mockResolvedValue('C:\\Games\\a.z64')
+    renderDialog()
+    chooseSource('file')
+    await pickPath('Escolher arquivo', 'Arquivo', 'C:\\Games\\a.z64')
+
+    chooseSource('folder')
+    expect(screen.getByRole('textbox', { name: 'Pasta' })).toHaveValue('')
+    expect(buscar()).toBeDisabled()
+
+    chooseSource('file')
+    expect(screen.getByRole('textbox', { name: 'Arquivo' })).toHaveValue('')
+    expect(buscar()).toBeDisabled()
+  })
+
+  it('IMV-050/o selo "já existe" vai para a linha enviada quando a não enviada de mesmo título vem antes', async () => {
+    mocks.scan.mockResolvedValue({
+      candidates: [
+        steamCandidate('Foo', { launchTarget: 'steam://rungameid/1' }),
+        steamCandidate('Foo', { launchTarget: 'steam://rungameid/2' }),
+      ],
+      warnings: [],
+    })
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 2, title: 'Foo' }], skipped: [] })
+    renderDialog()
+    await scanAndWait()
+
+    // Row 1 is unchecked by hand (not sent); row 2 is checked by hand (sent).
+    fireEvent.click(rowBoxes()[0])
+    fireEvent.click(rowBoxes()[1])
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+
+    expect(screen.getAllByText('já existe')).toHaveLength(1)
+    expect(rowBoxes()[0]).toBeEnabled()
+    expect(rowBoxes()[0]).not.toBeChecked()
+    expect(rowBoxes()[1]).toBeDisabled()
+    expect(rowBoxes()[1]).not.toBeChecked()
+    const sent = mocks.apply.mock.calls[0][0] as ImportCandidate[]
+    expect(sent.map((c) => c.launchTarget)).toEqual(['steam://rungameid/2'])
+  })
+
+  it('IMV-050/duas recusas com o mesmo título não geram aviso de chave duplicada do React', async () => {
+    mocks.scan.mockResolvedValue({
+      candidates: [
+        steamCandidate('Foo', { launchTarget: 'steam://rungameid/1' }),
+        steamCandidate('Foo', { launchTarget: 'steam://rungameid/2' }),
+      ],
+      warnings: [],
+    })
+    mocks.apply.mockResolvedValue({
+      applied: [],
+      skipped: [
+        { title: 'Foo', reason: 'duplicate' },
+        { title: 'Foo', reason: 'duplicate' },
+      ],
+    })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      renderDialog()
+      await scanAndWait()
+      fireEvent.click(rowBoxes()[1])
+      fireEvent.click(importar())
+
+      expect(await screen.findByText('Importados: 0')).toBeInTheDocument()
+      expect(screen.getAllByText('Foo: já estava na biblioteca')).toHaveLength(2)
+      const keyWarnings = errors.mock.calls.filter((c) => c.map(String).join(' ').includes('key'))
+      expect(keyWarnings).toHaveLength(0)
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  it('IMV-062/a mensagem de sem plataforma não aparece enquanto o catálogo carrega; aparece depois de carregar vazio', () => {
+    mocks.loading = true
+    mocks.platforms = []
+    const view = renderDialog()
+    chooseSource('file')
+    expect(screen.queryByText('Nenhuma plataforma. Crie uma em Plataformas.')).toBeNull()
+
+    mocks.loading = false
+    view.rerender()
+    expect(screen.getByText('Nenhuma plataforma. Crie uma em Plataformas.')).toBeInTheDocument()
+  })
+
+  it('IMV-062/IMV-052/o select de plataforma tem a mensagem como descrição acessível', () => {
+    mocks.platforms = []
+    renderDialog()
+    chooseSource('file')
+    expect(platformSelect()).toHaveAccessibleDescription('Nenhuma plataforma. Crie uma em Plataformas.')
   })
 
   it('IMV-050/Importados: N, recusados com o motivo, e a linha gravada vira "já existe" e fica bloqueada', async () => {

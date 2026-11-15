@@ -188,6 +188,17 @@ describe('markImported (IMV-050)', () => {
     expect(out[0].checked).toBe(false)
   })
 
+  it('IMV-050/o selo vai para a linha enviada quando uma não enviada de mesmo título vem antes; a não enviada fica como estava', () => {
+    const unsent = row('Foo', false, false)
+    const sent = row('Foo', false, true)
+
+    const out = markImported([unsent, sent], [sent], [{ title: 'Foo' }])
+
+    expect(out[0]).toEqual(unsent)
+    expect(out[1].candidate.exists).toBe(true)
+    expect(out[1].checked).toBe(false)
+  })
+
   it('IMV-050/duas linhas com o mesmo título e dois títulos gravados viram exists as duas', () => {
     const x = row('A')
     const y = row('A')

@@ -147,8 +147,9 @@ export function selectionCounts(rows: ReviewRow[]): { checked: number; selectabl
   return { checked, selectable, existing }
 }
 
-// markImported applies the result of a lot: each applied title turns the first
-// not-yet-existing row with that title into exists; the sent rows get unchecked (IMV-050).
+// markImported applies the result of a lot: each applied title turns a not-yet-existing row
+// with that title into exists. The sent rows are tried first; the other rows only when no sent
+// row matches. The sent rows get unchecked (IMV-050).
 export function markImported(
   rows: ReviewRow[],
   sent: ReviewRow[],
@@ -157,7 +158,11 @@ export function markImported(
   const sentSet = new Set(sent)
   const consumed = new Set<number>()
   for (const a of applied) {
-    const i = rows.findIndex((r, idx) => !consumed.has(idx) && !r.candidate.exists && r.title === a.title)
+    const free = (idx: number) => !consumed.has(idx) && !rows[idx].candidate.exists && rows[idx].title === a.title
+    let i = rows.findIndex((r, idx) => sentSet.has(r) && free(idx))
+    if (i < 0) {
+      i = rows.findIndex((r, idx) => !sentSet.has(r) && free(idx))
+    }
     if (i >= 0) {
       consumed.add(i)
     }

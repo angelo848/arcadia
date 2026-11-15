@@ -119,18 +119,24 @@ func handleImportScan(ctx context.Context, st importStore, loc importLocations,
 		Warnings:   append([]string{}, res.Warnings...),
 	}
 	for _, c := range res.Candidates {
-		exists, err := candidateExists(ctx, st, c, platformID)
-		if err != nil {
-			return nil, fmt.Errorf("import.scan: %w", err)
-		}
-		out.Candidates = append(out.Candidates, toIPCCandidate(c, exists))
+		out.Candidates = append(out.Candidates, toIPCCandidate(c, false))
 	}
+	// The size cut runs before the library check, so cut candidates cost no query. The cut
+	// is computed with exists=false: that is the larger JSON (true is one byte shorter), so
+	// the kept prefix never exceeds the limit. exists is filled in for the kept prefix only.
 	if p.Source == ipc.ImportSourceFile || p.Source == ipc.ImportSourceFolder {
 		kept, warning := capScanResult(out.Candidates)
 		out.Candidates = kept
 		if warning != "" {
 			out.Warnings = append(out.Warnings, warning)
 		}
+	}
+	for i := range out.Candidates {
+		exists, err := candidateExists(ctx, st, res.Candidates[i], platformID)
+		if err != nil {
+			return nil, fmt.Errorf("import.scan: %w", err)
+		}
+		out.Candidates[i].Exists = exists
 	}
 	return out, nil
 }
