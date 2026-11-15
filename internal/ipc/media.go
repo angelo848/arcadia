@@ -29,7 +29,7 @@ type ProviderKeyParams struct {
 	Provider string `json:"provider"`
 }
 
-// ProviderSetKeyParams are the params of provider.setKey. Secret is for IGDB only.
+// ProviderSetKeyParams are the params of provider.setKey. Secret is required for igdb, screenscraper and screenscraperdev.
 type ProviderSetKeyParams struct {
 	Provider string `json:"provider"`
 	Key      string `json:"key"`

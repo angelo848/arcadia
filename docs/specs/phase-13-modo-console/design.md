@@ -242,6 +242,7 @@ Nenhuma tabela referencia `media`/`media_job`, então a reconstrução não prec
 
 [contracts/ipc-v0.15.0-delta.md](contracts/ipc-v0.15.0-delta.md). Só acréscimos: métodos `video.queue`, `video.queueMissing`,
 `video.cancelPending`, `video.status`; notificação `game.closedByHotkey`; enums ampliados; blocos `x-console` e `x-video`.
+Contrato completo: [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.15.0 = v0.14.0 + o delta).
 
 ## 4. Big Box novo [BBX-001..BBX-030]
 

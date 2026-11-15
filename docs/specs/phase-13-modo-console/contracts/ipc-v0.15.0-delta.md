@@ -2,7 +2,7 @@
 
 - **Base:** [phase-12-metadados-unificados/contracts/ipc.openrpc.json](../../phase-12-metadados-unificados/contracts/ipc.openrpc.json)
   (v0.14.0). O contrato completo `docs/specs/phase-13-modo-console/contracts/ipc.openrpc.json` v0.15.0 = v0.14.0 + os pontos abaixo
-  é gravado por uma tarefa (como nas fases 11 e 12); o teste de contrato de `internal/ipc` passa a apontar para ele e um teste irmão
+  está gravado em [ipc.openrpc.json](ipc.openrpc.json) (tarefa T01, como nas fases 11 e 12); o teste de contrato de `internal/ipc` passa a apontar para ele e um teste irmão
   confere "só acréscimo" em relação à v0.14.0 (CON-026).
 - **Requisitos:** CON-017, CON-019, CON-026, CON-027, CON-031, VID-005..VID-008, SSC-001.
 - **Natureza:** só acréscimo. Nenhum método, parâmetro obrigatório, resultado, erro ou esquema existente perde nada: enums ganham
