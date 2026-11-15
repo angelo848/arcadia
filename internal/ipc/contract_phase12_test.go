@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -40,6 +41,9 @@ var obsoleteReplacement = map[string]string{
 	"scrape.apply":  "metadata.apply",
 	"media.queue":   "metadata.apply",
 }
+
+// contractV014Path is the literal phase-12 contract (v0.14.0); contractPath now points to v0.15.0 (phase 13).
+var contractV014Path = filepath.Join("..", "..", "docs", "specs", "phase-12-metadados-unificados", "contracts", "ipc.openrpc.json")
 
 // loadGeneric parses a contract file without the typed subset, for the "only additions" comparison.
 func loadGeneric(t *testing.T, path string) map[string]any {
@@ -154,10 +158,13 @@ func TestMetadataContract(t *testing.T) {
 	t.Parallel()
 	c := loadContract(t)
 
-	t.Run("MET-070/versão 0.14.0", func(t *testing.T) {
+	t.Run("MET-070/versão 0.14.0 (arquivo da fase 12) e a atual a contém", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.14.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.14.0\"", contractPath, c.Info.Version)
+		if v := genericSection(t, loadGeneric(t, contractV014Path), "info")["version"]; v != "0.14.0" {
+			t.Fatalf("contract %s info.version = %v, want \"0.14.0\"", contractV014Path, v)
+		}
+		if c.Info.Version < "0.14.0" {
+			t.Fatalf("contract %s info.version = %q, want >= \"0.14.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -404,7 +411,7 @@ func TestMetadataContract(t *testing.T) {
 	t.Run("MET-070/ProviderNoKey e ProviderUnavailable continuam com data.provider", func(t *testing.T) {
 		t.Parallel()
 		prev := genericSection(t, loadGeneric(t, contractV013Path), "components")
-		next := genericSection(t, loadGeneric(t, contractPath), "components")
+		next := genericSection(t, loadGeneric(t, contractV014Path), "components")
 		prevErrs := mustObject(t, prev["errors"], "v0.13.0 components.errors")
 		nextErrs := mustObject(t, next["errors"], "v0.14.0 components.errors")
 		for _, name := range []string{"ProviderNoKey", "ProviderUnavailable"} {
@@ -614,7 +621,7 @@ func TestMetadataContract(t *testing.T) {
 	t.Run("MET-070/v0.14.0 é a v0.13.0 mais acréscimos", func(t *testing.T) {
 		t.Parallel()
 		prev := loadGeneric(t, contractV013Path)
-		next := loadGeneric(t, contractPath)
+		next := loadGeneric(t, contractV014Path)
 
 		// info: version and description change; x-metadata is new.
 		pinfo := genericSection(t, prev, "info")

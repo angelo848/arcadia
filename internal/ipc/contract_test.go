@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-12-metadados-unificados contract (v0.14.0)
-// supersedes phase-11-importacao-v2 (v0.13.0) [IPC-041, MET-070].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-12-metadados-unificados", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-13-modo-console contract (v0.15.0)
+// supersedes phase-12-metadados-unificados (v0.14.0) [IPC-041, CON-026].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-13-modo-console", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-12-metadados-unificados/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-13-modo-console/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -62,6 +62,8 @@ type openRPC struct {
 			MaxScanItems       *int `json:"maxScanItems"`
 			MaxScanResultBytes *int `json:"maxScanResultBytes"`
 		} `json:"x-import"`
+		Console  map[string]any `json:"x-console"`
+		Video    map[string]any `json:"x-video"`
 		Metadata *struct {
 			MatchAuto          *float64 `json:"matchAuto"`
 			MatchMinSimilarity *float64 `json:"matchMinSimilarity"`
@@ -323,6 +325,12 @@ var phase6Methods = map[string]bool{
 	ipc.MethodMetadataBatchCancel:  false,
 	ipc.MethodMetadataBatchDiscard: false,
 	ipc.MethodMetadataBatchChanged: true,
+	// Added in v0.15.0 (phase 13) [CON-026, VID-005..VID-008, CON-019].
+	ipc.MethodVideoQueue:         false,
+	ipc.MethodVideoQueueMissing:  false,
+	ipc.MethodVideoCancelPending: false,
+	ipc.MethodVideoStatus:        false,
+	ipc.MethodGameClosedByHotkey: true,
 }
 
 func TestContract(t *testing.T) {
@@ -576,10 +584,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.14.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.15.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.14.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.14.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.15.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.15.0\"", contractPath, c.Info.Version)
 		}
 	})
 
