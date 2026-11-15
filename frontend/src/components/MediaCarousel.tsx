@@ -10,18 +10,28 @@ import { MediaThumbStrip } from './MediaThumbStrip'
 export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; resetKey: number }): JSX.Element {
   const ordered = useMemo(() => orderMedia(items ?? []), [items])
   const n = ordered.length
-  const [index, setIndex] = useState(0)
+  const [highlightId, setHighlightId] = useState<number | undefined>(undefined)
+  const [seenReset, setSeenReset] = useState(resetKey)
   const [failed, setFailed] = useState(false)
 
-  useEffect(() => {
-    setIndex(0)
-  }, [resetKey, items])
+  // Pin the highlight by id so new images never move it [IMG-009].
+  let hid = seenReset === resetKey ? highlightId : undefined
+  if (n > 0 && (hid === undefined || !ordered.some((m) => m.id === hid))) hid = ordered[0].id
+  if (seenReset !== resetKey) setSeenReset(resetKey)
+  if (hid !== highlightId) setHighlightId(hid)
 
   useEffect(() => {
     setFailed(false)
-  }, [index, resetKey, items])
+  }, [hid, resetKey])
 
-  const safe = n > 0 ? Math.min(index, n - 1) : 0
+  const safe = Math.max(
+    0,
+    ordered.findIndex((m) => m.id === hid),
+  )
+  const setIndex = (i: number) => {
+    const m = ordered[i]
+    if (m) setHighlightId(m.id)
+  }
   const current = n > 0 ? ordered[safe] : undefined
   const src = current && !failed ? current.url : coverPlaceholderUrl
 

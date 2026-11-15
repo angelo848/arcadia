@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { JSX, KeyboardEvent } from 'react'
 import { GRID_INSET } from '../lib/gridNav'
 import { mediaKindLabels } from '../lib/metadata'
@@ -18,6 +18,19 @@ export function MediaThumbStrip({
   const n = items.length
   const refs = useRef<Array<HTMLButtonElement | null>>([])
   const [failed, setFailed] = useState<Set<number>>(() => new Set())
+
+  // Keep the highlighted thumbnail visible when it moves because the list changed [IMG-009].
+  const last = useRef<{ id: number; index: number } | null>(null)
+  useEffect(() => {
+    const id = items[index]?.id
+    const prev = last.current
+    if (id !== undefined) {
+      if (prev && prev.id === id && prev.index !== index) {
+        refs.current[index]?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' })
+      }
+      last.current = { id, index }
+    }
+  })
 
   const select = (i: number) => {
     onSelect(i)

@@ -238,13 +238,115 @@ describe('MediaCarousel', () => {
     expect(strip().scrollLeft).toBe(0)
   })
 
-  it('AJU-013/trocar items volta à primeira imagem', () => {
+  it('IMG-009/trocar items do mesmo jogo (resetKey igual) não volta à primeira imagem', () => {
     mockScroll()
     const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
     fireEvent.click(thumbs()[2])
-    rerender(<MediaCarousel items={[item(9, 'cover'), item(8, 'screenshot')]} resetKey={1} />)
+    rerender(<MediaCarousel items={[...three, item(9, 'title')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/3.jpg')
+    expect(screen.getByText('4 de 4')).toBeTruthy()
+  })
+
+  it('IMG-009/trocar resetKey continua levando à primeira imagem, mesmo com a lista nova', () => {
+    mockScroll()
+    const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.click(thumbs()[2])
+    rerender(<MediaCarousel items={[item(9, 'cover'), item(8, 'screenshot')]} resetKey={2} />)
     expect(shownSrc(container)).toBe('/media/9.jpg')
     expect(screen.getByText('1 de 2')).toBeTruthy()
+  })
+
+  it('IMG-009/imagem nova depois de M: M continua em destaque, "k de n" e faixa com a lista nova', () => {
+    mockScroll()
+    const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.click(thumbs()[1]) // screenshot 1
+    rerender(<MediaCarousel items={[...three, item(5, 'title')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/1.jpg')
+    expect(screen.getByText('2 de 4')).toBeTruthy()
+    expect(thumbs().map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Capa, 1 de 4',
+      'Screenshot, 2 de 4',
+      'Tela de título, 3 de 4',
+      'Banner, 4 de 4',
+    ])
+    expect(thumbs().map((b) => b.getAttribute('aria-current'))).toEqual([null, 'true', null, null])
+  })
+
+  it('IMG-009/imagem nova antes de M: M continua em destaque e k passa a ser a nova posição', () => {
+    mockScroll()
+    const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.click(thumbs()[2]) // banner 3
+    rerender(<MediaCarousel items={[...three, item(5, 'title')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/3.jpg')
+    expect(screen.getByText('4 de 4')).toBeTruthy()
+    expect(thumbs()[3].getAttribute('aria-current')).toBe('true')
+  })
+
+  it('IMG-009/sem clique, uma capa que chega antes da imagem mostrada não troca o destaque', () => {
+    mockScroll()
+    const start = [item(1, 'screenshot'), item(3, 'banner')]
+    const { container, rerender } = render(<MediaCarousel items={start} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/1.jpg')
+    rerender(<MediaCarousel items={[...start, item(9, 'cover')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/1.jpg')
+    expect(screen.getByText('2 de 3')).toBeTruthy()
+    expect(thumbs()[0].getAttribute('aria-label')).toBe('Capa, 1 de 3')
+  })
+
+  it('IMG-009/a miniatura de M com o foco do teclado continua com o foco depois da lista nova', () => {
+    mockScroll()
+    const { rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.click(thumbs()[2]) // banner 3, focused
+    expect(document.activeElement).toBe(thumbs()[2])
+    const before = document.activeElement
+    rerender(<MediaCarousel items={[...three, item(5, 'title')]} resetKey={1} />)
+    expect(document.activeElement).toBe(before)
+    expect(document.activeElement).toBe(thumbs()[3])
+  })
+
+  it('IMG-009/M mudou de posição: scrollIntoView com inline nearest, sem mover o foco', () => {
+    mockScroll()
+    const { rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    expect(scrollSpy).not.toHaveBeenCalled()
+    fireEvent.click(thumbs()[2]) // banner 3
+    thumbs()[0].focus()
+    scrollSpy.mockClear()
+    rerender(<MediaCarousel items={[...three, item(5, 'title')]} resetKey={1} />)
+    expect(scrollSpy).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' })
+    expect(document.activeElement).toBe(thumbs()[0])
+  })
+
+  it('IMG-009/lista vazia que ganha uma imagem: ela aparece em destaque', () => {
+    mockScroll()
+    for (const empty of [[], undefined]) {
+      const { container, rerender, unmount } = render(<MediaCarousel items={empty} resetKey={1} />)
+      expect(shownSrc(container)).toBe(coverPlaceholderUrl)
+      rerender(<MediaCarousel items={[item(4, 'screenshot')]} resetKey={1} />)
+      expect(shownSrc(container)).toBe('/media/4.jpg')
+      expect(screen.getByText('1 de 1')).toBeTruthy()
+      unmount()
+    }
+  })
+
+  it('IMG-009/M removida da lista nova: a primeira imagem fica em destaque', () => {
+    mockScroll()
+    const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.click(thumbs()[2]) // banner 3
+    rerender(<MediaCarousel items={[item(2, 'cover'), item(1, 'screenshot')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe('/media/2.jpg')
+    expect(screen.getByText('1 de 2')).toBeTruthy()
+  })
+
+  it('IMG-009/erro no destaque não volta a ser tentado só porque a lista cresceu; volta ao trocar o destaque', () => {
+    mockScroll()
+    const { container, rerender } = render(<MediaCarousel items={three} resetKey={1} />)
+    fireEvent.error(container.querySelector('img') as HTMLImageElement)
+    expect(shownSrc(container)).toBe(coverPlaceholderUrl)
+    rerender(<MediaCarousel items={[...three, item(5, 'title')]} resetKey={1} />)
+    expect(shownSrc(container)).toBe(coverPlaceholderUrl)
+    expect(screen.getByText('1 de 4')).toBeTruthy()
+    fireEvent.click(thumbs()[1])
+    expect(shownSrc(container)).toBe('/media/1.jpg')
   })
 
   it('AJU-013/erro na imagem em destaque mostra o placeholder; rótulo, indicador e faixa continuam', () => {
