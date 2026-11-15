@@ -109,6 +109,8 @@ type instance struct {
 	tracker  *tracker.Tracker
 	notifier *sessionNotifier
 
+	mediaNotifier *mediaNotifier
+
 	coord   *feedback.Coordinator
 	router  *pauseRouter
 	sources []input.Source
@@ -261,7 +263,8 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	mediaRoot := filepath.Join(p.Root, "media")
 	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
 	keys := scrapers.NewKeys(credentialStore{})
-	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log, nil)
+	mediaNotes := &mediaNotifier{}
+	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log, mediaNotes)
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	// Statistics (phase 8): read only; the local zone gives the weeks (EST-002, EST-006).
@@ -277,6 +280,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	}))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)
+	mediaNotes.set(server)
 
 	triggers := make(chan input.Trigger, triggerQueueSize)
 	router := newPauseRouter(tr, triggers, log)
@@ -303,20 +307,21 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	}
 
 	a := &instance{
-		paths:        p,
-		log:          log,
-		info:         info,
-		store:        st,
-		server:       server,
-		tracker:      tr,
-		notifier:     notifier,
-		coord:        coord,
-		router:       router,
-		sources:      startedSources,
-		power:        powerCloser,
-		logCloser:    logCloser,
-		drainTimeout: shutdownDrainTimeout,
-		ipcFailed:    make(chan struct{}),
+		paths:         p,
+		log:           log,
+		info:          info,
+		store:         st,
+		server:        server,
+		tracker:       tr,
+		notifier:      notifier,
+		mediaNotifier: mediaNotes,
+		coord:         coord,
+		router:        router,
+		sources:       startedSources,
+		power:         powerCloser,
+		logCloser:     logCloser,
+		drainTimeout:  shutdownDrainTimeout,
+		ipcFailed:     make(chan struct{}),
 	}
 
 	queueCtx, stopQueue := context.WithCancel(ctx)
@@ -425,6 +430,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		a.stopQueue()
 		a.wg.Wait()
 		a.notifier.set(nil)
+		a.mediaNotifier.set(nil)
 		// After the server (no request can reach the tracker) and before the
 		// store (the tracker writes the end of the session) [AGT-010, SES-011].
 		if err := a.tracker.Close(ctx); err != nil {
