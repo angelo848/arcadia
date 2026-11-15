@@ -9,6 +9,38 @@ import (
 	"context"
 )
 
+const countActiveMediaJobsByKind = `-- name: CountActiveMediaJobsByKind :many
+SELECT kind, COUNT(*) AS n FROM media_job WHERE game_id = ? AND state IN ('pending','running') GROUP BY kind
+`
+
+type CountActiveMediaJobsByKindRow struct {
+	Kind string
+	N    int64
+}
+
+func (q *Queries) CountActiveMediaJobsByKind(ctx context.Context, gameID int64) ([]CountActiveMediaJobsByKindRow, error) {
+	rows, err := q.db.QueryContext(ctx, countActiveMediaJobsByKind, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountActiveMediaJobsByKindRow{}
+	for rows.Next() {
+		var i CountActiveMediaJobsByKindRow
+		if err := rows.Scan(&i.Kind, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteMedia = `-- name: DeleteMedia :execrows
 DELETE FROM media WHERE id = ?
 `

@@ -68,6 +68,20 @@ func (s *Store) PendingMediaJobs(ctx context.Context) ([]MediaJob, error) {
 	return out, nil
 }
 
+// ActiveMediaJobCounts counts the pending and running download jobs of a game by kind [MET-021].
+// Done, failed and cancelled jobs do not count; a game without active jobs gives an empty map.
+func (s *Store) ActiveMediaJobCounts(ctx context.Context, gameID int64) (map[string]int, error) {
+	rows, err := s.q.CountActiveMediaJobsByKind(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("store: contar jobs de mídia ativos: %w", err)
+	}
+	out := make(map[string]int, len(rows))
+	for _, r := range rows {
+		out[r.Kind] = int(r.N)
+	}
+	return out, nil
+}
+
 // ResetRunningMediaJobs puts the jobs left running by a stopped agent back to pending, so they run
 // again after a restart (MID-005).
 func (s *Store) ResetRunningMediaJobs(ctx context.Context) error {

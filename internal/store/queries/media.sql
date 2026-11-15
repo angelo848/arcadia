@@ -45,3 +45,6 @@ UPDATE media_job SET state = 'pending' WHERE state = 'running';
 SELECT id, game_id, kind, provider, source_url, state, attempts, last_error, created_at
 FROM media_job
 WHERE id = ?;
+
+-- name: CountActiveMediaJobsByKind :many
+SELECT kind, COUNT(*) AS n FROM media_job WHERE game_id = ? AND state IN ('pending','running') GROUP BY kind;
