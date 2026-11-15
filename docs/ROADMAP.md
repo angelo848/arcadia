@@ -116,6 +116,10 @@ confirmação), `frontend` (`ImportDialog`).
   "Obter dados"; as opções aparecem para o usuário escolher.
 - **Pasta (lote)**: o usuário informa a pasta e a plataforma, marca "Buscar metadados e imagens", e o sistema escolhe
   sozinho o melhor match de cada jogo por título + plataforma.
+  **Pedido do usuário (2026-11-15):** a busca acontece **logo na importação**, depois da janela de revisão dos títulos
+  da fase 11: o usuário confirma/edita os títulos, clica em importar, e a busca de metadados e imagens roda em seguida
+  sobre os jogos recém-importados (a janela de confirmação dos matches vem depois dela). Os títulos revisados na fase 11
+  são os usados na busca. Não é um passo à parte que o usuário precise lembrar de disparar depois.
 - **Janela de confirmação dos matches**: uma linha por jogo com o que foi encontrado (capa pequena, título, ano,
   plataforma). Match abaixo do limiar vem marcado como "em dúvida", com as alternativas numa lista para trocar, ou
   "nenhum". Caixa de seleção por linha, todas marcadas por padrão.
