@@ -294,6 +294,160 @@ func TestMediaQueue(t *testing.T) {
 	})
 }
 
+// cancelFetcher is the fetcher of the CancelGame tests. Each download waits for its gate (closed by the
+// test) or for its ctx; ignoreCtx keeps it waiting for the gate only. It counts the exits of the
+// downloads and the writes (a write happens only while the job is alive).
+type cancelFetcher struct {
+	mu        sync.Mutex
+	gates     map[string]chan struct{} // written only by newCancelFetcher
+	ignoreCtx bool
+	started   chan string
+	exited    map[string]int
+	wrote     map[string]int
+}
+
+func newCancelFetcher(urls ...string) *cancelFetcher {
+	f := &cancelFetcher{
+		gates:   map[string]chan struct{}{},
+		started: make(chan string, 16),
+		exited:  map[string]int{},
+		wrote:   map[string]int{},
+	}
+	for _, u := range urls {
+		f.gates[u] = make(chan struct{})
+	}
+	return f
+}
+
+func (f *cancelFetcher) Fetch(ctx context.Context, _ int64, url string) (media.Stored, bool, error) {
+	defer func() {
+		f.mu.Lock()
+		f.exited[url]++
+		f.mu.Unlock()
+	}()
+	f.started <- url
+	var done <-chan struct{}
+	if !f.ignoreCtx {
+		done = ctx.Done()
+	}
+	select {
+	case <-f.gates[url]:
+	case <-done:
+		return media.Stored{}, false, ctx.Err()
+	}
+	if ctx.Err() != nil {
+		return media.Stored{}, false, ctx.Err()
+	}
+	f.mu.Lock()
+	f.wrote[url]++
+	f.mu.Unlock()
+	return media.Stored{Hash: "h-" + url, Path: "7/h.png", ThumbPath: "7/t.jpg"}, true, nil
+}
+
+func TestMediaQueueCancelGame(t *testing.T) {
+	t.Parallel()
+	const u1, u2 = "https://cdn.example.test/g7.png", "https://cdn.example.test/g8.png"
+	t0 := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("DEL-008/CancelGame(G) interrompe o download de G e só volta depois que ele sai", func(t *testing.T) {
+		t.Parallel()
+		st := newFakeQueueStore(gameJob(1, 7, u1))
+		f := newCancelFetcher(u1)
+		q := newMediaQueue(st, f, domain.NewFakeClock(t0), quiet, nil)
+		stop := runQueue(t, q)
+		defer stop()
+		<-f.started
+
+		if err := q.CancelGame(t.Context(), 7); err != nil {
+			t.Fatalf("CancelGame: %v", err)
+		}
+		// Checked when CancelGame returns: the download has left, and it wrote nothing.
+		f.mu.Lock()
+		exited, wrote := f.exited[u1], f.wrote[u1]
+		f.mu.Unlock()
+		if exited != 1 {
+			t.Errorf("exits of the download of game 7 when CancelGame returned = %d, want 1", exited)
+		}
+		if wrote != 0 {
+			t.Errorf("writes of the cancelled download of game 7 = %d, want 0", wrote)
+		}
+	})
+
+	t.Run("DEL-008/não cancela nem atrasa o download de outro jogo H", func(t *testing.T) {
+		t.Parallel()
+		st := newFakeQueueStore(gameJob(1, 7, u1), gameJob(2, 8, u2))
+		f := newCancelFetcher(u1, u2)
+		q := newMediaQueue(st, f, domain.NewFakeClock(t0), quiet, nil)
+		stop := runQueue(t, q)
+		defer stop()
+		<-f.started
+		<-f.started
+
+		if err := q.CancelGame(t.Context(), 7); err != nil {
+			t.Fatalf("CancelGame: %v", err)
+		}
+		f.mu.Lock()
+		exitedH := f.exited[u2]
+		f.mu.Unlock()
+		if exitedH != 0 {
+			t.Errorf("the download of game 8 exited %d time(s) during CancelGame(7), want 0", exitedH)
+		}
+		close(f.gates[u2])
+		waitState(t, st, 2, store.JobDone)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.wrote[u2] != 1 {
+			t.Errorf("writes of the download of game 8 = %d, want 1: it was cancelled or delayed", f.wrote[u2])
+		}
+	})
+
+	t.Run("DEL-008/sem download do jogo, CancelGame devolve nil sem esperar", func(t *testing.T) {
+		t.Parallel()
+		st := newFakeQueueStore(gameJob(1, 8, u2)) // pending, and the queue is not running
+		q := newMediaQueue(st, newCancelFetcher(u2), domain.NewFakeClock(t0), quiet, nil)
+
+		if err := q.CancelGame(t.Context(), 7); err != nil {
+			t.Fatalf("CancelGame with no download of game 7: %v", err)
+		}
+	})
+
+	t.Run("DEL-008/download que ignora o cancelamento: CancelGame volta ao vencer o prazo de 5 s do relógio", func(t *testing.T) {
+		t.Parallel()
+		st := newFakeQueueStore(gameJob(1, 7, u1))
+		f := newCancelFetcher(u1)
+		f.ignoreCtx = true
+		clock := domain.NewFakeClock(t0)
+		q := newMediaQueue(st, f, clock, quiet, nil)
+		stop := runQueue(t, q)
+		// Cleanups run last-in first-out: the gate is released before the queue is stopped, so the
+		// download can end and Run can return.
+		t.Cleanup(stop)
+		var once sync.Once
+		release := func() { once.Do(func() { close(f.gates[u1]) }) }
+		t.Cleanup(release)
+		<-f.started
+
+		done := make(chan error, 1)
+		go func() { done <- q.CancelGame(t.Context(), 7) }()
+		if err := clock.BlockUntilWaiters(t.Context(), 1); err != nil {
+			t.Fatalf("BlockUntilWaiters: %v", err)
+		}
+		clock.Advance(4 * time.Second)
+		select {
+		case err := <-done:
+			t.Fatalf("CancelGame returned after 4 s, before the 5 s deadline: %v", err)
+		default:
+		}
+		clock.Advance(time.Second)
+		select {
+		case <-done:
+		case <-time.After(testTimeout):
+			t.Fatal("CancelGame did not return at the 5 s deadline")
+		}
+	})
+}
+
 // waitAttempts waits until job id has recorded n attempts and is pending again, or fails the
 // test after five seconds.
 func waitAttempts(t *testing.T, f *fakeQueueStore, id int64, n int) {

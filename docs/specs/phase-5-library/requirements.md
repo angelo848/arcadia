@@ -317,6 +317,7 @@ Dado o jogo `G` sem sessão ativa, quando removo `G` (`game.delete`), então `G`
 sessões de `G` e as pausas dessas sessões somem (cascata, pergunta 1); as linhas de vínculo (gêneros, empresas, modos),
 `additional_app`, `tracking_rule` e `media_asset` de `G` somem; a linha de `game_fts` de `G` é apagada (FTS-004). Os
 outros jogos, a plataforma, os gêneros, as empresas e os modos continuam como estavam. Resultado: `{gameId: G}`.
+· alterado em 2026-11-15: os arquivos de mídia de `G` no disco são tratados em DEL-007..DEL-011.
 
 ### DEL-002 — Jogo com sessão ativa ou lançamento pendente não é removido
 Dado o jogo `G` em Running, Grace ou Paused, ou um lançamento rastreado de `G` ainda em andamento, quando removo `G`, então
@@ -336,6 +337,64 @@ Dado um jogo `G` com um processo lançado por "Sem contar tempo" ainda aberto, q
 ### DEL-006 — Remoção atômica
 Dado que apagar as linhas de `G` falha no meio (teste com trigger que aborta, como em STO-021), quando removo `G`, então
 o jogo, as sessões, as pausas e a linha de `game_fts` continuam todos como estavam.
+
+### DEL-007 — Remover o jogo apaga a pasta de mídia dele
+· incluído em 2026-11-15: bug "as imagens ficam no disco depois de remover o jogo" (o banco apaga `media_asset` por
+cascata, mas os arquivos ficavam; DEL-001 não cobria arquivos).
+Dado o jogo `G` com pasta `<mediaRoot>/<G>` contendo imagens (`*.jpg`, `*.png`, `thumb_*.jpg`, inclusive em
+subpastas), quando a remoção de `G` no banco tem sucesso (DEL-001), então o agente apaga recursivamente `<mediaRoot>/<G>`
+(`media.Store.RemoveGame(G)`) antes de responder `{gameId: G}`, e a pasta deixa de existir. Dado que a pasta não existe,
+então nada acontece e a remoção responde sucesso. Dado que apagar a pasta falha (arquivo aberto, permissão), então o erro
+só é registrado em log (`slog`) e a remoção responde sucesso: a remoção do jogo nunca falha por causa dos arquivos. Dado
+que a remoção no banco falha (`-32001`, `-32002`, `-32603`), então a pasta não é tocada.
+Verificação: teste do `media.Store` (`t.TempDir()`: pasta com imagens e miniaturas é apagada; pasta ausente é no-op) e teste
+do handler `game.delete` com mídia em disco (apaga em sucesso; mantém em `-32002` e `-32001`; falha de remoção só vai
+para o log).
+
+### DEL-008 — Downloads em andamento do jogo são cancelados antes de apagar a pasta
+· incluído em 2026-11-15.
+Dado o jogo `G` com downloads na fila de mídia (MID-005) em andamento ou pendentes, quando a remoção de `G` no banco tem
+sucesso, então, antes de apagar a pasta (DEL-007), o agente cancela os downloads em andamento de `G` e espera cada um
+terminar; depois disso nenhum download de `G` grava arquivo. Os jobs pendentes de `G` já somem por cascata (DEL-001) e não
+rodam. Dado um download de `G` que terminava no instante da remoção, então a pasta não reaparece depois de apagada. Jobs de
+outros jogos não são cancelados nem atrasados. A espera tem prazo (5 s, o mesmo da remoção); vencido o prazo, o agente
+registra em log e segue para apagar a pasta.
+Verificação: teste da fila (`media_queue`) com `domain.Clock` fake e fetcher fake bloqueado: `CancelGame(G)` interrompe o
+download de `G`, só retorna depois que ele sai, não toca o download de `H`; teste de handler: após `game.delete` com download
+em curso a pasta `<G>` não existe, mesmo depois de liberar o fetcher.
+
+### DEL-009 — Só se apaga a pasta cujo nome é o id do jogo, dentro do `mediaRoot`
+· incluído em 2026-11-15.
+Dado `RemoveGame(id)`, quando `id <= 0`, então retorna erro e nada é apagado. O caminho é `mediaRoot` + `FormatInt(id)`
+montado só a partir do inteiro recebido (nunca de `media_asset.path`, de título ou de qualquer texto vindo do banco).
+Antes de apagar, o caminho resolvido (`filepath.Clean`/`Abs`) tem que ser estritamente filho direto de `mediaRoot`
+(`filepath.Rel` sem `..` e sem ser `.`). Dado que `<mediaRoot>/<id>` é link simbólico ou junção, então nada é apagado
+(erro registrado). Dado um link dentro da pasta do jogo, então o link é removido sem seguir o destino: nada fora de
+`<mediaRoot>/<id>` é apagado.
+Verificação: teste do `media.Store` com `id` 0 e negativo, `mediaRoot` vazio/relativo, pasta-irmã de nome parecido (`12` não
+apaga `120` nem `012`), link para uma pasta de fora (o conteúdo de fora continua; criação de link só no Windows com
+privilégio: `t.Skip` se falhar).
+
+### DEL-010 — Varredura de pastas órfãs ao iniciar
+· incluído em 2026-11-15.
+Dado a biblioteca com os jogos `{1, 3}` e `mediaRoot` com as pastas `1`, `2`, `3`, `4`, quando o agente inicia, então, em
+segundo plano, apaga recursivamente `2` e `4` (resíduos de remoções anteriores a esta correção) e mantém `1` e `3`. Só
+entram na varredura entradas que sejam diretório e cujo nome seja a forma canônica de um id positivo (`FormatInt(n)` ==
+nome, `n > 0`, sem overflow): `007`, `0`, `-1`, `1a`, `platforms`, arquivos soltos (inclusive `5` arquivo, não pasta) e links
+nunca são apagados. A lista de pastas é lida antes da lista de ids do banco, para que um jogo criado durante a varredura
+nunca perca a pasta. Se ler os ids do banco falha, nada é apagado. A falha em uma pasta só vai para o log e a varredura
+segue; o shutdown do agente (`ctx` cancelado) interrompe a varredura entre pastas e o agente espera a goroutine terminar
+(`sync.WaitGroup`); a varredura nunca atrasa o início do agente nem a resposta do IPC, e não envia notificação.
+Verificação: teste do `media.Store.SweepOrphans` (`t.TempDir()`: casos acima, falha em uma pasta não impede as outras,
+`ctx` cancelado para entre pastas) e teste do agente (varredura roda no início, a goroutine termina no shutdown, `goleak`).
+
+### DEL-011 — A remoção só mexe na pasta do jogo e não notifica
+· incluído em 2026-11-15.
+Dado a remoção de `G` ou a varredura de órfãs, então ícones de plataforma (`<mediaRoot>/platforms/`), pastas de outros jogos,
+arquivos soltos no `mediaRoot` e qualquer outro dado continuam intactos; nenhuma notificação nova é emitida (`media.changed`
+não é emitido pela remoção; IPC-050 vale), nenhum método IPC muda e `internal/tracker` não muda.
+Verificação: os testes de DEL-007 e DEL-010 conferem a árvore restante do `mediaRoot` e o conjunto de notificações do
+agente.
 
 ---
 

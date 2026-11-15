@@ -85,9 +85,23 @@ type gameLaunchParams struct {
 // gameHandlers returns the handlers of game.add, game.list, game.get,
 // game.update, game.delete, session.list, game.launch and session.current [IPC-020..IPC-026, IPC-028,
 // IPC-031, IPC-044, IPC-045, IPC-046, IPC-047, IPC-048, IPC-049, AGT-011].
-// stat is os.Stat in production.
+// stat is os.Stat in production. The handlers do not clean any media (see gameHandlersWithMedia).
 func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 	stat func(string) (fs.FileInfo, error), log *slog.Logger) map[string]ipc.Handler {
+	return gameHandlersWithMedia(st, tr, clock, stat, log, nil)
+}
+
+// gameMedia is what game.delete needs from the media of a game [DEL-007, DEL-008]: the downloads of
+// the game are cancelled and waited for, then its folder is removed.
+type gameMedia interface {
+	CancelGame(ctx context.Context, gameID int64) error
+	RemoveGame(gameID int64) error
+}
+
+// gameHandlersWithMedia is gameHandlers with med cleaning the media of a game removed by game.delete.
+// med may be nil.
+func gameHandlersWithMedia(st gameStore, tr sessionTracker, clock domain.Clock,
+	stat func(string) (fs.FileInfo, error), log *slog.Logger, med gameMedia) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
 		ipc.MethodGameAdd: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameAdd(ctx, st, clock, stat, log, params)
@@ -105,7 +119,7 @@ func gameHandlers(st gameStore, tr sessionTracker, clock domain.Clock,
 			return handleGameUpdate(ctx, st, clock, log, params)
 		},
 		ipc.MethodGameDelete: func(ctx context.Context, params json.RawMessage) (any, error) {
-			return handleGameDelete(ctx, st, tr, log, params)
+			return handleGameDelete(ctx, st, tr, log, med, params)
 		},
 		ipc.MethodGameLaunch: func(ctx context.Context, params json.RawMessage) (any, error) {
 			return handleGameLaunch(ctx, st, tr, log, params)

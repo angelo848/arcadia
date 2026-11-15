@@ -62,6 +62,8 @@ IMP-008).
 Verificação: teste com HTTP local (`httptest`), sem rede externa.
 
 ### MID-005 — Fila em background
+· alterado em 2026-11-15 (docs/specs/phase-5-library, DEL-007, DEL-008): a fila cancela por jogo (`CancelGame`) e espera os
+downloads dele saírem quando o jogo é removido; a remoção do jogo apaga a pasta `data\media\<id>\`.
 Dado uma ou mais mídias para baixar, quando a fila roda, então os downloads acontecem fora da UI, com limite de
 concorrência, retomada após reinício do agente (itens não concluídos continuam pendentes) e cancelamento. O agente é o
 único que escreve no banco e nos arquivos de mídia (ADR 0015).

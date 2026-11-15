@@ -45,10 +45,21 @@ type mediaQueue struct {
 	sink  mediaChangeSink // nil = no notices
 
 	mu      sync.Mutex
-	changes *mediaChangeCoalescer        // guarded by mu
-	cancels map[int64]context.CancelFunc // jobs running now
-	retryAt map[int64]time.Time          // failed jobs waiting for their next attempt
+	changes *mediaChangeCoalescer // guarded by mu
+	active  map[int64]*activeJob  // jobs running now, by job id; guarded by mu
+	retryAt map[int64]time.Time   // failed jobs waiting for their next attempt
 }
+
+// activeJob is a download in progress: its game (for CancelGame), the cancel of its context and
+// done, closed once its goroutine has finished (DEL-008).
+type activeJob struct {
+	gameID int64
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// mediaCancelWait bounds the wait of CancelGame for the downloads it interrupted (DEL-008).
+const mediaCancelWait = 5 * time.Second
 
 // mediaChangeSink receives the media.changed notices (IMG-001..003). It is always called outside q.mu.
 type mediaChangeSink interface{ MediaChanged(gameID int64) }
@@ -58,7 +69,7 @@ func newMediaQueue(st mediaQueueStore, fetch mediaFetcher, clock domain.Clock, l
 		st: st, fetch: fetch, clock: clock, log: log, sink: sink,
 		changes: newMediaChangeCoalescer(mediaChangedWindow),
 		wake:    make(chan struct{}, 1),
-		cancels: map[int64]context.CancelFunc{},
+		active:  map[int64]*activeJob{},
 		retryAt: map[int64]time.Time{},
 	}
 }
@@ -78,10 +89,42 @@ func (q *mediaQueue) Cancel(ctx context.Context, id int64) error {
 		return fmt.Errorf("agent: cancelar mídia: %w", err)
 	}
 	q.mu.Lock()
-	cancel := q.cancels[id]
+	act := q.active[id]
 	q.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if act != nil {
+		act.cancel()
+	}
+	return nil
+}
+
+// CancelGame interrupts the downloads in progress of gameID and waits until they have left, so no
+// file of the game is written after it returns (DEL-008). Downloads of other games and pending jobs
+// are not touched: pending jobs of the game go with its row. The wait is bounded by mediaCancelWait
+// on the clock; past it, or when ctx ends, CancelGame returns an error and the caller goes on.
+func (q *mediaQueue) CancelGame(ctx context.Context, gameID int64) error {
+	q.mu.Lock()
+	var acts []*activeJob
+	for _, act := range q.active {
+		if act.gameID == gameID {
+			acts = append(acts, act)
+		}
+	}
+	q.mu.Unlock()
+	if len(acts) == 0 {
+		return nil
+	}
+	for _, act := range acts {
+		act.cancel()
+	}
+	deadline := q.clock.After(mediaCancelWait)
+	for _, act := range acts {
+		select {
+		case <-act.done:
+		case <-deadline:
+			return fmt.Errorf("agent: downloads do jogo %d ainda em curso após %v", gameID, mediaCancelWait)
+		case <-ctx.Done():
+			return fmt.Errorf("agent: esperar downloads do jogo %d: %w", gameID, ctx.Err())
+		}
 	}
 	return nil
 }
@@ -163,12 +206,13 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 		jobCtx, cancel := context.WithCancel(ctx)
 		q.mu.Lock()
 		delete(q.retryAt, job.ID) // the attempt is starting: its retry time is spent
-		q.cancels[job.ID] = cancel
+		q.active[job.ID] = &activeJob{gameID: job.GameID, cancel: cancel, done: make(chan struct{})}
 		q.mu.Unlock()
 		wg.Add(1)
 		go func(job store.MediaJob) {
 			defer wg.Done()
 			q.run(ctx, jobCtx, cancel, job)
+			q.finish(job.ID)
 			<-sem
 			q.Notify() // a slot is free: the loop starts the next pending job now
 		}(job)
@@ -179,12 +223,7 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 // so a job cancelled by the user keeps the state Cancel wrote, and a job interrupted by shutdown is
 // pending again for the next start.
 func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFunc, job store.MediaJob) {
-	defer func() {
-		q.mu.Lock()
-		delete(q.cancels, job.ID)
-		q.mu.Unlock()
-		cancel()
-	}()
+	defer cancel()
 	stored, _, err := q.fetch.Fetch(jobCtx, job.GameID, job.SourceURL)
 	if err == nil {
 		var added bool
@@ -226,6 +265,17 @@ func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFu
 		q.mu.Unlock()
 		q.setState(writeCtx, job.ID, store.JobPending, attempts, err.Error())
 		q.Notify() // the retry is scheduled: the loop arms its timer
+	}
+}
+
+// finish forgets a job whose download has returned and wakes the CancelGame waiting for it.
+func (q *mediaQueue) finish(id int64) {
+	q.mu.Lock()
+	act := q.active[id]
+	delete(q.active, id)
+	q.mu.Unlock()
+	if act != nil {
+		close(act.done)
 	}
 }
 

@@ -85,8 +85,11 @@ const deleteHandlerTimeout = 5 * time.Second
 // store is -32002; an unknown game is -32001; shutdown, a deadline before the
 // start and store failures are -32603 with nothing changed. No notification is
 // sent for a library write [IPC-050].
+//
+// After a successful removal the media of the game is cancelled, waited for and its folder removed
+// [DEL-007, DEL-008]; a failure there is only logged. med may be nil (no media to clean).
 func handleGameDelete(ctx context.Context, st gameStore, tr sessionTracker, log *slog.Logger,
-	params json.RawMessage) (any, error) {
+	med gameMedia, params json.RawMessage) (any, error) {
 	var p ipc.GameDeleteParams
 	if rpcErr := ipc.DecodeParams(params, &p); rpcErr != nil {
 		return nil, rpcErr
@@ -110,6 +113,9 @@ func handleGameDelete(ctx context.Context, st gameStore, tr sessionTracker, log 
 		return st.DeleteGame(dctx, p.GameID)
 	})
 	if err == nil {
+		if med != nil {
+			removeGameMedia(context.WithoutCancel(ctx), med, p.GameID, log)
+		}
 		return ipc.GameDeletedResult{GameID: p.GameID}, nil
 	}
 
@@ -138,6 +144,18 @@ func handleGameDelete(ctx context.Context, st gameStore, tr sessionTracker, log 
 		log.Error("falha ao remover o jogo", "game_id", p.GameID, "error", err.Error())
 	}
 	return nil, fmt.Errorf("game.delete: %w", err)
+}
+
+// removeGameMedia stops the downloads of a removed game and then deletes its folder [DEL-008]. The
+// order matters: the folder is removed only after the downloads have left, so none comes back. Each
+// failure is logged at Warn and does not change the answer of game.delete [DEL-007].
+func removeGameMedia(ctx context.Context, med gameMedia, gameID int64, log *slog.Logger) {
+	if err := med.CancelGame(ctx, gameID); err != nil {
+		log.Warn("downloads do jogo removido não pararam a tempo", "game_id", gameID, "error", err.Error())
+	}
+	if err := med.RemoveGame(gameID); err != nil {
+		log.Warn("pasta de mídia do jogo removido não foi apagada", "game_id", gameID, "error", err.Error())
+	}
 }
 
 // updateHandlerTimeout bounds the UpdateGame call of game.update [IPC-045].

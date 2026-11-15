@@ -15,6 +15,10 @@ e pode haver uma sessão ativa no momento do pedido. Spec: [docs/specs/phase-5-l
   vencer antes de a remoção começar, ela não roda. Se já começou, o pedido aguarda o resultado e responde sucesso ou erro
   real, nunca "sucesso" sem a remoção ter ocorrido.
 - A UI exige confirmação antes do envio (diálogo com foco preso, DSK-018 e UI-041).
+- **Atualização 2026-11-15:** a remoção também apaga a pasta de mídia do jogo (`<mediaRoot>/<gameId>`), depois do sucesso
+  no banco e do cancelamento dos downloads em andamento do jogo; falha ao apagar só é registrada em log e nunca faz a
+  remoção falhar. Ao iniciar, o agente varre as pastas numéricas órfãs de remoções anteriores. Ver DEL-007..DEL-011 em
+  [phase-5-library](../specs/phase-5-library/requirements.md).
 
 ## Alternativas consideradas
 - **Remoção lógica (flag `deleted`):** mantém sessões órfãs visíveis e complica a consulta de tempo; o usuário pediu

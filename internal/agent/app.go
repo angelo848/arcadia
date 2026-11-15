@@ -268,16 +268,18 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		DataDir:   p.Root,
 	}
 	handlers := ipc.AgentHandlers(info, clock)
-	maps.Copy(handlers, gameHandlers(st, tr, clock, os.Stat, log))
 	maps.Copy(handlers, emulatorHandlers(st, log))
 	// Metadata and media (phase 7): the keys live in the Credential Manager and the images in
 	// data\media. The queue runs in its own goroutine, below, and is waited for at shutdown.
 	httpClient := &http.Client{Timeout: mediaHTTPTimeout}
 	mediaRoot := filepath.Join(p.Root, "media")
+	mediaFiles := media.New(mediaRoot, httpClient)
 	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
 	keys := scrapers.NewKeys(credentialStore{})
 	mediaNotes := &mediaNotifier{}
 	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log, mediaNotes)
+	// game.delete cleans the media of the game it removes (DEL-007, DEL-008).
+	maps.Copy(handlers, gameHandlersWithMedia(st, tr, clock, os.Stat, log, gameMediaOf{q: queue, files: mediaFiles}))
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	// Statistics (phase 8): read only; the local zone gives the weeks (EST-002, EST-006).
@@ -372,6 +374,17 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		}
 	}()
 
+	// Orphan sweep [DEL-010]: runs in the background under the agent ctx (not the queue's, which
+	// Shutdown cancels first: a sweep started just before it must still finish). Shutdown waits for it
+	// through a.wg, before the store closes.
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		if err := mediaFiles.SweepOrphans(ctx, st.GameIDs); err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("varredura das pastas de mídia órfãs", "error", err.Error())
+		}
+	}()
+
 	log.Info("agente iniciado", "version", info.Version, "pid", info.PID, "data_dir", p.Root)
 	return a, nil
 }
@@ -390,6 +403,23 @@ func exitCode(shutdownErr error, ipcFailed bool) int {
 		return 1
 	}
 	return 0
+}
+
+// gameMediaOf is the gameMedia of the agent: the queue stops the downloads of a game and the media
+// store removes its folder [DEL-008].
+type gameMediaOf struct {
+	q     *mediaQueue
+	files *media.Store
+}
+
+// CancelGame stops and waits for the downloads of gameID (see mediaQueue.CancelGame).
+func (m gameMediaOf) CancelGame(ctx context.Context, gameID int64) error {
+	return m.q.CancelGame(ctx, gameID)
+}
+
+// RemoveGame deletes the folder of gameID (see media.Store.RemoveGame).
+func (m gameMediaOf) RemoveGame(gameID int64) error {
+	return m.files.RemoveGame(gameID)
 }
 
 // closeWrap closes c and wraps its error with what.

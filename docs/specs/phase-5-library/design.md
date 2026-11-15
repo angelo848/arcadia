@@ -277,6 +277,26 @@ func (t *Tracker) WithoutActiveGame(ctx context.Context, gameID int64, fn func()
   o processo fica vivo sem linha de jogo. Como `LaunchUntracked` lê o jogo antes, o pior caso é um lançamento de um
   jogo que sumiu logo depois: aceito e documentado (Limitações da fase 4, item 11).
 
+### Mídia do jogo removido [DEL-007..DEL-011] (incluído em 2026-11-15)
+Sem ADR novo (atualização no ADR 0021). Ordem no handler `game.delete`, **fora** de `tracker.WithoutActiveGame` (o `fn`
+continua só a transação):
+1. `WithoutActiveGame(... store.DeleteGame ...)`; qualquer erro devolve como hoje e a mídia não é tocada.
+2. Em sucesso: `mediaQueue.CancelGame(ctx, id)` cancela os jobs em andamento do jogo (mapa `jobID → gameID` guardado junto
+   de `cancels`) e espera cada um sair (canal de término por job), com prazo de 5 s; os pendentes já caíram por cascata.
+3. `media.Store.RemoveGame(id int64) error` (`internal/media/remove.go`): valida `id > 0`, monta
+   `filepath.Join(root, FormatInt(id))`, confere filho direto de `root` (`filepath.Rel`), `Lstat` e recusa link/junção,
+   `os.RemoveAll`. Erro do passo 2 ou 3 → `log.Warn`, resposta segue como sucesso.
+4. `media.Store.SweepOrphans(ctx, listIDs func(ctx) (map[int64]struct{}, error)) error`: lê o diretório do `root` primeiro,
+   depois chama `listIDs` (novo `store.GameIDs(ctx)`, só leitura), apaga cada pasta numérica canônica ausente do mapa
+   (mesma validação do passo 3), checa `ctx` entre pastas.
+5. `app.go`: inicia a varredura numa goroutine própria, no `errgroup`/`WaitGroup` do agente, depois que o store e a fila
+   estão prontos; erros só em log.
+
+Arquivos de código a mudar: `internal/agent/library.go` (`handleGameDelete`; recebe a fila e o `media.Store` por
+interface pequena), `internal/agent/media_queue.go` (`CancelGame`), `internal/agent/app.go` (varredura),
+`internal/media/remove.go` novo (`RemoveGame`, `SweepOrphans`), `internal/store` (`GameIDs`, query sqlc se couber).
+Nada em `internal/tracker`, `internal/ipc` ou no contrato OpenRPC.
+
 ## Sessões e tracker — sem mudança de comportamento
 
 Nenhuma regra de SES-*, PAU-*, FBK-* muda. `game.update` não chama o tracker (EDT-006): a sessão é uma leitura de
