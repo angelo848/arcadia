@@ -34,15 +34,23 @@ type Query struct {
 	Title    string
 	Platform string
 	Year     int
+	SeedKey  string // seed key of the library platform, "" when none
+	Category string // "pc", "console", ... "" when unknown
 }
 
-// Candidate is a game a provider found for a query (MID-002).
+// Candidate is a game a provider found for a query (MID-002). PlatformKeys, PlatformConfirmed,
+// ThumbURL, Meta and Images are filled by the providers that know them (phase 12).
 type Candidate struct {
-	Provider   string
-	ProviderID string
-	Title      string
-	Platform   string
-	Year       int
+	Provider          string
+	ProviderID        string
+	Title             string
+	Platform          string
+	Year              int
+	PlatformKeys      []string
+	PlatformConfirmed bool
+	ThumbURL          string
+	Meta              *Metadata
+	Images            []RemoteMedia
 }
 
 // Metadata is the text a provider knows about a game (MID-003). Empty fields mean unknown.
@@ -69,6 +77,11 @@ type MetadataProvider interface {
 	Search(ctx context.Context, q Query) ([]Candidate, error)
 	Details(ctx context.Context, providerID string) (Metadata, error)
 	Media(ctx context.Context, providerID string) ([]RemoteMedia, error)
+}
+
+// Fetcher returns the text and the images of a game in one request [MET-012, MET-014].
+type Fetcher interface {
+	Fetch(ctx context.Context, providerID string) (Metadata, []RemoteMedia, error)
 }
 
 // request describes one HTTP call of a provider.
