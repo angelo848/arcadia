@@ -58,6 +58,12 @@
 | `done` | `batchStart` válido | `searching` | descarta a antiga e cria a nova |
 | `done` | `batchResults`, `batchApply`, `batchCancel` | `done` | `-32016` (`batchCancel` devolve o estado, no-op) |
 
+- **Ordem das checagens** (MET-071, alterado em 2026-11-15): em `batchResults` e `batchApply`, primeiro os parâmetros
+  (`limit` ausente = 100, `0` explícito = `-32602`; `choices`), depois `batchId` e o estado. Por isso as linhas "`-32016`" da
+  tabela valem só com parâmetros válidos.
+- **Falha temporária de provedor durante `searching`** (MET-011): 1ª falha seguida suspende o provedor 30 s, 2ª 60 s, 3ª o
+  desativa até o fim do lote; sem degrau de 120 s. Não muda o estado do job.
+- **`applying` → `batchCancel`** (MET-066): o `result` parcial inclui todo jogo já gravado, inclusive o que estava em curso.
 - **`batchId` desconhecido** (diferente do atual) em qualquer método com `batchId`: `-32014` BatchNotFound, em qualquer estado.
 - **`batchStatus` não tem `batchId`** e nunca falha por estado.
 - **Reiniciar o agente** leva a (sem busca) (MET-058); a UI percebe quando `batchStatus` devolve `null` e a tinha em memória

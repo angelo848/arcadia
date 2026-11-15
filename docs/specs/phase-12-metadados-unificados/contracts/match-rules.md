@@ -228,7 +228,7 @@ Genérico (nome de pasta, sem diferenciar maiúsculas): `bin`, `bin32`, `bin64`,
 | intervalo IGDB / SteamGridDB / Steam Store | 334 ms / 500 ms / 2.000 ms |
 | prazo da busca única | 20 s |
 | prazo da busca de um jogo no lote | 15 s |
-| suspensão depois de falha temporária (1ª, 2ª, 3ª) | 30 s, 60 s, 120 s; na 3ª seguida o provedor é desativado no lote |
+| suspensão depois de falha temporária seguida (1ª, 2ª) | 30 s, 60 s; a 3ª seguida desativa o provedor até o fim do lote (sem degrau de 120 s; alterado em 2026-11-15) |
 | trabalhadores da busca em lote | 3 |
 | itens por busca única / alternativas por linha do lote | 10 / 5 (a linha tem até 5 itens, o primeiro é o escolhido) |
 | janela de agrupamento do progresso | 500 ms |

@@ -86,8 +86,7 @@
       "progressWindowMs": 500,
       "providerCooldownMs": [
         30000,
-        60000,
-        120000
+        60000
       ],
       "providerMaxFailures": 3,
       "maxStatusWarnings": 10,
@@ -1686,7 +1685,7 @@
     },
     {
       "name": "metadata.batchStart",
-      "summary": "Starts the background search over games already written (the titles stored are the ones searched). Returns at once; progress comes by metadata.batchChanged [MET-052, MET-053].",
+      "summary": "Starts the background search over games already written (the titles stored are the ones searched). Returns at once; progress comes by metadata.batchChanged. ProviderNoKey when neither IGDB nor SteamGridDB has a key (Steam Store needs none and does not count) [MET-052, MET-053].",
       "paramStructure": "by-name",
       "params": [
         {

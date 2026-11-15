@@ -373,8 +373,17 @@ type batchRow struct {
   primeiro selecionado salvo `none`) e a grava sob `job.mu` **só se** o estado ainda é `searching`. Jogo apagado
   (`ErrGameNotFound`) → linha `none` sem alternativas.
 - **Falhas de provedor** (MET-011): um `providerHealth` por job (mapa por provedor: falhas seguidas, suspenso até) consultado
-  antes de cada pergunta; a suspensão é um instante do `domain.Clock`, sem goroutine. Provedor desativado entra em
-  `warnings` uma vez.
+  antes de cada pergunta; a suspensão é um instante do `domain.Clock`, sem goroutine. A 1ª falha temporária seguida suspende
+  o provedor por 30 s, a 2ª por 60 s e a 3ª seguida o desativa até o fim do lote (`providerCooldown = {30 s, 60 s}`,
+  `providerMaxFailures = 3`; não há degrau de 120 s). Sucesso zera a contagem. Provedor desativado entra em `warnings` uma
+  vez. · alterado em 2026-11-15.
+- **`batchStart` e chaves** (MET-052): `ProviderNoKey` quando nem o IGDB nem o SteamGridDB têm chave; a Steam Store não tem
+  chave e não conta.
+- **Validação antes do estado** (MET-071): em `batchResults` e `batchApply` os parâmetros (`limit`, `offset`, `choices`) são
+  validados antes de se olhar o estado da busca; `limit` ausente = 100 (`defaultResultsLimit`), `0` explícito = `-32602`. Para
+  distinguir ausente de 0, o decodificador usa `*int` para `limit` (nil → 100).
+- **Resultado parcial** (MET-066): o contador de `result` é atualizado sob `job.mu` a cada jogo gravado, de modo que o
+  cancelamento durante a aplicação devolve todo jogo já gravado, inclusive o que estava em curso e terminou.
 - **Aplicação** (`batchApply`): valida (índices, ids), guarda as escolhas, passa a `applying` e inicia um coordenador com 1
   trabalhador. Para cada escolha: pega o grupo da linha, obtém o que falta de cada provedor (`Meta`/`Images` do grupo quando o
   IGDB já trouxe; senão `Fetch`), `Merge` + `ApplyMetadata` (`replace=false`), `queueImages`; erro → `failed`+1 e título em
@@ -446,7 +455,10 @@ export async function loadBatchRows(batchId: number): Promise<BatchRowView[]>   
 
 `useMetadataBatch` tem **uma** assinatura de `metadata:batch` (cancelada ao desmontar, como IMG-007), lê
 `MetadataBatchStatus` no início, ao reconectar e a cada mudança de `state`, e atualiza só os contadores com o payload do evento.
-`interrupted` fica verdadeiro quando o hook tinha um estado e `MetadataBatchStatus` volta `batch: null` (MET-067). Ao ir para
+`interrupted` fica verdadeiro quando o hook tinha um estado e `MetadataBatchStatus` volta `batch: null` (MET-067); volta a
+falso na releitura seguinte ("some quando a UI relê o estado depois de exibi-lo"). O hook expõe `refresh()` para o
+`onBatchStarted`. O destaque único do indicador (MET-067) é uma classe aplicada na transição e removida ao fim da animação
+(`onAnimationEnd`), sem temporizador. Ao ir para
 `done`, invalida `['library','games']` e o catálogo (leituras).
 
 `acceptedScore` (0,8) e `scrapeSearch`/`scrapeApply` deixam de ser usados pela UI; a tarefa os remove com os testes que só os
@@ -461,7 +473,9 @@ cobriam (o `scrape.*` continua no contrato, mas sem consumidor).
   preenchidos", `MetadataOptions` com "Aplicar"; o resultado mostra `queued` e `skippedByLimit` (MET-024).
 - **`ImportDialog`**: (a) fonte `folder`: caixa "Buscar metadados e imagens" (estado `searchMeta`, padrão `true`; desativada pelas
   regras de MET-050 com `ProviderKeyStatus` e o estado do lote vindo de `useMetadataBatch`); depois de `applyImportInLots`,
-  se `searchMeta` e há gravados, `onImported()` e em seguida `batch.start(ids)`; (b) fonte `file`: abaixo da tabela, "Nome para
+  se `searchMeta` e há gravados, `onImported()` e em seguida `batch.start(ids)`; no sucesso chama a prop
+  `onBatchStarted()` (MET-051), com que o `App` relê `MetadataBatchStatus` para o indicador mostrar 0/n na hora (no erro não
+  chama); (b) fonte `file`: abaixo da tabela, "Nome para
   busca" (`candidate.searchName`), "Obter dados" e `MetadataOptions` com a opção "Nenhuma"; a escolha vira `refs`, guardada
   junto da linha; depois do `ImportApply`, `metadataApply(gameId, refs, false)` (MET-042). Todo `resetList()` (IMV-049) descarta
   também a busca e a escolha.
@@ -532,6 +546,12 @@ lançamento, pausa ou sessão (MET-080).
       (§5.5).
   11. *Dois `NormalizeTitle`* com papéis diferentes podem confundir quem lê; os comentários de `match_unified.go` e de
       `importers/title.go` apontam um para o outro.
+  12. **LIMITAÇÃO CONHECIDA — uma requisição por vez por conexão.** O servidor IPC despacha uma requisição por vez em cada
+      conexão. Um `metadata.search` (até 20 s) ou um `metadata.apply` em curso atrasa `metadata.batchCancel` e
+      `metadata.batchStatus` enviados na **mesma conexão da UI** até terminar. Aceitável: é um fluxo de uso raro (buscar ou
+      aplicar um jogo enquanto uma busca em lote roda e o usuário cancela nesse intervalo). A busca em lote em si roda no
+      agente e não é afetada; as notificações de progresso saem pelo agente, não pela fila de requisições. Nenhuma
+      mitigação nesta fase e nenhum ADR; reavaliar se o IPC passar a atender requisições em paralelo.
 
 ## 10. ADRs propostos
 

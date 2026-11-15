@@ -180,12 +180,15 @@ cancelado. As chamadas de download de imagem (fila de mídia, MID-005) não pass
 independentes não se atrasam); teste do agente com `httptest` contando requisições por provedor.
 
 ### MET-011 — Falha temporária no lote
-Dado uma busca em lote (MET-053), quando um provedor responde com falha temporária (429, 5xx, rede), então o agente suspende
-as chamadas a **esse** provedor por 30 s, depois 60 s, depois 120 s (relógio fake nos testes), e os jogos que forem buscados
-nesse intervalo seguem com os demais provedores. Dado 3 falhas seguidas do mesmo provedor, então ele fica desativado até o fim
-daquele lote e o `warnings` do lote registra "IGDB indisponível: a busca continuou sem ele". Uma resposta bem-sucedida zera a
-contagem. Um jogo cuja busca falhou em todos os provedores aplicáveis fica com `confidence = none`.
-· verificação: teste do job com provedor fake que falha N vezes e relógio fake.
+Dado uma busca em lote (MET-053), quando um provedor responde com falha temporária (429, 5xx, rede), então o agente conta a
+falha **seguida** desse provedor: a 1ª suspende as chamadas a **esse** provedor por 30 s, a 2ª seguida as suspende por 60 s
+(relógio fake nos testes) e a 3ª seguida o **desativa** até o fim daquele lote (não há suspensão de 120 s). Os jogos buscados
+durante uma suspensão seguem com os demais provedores. Na desativação, o `warnings` do lote registra "IGDB indisponível: a
+busca continuou sem ele" uma só vez. Uma resposta bem-sucedida zera a contagem. Um jogo cuja busca falhou em todos os
+provedores aplicáveis fica com `confidence = none`.
+· alterado em 2026-11-15: a regra se contradizia ("30 s, depois 60 s, depois 120 s" e "3 falhas seguidas desativam"); vale 1ª = 30 s, 2ª = 60 s, 3ª = desativa, sem degrau de 120 s.
+· verificação: teste do job com provedor fake que falha N vezes e relógio fake (1ª falha: suspenso por 30 s e liberado em 30 s;
+2ª: 60 s; 3ª: desativado, sem retorno no lote; sucesso entre falhas zera).
 
 ### MET-012 — IGDB: texto, capa, screenshots e fundo numa só requisição
 Dado uma busca ou um detalhe do IGDB, então **uma** requisição devolve os candidatos já com o que `scrape.apply` precisaria:
@@ -289,8 +292,9 @@ Dado `metadata.apply`, então a chamada não envia nenhuma notificação (IPC-05
 Dado a fonte "Arquivo" com um arquivo, então o candidato traz `searchName`: o título normalizado do nome do arquivo
 (`importers.NormalizeTitle`, IMV-001..IMV-005), sem sufixos de motor (`-Win64-Shipping`, `-x64` etc.); se o nome é genérico
 (`game`, `launcher`, `start`, `play`, `run`, `main`, `app`, `client`...) ou fica vazio, o nome da pasta pai normalizado
-(IMV-006); se a pasta é genérica (`bin`, `binaries`, `win64`, `release`...), sobe até 2 níveis, sem passar da raiz do disco. As
-listas e os vetores estão em [match-rules §5](contracts/match-rules.md). As outras fontes não trazem o campo.
+(IMV-006); se a pasta é genérica (`bin`, `binaries`, `win64`, `release`...), sobe até 3 pastas acima do arquivo, sem passar da raiz do
+disco. As listas e os vetores estão em [match-rules §5](contracts/match-rules.md). As outras fontes não trazem o campo.
+· alterado em 2026-11-15: "até 2 níveis" divergia de match-rules §5.2 (até 3 pastas).
 · verificação: teste do importador (tabela de `match-rules.md` §5) e teste de contrato do IPC (campo opcional).
 
 ### MET-041 — "Nome para busca" e "Obter dados" na importação de arquivo
@@ -328,10 +332,12 @@ este nome." Os avisos de provedor (MET-001) aparecem acima da lista.
 
 ### MET-050 — A caixa "Buscar metadados e imagens"
 Dado a fonte "Pasta", então a janela de importação tem a caixa "Buscar metadados e imagens", **marcada por padrão**. A caixa
-fica desativada, com a mensagem "Cadastre a chave do IGDB ou do SteamGridDB em Configurações.", quando nenhum provedor é
-aplicável com chave à plataforma escolhida (`provider.keyStatus` das duas chaves e MET-003); e desativada com "Há metadados para
-revisar. Revise ou descarte antes de buscar de novo." quando existe uma busca em lote em `ready` ou `cancelled`
-(MET-052). Desmarcar a caixa importa como na fase 11, sem busca. As outras fontes não têm a caixa.
+fica desativada, com a mensagem "Cadastre a chave do IGDB ou do SteamGridDB em Configurações.", quando nem o IGDB nem o
+SteamGridDB têm chave (`provider.keyStatus` das duas chaves; ambos aplicam a qualquer plataforma, MET-003). A Steam Store
+**não tem chave** e não conta como "provedor com chave": só ela disponível não ativa a caixa. A caixa também fica desativada,
+com "Há metadados para revisar. Revise ou descarte antes de buscar de novo.", quando existe uma busca em lote em `ready` ou
+`cancelled` (MET-052). Desmarcar a caixa importa como na fase 11, sem busca. As outras fontes não têm a caixa.
+· alterado em 2026-11-15: esclarecido que a Steam Store (sem chave) não conta para "provedor com chave".
 · verificação: teste de componente (marcada; sem chaves; busca pendente; fonte Steam).
 
 ### MET-051 — A busca começa depois da importação, sobre o que entrou
@@ -340,16 +346,23 @@ janela chama `metadata.batchStart` com os `gameId` do resultado (`applied[].game
 o título **gravado** (o que o usuário revisou na janela de IMV-040..IMV-048). A importação não espera pela busca: o resumo
 "Importados: N" aparece e a biblioteca recarrega (`onImported`) antes. Falha de `metadata.batchStart` (sem chave, outra busca em
 andamento) aparece como aviso na janela e não desfaz nada. Lote de importação interrompido por falha: busca só dos jogos gravados.
-· verificação: teste de componente (ordem: lotes, `onImported`, `batchStart` com os ids; sem jogos gravados → sem chamada;
-falha do start).
+Depois de um `batchStart` bem-sucedido feito pelo `ImportDialog`, o `App` relê o estado da busca (`MetadataBatchStatus`; o
+`ImportDialog` avisa por uma prop `onBatchStarted`), de modo que o indicador (MET-067) mostre "Buscando metadados 0/n" na hora,
+sem esperar pela primeira notificação.
+· alterado em 2026-11-15: releitura do estado depois do `batchStart` (`onBatchStarted`).
+· verificação: teste de componente (ordem: lotes, `onImported`, `batchStart` com os ids, `onBatchStarted` só no sucesso; sem
+jogos gravados → sem chamada; falha do start sem `onBatchStarted`; `App` relê o estado e o indicador mostra 0/n).
 
 ### MET-052 — `metadata.batchStart`
 Dado `metadata.batchStart` com 1 a 1.000 `gameIds` distintos, então o agente cria **uma** busca em lote, devolve `batchId` e
 `total` na hora e começa em segundo plano (estado `searching`). Dado `gameId` inexistente, então `-32001` e nada começa. Dado
 uma busca em `searching`, `ready`, `cancelled` ou `applying`, então `-32015` (BatchBusy); em `done` ou sem busca, a nova
-substitui a antiga. Dado nenhum provedor aplicável com chave para nenhum dos jogos, então `-32010`. Mais de 1.000 ids ou ids
-repetidos: `-32602`.
-· verificação: teste do agente (um caso por regra; a chamada volta antes de qualquer requisição de rede).
+substitui a antiga. Dado que nem o IGDB nem o SteamGridDB têm chave, então `-32010` (`ProviderNoKey`, `data.provider` = `igdb`),
+mesmo que a Steam Store fosse aplicável: ela não tem chave e não conta como "provedor com chave" (como em MET-050). Mais de
+1.000 ids ou ids repetidos: `-32602`.
+· alterado em 2026-11-15: `ProviderNoKey` definido pela falta das duas chaves (a Steam Store não conta).
+· verificação: teste do agente (um caso por regra; sem as duas chaves e jogo de Windows → `-32010`; a chamada volta antes de
+qualquer requisição de rede).
 
 ### MET-053 — Execução da busca
 Dado a busca em `searching`, então 3 trabalhadores (`batchWorkers`) pegam os jogos na ordem recebida; para cada jogo o agente lê
@@ -457,21 +470,26 @@ depois pela fila (MID-005) e pelo `media.changed` (IMG-001); a aplicação não 
 
 ### MET-066 — Cancelar a aplicação e o resumo
 Dado `metadata.batchCancel` com a busca em `applying`, então nenhum jogo novo começa, o jogo em curso termina, o que já foi
-aplicado fica, e o estado vai a `done` com o `result` parcial. Ao entrar em `done`, a UI mostra o resumo ("Metadados aplicados em
+aplicado fica, e o estado vai a `done` com o `result` parcial, que inclui **todo jogo já gravado** (`applied`,
+`imagesQueued`, `imagesSkippedByLimit` e `failedTitles` contam o jogo em curso que terminou e os anteriores). Ao entrar em `done`, a UI mostra o resumo ("Metadados aplicados em
 N jogos; M imagens na fila; K falharam") e invalida a lista de jogos e o catálogo (leituras; gêneros e descrições mudaram),
 sem tocar em sessão. O resumo some com "Fechar", que chama `batchDiscard`.
-· verificação: teste do job (cancelar no meio; resultado parcial) e de componente (resumo; invalidações; fechar → descarta).
+· alterado em 2026-11-15: o resultado parcial inclui todo jogo já gravado.
+· verificação: teste do job (cancelar no meio; resultado parcial com `applied` = jogos gravados, incluindo o em curso) e de componente (resumo; invalidações; fechar → descarta).
 
 ### MET-067 — Indicador de tarefa e abertura automática
 Dado qualquer estado da busca diferente de "sem busca", então o cabeçalho da janela principal mostra o indicador
 "Buscando metadados k/n" (`searching`, com "Cancelar"), "Revisar metadados (n)" (`ready` e `cancelled`, com "Descartar"),
 "Aplicando metadados k/n" (`applying`, com "Cancelar") ou o resumo (`done`). Dado a transição para `ready` com nenhum modal
 aberto, ou só a janela de importação aberta e sem operação em curso, então a janela de confirmação abre sozinha (a de importação
-fecha antes); com outro modal aberto, só o indicador muda e pisca uma vez. O indicador reflete o estado que a UI leu (MET-055);
-dado que a UI achava ter uma busca e o agente responde `null` (reiniciou), então mostra uma vez "A busca de metadados foi
-interrompida. Use Buscar metadados no jogo."
+fecha antes); com outro modal aberto, só o indicador muda e recebe **um destaque único** (animação ou realce que roda uma vez e não se
+repete enquanto o estado não muda). O indicador reflete o estado que a UI leu (MET-055); dado que a UI achava ter uma busca
+e o agente responde `null` (reiniciou), então mostra o aviso "A busca de metadados foi interrompida. Use Buscar metadados no
+jogo." e ele **some quando a UI relê o estado depois de exibi-lo** (a leitura seguinte que também devolve `null` não o mostra
+de novo, pois a UI já não achava ter uma busca).
+· alterado em 2026-11-15: "uma vez" e "pisca uma vez" definidos.
 · verificação: teste de componente (`App` com fake de eventos e de `MetadataBatchStatus`: cada estado; abertura automática com
-e sem outro modal; agente reiniciado).
+e sem outro modal; destaque único com outro modal; agente reiniciado: o aviso aparece e some na releitura seguinte).
 
 ### MET-068 — A imagem pequena da linha
 Dado um item com `thumbUrl`, então a UI mostra a imagem pequena (`<img>`, `alt=""`, `loading="lazy"`,
@@ -505,10 +523,15 @@ descrição, sem mudar parâmetro, resultado ou erro. Nenhum método, parâmetro
 
 ### MET-071 — Validação dos parâmetros
 Dado os métodos novos, então cada regra de [ipc-v0.14.0-delta §3](contracts/ipc-v0.14.0-delta.md) é conferida antes de qualquer
-leitura ou chamada de rede, e a violação é `-32602`: título vazio ou > 200 runas, plataforma > 100, ano fora de 1900..2100,
+leitura ou chamada de rede, e a violação é `-32602`. Em `metadata.batchResults` e `metadata.batchApply`, a validação dos
+parâmetros (`limit`, `offset`, `choices` e seus campos que não dependem da busca) vem **antes** da checagem de estado: com
+`limit` inválido ou `choices` vazio em estado errado, a resposta é `-32602`, não `-32016`. `limit` **ausente** vale 100; `limit`
+**0 explícito** é `-32602` (ausente e 0 são diferentes). As violações: título vazio ou > 200 runas, plataforma > 100, ano fora de 1900..2100,
 `refs` fora de 1..3 ou repetindo provedor, `providerId` fora de `^[0-9]{1,20}$`, `gameIds` fora de 1..1.000 ou repetidos,
 `offset` < 0, `limit` fora de 1..200, `choices` fora de 1..1.000, `candidate` < 0, `batchId` < 1.
-· verificação: teste do agente (um caso por regra).
+· alterado em 2026-11-15: ordem validação × estado; `limit` ausente = 100 e 0 explícito = `-32602`.
+· verificação: teste do agente (um caso por regra; `limit` 0 explícito em `ready` → `-32602`; `limit` ausente → 100;
+`limit` 0 e `choices` vazio em `searching` → `-32602`, não `-32016`).
 
 ### MET-072 — Binding do desktop e evento
 Dado a UI, então o binding expõe `MetadataSearch`, `MetadataApply`, `MetadataBatchStart`, `MetadataBatchStatus`,

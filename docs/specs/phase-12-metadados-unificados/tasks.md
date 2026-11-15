@@ -341,7 +341,7 @@ const (
 	progressWindow = 500 * time.Millisecond; providerMaxFailures = 3
 	maxStatusWarnings = 10; maxFailedTitles = 10
 )
-var providerCooldown = []time.Duration{30 * time.Second, 60 * time.Second, 120 * time.Second}
+var providerCooldown = []time.Duration{30 * time.Second, 60 * time.Second}
 
 type metadataStore interface { // what the unified service needs from the store
 	scrapeStore
@@ -417,14 +417,14 @@ func (c *progressCoalescer) next() (time.Time, bool)
 type providerHealth struct{ /* mu; per provider: fails int, until time.Time, disabled bool */ }
 func newProviderHealth(clock domain.Clock) *providerHealth
 func (h *providerHealth) allowed(provider string) bool          // not suspended and not disabled
-func (h *providerHealth) report(provider string, err error) (nowDisabled bool) // nil resets; ErrUnavailable suspends 30/60/120 s; the 3rd in a row disables
+func (h *providerHealth) report(provider string, err error) (nowDisabled bool) // nil resets; ErrUnavailable suspends 30/60 s; the 3rd in a row disables
 type batchRow struct{ gameID int64; title, platform string; confidence domain.Confidence; selected int; groups []scrapers.Group }
 // searchOne reads title, platform and year of the stored game, builds the Query (SearchTerm, ResolvePlatform) and asks the aggregator
 // with Staged and the 15 s deadline; deleted game = row none without alternatives [MET-053].
 func (m *metadataService) searchOne(ctx context.Context, gameID int64, h *providerHealth) (batchRow, failedAll bool, err error)
 ```
 - **test-writer:** `metadata_batch_search_test.go` (provedor fake que falha N vezes, relógio fake):
-  - `MET-011/falha temporária suspende 30 s, depois 60 s, depois 120 s`; `MET-011/durante a suspensão, os jogos seguem com os demais provedores`; `MET-011/3 falhas seguidas desativam até o fim do lote e geram o aviso "IGDB indisponível: a busca continuou sem ele" uma só vez`; `MET-011/sucesso zera a contagem`; `MET-011/jogo cuja busca falhou em todos os provedores fica none`; `MET-011/provedores têm contagens independentes`;
+  - `MET-011/falha temporária suspende 30 s, depois 60 s; a 3ª seguida desativa`; `MET-011/durante a suspensão, os jogos seguem com os demais provedores`; `MET-011/3 falhas seguidas desativam até o fim do lote e geram o aviso "IGDB indisponível: a busca continuou sem ele" uma só vez`; `MET-011/sucesso zera a contagem`; `MET-011/jogo cuja busca falhou em todos os provedores fica none`; `MET-011/provedores têm contagens independentes`;
   - `MET-015/IGDB match: zero chamadas à Steam Store`; `MET-015/IGDB doubt: uma chamada`; `MET-015/sem chave do IGDB: uma chamada`;
   - `MET-053/a consulta usa título, plataforma e ano gravados do jogo`; `MET-053/a linha guarda confiança, item selecionado (o primeiro) e até 5 alternativas ≥ 0,40`; `MET-053/none: selected -1`; `MET-053/jogo apagado: linha none sem alternativas`; `MET-053/prazo de 15 s por jogo`.
 - Dependência: T17, T20.

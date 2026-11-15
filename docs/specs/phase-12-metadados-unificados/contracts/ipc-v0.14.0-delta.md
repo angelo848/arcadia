@@ -39,12 +39,15 @@ Novo bloco em `info` (constantes do agente e de `domain`, fora do fio, como `x-i
   "maxResultsLimit": 200,
   "maxResultBytes": 921600,
   "progressWindowMs": 500,
-  "providerCooldownMs": [30000, 60000, 120000],
+  "providerCooldownMs": [30000, 60000],
   "providerMaxFailures": 3,
   "maxStatusWarnings": 10,
   "maxFailedTitles": 10
 }
 ```
+
+`providerCooldownMs` tem **2** degraus (1ª falha seguida: 30 s; 2ª: 60 s); a 3ª falha seguida (`providerMaxFailures` = 3)
+desativa o provedor no lote, sem degrau de 120 s (alterado em 2026-11-15, MET-011).
 
 `x-limits.maxMessageBytes` continua 1048576; `maxResultBytes` deixa 127 KiB de folga para o envelope (como `x-import`).
 `x-media.mediaChangedWindowMs` continua 500 e `x-metadata.progressWindowMs` usa o mesmo valor por decisão (a UI reage igual).
@@ -174,7 +177,7 @@ Resumos (`summary`):
 
 - `metadata.search`: "Searches every applicable provider at once and returns one scored list with the confidence of the best item [MET-001..MET-009]."
 - `metadata.apply`: "Applies the text (priority igdb, steamstore; only empty fields unless replace) and queues the images of one unified candidate, within the per-kind image limit [MET-030..MET-033, MET-021]. No notification of its own; images arrive by media.changed [IMG-001, IPC-050]."
-- `metadata.batchStart`: "Starts the background search over games already written (the titles stored are the ones searched). Returns at once; progress comes by metadata.batchChanged [MET-052, MET-053]."
+- `metadata.batchStart`: "Starts the background search over games already written (the titles stored are the ones searched). Returns at once; progress comes by metadata.batchChanged. ProviderNoKey when neither IGDB nor SteamGridDB has a key (Steam Store needs none and does not count) [MET-052, MET-053]."
 - `metadata.batchStatus`: "The current batch or null. Safety net for dropped notifications and reconnects [MET-055]."
 - `metadata.batchResults`: "One page of the rows of a ready or cancelled batch; fewer than limit rows when the page would pass maxResultBytes [MET-057]."
 - `metadata.batchApply`: "Accepts the user's choices and applies them in the background; returns at once [MET-064, MET-065]."
@@ -191,8 +194,12 @@ Regras de validação (todas `-32602`, antes de qualquer leitura ou rede, MET-07
 | `refs` | 1..3 itens, `provider` único entre eles, `providerId` `^[0-9]{1,20}$` |
 | `gameIds` | 1..1.000, todos ≥ 1, sem repetição |
 | `batchId` | ≥ 1 |
-| `offset` / `limit` | ≥ 0 / 1..200 |
+| `offset` / `limit` | ≥ 0 / 1..200; `limit` **ausente** = 100, `0` explícito = `-32602` |
 | `choices` | 1..1.000, `gameId` ≥ 1 sem repetição, `candidate` ≥ 0 e dentro da lista da linha, `gameId` presente na busca |
+
+Ordem (MET-071, alterado em 2026-11-15): os parâmetros de `metadata.batchResults` e `metadata.batchApply` (`limit`, `offset`,
+`choices` e o que não depende da busca) são validados **antes** da checagem de estado; erro de parâmetro é `-32602` mesmo em
+estado errado (`-32016` só com parâmetros válidos).
 
 ## 4. Notificação nova
 
