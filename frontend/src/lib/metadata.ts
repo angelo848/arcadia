@@ -29,6 +29,8 @@ export type MetadataCandidateView = {
   year: number
   platform: string
   score: number
+  // Small cover of the candidate, absent when no provider sent one [MET-068].
+  thumbUrl?: string
 }
 
 // MetadataSearchView is the unified search result, best candidate first.
