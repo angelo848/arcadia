@@ -61,6 +61,7 @@ Verificação: teste de componente com evento simulado; revisão de que não há
 ## Requisitos do Big Box
 
 ### BIG-001 — Entrar e sair da tela cheia
+· substituído por BBX-001, BBX-002 (docs/specs/phase-13-modo-console, 2026-11-15): Big Box novo, com temas.
 · alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): a "página do jogo" vira o painel de detalhes; B
 com o foco no painel volta ao cartão; ao sair, a janela volta ao estado anterior (UIX-003).
 Dado a biblioteca, quando escolho "Big Box" (botão ou atalho), então a janela vai para tela cheia com a grade de capas
@@ -68,6 +69,7 @@ em fonte grande. Quando aperto B ou Esc na biblioteca, então saio do Big Box, n
 Verificação: teste de componente; teste manual na TV.
 
 ### BIG-002 — Navegação por controle
+· substituído por BBX-005, BBX-006, BBX-014, BBX-016, BBX-018, BBX-019 (docs/specs/phase-13-modo-console, 2026-11-15).
 · alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): o cartão é um item só (sem botões); A no cartão o
 põe em foco e leva ao "Jogar" do painel; na borda da grade, as direções levam ao painel ou à coluna esquerda.
 Dado o Big Box com a janela em foco, quando aperto as setas ou o direcional do controle, então o foco se move pela
@@ -75,6 +77,8 @@ grade, com a capa do foco destacada. O foco passa por todos os itens da página 
 Verificação: teste de componente com eventos de teclado simulados; teste manual com controle real.
 
 ### BIG-003 — Sem depender do mouse
+· substituído por BBX-003, BBX-014 (docs/specs/phase-13-modo-console, 2026-11-15): o Big Box só navega; busca e filtros ficam na
+janela normal.
 · alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-044): lacuna registrada (a busca e os filtros não eram
 navegáveis pelo controle); a coluna esquerda passa a ser navegável.
 Dado o Big Box, quando não há mouse, então todas as ações (buscar, filtrar, abrir jogo, iniciar jogo, voltar) são
@@ -82,6 +86,8 @@ alcançáveis pelo controle. A busca de texto abre pelo teclado virtual do Windo
 Verificação: revisão da lista de ações; teste manual.
 
 ### BIG-004 — Pausa durante o Big Box
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, BBX-017): "Pausado" aparece na capa e no bloco de informações do
+tema Faixa.
 Dado um jogo iniciado pelo Big Box, quando o usuário pausa pelo atalho da fase 4 (`Select + Y`), então a pausa funciona
 como fora da tela cheia, e o Big Box mostra "Pausado" no jogo.
 Verificação: teste manual; teste de componente da marcação.

@@ -172,6 +172,8 @@ em `domain` como constantes (`MatchAuto`, `MatchMargin`, `MatchDoubt`, `MatchAlt
 ## MET — Provedores e limites de requisição
 
 ### MET-010 — Intervalo mínimo entre requisições, por provedor
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-015): entra o ScreenScraper (só vídeo), com 1.500 ms ou mais pelo
+limite por minuto da conta; o download do vídeo também passa pelo limitador dele.
 Dado qualquer chamada de rede a um provedor, de qualquer origem (busca única, lote, aplicação), então ela espera até o próximo
 horário livre do provedor: IGDB 334 ms, SteamGridDB 500 ms e Steam Store 2.000 ms depois da requisição anterior daquele
 provedor (o relógio é `domain.Clock`; o limitador é um só por provedor no agente). Quem espera sai na hora quando o contexto é
@@ -254,6 +256,8 @@ máximo".
 · verificação: teste do agente (contadores) e de componente (textos).
 
 ### MET-025 — Só os tipos que existem
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-001): vale para a fase 12; a fase 13 cria o tipo `video`
+(migração 9).
 Dado a fase, então nenhum tipo de mídia novo é criado: sem migração, `media.kind` continua `cover`, `screenshot`, `title`,
 `banner`, `background`, `select`. Logos, ícones e caixa 3D ficam fora (decisão 5, ADR 0030).
 · verificação: revisão do diff (nenhum arquivo em `internal/store/migrations`).
@@ -263,6 +267,8 @@ Dado a fase, então nenhum tipo de mídia novo é criado: sem migração, `media
 ## MET — Aplicar um candidato
 
 ### MET-030 — `metadata.apply` grava texto por prioridade e enfileira as imagens
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-004): depois de aplicar, o agente enfileira a busca de vídeo do
+jogo quando há credenciais do ScreenScraper, sistema mapeado e vaga; o resultado não muda.
 Dado `metadata.apply` com `gameId`, `refs` (uma por provedor, MET-031) e `replace`, quando o agente atende, então obtém de cada
 provedor o texto e as imagens (uma requisição ao IGDB, uma à Steam Store e duas ao SteamGridDB, MET-012..MET-014), faz o merge por campo
 com a prioridade de MID-003 (descrição, gêneros, modos, empresas e ano: IGDB, depois Steam Store) preenchendo só campos vazios,
@@ -462,6 +468,8 @@ escolhas, `-32602`. "Descartar tudo" chama `metadata.batchDiscard`.
 · verificação: teste de componente (escolhas enviadas; janela fecha; descartar); teste do agente (um caso por erro).
 
 ### MET-065 — Execução da aplicação
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-004): cada jogo aplicado também ganha a busca de vídeo nas
+condições de VID-004.
 Dado a busca em `applying`, então um único trabalhador aplica as escolhas em ordem: para cada jogo, obtém de cada provedor da
 escolha o que falta (MET-012, MET-013, MET-014; sempre `replace = false`), grava o texto (MET-030) e enfileira as imagens
 (MET-020..MET-023). Falha de um jogo (provedor fora, jogo apagado) incrementa `failed`, guarda o título (até 10) e segue para o
@@ -479,6 +487,8 @@ sem tocar em sessão. O resumo some com "Fechar", que chama `batchDiscard`.
 · verificação: teste do job (cancelar no meio; resultado parcial com `applied` = jogos gravados, incluindo o em curso) e de componente (resumo; invalidações; fechar → descarta).
 
 ### MET-067 — Indicador de tarefa e abertura automática
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, BBX-022): com o Big Box ativo a janela de confirmação não abre
+sozinha; o indicador pisca como com outro modal aberto.
 Dado qualquer estado da busca diferente de "sem busca", então o cabeçalho da janela principal mostra o indicador
 "Buscando metadados k/n" (`searching`, com "Cancelar"), "Revisar metadados (n)" (`ready` e `cancelled`, com "Descartar"),
 "Aplicando metadados k/n" (`applying`, com "Cancelar") ou o resumo (`done`). Dado a transição para `ready` com nenhum modal

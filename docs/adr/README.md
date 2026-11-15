@@ -48,3 +48,6 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0032](0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md) | Leitura de pasta por extensões fechadas e resultado limitado ao teto do IPC | aceito |
 | [0033](0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md) | Busca unificada de metadados com agregador, pontuação com travas e confirmação em lote | aceito |
 | [0034](0034-limite-de-imagens-conta-atuais-e-enfileiradas.md) | Limite de imagens por tipo conta as atuais e as enfileiradas | aceito |
+| [0035](0035-fechar-o-jogo-pelo-controle.md) | Fechar o jogo pelo controle (Select + B) | aceito |
+| [0036](0036-big-box-com-temas-selecionaveis.md) | Big Box com temas selecionáveis | aceito |
+| [0037](0037-video-do-screenscraper-como-midia-na-fila.md) | Vídeo do ScreenScraper como mídia `video` na fila | aceito |

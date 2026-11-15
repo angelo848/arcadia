@@ -149,6 +149,8 @@ confirmação), `frontend` (`ImportDialog`).
 
 ## Fase 13 — Modo console (ponto 9)
 
+> **Status:** spec aprovada em [phase-13-modo-console](specs/phase-13-modo-console/requirements.md) ([ADR 0035](adr/0035-fechar-o-jogo-pelo-controle.md), [0036](adr/0036-big-box-com-temas-selecionaveis.md), [0037](adr/0037-video-do-screenscraper-como-midia-na-fila.md)). Decisões finais: motivo de fim `closed-by-hotkey`, `WM_CLOSE` por até 3 s antes de matar, sem número de discos.
+
 **Entrega**
 - Atalho só de controle **Select + B** (segurado, como o Select + Y da pausa): encerra a sessão em curso matando a
   árvore de processos do jogo ou do emulador (Job Object). A sessão fecha normalmente, com o tempo contado até ali
@@ -166,7 +168,7 @@ confirmação), `frontend` (`ImportDialog`).
    ignora com o aviso sonoro de recusa.
 3. O atalho funciona fora do Big Box também.
 4. Sem confirmação extra contra acidente: só o 1 s segurado.
-5. Motivo de fim novo: `closed_by_hotkey`.
+5. Motivo de fim novo: `closed-by-hotkey`.
 6. Com a sessão pausada, encerra normalmente e o tempo pausado não conta.
 7. Só existe uma sessão por vez; não há caso de várias.
 

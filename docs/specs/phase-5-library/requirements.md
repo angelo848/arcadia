@@ -418,6 +418,8 @@ Dado o jogo `G`, quando chamo `Store.GameDetail(G)`, então recebo os campos de 
 vazias quando não há nada (nunca nulas). Dado um id inexistente, então erro que embrulha `ErrGameNotFound`.
 
 ### STO-027 — Sessões de um jogo
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-017): `endReason` pode ser também `client-no-launch` (já gravado
+desde a fase 6; correção do contrato) e `closed-by-hotkey`.
 Dado o jogo `G` com sessões `ended`, `discarded` e uma aberta, quando chamo `Store.GameSessions(G, offset, limit)`, então
 recebo as sessões ordenadas por `started_at` decrescente e `id` decrescente, cada uma com `state`, `startedAt`, `endedAt`
 (nulo se aberta), `activeSeconds` e `endReason` (nulo quando não há). Dado `G` inexistente, então `ErrGameNotFound`.

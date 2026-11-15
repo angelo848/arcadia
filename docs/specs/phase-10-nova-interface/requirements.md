@@ -144,6 +144,8 @@ Dado uma janela de largura L, então a coluna esquerda tem `clamp(220px, 16vw, 3
 centro de 484 px e 1132 px); conferência manual em 1024 × 640, 1366 × 768 e 1920 × 1080.
 
 ### UIX-006 — Cores só por variáveis do tema
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, BBX-025): a varredura inclui `frontend/src/bigbox/` e os tokens
+`--arc-bb-*` sob `[data-bigbox-theme="faixa"]`.
 Dado o código do frontend, quando a suíte roda, então nenhum arquivo `.tsx` em `frontend/src` usa classe de cor da
 paleta do Tailwind (ex.: `bg-neutral-900`, `text-emerald-400`, `border-red-500`, `bg-black/60`, `text-white`) nem cor
 literal (`#rgb`, `rgb(...)`, `hsl(...)`) em `className` ou `style`; as cores vêm só dos tokens do tema (`--arc-*`, lista
@@ -479,6 +481,8 @@ navegar no carrossel e acionar Editar, Buscar metadados e Remover. Nenhum ponto 
 ## UIX — Big Box e estatísticas
 
 ### UIX-044 — Big Box sobre o layout novo
+· substituído por BBX-001..BBX-030 (docs/specs/phase-13-modo-console, 2026-11-15): o Big Box deixa de usar as três colunas;
+`useBigBoxNav`, `cardGrid`, `gridNext` e `nextFocus` saem.
 Dado o Big Box (BIG-001..BIG-004, sem visual novo), então ele usa as três colunas em tela cheia com a fonte maior, e:
 - cada cartão é um item navegável (o próprio cartão); as direções movem cartão a cartão dentro da grade e, na borda da
   grade, a direita leva ao painel e a esquerda à coluna esquerda (busca, "Todos", plataformas e filtros também são itens
@@ -501,6 +505,8 @@ Critérios acrescentados após a revisão (2026-11-14):
   "Jogar" de H nem para "Jogar" de G numa leitura posterior.
 
 ### UIX-045 — Estatísticas abrem o jogo no painel
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, BBX-003): as estatísticas saem do Big Box; a parte "No Big Box..."
+deixa de existir.
 Dado a página de estatísticas, quando o usuário escolhe um jogo G (EST-001), então a página fecha, a biblioteca volta com
 os filtros que tinha e G fica em foco no painel (com a regra de UIX-021 se G estiver fora dos filtros). No Big Box, o
 foco do controle vai para "Jogar" do painel.

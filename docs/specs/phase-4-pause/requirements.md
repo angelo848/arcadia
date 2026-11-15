@@ -293,6 +293,9 @@ criado, nada é gravado, a sessão não muda e o pedido é recusado com o erro "
 (`sessionId`, `gameId`, `title`), como em SES-002.
 
 ### SES-032 — Lançamento sem rastrear não cria sessão
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-011, CON-031): o processo fica num Job Object guardado pelo
+tracker; sem sessão e sem notificação, como antes. Durante o fechamento pelo controle (até 3 s), lançamentos são recusados com
+"sessão ativa".
 Dado o tracker sem sessão e o jogo `G`, quando peço para lançá-lo sem contar tempo, então o processo é criado com o mesmo
 `LaunchSpec` de SES-001 (executável entre aspas como primeiro token da linha de comando, `launch_args`, pasta de
 trabalho), o PID é devolvido, nenhuma linha de `play_session` é criada, nenhuma notificação é enviada, `Current()`
@@ -342,6 +345,9 @@ pauso e retomo a sessão, então os dois processos continuam vivos e dentro do j
 saem, então a sessão vai para Grace (SES-021) e termina.
 
 ### TRK-010 — Lançamento sem rastrear fica fora do rastreamento
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-011): o processo passa a nascer suspenso dentro de um Job Object
+guardado pelo tracker só para Select + B poder fechá-lo (sem sessão, sem porta de conclusão, sem `KILL_ON_JOB_CLOSE`); "nenhum job
+é criado" deixa de valer; continua vivo depois de `Tracker.Close`.
 Dado o `fake-game` com `--run forever --until-file F --report R`, quando o tracker o lança sem contar tempo, então o
 processo roda com `cwd` igual à pasta de trabalho e com os argumentos de `launch_args` sem alteração, nenhum job é
 criado para ele, nenhuma linha de `play_session` existe, e o processo continua vivo depois de `Tracker.Close`; quando
@@ -529,6 +535,8 @@ sem roubar o foco, no topo e centralizado, por ~2,5 s; em tela cheia exclusiva o
 ## Som (SND)
 
 ### SND-001 — Dois sinais distintos
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-015): entra um terceiro sinal, `CueRefused` (300 Hz por 100 ms e
+200 Hz por 200 ms), o aviso sonoro de recusa do Select + B.
 Dado `Play(CuePaused)`, então são tocados dois tons seguidos: 660 Hz por 90 ms e 440 Hz por 120 ms (descendente); dado
 `Play(CueResumed)`, então 440 Hz por 90 ms e 660 Hz por 120 ms (ascendente). Os tons saem por uma função injetável (no
 Windows, `Beep` de `kernel32`). `Play` volta imediatamente, mesmo com a função de tom demorando 500 ms.
@@ -557,6 +565,8 @@ foco o som e o aviso confirmam que o agente aplicou o pedido).
 · alterado em 2026-11-09: inclui o motivo `ui`.
 
 ### FBK-002 — O coordenador mostra o aviso e toca o som
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-015): `EventRefused` chama só `Sound.Play(CueRefused)`, sem
+`Overlay.Show`.
 Dado `FeedbackPaused`, então o coordenador chama `Overlay.Show(NoticePaused)` e `Sound.Play(CuePaused)` uma vez cada;
 dado `FeedbackResumed`, `Show(NoticeResumed)` e `Play(CueResumed)`. Dado que um dos dois falha ou está ausente, então o
 outro ainda é chamado, o erro é registrado em `Warn` e nada é propagado ao tracker.
@@ -594,6 +604,8 @@ Dado o tracker sem sessão (ou em Grace), quando chega um gatilho, então nada �
 (Limitações 2).
 
 ### PAU-004 — Antirrepique entre fontes
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-004): a janela conta só gatilhos de pausa; os de fechar
+(Select + B) têm janela própria de 300 ms.
 Dados dois gatilhos (da mesma fonte ou de fontes diferentes) com instantes `At` separados por menos de 300 ms, então só
 o primeiro é encaminhado ao tracker; separados por exatamente 300 ms, o segundo também é encaminhado. A janela é medida
 a partir do último gatilho encaminhado.

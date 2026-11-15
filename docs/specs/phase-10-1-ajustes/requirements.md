@@ -302,6 +302,7 @@ do cartão, AJU-015).
 `Steam Poster\Jogo-01.jpg`: a primeira capa é a da raiz de `Box - Front`).
 
 ### AJU-020 — Limite de imagens por tipo
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-002): a tabela de `domain.MediaKindLimit` ganha `video` = 1.
 Dado a cópia das imagens do LaunchBox de um jogo, então são gravadas no máximo: capa 1, screenshot 10, fundo 2, tela de
 título 2, tela de seleção 2, banner 2 (decisão 3 do usuário). O limite conta as imagens que o jogo já tem daquele tipo no
 início da cópia, de qualquer provedor, e só as efetivamente gravadas (uma imagem repetida pelo hash, MID-004, não conta e

@@ -30,6 +30,8 @@ Formato: IDs `ÁREA-NNN`, critérios Dado/Quando/Então. Área nova: **MID**.
 ## Requisitos
 
 ### MID-001 — Chaves de API
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, SSC-001): dois provedores de credencial novos, `screenscraper` (conta
+do usuário) e `screenscraperdev` (desenvolvedor do Arcadia), ambos com id e senha.
 Dado que o usuário informa a chave de um provedor, quando salvo, então ela é guardada no Credential Manager sob um
 nome por provedor, e a UI mostra só "cadastrada" ou "não cadastrada". Dado que a chave não existe, então o provedor
 fica indisponível com a mensagem "Cadastre a chave em Configurações" e nenhuma chamada é feita.
@@ -62,6 +64,8 @@ IMP-008).
 Verificação: teste com HTTP local (`httptest`), sem rede externa.
 
 ### MID-005 — Fila em background
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-009, VID-016, VID-017): jobs de vídeo rodam numa raia própria de
+1 trabalhador, com pausa por cota e por credencial sem gastar tentativa; as imagens não esperam por eles.
 · alterado em 2026-11-15 (docs/specs/phase-5-library, DEL-007, DEL-008): a fila cancela por jogo (`CancelGame`) e espera os
 downloads dele saírem quando o jogo é removido; a remoção do jogo apaga a pasta `data\media\<id>\`.
 Dado uma ou mais mídias para baixar, quando a fila roda, então os downloads acontecem fora da UI, com limite de

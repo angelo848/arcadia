@@ -125,6 +125,9 @@ um processo que casa com a regra aparece de novo nesse prazo, então a sessão c
 sessão termina com o instante de saída do último processo casado.
 
 ### RUL-005 — Pausa e demais regras
+· alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-008, CON-030): Select + B pede para fechar (`WM_CLOSE`, até 3 s)
+e depois mata os processos adotados vivos que ainda casam com a regra pelo caminho (o cliente da loja nunca é tocado); sem
+processo adotado, recusa com som (CON-009).
 Dado uma sessão adotada, então a pausa por teclado e controle (fase 4) funciona da mesma forma, e a máquina de estados
 (§4.3) não muda. Dado uma sessão adotada, então o Job Object não existe: pausa e filhos são limitados ao que o watcher
 enxerga, e a página do jogo mostra "rastreio por processo" nessa sessão.
