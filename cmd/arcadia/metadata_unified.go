@@ -178,7 +178,10 @@ func (a *App) MetadataBatchStatus() (MetadataBatchStatusView, error) {
 // MetadataBatchResults returns one page of the rows of a ready or cancelled batch [MET-057].
 func (a *App) MetadataBatchResults(batchID int64, offset, limit int) (MetadataBatchResultsView, error) {
 	var res ipc.BatchResultsResult
-	params := ipc.BatchResultsParams{BatchID: batchID, Offset: offset, Limit: limit}
+	params := ipc.BatchResultsParams{BatchID: batchID, Offset: offset}
+	if limit != 0 { // 0 from the UI means the default page (absent on the wire) [MET-071]
+		params.Limit = &limit
+	}
 	if err := a.callAgent(ipc.MethodMetadataBatchResults, libraryTimeout, params, &res); err != nil {
 		return MetadataBatchResultsView{}, err
 	}

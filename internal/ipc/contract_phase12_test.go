@@ -225,7 +225,7 @@ func TestMetadataContract(t *testing.T) {
 			{"MetadataSearchParams", ipc.MetadataSearchParams{Title: "x", Platform: "PC", Year: 1998}, []string{"platform", "title", "year"}},
 			{"MetadataApplyParams", ipc.MetadataApplyParams{GameID: 1, Refs: []ipc.MetadataRef{{Provider: "igdb", ProviderID: "1"}}, Replace: true}, []string{"gameId", "refs", "replace"}},
 			{"BatchStartParams", ipc.BatchStartParams{GameIDs: []int64{1}}, []string{"gameIds"}},
-			{"BatchResultsParams", ipc.BatchResultsParams{BatchID: 1, Offset: 5, Limit: 100}, []string{"batchId", "limit", "offset"}},
+			{"BatchResultsParams", ipc.BatchResultsParams{BatchID: 1, Offset: 5, Limit: libPtr(100)}, []string{"batchId", "limit", "offset"}},
 			{"BatchIDParams", ipc.BatchIDParams{BatchID: 1}, []string{"batchId"}},
 		} {
 			if got := jsonFieldNames(t, tc.v); !slices.Equal(got, tc.want) {
@@ -447,7 +447,7 @@ func TestMetadataContract(t *testing.T) {
 			"maxResultsLimit":     200.0,
 			"maxResultBytes":      921600.0,
 			"progressWindowMs":    500.0,
-			"providerCooldownMs":  []any{30000.0, 60000.0, 120000.0},
+			"providerCooldownMs":  []any{30000.0, 60000.0},
 			"providerMaxFailures": 3.0,
 			"maxStatusWarnings":   10.0,
 			"maxFailedTitles":     10.0,

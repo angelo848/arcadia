@@ -48,7 +48,11 @@ func readyRows(t *testing.T, f batchFixture, titles ...string) (int64, []int64) 
 // resultsPage runs metadata.batchResults with the offset and the limit (0 = absent) and returns the result.
 func resultsPage(t *testing.T, f metaFixture, id int64, offset, limit int) ipc.BatchResultsResult {
 	t.Helper()
-	out, err := f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, ipc.BatchResultsParams{BatchID: id, Offset: offset, Limit: limit}))
+	params := ipc.BatchResultsParams{BatchID: id, Offset: offset}
+	if limit != 0 { // 0 here means absent: the default of 100 [MET-071]
+		params.Limit = &limit
+	}
+	out, err := f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, params))
 	if err != nil {
 		t.Fatalf("metadata.batchResults(offset %d, limit %d): %v", offset, limit, err)
 	}
@@ -160,6 +164,40 @@ func TestBatchResults(t *testing.T) {
 			if codeOf(err) != ipc.CodeInvalidParams {
 				t.Errorf("params %s: code = %d (%v), want %d", p, codeOf(err), err, ipc.CodeInvalidParams)
 			}
+		}
+	})
+
+	t.Run("MET-071/limit 0 explícito em ready: -32602 (ausente é 100)", func(t *testing.T) {
+		t.Parallel()
+		c := reachBatch(t, ipc.BatchStateReady)
+		zero := 0
+		_, err := c.f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, ipc.BatchResultsParams{BatchID: c.id, Limit: &zero}))
+		if codeOf(err) != ipc.CodeInvalidParams {
+			t.Errorf("code = %d (%v), want %d", codeOf(err), err, ipc.CodeInvalidParams)
+		}
+	})
+
+	t.Run("MET-071/limit 0 e 201 em searching: -32602 antes da checagem de estado", func(t *testing.T) {
+		t.Parallel()
+		c := reachBatch(t, ipc.BatchStateSearching)
+		zero, big := 0, 201
+		for _, limit := range []*int{&zero, &big} {
+			_, err := c.f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, ipc.BatchResultsParams{BatchID: c.id, Limit: limit}))
+			if codeOf(err) != ipc.CodeInvalidParams {
+				t.Errorf("limit %d: code = %d (%v), want %d", *limit, codeOf(err), err, ipc.CodeInvalidParams)
+			}
+		}
+	})
+
+	t.Run("MET-058/batchResults depois do descarte: -32014", func(t *testing.T) {
+		t.Parallel()
+		c := reachBatch(t, ipc.BatchStateReady)
+		if _, err := c.f.call(t, ipc.MethodMetadataBatchDiscard, batchJSON(t, ipc.BatchIDParams{BatchID: c.id})); err != nil {
+			t.Fatalf("batchDiscard: %v", err)
+		}
+		_, err := c.f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, ipc.BatchResultsParams{BatchID: c.id}))
+		if codeOf(err) != ipc.CodeBatchNotFound {
+			t.Errorf("code = %d (%v), want %d", codeOf(err), err, ipc.CodeBatchNotFound)
 		}
 	})
 

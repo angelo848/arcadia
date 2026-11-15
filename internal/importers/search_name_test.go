@@ -7,6 +7,19 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/importers"
 )
 
+// MET-040: a file name made only of markings never gives its raw stem back: the result has no brackets.
+func TestSearchNameNoRawMarkings(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{`E:\Games\[].exe`, `E:\[].exe`, `[].exe`} {
+		t.Run("MET-040/marcações sem nome: "+path, func(t *testing.T) {
+			t.Parallel()
+			if got := importers.SearchName(path); strings.ContainsAny(got, "[]()") {
+				t.Errorf("SearchName(%q) = %q, want no raw markings", path, got)
+			}
+		})
+	}
+}
+
 // MET-040: SearchName proposes the metadata search name of a file (match-rules.md §5.2). Pure: no disk, no clock.
 // The paths use Windows separators, as the file source receives them.
 func TestSearchName(t *testing.T) {
@@ -34,6 +47,7 @@ func TestSearchName(t *testing.T) {
 		{name: "MET-040/sobe até 3 pastas (3º nível é lido)", path: `E:\Real Title\bin\release\game.exe`, want: "Real Title"},
 		{name: "MET-040/nunca sobe da raiz do disco", path: `E:\bin\game.exe`, want: "game"},
 		{name: "MET-040/genérico sem diferenciar maiúsculas nem separadores (Start_Game)", path: `E:\Games\Some Game\Start_Game.exe`, want: "Some Game"},
+		{name: "MET-040/[].exe sem nome usa a pasta útil, sem marcações cruas", path: `E:\Games\Real Game\[].exe`, want: "Real Game"},
 		{name: "MET-040/título longo cortado em 200 runas", path: `E:\Games\` + strings.Repeat("é", 250) + `.exe`, want: strings.Repeat("é", 200)},
 	}
 

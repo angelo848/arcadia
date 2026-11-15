@@ -108,12 +108,12 @@ type BatchStatusResult struct {
 	Batch *BatchStatus `json:"batch"`
 }
 
-// BatchResultsParams are the params of metadata.batchResults. Offset and Limit are
-// the values sent by the client (the defaults are applied by the agent).
+// BatchResultsParams are the params of metadata.batchResults. Limit is nil when absent (the agent uses
+// 100); a present value must be 1 to 200 [MET-071]. Offset is 0 when absent.
 type BatchResultsParams struct {
 	BatchID int64 `json:"batchId"`
 	Offset  int   `json:"offset,omitempty"`
-	Limit   int   `json:"limit,omitempty"`
+	Limit   *int  `json:"limit,omitempty"`
 }
 
 // BatchRow is one game of a ready or cancelled batch. Selected is the index in

@@ -45,7 +45,7 @@ func SearchName(path string) string {
 		stem = next
 	}
 
-	name := NormalizeTitle(stem, false)
+	name := searchTitle(stem, false)
 	if name != "" && !genericFileNames[genericKey(name)] {
 		return name
 	}
@@ -62,15 +62,26 @@ func SearchName(path string) string {
 		if genericFolderNames[genericKey(folder)] {
 			continue
 		}
-		if t := NormalizeTitle(folder, true); t != "" {
+		if t := searchTitle(folder, true); t != "" {
 			return t
 		}
 	}
 
-	if name != "" {
-		return name
+	return name
+}
+
+// searchTitle is NormalizeTitle for a search name. NormalizeTitle keeps the raw text when only markings are
+// left ("[]" stays "[]"); a search name never does, so it returns "" then. The result is at most
+// domain.MaxTitleRunes runes [MET-040].
+func searchTitle(s string, fromFolder bool) string {
+	clean := s
+	if fromFolder {
+		clean = reOrderPrefix.ReplaceAllString(clean, "$1")
 	}
-	return stem
+	if cleanSpaces(strings.ReplaceAll(removeGroups(clean), "_", " ")) == "" {
+		return ""
+	}
+	return NormalizeTitle(s, fromFolder)
 }
 
 // genericKey compares names without case, spaces, separators or punctuation.

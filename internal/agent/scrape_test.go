@@ -237,6 +237,47 @@ func TestScrapeHandlers(t *testing.T) {
 		}
 	})
 
+	for _, id := range []string{"steamstore", "igdb"} {
+		t.Run("MET-012/MET-014/scrape.apply de "+id+" usa Fetch: uma requisição, sem Details nem Media", func(t *testing.T) {
+			t.Parallel()
+			p := &metaFetchProv{metaProv: metaProv{id: id, meta: scrapers.Metadata{Description: "Texto"},
+				media: []scrapers.RemoteMedia{{Kind: scrapers.KindCover, URL: "https://cdn.example.test/c.png"}}}}
+			f := newScrapeFixtureWith(t, map[string]scrapers.MetadataProvider{id: p})
+			if _, err := f.call(t, ipc.MethodScrapeApply, scrapeJSON(t, map[string]any{"gameId": f.gameID, "provider": id, "providerId": "7"})); err != nil {
+				t.Fatalf("scrape.apply: %v", err)
+			}
+			if n := p.count("Fetch"); n != 1 {
+				t.Errorf("Fetch calls = %d, want 1", n)
+			}
+			if n := p.count("Details") + p.count("Media"); n != 0 {
+				t.Errorf("Details and Media calls = %d, want 0 when Fetch exists", n)
+			}
+			if n := p.totalRequests(); n != 1 {
+				t.Errorf("requests = %d, want 1", n)
+			}
+		})
+	}
+
+	for _, bad := range []string{"", "abc", "12a", "-1", "1.5", strings.Repeat("9", 21)} {
+		t.Run(fmt.Sprintf("MET-071/providerId %q: scrape.apply e media.queue dão -32602 sem chamar o provedor", bad), func(t *testing.T) {
+			t.Parallel()
+			p := &metaFetchProv{metaProv: metaProv{id: "steamstore", meta: scrapers.Metadata{Description: "Texto"},
+				media: []scrapers.RemoteMedia{{Kind: scrapers.KindCover, URL: "https://cdn.example.test/c.png"}}}}
+			f := newScrapeFixtureWith(t, map[string]scrapers.MetadataProvider{"steamstore": p})
+			_, err := f.call(t, ipc.MethodScrapeApply, scrapeJSON(t, map[string]any{"gameId": f.gameID, "provider": "steamstore", "providerId": bad}))
+			if codeOf(err) != ipc.CodeInvalidParams {
+				t.Errorf("scrape.apply: code = %d (%v), want %d", codeOf(err), err, ipc.CodeInvalidParams)
+			}
+			_, err = f.call(t, ipc.MethodMediaQueue, scrapeJSON(t, map[string]any{"gameId": f.gameID, "provider": "steamstore", "providerId": bad, "kinds": []string{"cover"}}))
+			if codeOf(err) != ipc.CodeInvalidParams {
+				t.Errorf("media.queue: code = %d (%v), want %d", codeOf(err), err, ipc.CodeInvalidParams)
+			}
+			if n := p.totalRequests(); n != 0 {
+				t.Errorf("provider requests = %d, want 0", n)
+			}
+		})
+	}
+
 	t.Run("MID-008/provedor indisponível vira -32011", func(t *testing.T) {
 		t.Parallel()
 		f := newScrapeFixture(t, &fakeProvider{id: "igdb", err: scrapers.ErrUnavailable})
@@ -245,6 +286,41 @@ func TestScrapeHandlers(t *testing.T) {
 			t.Errorf("code = %d (%v), want %d", codeOf(err), err, ipc.CodeProviderUnavailable)
 		}
 	})
+}
+
+// newScrapeFixtureWith is newScrapeFixture with the providers given by name (fakes with or without Fetch).
+func newScrapeFixtureWith(t *testing.T, provs map[string]scrapers.MetadataProvider) scrapeFixture {
+	t.Helper()
+	root := t.TempDir()
+	st, err := store.Open(t.Context(), filepath.Join(root, "library.db"), store.OpenOptions{Migrate: true})
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	g, err := st.AddGame(t.Context(), store.NewGame{Title: "Celeste", Exe: `C:\c.exe`, At: time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("AddGame: %v", err)
+	}
+	keys := scrapers.NewKeys(&memKeyStore{values: map[string]string{}})
+	clock := domain.NewFakeClock(time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	queue := newMediaQueue(st, media.New(filepath.Join(root, "media"), nil), clock, log, nil)
+	svc := &scrapeService{
+		st:   st,
+		keys: keys,
+		providers: func(name string) (scrapers.MetadataProvider, error) {
+			p, ok := provs[name]
+			if !ok {
+				return nil, errUnknownProvider
+			}
+			return p, nil
+		},
+		queue:     queue,
+		mediaRoot: filepath.Join(root, "media"),
+		clock:     clock,
+		log:       log,
+	}
+	return scrapeFixture{st: st, keys: keys, handlers: scrapeHandlers(svc), gameID: g.ID, root: root, queue: queue, svc: svc}
 }
 
 func scrapeJSON(t *testing.T, v any) string {

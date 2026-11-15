@@ -19,6 +19,9 @@ import (
 // batchProviders are the providers a batch can ask, in the aggregator's order.
 var batchProviders = []string{"igdb", "steamgriddb", "steamstore"}
 
+// batchKeyProviders are the providers that need a key and so count for batchStart's key check [MET-052].
+var batchKeyProviders = []string{"igdb", "steamgriddb"}
+
 // batchProviderLabels name the providers in the batch warnings [MET-011].
 var batchProviderLabels = map[string]string{
 	"igdb":        "IGDB",
@@ -56,13 +59,10 @@ func (r *batchRow) toIPC() ipc.BatchRow {
 	}
 }
 
-// batchEvent tells the coordinator that a worker finished a game. In searching only failed is used; in
-// applying title, queued and skipped are too (the title of a failed game, its images [MET-065]).
+// batchEvent tells the coordinator that a worker finished a game. The counters are not in it: the worker
+// that writes a game counts it under the job's mutex, in the same block as the write [MET-066].
 type batchEvent struct {
-	failed  bool
-	title   string
-	queued  int
-	skipped int
+	failed bool
 }
 
 // applyItem is one choice of a batch application: the game, its title and the group the user picked.
@@ -86,7 +86,8 @@ type batchJob struct {
 
 	mu           sync.Mutex
 	state        string
-	total        int // games of a search, choices of an application [batch-state-machine.md §2]
+	discarded    bool // set by batchDiscard; the job is gone for every caller that still holds it
+	total        int  // games of a search, choices of an application [batch-state-machine.md §2]
 	done         int
 	failed       int
 	warnings     []string
@@ -203,12 +204,12 @@ func (m *metadataService) batchStart(ctx context.Context, params json.RawMessage
 	defer m.batchMu.Unlock()
 	if m.batch != nil {
 		m.batch.mu.Lock()
-		st := m.batch.state
+		st, cancel := m.batch.state, m.batch.cancel
 		m.batch.mu.Unlock()
 		if st != ipc.BatchStateDone {
 			return nil, batchBusy(st)
 		}
-		m.batch.cancel()
+		cancel()
 		m.batch = nil
 	}
 	n := len(p.GameIDs)
@@ -253,8 +254,9 @@ func validBatchIDs(ids []int64) bool {
 	return true
 }
 
-// checkBatchKeys returns nil when some applicable provider has a key for some game. Otherwise it is the
-// contract's -32010, with the first applicable provider as data.provider [MET-052].
+// checkBatchKeys returns nil when some applicable keyed provider has a key for some game. Steam Store has no
+// key, so it does not count. Otherwise it is the contract's -32010, with the first applicable keyed provider
+// (IGDB when there is none) as data.provider [MET-052].
 func (m *metadataService) checkBatchKeys(ctx context.Context, details []store.GameDetail) error {
 	first := ""
 	for _, d := range details {
@@ -263,7 +265,7 @@ func (m *metadataService) checkBatchKeys(ctx context.Context, details []store.Ga
 			return err
 		}
 		info := scrapers.PlatformInfo{SeedKey: q.SeedKey, Category: q.Category, Known: q.Platform != "" || q.SeedKey != ""}
-		for _, p := range batchProviders {
+		for _, p := range batchKeyProviders {
 			if !scrapers.Applicable(p, info) {
 				continue
 			}
@@ -280,7 +282,7 @@ func (m *metadataService) checkBatchKeys(ctx context.Context, details []store.Ga
 		}
 	}
 	if first == "" {
-		first = batchProviders[0]
+		first = batchKeyProviders[0]
 	}
 	return m.scrape.providerError(first, scrapers.ErrNoKey)
 }
@@ -308,17 +310,17 @@ func (m *metadataService) runSearch(job *batchJob, ctx context.Context) {
 }
 
 // runApply applies the choices of a batch: one worker takes the items in order and the coordinator (this
-// goroutine) counts them. It returns when the batch is done or ctx ends, and it waits for its worker first
-// [MET-065, MET-059].
-func (m *metadataService) runApply(job *batchJob, items []applyItem) {
+// goroutine) notifies the progress. It returns when the batch is done or ctx ends, and it waits for its
+// worker first [MET-065, MET-059].
+func (m *metadataService) runApply(job *batchJob, ctx context.Context, items []applyItem) {
 	events := make(chan batchEvent)
 	var worker sync.WaitGroup
 	worker.Add(1)
 	go func() {
 		defer worker.Done()
-		m.applyWorker(job, job.ctx, items, events)
+		m.applyWorker(job, ctx, items, events)
 	}()
-	m.coordinate(job, job.ctx, events, len(items))
+	m.coordinate(job, ctx, events, len(items))
 	worker.Wait()
 }
 
@@ -355,17 +357,18 @@ func (m *metadataService) applyWorker(job *batchJob, ctx context.Context, items 
 		if ctx.Err() != nil {
 			return
 		}
-		res, err := m.applyGame(ctx, job, it)
+		err := m.applyGame(ctx, job, it)
 		if ctx.Err() != nil {
 			return
 		}
-		ev := batchEvent{queued: res.queued, skipped: res.skipped}
+		ev := batchEvent{}
 		if err != nil {
 			if errors.Is(err, errBatchStopped) {
 				return
 			}
 			m.log.Error("aplicação do lote", "game", it.gameID, "error", err.Error())
-			ev = batchEvent{failed: true, title: it.title}
+			job.countFailed(it.title)
+			ev.failed = true
 		}
 		select {
 		case events <- ev:
@@ -377,10 +380,11 @@ func (m *metadataService) applyWorker(job *batchJob, ctx context.Context, items 
 
 // applyGame applies the group of one choice: the texts and the images the search already brought are used
 // (IGDB needs no request); the others are fetched as metadata.apply does. The write happens only while the
-// batch is still applying, under its mutex, so a cancelled batch writes nothing more [MET-065, MET-066].
-func (m *metadataService) applyGame(ctx context.Context, job *batchJob, it applyItem) (queueResult, error) {
+// batch is still applying, under its mutex, and the game is counted in the same block, so a cancelled batch
+// writes nothing more and its result has every game written [MET-065, MET-066].
+func (m *metadataService) applyGame(ctx context.Context, job *batchJob, it applyItem) error {
 	if _, err := m.scrape.game(ctx, it.gameID); err != nil {
-		return queueResult{}, err
+		return err
 	}
 	texts := make(map[string]scrapers.Metadata, len(it.group.Refs))
 	offers := make([]scrapers.Offer, 0, len(it.group.Refs))
@@ -392,7 +396,7 @@ func (m *metadataService) applyGame(ctx context.Context, job *batchJob, it apply
 		}
 		md, media, err := m.fetchOne(ctx, ipc.MetadataRef{Provider: r.Provider, ProviderID: r.ProviderID})
 		if err != nil {
-			return queueResult{}, err
+			return err
 		}
 		texts[r.Provider] = md
 		offers = append(offers, scrapers.Offer{Provider: r.Provider, Media: media})
@@ -400,10 +404,30 @@ func (m *metadataService) applyGame(ctx context.Context, job *batchJob, it apply
 	job.mu.Lock()
 	defer job.mu.Unlock()
 	if job.state != ipc.BatchStateApplying {
-		return queueResult{}, errBatchStopped
+		return errBatchStopped
 	}
 	_, res, err := m.commitApply(ctx, it.gameID, texts, offers, false)
-	return res, err
+	if err != nil {
+		return err
+	}
+	job.done++
+	job.imagesQueued += res.queued
+	job.imagesSkip += res.skipped
+	return nil
+}
+
+// countFailed counts one failed game of the application and keeps its title, up to maxFailedTitles
+// [MET-065]. It does nothing when the batch is no longer applying.
+func (j *batchJob) countFailed(title string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.state != ipc.BatchStateApplying {
+		return
+	}
+	j.failed++
+	if len(j.failedTitles) < maxFailedTitles {
+		j.failedTitles = append(j.failedTitles, title)
+	}
 }
 
 // coordinate counts the finished games of total, sends the notifications through the progress coalescer
@@ -479,26 +503,21 @@ func (j *batchJob) working() bool {
 	return j.state == ipc.BatchStateSearching || j.state == ipc.BatchStateApplying
 }
 
-// advance counts one finished game (failed or done) and returns the notification to send, when the batch
-// is still working. In applying it also keeps the counters of the result [MET-065].
+// advance counts one finished game of the search and returns the notification to send, when the batch is
+// still working. In applying the worker has counted the game already, so it only returns the notification
+// [MET-065, MET-066].
 func (j *batchJob) advance(ev batchEvent) (ipc.MetadataBatchChangedParams, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.working() {
 		return ipc.MetadataBatchChangedParams{}, false
 	}
-	applying := j.state == ipc.BatchStateApplying
-	if ev.failed {
-		j.failed++
-		if applying && len(j.failedTitles) < maxFailedTitles {
-			j.failedTitles = append(j.failedTitles, ev.title)
+	if j.state == ipc.BatchStateSearching {
+		if ev.failed {
+			j.failed++
+		} else {
+			j.done++
 		}
-		return j.progressLocked(), true
-	}
-	j.done++
-	if applying {
-		j.imagesQueued += ev.queued
-		j.imagesSkip += ev.skipped
 	}
 	return j.progressLocked(), true
 }
@@ -578,20 +597,15 @@ func (j *batchJob) rowsLocked() []ipc.BatchRow {
 	return out
 }
 
-// choicesValidLocked reports whether every choice names a game of the batch that has a row, and a
-// candidate of that row. The caller holds mu.
-func (j *batchJob) choicesValidLocked(choices []ipc.BatchChoice) bool {
+// validChoiceParams checks the choices of metadata.batchApply that need no batch: 1 to maxBatchChoices of
+// them, no game repeated, and a candidate of 0 or more [MET-064, MET-071].
+func validChoiceParams(choices []ipc.BatchChoice) bool {
 	if len(choices) < 1 || len(choices) > maxBatchChoices {
 		return false
 	}
 	seen := make(map[int64]bool, len(choices))
 	for _, c := range choices {
-		i, ok := j.index[c.GameID]
-		if !ok || seen[c.GameID] {
-			return false
-		}
-		r := j.rows[i]
-		if r == nil || c.Candidate < 0 || c.Candidate >= len(r.groups) {
+		if c.Candidate < 0 || seen[c.GameID] {
 			return false
 		}
 		seen[c.GameID] = true
@@ -599,9 +613,31 @@ func (j *batchJob) choicesValidLocked(choices []ipc.BatchChoice) bool {
 	return true
 }
 
+// choicesValidLocked reports whether every choice names a game of the batch that has a row, and a
+// candidate of that row. A discarded job has no rows. The caller holds mu.
+func (j *batchJob) choicesValidLocked(choices []ipc.BatchChoice) bool {
+	if j.discarded {
+		return false
+	}
+	for _, c := range choices {
+		i, ok := j.index[c.GameID]
+		if !ok {
+			return false
+		}
+		r := j.rows[i]
+		if r == nil || c.Candidate >= len(r.groups) {
+			return false
+		}
+	}
+	return true
+}
+
 // planLocked returns the items of valid choices, in the order of the games. The caller holds mu and has
-// checked the choices with choicesValidLocked.
+// checked the choices with choicesValidLocked; a discarded job plans nothing.
 func (j *batchJob) planLocked(choices []ipc.BatchChoice) []applyItem {
+	if j.discarded {
+		return nil
+	}
 	items := make([]applyItem, 0, len(choices))
 	for _, c := range choices {
 		pos := j.index[c.GameID]
@@ -662,6 +698,9 @@ func (m *metadataService) batchCancel(_ context.Context, params json.RawMessage)
 	}
 	job.mu.Lock()
 	defer job.mu.Unlock()
+	if job.discarded {
+		return nil, ipc.NewError(ipc.CodeBatchNotFound, ipc.MsgBatchNotFound)
+	}
 	switch job.state {
 	case ipc.BatchStateSearching:
 		job.state = ipc.BatchStateCancelled
@@ -690,14 +729,13 @@ func (m *metadataService) batchDiscard(_ context.Context, params json.RawMessage
 		return nil, ipc.NewError(ipc.CodeBatchNotFound, ipc.MsgBatchNotFound)
 	}
 	job.mu.Lock()
-	st := job.state
-	if st == ipc.BatchStateSearching || st == ipc.BatchStateApplying {
-		job.mu.Unlock()
-		return nil, batchWrongState(st)
+	defer job.mu.Unlock()
+	if job.state == ipc.BatchStateSearching || job.state == ipc.BatchStateApplying {
+		return nil, batchWrongState(job.state)
 	}
+	job.discarded = true
 	job.rows = nil
 	job.result = nil
-	job.mu.Unlock()
 	job.cancel()
 	m.batch = nil
 	return ipc.BatchDiscardResult{Discarded: true}, nil
@@ -710,9 +748,9 @@ func (m *metadataService) batchResults(_ context.Context, params json.RawMessage
 	if e := decodeOrInvalid(params, &p); e != nil {
 		return nil, e
 	}
-	limit := p.Limit
-	if limit == 0 {
-		limit = defaultResultsLimit
+	limit := defaultResultsLimit
+	if p.Limit != nil {
+		limit = *p.Limit
 	}
 	if p.BatchID < 1 || p.Offset < 0 || limit < 1 || limit > maxResultsLimit {
 		return nil, badParams()
@@ -723,6 +761,9 @@ func (m *metadataService) batchResults(_ context.Context, params json.RawMessage
 	}
 	job.mu.Lock()
 	defer job.mu.Unlock()
+	if job.discarded {
+		return nil, ipc.NewError(ipc.CodeBatchNotFound, ipc.MsgBatchNotFound)
+	}
 	if job.state != ipc.BatchStateReady && job.state != ipc.BatchStateCancelled {
 		return nil, batchWrongState(job.state)
 	}
@@ -769,7 +810,7 @@ func (m *metadataService) batchApply(_ context.Context, params json.RawMessage) 
 	if e := decodeOrInvalid(params, &p); e != nil {
 		return nil, e
 	}
-	if p.BatchID < 1 {
+	if p.BatchID < 1 || !validChoiceParams(p.Choices) {
 		return nil, badParams()
 	}
 	job, err := m.jobOf(p.BatchID)
@@ -778,6 +819,9 @@ func (m *metadataService) batchApply(_ context.Context, params json.RawMessage) 
 	}
 	job.mu.Lock()
 	defer job.mu.Unlock()
+	if job.discarded {
+		return nil, ipc.NewError(ipc.CodeBatchNotFound, ipc.MsgBatchNotFound)
+	}
 	if job.state != ipc.BatchStateReady && job.state != ipc.BatchStateCancelled {
 		return nil, batchWrongState(job.state)
 	}
@@ -791,10 +835,15 @@ func (m *metadataService) batchApply(_ context.Context, params json.RawMessage) 
 	job.imagesQueued, job.imagesSkip = 0, 0
 	job.failedTitles = nil
 	job.result = nil
+	// A cancelled batch has its context cancelled: the application gets a new one, child of the agent's [MET-064].
+	if job.ctx.Err() != nil {
+		job.ctx, job.cancel = context.WithCancel(m.root)
+	}
+	ctx := job.ctx
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		m.runApply(job, items)
+		m.runApply(job, ctx, items)
 	}()
 	return ipc.BatchApplyResult{Accepted: len(p.Choices)}, nil
 }

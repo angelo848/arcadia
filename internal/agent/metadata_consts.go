@@ -22,6 +22,7 @@ const (
 	maxFailedTitles     = 10 // failed titles returned in the batch result
 )
 
-// providerCooldown is how long a provider stays suspended after each run of providerMaxFailures
-// failures in a batch: 30 s, then 60 s, then 120 s [MET-011].
-var providerCooldown = []time.Duration{30 * time.Second, 60 * time.Second, 120 * time.Second}
+// providerCooldown is how long a provider stays suspended after each failure in a row of a batch: 30 s after
+// the first, 60 s after the second. The providerMaxFailures-th one disables it for the rest of the batch, so
+// there is no step for it [MET-011].
+var providerCooldown = []time.Duration{30 * time.Second, 60 * time.Second}

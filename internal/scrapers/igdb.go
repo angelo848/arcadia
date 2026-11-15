@@ -81,6 +81,7 @@ func (p *IGDB) accessToken(ctx context.Context) (string, error) {
 	if p.token != "" && p.cfg.Clock.Now().Before(p.expires) {
 		return p.token, nil
 	}
+	// The secret goes in the form body, never in the query: URLs end up in logs and errors [MET-001].
 	form := url.Values{"client_id": {p.cfg.ClientID}, "client_secret": {p.cfg.Secret}, "grant_type": {"client_credentials"}}
 	var out struct {
 		AccessToken string `json:"access_token"`
@@ -88,8 +89,9 @@ func (p *IGDB) accessToken(ctx context.Context) (string, error) {
 	}
 	err := doJSON(ctx, p.cfg.HTTP, igdbName, request{
 		method:  http.MethodPost,
-		url:     p.cfg.TokenURL + "?" + form.Encode(),
-		headers: map[string]string{},
+		url:     p.cfg.TokenURL,
+		headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		body:    form.Encode(),
 	}, &out)
 	if err != nil {
 		return "", err

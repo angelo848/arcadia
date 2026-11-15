@@ -24,6 +24,63 @@ var igStart = time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 // igGuardTimeout only stops a broken test from hanging. The FakeClock decides when limiter waits end.
 const igGuardTimeout = 2 * time.Second
 
+// TestIGDBSecretStaysOutOfTheTokenRequest checks that the IGDB client secret never reaches an error text, and
+// that the token request sends it in the body of the POST, not in the URL query [MID-001].
+func TestIGDBSecretStaysOutOfTheTokenRequest(t *testing.T) {
+	t.Parallel()
+	const secret = "seg-muito-secreto-9f3a"
+
+	t.Run("MID-001/rede caída no token: o erro não contém o client_secret", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.NotFoundHandler())
+		base := srv.URL
+		srv.Close()
+		p := scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: "cid", Secret: secret, APIBase: base + "/v4", TokenURL: base + "/oauth2/token"})
+		_, err := p.Search(igGuard(t), scrapers.Query{Title: "Celeste"})
+		if err == nil {
+			t.Fatal("search against a closed server succeeded")
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("error repeats the client secret: %v", err)
+		}
+	})
+
+	t.Run("MID-001/o token vai no corpo do POST, não na query", func(t *testing.T) {
+		t.Parallel()
+		var mu sync.Mutex
+		tokenSeen, bodyOK, queryLeak := false, false, false
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == "/oauth2/token" {
+				_ = r.ParseForm()
+				mu.Lock()
+				tokenSeen = true
+				bodyOK = bodyOK || r.PostForm.Get("client_secret") == secret
+				queryLeak = queryLeak || strings.Contains(r.URL.RawQuery, secret)
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":3600}`)
+				return
+			}
+			http.NotFound(w, r) // the API answer is not the point of this test
+		}))
+		t.Cleanup(srv.Close)
+		p := scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: "cid", Secret: secret, APIBase: srv.URL + "/v4", TokenURL: srv.URL + "/oauth2/token", HTTP: srv.Client()})
+		_, _ = p.Search(igGuard(t), scrapers.Query{Title: "Celeste"})
+
+		mu.Lock()
+		defer mu.Unlock()
+		if !tokenSeen {
+			t.Fatal("the token request was never sent")
+		}
+		if queryLeak {
+			t.Error("the client secret is in the URL query of the token request")
+		}
+		if !bodyOK {
+			t.Error("the client secret is not in the body of the token POST")
+		}
+	})
+}
+
 // igGuard is a context that ends after igGuardTimeout, to bound the blocking waits on the fake clock.
 func igGuard(t *testing.T) context.Context {
 	t.Helper()

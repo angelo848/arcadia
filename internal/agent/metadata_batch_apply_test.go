@@ -356,6 +356,20 @@ func TestBatchApplyChoices(t *testing.T) {
 		})
 	}
 
+	t.Run("MET-071/escolhas vazias em searching: -32602 antes da checagem de estado", func(t *testing.T) {
+		t.Parallel()
+		c := reachBatch(t, ipc.BatchStateSearching)
+		applyWant(t, c, []ipc.BatchChoice{}, ipc.CodeInvalidParams)
+		wantBatchState(t, c.f.metaFixture, ipc.BatchStateSearching)
+	})
+
+	t.Run("MET-071/candidate negativo em searching: -32602 antes da checagem de estado", func(t *testing.T) {
+		t.Parallel()
+		c := reachBatch(t, ipc.BatchStateSearching)
+		applyWant(t, c, []ipc.BatchChoice{{GameID: c.ids[0], Candidate: -1}}, ipc.CodeInvalidParams)
+		wantBatchState(t, c.f.metaFixture, ipc.BatchStateSearching)
+	})
+
 	t.Run("MET-071/batchId 0: -32602", func(t *testing.T) {
 		t.Parallel()
 		c := reachBatch(t, ipc.BatchStateReady)
@@ -559,6 +573,81 @@ func TestBatchApply(t *testing.T) {
 		}
 	})
 
+	t.Run("MET-064/batchCancel na busca e depois batchApply: done com applied = escolhas", func(t *testing.T) {
+		t.Parallel()
+		f := newBatchFixture(t, true, false)
+		f.gate.free = map[string]bool{"Celeste": true, "Hades": true} // Dead Cells is held until the cancel
+		ids := batchGames(t, f, "Hades", "Dead Cells")
+		res := startBatchOK(t, f, ids...)
+		// The counter notices of searching are coalesced over 500 ms of the fake clock, so the batch's own
+		// status is polled until two games are done.
+		deadline := time.After(testTimeout)
+		for {
+			if b := batchStatusNow(t, f.metaFixture); b != nil && b.Done == 2 {
+				break
+			}
+			select {
+			case <-f.spy.signal:
+			case <-time.After(20 * time.Millisecond):
+			case <-deadline:
+				t.Fatalf("two games were never done: %+v", batchStatusNow(t, f.metaFixture))
+			}
+		}
+		if state := cancelBatch(t, f.metaFixture, res.BatchID); state != ipc.BatchStateCancelled {
+			t.Fatalf("batchCancel state = %q, want cancelled", state)
+		}
+		waitReturns(t, "the search workers", f.meta.Wait)
+
+		choices := choicesOf(ids[:2])
+		if _, err := callWithin(t, f.metaFixture, ipc.MethodMetadataBatchApply, batchJSON(t, ipc.BatchApplyParams{BatchID: res.BatchID, Choices: choices})); err != nil {
+			t.Fatalf("metadata.batchApply on a cancelled batch: %v", err)
+		}
+		awaitBatchState(t, f.spy, res.BatchID, ipc.BatchStateDone)
+		st := batchStatusNow(t, f.metaFixture)
+		if st == nil || st.State != ipc.BatchStateDone || st.Result == nil {
+			t.Fatalf("batch = %+v, want done with a result", st)
+		}
+		if st.Result.Applied != len(choices) || st.Done != len(choices) || st.Total != len(choices) {
+			t.Errorf("applied %d done %d total %d, want %d of each", st.Result.Applied, st.Done, st.Total, len(choices))
+		}
+	})
+
+	t.Run("MET-066/cancelar com jogo já gravado e evento ainda não contado: o resultado conta o que foi gravado", func(t *testing.T) {
+		t.Parallel()
+		w := newApplyWorld(t, applyCfg{titles: []string{"Hades", "Dead Cells"}, igdb: true, covers: 1})
+		gate, open := newGate(t)
+		id, ids := w.readyBatch(t)
+		entered := make(chan struct{}, 1)
+		w.meta.notify = gatedSink{next: w.spy, gate: gate}
+		w.meta.st = applySignal{metadataStore: w.meta.st, gameID: ids[1], entered: entered}
+		batchApplyOK(t, w, id, ids)
+		// Celeste is counted; the coordinator is now held inside that notification, so Hades' event cannot be counted.
+		awaitBatchNotice(t, w.spy, "applying with done 1", func(e ipc.MetadataBatchChangedParams) bool {
+			return e.BatchID == id && e.State == ipc.BatchStateApplying && e.Done == 1
+		})
+		select {
+		case <-entered: // Hades is being written: the batch mutex is held until the write ends
+		case <-time.After(testTimeout):
+			t.Fatal("Hades was never written")
+		}
+		if state := cancelBatch(t, w.metaFixture, id); state != ipc.BatchStateDone {
+			t.Errorf("batchCancel state = %q, want done", state)
+		}
+		open()
+		waitReturns(t, "the application", w.meta.Wait)
+
+		st := batchStatusNow(t, w.metaFixture)
+		if st == nil || st.Result == nil {
+			t.Fatalf("batch = %+v, want done with a result", st)
+		}
+		if r := st.Result; r.Applied != 2 || r.ImagesQueued != 2 || r.ImagesSkippedByLimit != 0 {
+			t.Errorf("result = %+v, want applied 2, imagesQueued 2, no skip: Hades was written before the cancel", r)
+		}
+		if d := gameText(t, w.st, ids[2]).Description; d != "" {
+			t.Errorf("Dead Cells description = %q after the cancel, want none", d)
+		}
+	})
+
 	t.Run("MET-022/mesmo jogo com 1 vaga de screenshot recebe 1 pelo lote", func(t *testing.T) {
 		t.Parallel()
 		w := newApplyWorld(t, applyCfg{igdb: true, screenshots: 3})
@@ -670,6 +759,38 @@ func TestBatchApply(t *testing.T) {
 		}
 		wantBatchState(t, c.f.metaFixture, batchNone)
 	})
+}
+
+// gatedSink passes every notification to next and, on the first applying notice with done 1, holds the
+// goroutine that notifies (the coordinator) until gate is closed.
+type gatedSink struct {
+	next batchSink
+	gate chan struct{}
+}
+
+func (s gatedSink) BatchChanged(p ipc.MetadataBatchChangedParams) {
+	s.next.BatchChanged(p)
+	if p.State == ipc.BatchStateApplying && p.Done == 1 {
+		<-s.gate
+	}
+}
+
+// applySignal is the store of the batch service: it signals when the write of gameID starts. The write
+// runs under the batch mutex, so a cancel that comes after the signal waits for the write to end.
+type applySignal struct {
+	metadataStore
+	gameID  int64
+	entered chan struct{}
+}
+
+func (s applySignal) ApplyMetadata(ctx context.Context, id int64, f scrapers.Fields, replace bool, at time.Time) (store.GameDetail, error) {
+	if id == s.gameID {
+		select {
+		case s.entered <- struct{}{}:
+		default:
+		}
+	}
+	return s.metadataStore.ApplyMetadata(ctx, id, f, replace, at)
 }
 
 // TestBatchApplyShutdown checks the shutdown during applying: the root context ends the application, Wait

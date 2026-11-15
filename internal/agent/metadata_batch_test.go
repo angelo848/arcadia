@@ -516,6 +516,26 @@ func TestBatchJob(t *testing.T) {
 		}
 	})
 
+	t.Run("MET-052/Steam Store não conta como chave: sem IGDB nem SteamGridDB é -32010 com data.provider igdb", func(t *testing.T) {
+		t.Parallel()
+		steam := newApplyProv("steamstore", nil) // a provider with no key of its own is still not a keyed provider
+		f := newMetaFixture(t, map[string]scrapers.MetadataProvider{
+			"igdb":        newApplyProv("igdb", nil),
+			"steamgriddb": newApplyProv("steamgriddb", nil),
+			"steamstore":  steam,
+		}, "igdb", "steamgriddb")
+		_, err := f.call(t, ipc.MethodMetadataBatchStart, batchJSON(t, ipc.BatchStartParams{GameIDs: []int64{f.gameID}}))
+		if codeOf(err) != ipc.CodeProviderNoKey {
+			t.Fatalf("code = %d (%v), want %d", codeOf(err), err, ipc.CodeProviderNoKey)
+		}
+		if d := errData(t, err); d["provider"] != "igdb" {
+			t.Errorf("data.provider = %q, want igdb", d["provider"])
+		}
+		if n := steam.totalRequests(); n != 0 {
+			t.Errorf("Steam Store requests = %d, want 0", n)
+		}
+	})
+
 	t.Run("MET-052/em done a nova substitui a antiga (batchId cresce)", func(t *testing.T) {
 		t.Parallel()
 		c := reachBatch(t, ipc.BatchStateDone)
@@ -1023,6 +1043,73 @@ func TestBatchJob(t *testing.T) {
 		}
 	})
 
+	t.Run("MET-055/batchStart e batchStatus logo depois: searching, done 0, total n, sem notificação da chamada", func(t *testing.T) {
+		t.Parallel()
+		f := newBatchFixture(t, true, false)
+		ids := batchGames(t, f, "Hades")
+		res := startBatchOK(t, f, ids...)
+		b := batchStatusNow(t, f.metaFixture)
+		if b == nil || b.BatchID != res.BatchID || b.State != ipc.BatchStateSearching || b.Done != 0 || b.Total != len(ids) || b.Failed != 0 {
+			t.Errorf("batch = %+v, want searching with done 0 of %d", b, len(ids))
+		}
+		if n := len(f.spy.all()); n != 0 {
+			t.Errorf("%d notifications from batchStart and batchStatus, want none (MET-054)", n)
+		}
+	})
+
+	t.Run("MET-058/batchDiscard concorrente com apply, results e cancel: sem pânico e sem ler linhas descartadas", func(t *testing.T) {
+		t.Parallel()
+		expected := map[int]bool{ipc.CodeBatchNotFound: true, ipc.CodeBatchWrongState: true, ipc.CodeBatchBusy: true, ipc.CodeInvalidParams: true}
+		f := newBatchFixture(t, false, false)
+		ids := batchGames(t, f, "Hades", "Dead Cells")
+		for round := range 100 {
+			res := startBatchOK(t, f, ids...)
+			awaitBatchState(t, f.spy, res.BatchID, ipc.BatchStateReady)
+			id := res.BatchID
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			run := func(name string, call func() (any, error)) {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer func() {
+						if r := recover(); r != nil {
+							t.Errorf("round %d %s: panic: %v", round, name, r)
+						}
+					}()
+					<-start
+					out, err := call()
+					if err != nil && !expected[codeOf(err)] {
+						t.Errorf("round %d %s: %v", round, name, err)
+					}
+					if rs, ok := out.(ipc.BatchResultsResult); ok && err == nil && rs.Total != len(ids) {
+						t.Errorf("round %d batchResults read %d rows of a discarded batch, want %d", round, rs.Total, len(ids))
+					}
+				}()
+			}
+			run("batchApply", func() (any, error) {
+				return f.call(t, ipc.MethodMetadataBatchApply, batchJSON(t, ipc.BatchApplyParams{BatchID: id, Choices: choicesOf(ids)}))
+			})
+			run("batchResults", func() (any, error) {
+				return f.call(t, ipc.MethodMetadataBatchResults, batchJSON(t, ipc.BatchResultsParams{BatchID: id}))
+			})
+			run("batchCancel", func() (any, error) {
+				return f.call(t, ipc.MethodMetadataBatchCancel, batchJSON(t, ipc.BatchIDParams{BatchID: id}))
+			})
+			run("batchDiscard", func() (any, error) {
+				return f.call(t, ipc.MethodMetadataBatchDiscard, batchJSON(t, ipc.BatchIDParams{BatchID: id}))
+			})
+			close(start)
+			wg.Wait()
+
+			// Clean up: a batch left applying ends as done with a cancel; then it is discarded.
+			_, _ = f.call(t, ipc.MethodMetadataBatchCancel, batchJSON(t, ipc.BatchIDParams{BatchID: id}))
+			waitReturns(t, "the workers of the round", f.meta.Wait)
+			_, _ = f.call(t, ipc.MethodMetadataBatchDiscard, batchJSON(t, ipc.BatchIDParams{BatchID: id}))
+			wantBatchState(t, f.metaFixture, batchNone)
+		}
+	})
+
 	t.Run("MET-059/desligamento cancela o contexto raiz, Wait espera trabalhadores e nenhuma requisição nova é feita", func(t *testing.T) {
 		f := newBatchFixture(t, true, false)
 		root, stop := context.WithCancel(t.Context())
@@ -1105,7 +1192,7 @@ func TestBatchStateMachine(t *testing.T) {
 		{name: "MET-056/searching + batchCancel → cancelled", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchCancel, params: byID, wantState: ipc.BatchStateCancelled},
 		{name: "MET-052/searching + batchStart → -32015 com data.state", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchStart, params: start, wantCode: ipc.CodeBatchBusy, dataState: ipc.BatchStateSearching, wantState: ipc.BatchStateSearching},
 		{name: "MET-057/searching + batchResults → -32016", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchResults, params: results, wantCode: ipc.CodeBatchWrongState, dataState: ipc.BatchStateSearching, wantState: ipc.BatchStateSearching},
-		{name: "MET-064/searching + batchApply → -32016", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchApply, params: apply, wantCode: ipc.CodeBatchWrongState, dataState: ipc.BatchStateSearching, wantState: ipc.BatchStateSearching},
+		{name: "MET-064/searching + batchApply → -32016", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchApply, params: apply, prepare: func(c *batchCase) { c.rowIDs = c.ids[:1] }, wantCode: ipc.CodeBatchWrongState, dataState: ipc.BatchStateSearching, wantState: ipc.BatchStateSearching},
 		{name: "MET-058/searching + batchDiscard → -32016", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchDiscard, params: byID, wantCode: ipc.CodeBatchWrongState, dataState: ipc.BatchStateSearching, wantState: ipc.BatchStateSearching},
 		{name: "MET-055/searching + batchStatus → searching", state: ipc.BatchStateSearching, method: ipc.MethodMetadataBatchStatus, params: status, wantState: ipc.BatchStateSearching},
 

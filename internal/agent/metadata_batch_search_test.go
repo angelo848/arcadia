@@ -71,8 +71,7 @@ func TestProviderHealth(t *testing.T) {
 			t.Fatal("not allowed at 60 s, want the suspension over")
 		}
 
-		// The 3rd failure in a row disables. The 120 s step of MET-011 cannot be observed: the
-		// disabling comes first (lacuna apontada no relatório).
+		// The 3rd failure in a row disables. There is no 120 s step (alterado em 2026-11-15, MET-011).
 		if !h.report("igdb", scrapers.ErrUnavailable) {
 			t.Fatal("3rd failure in a row did not disable the provider")
 		}

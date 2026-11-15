@@ -197,7 +197,7 @@ func (s *scrapeService) apply(ctx context.Context, params json.RawMessage) (any,
 	if e := decodeOrInvalid(params, &p); e != nil {
 		return nil, e
 	}
-	if !validProvider(p.Provider) || p.ProviderID == "" {
+	if !validProvider(p.Provider) || !validProviderID(p.ProviderID) {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 	if _, err := s.game(ctx, p.GameID); err != nil {
@@ -207,11 +207,8 @@ func (s *scrapeService) apply(ctx context.Context, params json.RawMessage) (any,
 	if err != nil {
 		return nil, s.providerError(p.Provider, err)
 	}
-	md, err := prov.Details(ctx, p.ProviderID)
-	if err != nil {
-		return nil, s.providerError(p.Provider, err)
-	}
-	images, err := prov.Media(ctx, p.ProviderID)
+	// One request through Fetcher when the provider has it, as metadata.apply does [MET-012, MET-014].
+	md, images, err := fetchFrom(ctx, prov, p.ProviderID)
 	if err != nil {
 		return nil, s.providerError(p.Provider, err)
 	}
@@ -259,7 +256,7 @@ func (s *scrapeService) mediaQueue(ctx context.Context, params json.RawMessage) 
 	if e := decodeOrInvalid(params, &p); e != nil {
 		return nil, e
 	}
-	if !validProvider(p.Provider) || p.ProviderID == "" || len(p.Kinds) == 0 {
+	if !validProvider(p.Provider) || !validProviderID(p.ProviderID) || len(p.Kinds) == 0 {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 	kinds := map[string]bool{}

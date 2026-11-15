@@ -25,6 +25,7 @@ const (
 	maxSearchYear       = 2100
 	maxApplyRefs        = 3
 	maxProviderIDDigits = 20
+	maxThumbChars       = 300 // longer thumbnail URLs are dropped from a candidate [MET-068]
 )
 
 // thumbHosts are the only hosts a thumbnail may come from, over https [MET-068].
@@ -152,20 +153,33 @@ func searchResult(out scrapers.Outcome) ipc.MetadataSearchResult {
 }
 
 // candidateOf converts a group of the aggregator to a unified candidate; the score goes from
-// thousandths to 0..1 [MET-008].
+// thousandths to 0..1 [MET-008]. The title is cut to maxTitleRunes and the platform to maxPlatformRunes, and
+// a thumbnail over maxThumbChars is dropped, so every row fits the ceiling of a page [MET-057, MET-068].
 func candidateOf(g scrapers.Group) ipc.MetadataCandidate {
 	refs := make([]ipc.MetadataRef, 0, len(g.Refs))
 	for _, r := range g.Refs {
 		refs = append(refs, ipc.MetadataRef{Provider: r.Provider, ProviderID: r.ProviderID})
 	}
+	thumb := allowedThumb(g.ThumbURL)
+	if len(thumb) > maxThumbChars {
+		thumb = ""
+	}
 	return ipc.MetadataCandidate{
 		Refs:     refs,
-		Title:    g.Title,
+		Title:    truncateRunes(g.Title, maxTitleRunes),
 		Year:     g.Year,
-		Platform: g.Platform,
+		Platform: truncateRunes(g.Platform, maxPlatformRunes),
 		Score:    float64(g.Score.Score) / 1000,
-		ThumbURL: allowedThumb(g.ThumbURL),
+		ThumbURL: thumb,
 	}
+}
+
+// truncateRunes returns s cut to at most n runes.
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }
 
 // validSearch checks the lengths and the year of metadata.search [MET-071]. The title is already
@@ -248,20 +262,26 @@ func (m *metadataService) fetchOne(ctx context.Context, r ipc.MetadataRef) (scra
 	if err != nil {
 		return scrapers.Metadata{}, nil, m.scrape.providerError(r.Provider, err)
 	}
+	md, media, err := fetchFrom(ctx, prov, r.ProviderID)
+	if err != nil {
+		return scrapers.Metadata{}, nil, m.scrape.providerError(r.Provider, err)
+	}
+	return md, media, nil
+}
+
+// fetchFrom obtains the text and the images of one provider id: one request through Fetcher when the
+// provider has it, Details and Media otherwise [MET-012, MET-014]. It returns the provider's error as is.
+func fetchFrom(ctx context.Context, prov scrapers.MetadataProvider, providerID string) (scrapers.Metadata, []scrapers.RemoteMedia, error) {
 	if f, ok := prov.(scrapers.Fetcher); ok {
-		md, media, err := f.Fetch(ctx, r.ProviderID)
-		if err != nil {
-			return scrapers.Metadata{}, nil, m.scrape.providerError(r.Provider, err)
-		}
-		return md, media, nil
+		return f.Fetch(ctx, providerID)
 	}
-	md, err := prov.Details(ctx, r.ProviderID)
+	md, err := prov.Details(ctx, providerID)
 	if err != nil {
-		return scrapers.Metadata{}, nil, m.scrape.providerError(r.Provider, err)
+		return scrapers.Metadata{}, nil, err
 	}
-	media, err := prov.Media(ctx, r.ProviderID)
+	media, err := prov.Media(ctx, providerID)
 	if err != nil {
-		return scrapers.Metadata{}, nil, m.scrape.providerError(r.Provider, err)
+		return scrapers.Metadata{}, nil, err
 	}
 	return md, media, nil
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -84,6 +85,16 @@ type Fetcher interface {
 	Fetch(ctx context.Context, providerID string) (Metadata, []RemoteMedia, error)
 }
 
+// netCause describes a failed request without its URL: the operation and the cause of a *url.Error, or
+// the error text of any other error.
+func netCause(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Op + ": " + ue.Err.Error()
+	}
+	return err.Error()
+}
+
 // request describes one HTTP call of a provider.
 type request struct {
 	method  string
@@ -108,7 +119,8 @@ func doJSON(ctx context.Context, client *http.Client, provider string, rq reques
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %v", ErrUnavailable, provider, err)
+		// The *url.Error carries the URL, which may hold a secret: only the operation and the cause are kept.
+		return fmt.Errorf("%w: %s: %s", ErrUnavailable, provider, netCause(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {

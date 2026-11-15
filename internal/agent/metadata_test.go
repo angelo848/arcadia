@@ -783,6 +783,35 @@ func TestMetadataSearch(t *testing.T) {
 	})
 }
 
+// TestCandidateOfLimits checks the limits of a unified candidate: the title at 200 runes, the platform at
+// 100 runes (contract maxLength) and a thumbnail of at most 300 characters [MET-068].
+func TestCandidateOfLimits(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("é", 250)
+	t.Run("MET-068/título passa de 200 runas e plataforma de 100: são cortados", func(t *testing.T) {
+		t.Parallel()
+		c := candidateOf(scrapers.Group{Title: long, Platform: long})
+		if got := []rune(c.Title); len(got) != 200 || string(got) != strings.Repeat("é", 200) {
+			t.Errorf("title = %d runes, want the first 200", len(got))
+		}
+		if got := []rune(c.Platform); len(got) != 100 || string(got) != strings.Repeat("é", 100) {
+			t.Errorf("platform = %d runes, want the first 100", len(got))
+		}
+	})
+	t.Run("MET-068/thumbUrl de 300 caracteres passa; de 301 vira vazio", func(t *testing.T) {
+		t.Parallel()
+		const host = "https://images.igdb.com/"
+		atLimit := host + strings.Repeat("a", 300-len(host))
+		overLimit := host + strings.Repeat("a", 301-len(host))
+		if got := candidateOf(scrapers.Group{ThumbURL: atLimit}).ThumbURL; got != atLimit {
+			t.Errorf("thumbUrl of 300 characters = %q, want it kept", got)
+		}
+		if got := candidateOf(scrapers.Group{ThumbURL: overLimit}).ThumbURL; got != "" {
+			t.Errorf("thumbUrl of 301 characters = %d chars, want empty", len(got))
+		}
+	})
+}
+
 func TestAllowedThumb(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
