@@ -82,7 +82,7 @@ func newScrapeFixture(t *testing.T, p *fakeProvider) scrapeFixture {
 	keys := scrapers.NewKeys(&memKeyStore{values: map[string]string{}})
 	clock := domain.NewFakeClock(time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC))
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	queue := newMediaQueue(st, media.New(filepath.Join(root, "media"), nil), clock, log)
+	queue := newMediaQueue(st, media.New(filepath.Join(root, "media"), nil), clock, log, nil)
 	svc := &scrapeService{
 		st:   st,
 		keys: keys,

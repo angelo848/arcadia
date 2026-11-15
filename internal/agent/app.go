@@ -261,7 +261,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	mediaRoot := filepath.Join(p.Root, "media")
 	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
 	keys := scrapers.NewKeys(credentialStore{})
-	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log)
+	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log, nil)
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	// Statistics (phase 8): read only; the local zone gives the weeks (EST-002, EST-006).

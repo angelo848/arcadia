@@ -42,15 +42,21 @@ type mediaQueue struct {
 	clock domain.Clock
 	log   *slog.Logger
 	wake  chan struct{}
+	sink  mediaChangeSink // nil = no notices
 
 	mu      sync.Mutex
+	changes *mediaChangeCoalescer        // guarded by mu
 	cancels map[int64]context.CancelFunc // jobs running now
 	retryAt map[int64]time.Time          // failed jobs waiting for their next attempt
 }
 
-func newMediaQueue(st mediaQueueStore, fetch mediaFetcher, clock domain.Clock, log *slog.Logger) *mediaQueue {
+// mediaChangeSink receives the media.changed notices (IMG-001..003). It is always called outside q.mu.
+type mediaChangeSink interface{ MediaChanged(gameID int64) }
+
+func newMediaQueue(st mediaQueueStore, fetch mediaFetcher, clock domain.Clock, log *slog.Logger, sink mediaChangeSink) *mediaQueue {
 	return &mediaQueue{
-		st: st, fetch: fetch, clock: clock, log: log,
+		st: st, fetch: fetch, clock: clock, log: log, sink: sink,
+		changes: newMediaChangeCoalescer(mediaChangedWindow),
 		wake:    make(chan struct{}, 1),
 		cancels: map[int64]context.CancelFunc{},
 		retryAt: map[int64]time.Time{},
@@ -88,17 +94,37 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 	}
 	sem := make(chan struct{}, mediaConcurrency)
 	var wg sync.WaitGroup
+	defer func() { // runs after wg.Wait: pending notices are dropped when Run returns
+		q.mu.Lock()
+		q.changes = newMediaChangeCoalescer(mediaChangedWindow)
+		q.mu.Unlock()
+	}()
 	defer wg.Wait()
+	// The loop wakes for new work (Notify), for a finished download that frees a slot, and for the
+	// next retry or notice. The timer is re-armed only when its deadline changes, so a wake-up does
+	// not leave abandoned waiters on the clock, and an idle queue holds none.
+	var (
+		armed   time.Time
+		armedCh <-chan time.Time
+	)
 	for {
+		q.flushChanges()
+		// The deadline is read before dispatch: a retry that is future now is covered by the timer,
+		// one that is already due is started by dispatch, and a later one calls Notify.
+		deadline, ok := q.nextDeadline()
 		q.dispatch(ctx, sem, &wg)
-		// The loop wakes for new work (Notify), for a finished download that frees a slot, and for
-		// the next retry. A timer exists only while a retry is pending, so an idle queue holds no
-		// waiter on the clock.
+		switch {
+		case !ok:
+			armedCh = nil
+		case armedCh == nil || !deadline.Equal(armed):
+			armed, armedCh = deadline, q.armTimer(deadline)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-q.wake:
-		case <-q.retryTimer():
+		case <-armedCh:
+			armedCh = nil // fired: the next volta re-arms if a deadline remains
 		}
 	}
 }
@@ -158,10 +184,21 @@ func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFu
 	}()
 	stored, _, err := q.fetch.Fetch(jobCtx, job.GameID, job.SourceURL)
 	if err == nil {
-		_, err = q.st.AddMedia(jobCtx, store.MediaRow{
+		var added bool
+		added, err = q.st.AddMedia(jobCtx, store.MediaRow{
 			GameID: job.GameID, Kind: job.Kind, Provider: job.Provider, SourceURL: job.SourceURL,
 			Hash: stored.Hash, Path: stored.Path, ThumbPath: stored.ThumbPath, CreatedAt: q.clock.Now(),
 		})
+		if err == nil && added && parent.Err() == nil && jobCtx.Err() == nil {
+			q.mu.Lock()
+			send := q.changes.changed(job.GameID, q.clock.Now())
+			q.mu.Unlock()
+			if send && q.sink != nil {
+				q.sink.MediaChanged(job.GameID)
+			} else {
+				q.Notify() // the loop arms the coalescing timer
+			}
+		}
 	}
 	writeCtx := context.WithoutCancel(parent)
 	switch {
@@ -195,21 +232,57 @@ func (q *mediaQueue) setState(ctx context.Context, id int64, state string, attem
 	}
 }
 
-// retryTimer returns a channel that fires when the earliest future retry is due, or nil when no
-// retry is pending (a nil channel never fires in a select). A retry already due is started by
-// dispatch, not by a timer.
-func (q *mediaQueue) retryTimer() <-chan time.Time {
+// flushChanges sends the coalesced notices whose window ended.
+func (q *mediaQueue) flushChanges() {
+	q.mu.Lock()
+	ids := q.changes.due(q.clock.Now())
+	q.mu.Unlock()
+	if q.sink == nil {
+		return
+	}
+	for _, id := range ids {
+		q.sink.MediaChanged(id)
+	}
+}
+
+// nextDeadline is the earliest of the next future retry and the next pending notice (which may
+// already be due, so the loop fires at once).
+func (q *mediaQueue) nextDeadline() (time.Time, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := q.clock.Now()
 	var first time.Time
+	found := false
 	for _, due := range q.retryAt {
-		if due.After(now) && (first.IsZero() || due.Before(first)) {
-			first = due
+		if due.After(now) && (!found || due.Before(first)) {
+			first, found = due, true
 		}
 	}
-	if first.IsZero() {
+	if end, ok := q.changes.next(); ok && (!found || end.Before(first)) {
+		first, found = end, true
+	}
+	return first, found
+}
+
+// nextTimer returns a channel that fires at nextDeadline, or nil when there is none (a nil channel
+// never fires in a select). A retry already due is started by dispatch, not by a timer.
+func (q *mediaQueue) nextTimer() <-chan time.Time {
+	deadline, ok := q.nextDeadline()
+	if !ok {
 		return nil
 	}
-	return q.clock.After(first.Sub(now))
+	return q.armTimer(deadline)
+}
+
+// armTimer returns a channel that fires at deadline. If the clock moved past the deadline while the
+// timer was being armed (the timer may then be registered relative to the later instant), the
+// returned channel fires at once instead.
+func (q *mediaQueue) armTimer(deadline time.Time) <-chan time.Time {
+	ch := q.clock.After(deadline.Sub(q.clock.Now())) // d <= 0 fires at once
+	if q.clock.Now().Before(deadline) {
+		return ch
+	}
+	fired := make(chan time.Time, 1)
+	fired <- q.clock.Now()
+	return fired
 }
