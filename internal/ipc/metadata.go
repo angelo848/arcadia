@@ -162,6 +162,16 @@ type BatchCancelResult struct {
 	State string `json:"state"`
 }
 
+// BatchBusyData is the data of the BatchBusy error (-32015): the state that blocks metadata.batchStart.
+type BatchBusyData struct {
+	State string `json:"state"`
+}
+
+// BatchWrongStateData is the data of the BatchWrongState error (-32016): the state the method refused.
+type BatchWrongStateData struct {
+	State string `json:"state"`
+}
+
 // BatchDiscardResult is the result of metadata.batchDiscard.
 type BatchDiscardResult struct {
 	Discarded bool `json:"discarded"`

@@ -47,6 +47,11 @@ type metadataService struct {
 	log    *slog.Logger
 	root   context.Context // the agent's context: jobs are children of it, never of a request
 	wg     sync.WaitGroup  // every goroutine of every job; Wait at shutdown [MET-059]
+
+	notify      batchSink  // receives metadata.batchChanged (MET-054); nil = none
+	batchMu     sync.Mutex // guards batch and lastBatchID; taken before a job's mu, never after
+	batch       *batchJob  // the one batch of the agent, in memory only [MET-058]
+	lastBatchID int64      // the last batchId issued, so ids grow even with a stopped clock
 }
 
 // newMetadataService builds the service over the scrape service, which keeps the providers, the
@@ -60,8 +65,14 @@ func newMetadataService(s *scrapeService, st metadataStore, root context.Context
 // metadataHandlers returns the handlers of the unified metadata methods.
 func metadataHandlers(m *metadataService) map[string]ipc.Handler {
 	return map[string]ipc.Handler{
-		ipc.MethodMetadataSearch: m.search,
-		ipc.MethodMetadataApply:  m.apply,
+		ipc.MethodMetadataSearch:       m.search,
+		ipc.MethodMetadataApply:        m.apply,
+		ipc.MethodMetadataBatchStart:   m.batchStart,
+		ipc.MethodMetadataBatchStatus:  m.batchStatus,
+		ipc.MethodMetadataBatchResults: m.batchResults,
+		ipc.MethodMetadataBatchApply:   m.batchApply,
+		ipc.MethodMetadataBatchCancel:  m.batchCancel,
+		ipc.MethodMetadataBatchDiscard: m.batchDiscard,
 	}
 }
 
@@ -191,16 +202,27 @@ func (m *metadataService) apply(ctx context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	now := m.clock.Now()
-	d, err := m.st.ApplyMetadata(ctx, p.GameID, scrapers.Merge(texts), p.Replace, now)
+	d, res, err := m.commitApply(ctx, p.GameID, texts, offers, p.Replace)
 	if err != nil {
-		return nil, m.scrape.storeError("aplicar metadados", err)
-	}
-	res, err := m.scrape.queueImages(ctx, p.GameID, offers, nil, now)
-	if err != nil {
-		return nil, m.scrape.storeError("enfileirar mídia", err)
+		return nil, err
 	}
 	return ipc.MetadataApplyResult{Detail: gameDetailToIPC(d), Queued: res.queued, SkippedByLimit: res.skipped}, nil
+}
+
+// commitApply writes the merged text of the fetched providers on the game and queues the offered images
+// [MET-030, MET-033]. It is the write path of metadata.apply and of the batch application [MET-065], so
+// both keep the same merge and the same image limit [MET-022].
+func (m *metadataService) commitApply(ctx context.Context, gameID int64, texts map[string]scrapers.Metadata, offers []scrapers.Offer, replace bool) (store.GameDetail, queueResult, error) {
+	now := m.clock.Now()
+	d, err := m.st.ApplyMetadata(ctx, gameID, scrapers.Merge(texts), replace, now)
+	if err != nil {
+		return store.GameDetail{}, queueResult{}, m.scrape.storeError("aplicar metadados", err)
+	}
+	res, err := m.scrape.queueImages(ctx, gameID, offers, nil, now)
+	if err != nil {
+		return d, queueResult{}, m.scrape.storeError("enfileirar mídia", err)
+	}
+	return d, res, nil
 }
 
 // fetchRefs obtains the text and the images of every ref: one request through Fetcher when the

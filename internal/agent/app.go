@@ -61,6 +61,10 @@ type config struct {
 
 	// Platform creates platform-specific sources, power watcher and feedback [T20].
 	Platform func(domain.Clock, *slog.Logger) platformParts
+
+	// Providers builds a metadata provider by name; nil => newProviderFactory with the agent keys
+	// and the HTTP client (tests inject blocking fakes).
+	Providers func(name string) (scrapers.MetadataProvider, error)
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -110,6 +114,15 @@ type instance struct {
 	notifier *sessionNotifier
 
 	mediaNotifier *mediaNotifier
+
+	// metadata runs metadata.search/apply and the batch [MET-059]; stopMetadata cancels its root
+	// context at shutdown, before Wait. batchNotifier forwards the batch progress to the IPC server.
+	metadata      *metadataService
+	stopMetadata  context.CancelFunc
+	batchNotifier *batchNotifier
+
+	// onShutdownStep, when set (tests only), is called with each shutdown step in order.
+	onShutdownStep func(step string)
 
 	coord   *feedback.Coordinator
 	router  *pauseRouter
@@ -269,18 +282,30 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	// Statistics (phase 8): read only; the local zone gives the weeks (EST-002, EST-006).
 	maps.Copy(handlers, statsHandlers(st, clock, time.Local, log))
-	maps.Copy(handlers, scrapeHandlers(&scrapeService{
+	providers := cfg.Providers
+	if providers == nil {
+		providers = newProviderFactory(keys, httpClient, clock)
+	}
+	scrapeSvc := &scrapeService{
 		st:        st,
 		keys:      keys,
-		providers: newProviderFactory(keys, httpClient, clock),
+		providers: providers,
 		queue:     queue,
 		mediaRoot: mediaRoot,
 		clock:     clock,
 		log:       log,
-	}))
+	}
+	maps.Copy(handlers, scrapeHandlers(scrapeSvc))
+	// Unified metadata (phase 12): jobs are children of metaCtx, cancelled at shutdown (MET-059).
+	metaCtx, stopMetadata := context.WithCancel(ctx)
+	metadata := newMetadataService(scrapeSvc, st, metaCtx)
+	batchNotes := &batchNotifier{}
+	metadata.notify = batchNotes
+	maps.Copy(handlers, metadataHandlers(metadata))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)
 	mediaNotes.set(server)
+	batchNotes.set(server)
 
 	triggers := make(chan input.Trigger, triggerQueueSize)
 	router := newPauseRouter(tr, triggers, log)
@@ -315,6 +340,9 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		tracker:       tr,
 		notifier:      notifier,
 		mediaNotifier: mediaNotes,
+		metadata:      metadata,
+		stopMetadata:  stopMetadata,
+		batchNotifier: batchNotes,
 		coord:         coord,
 		router:        router,
 		sources:       startedSources,
@@ -427,12 +455,21 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		if err := a.server.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close ipc server: %w", err))
 		}
+		a.step("server.close")
+		// The batch is cancelled and waited for before the queue and the store: its jobs
+		// write the database and call queue.Notify [MET-059].
+		a.stopMetadata()
+		a.metadata.Wait()
+		a.step("metadata.wait")
+		a.step("queue.stop")
 		a.stopQueue()
 		a.wg.Wait()
 		a.notifier.set(nil)
 		a.mediaNotifier.set(nil)
+		a.batchNotifier.set(nil)
 		// After the server (no request can reach the tracker) and before the
 		// store (the tracker writes the end of the session) [AGT-010, SES-011].
+		a.step("tracker.close")
 		if err := a.tracker.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: %w", err))
 		}
@@ -441,6 +478,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 				errs = append(errs, fmt.Errorf("shutdown: close feedback: %w", err))
 			}
 		}
+		a.step("store.close")
 		if err := a.store.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close store: %w", err))
 		}
@@ -450,6 +488,13 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		a.shutdownErr = errors.Join(errs...)
 	})
 	return a.shutdownErr
+}
+
+// step reports a shutdown step to the test hook onShutdownStep, when it is set.
+func (a *instance) step(name string) {
+	if a.onShutdownStep != nil {
+		a.onShutdownStep(name)
+	}
 }
 
 // CloseLog closes the log file. It is idempotent and must be the last step of
