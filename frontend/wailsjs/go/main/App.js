@@ -54,8 +54,8 @@ export function ImportApply(arg1, arg2) {
   return window['go']['main']['App']['ImportApply'](arg1, arg2);
 }
 
-export function ImportScan(arg1, arg2) {
-  return window['go']['main']['App']['ImportScan'](arg1, arg2);
+export function ImportScan(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ImportScan'](arg1, arg2, arg3);
 }
 
 export function LaunchGame(arg1) {

@@ -320,6 +320,10 @@ export namespace main {
 	    playedSeconds?: number;
 	    lastPlayed?: string;
 	    exists: boolean;
+	    file?: string;
+	    extension?: string;
+	    discs?: number;
+	    discFiles?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ImportCandidateView(source);
@@ -342,6 +346,26 @@ export namespace main {
 	        this.playedSeconds = source["playedSeconds"];
 	        this.lastPlayed = source["lastPlayed"];
 	        this.exists = source["exists"];
+	        this.file = source["file"];
+	        this.extension = source["extension"];
+	        this.discs = source["discs"];
+	        this.discFiles = source["discFiles"];
+	    }
+	}
+	export class ImportScanOptions {
+	    platform?: string;
+	    titleFrom?: string;
+	    recursive?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportScanOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.titleFrom = source["titleFrom"];
+	        this.recursive = source["recursive"];
 	    }
 	}
 	export class ImportScanView {
