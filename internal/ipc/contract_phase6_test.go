@@ -76,7 +76,7 @@ func TestImportContract(t *testing.T) {
 
 	t.Run("IMP-001/candidatos usam camelCase com as mesmas chaves do contrato", func(t *testing.T) {
 		t.Parallel()
-		// Every field is set so that the key list is the full contract property list (v0.13.0, IMV-070).
+		// Every field is set so that the key list is the full contract property list (v0.14.0, MET-040).
 		got := jsonKeys(t, ipc.ImportCandidate{
 			Source:        ipc.ImportSourceFile,
 			Title:         "x",
@@ -97,6 +97,7 @@ func TestImportContract(t *testing.T) {
 			Extension:     "cue",
 			Discs:         2,
 			DiscFiles:     []string{`Jogo\Jogo (Disc 1).cue`, `Jogo\Jogo (Disc 2).cue`},
+			SearchName:    "Jogo",
 		})
 		if want := schemaProps(t, "ImportCandidate"); !slices.Equal(got, want) {
 			t.Errorf("ImportCandidate keys = %v, want %v", got, want)

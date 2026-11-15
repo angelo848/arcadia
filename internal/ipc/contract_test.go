@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-11-importacao-v2 contract (v0.13.0)
-// supersedes phase-10-2-imagens-ao-vivo (v0.12.0) [IPC-041, IMV-070].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-11-importacao-v2", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-12-metadados-unificados contract (v0.14.0)
+// supersedes phase-11-importacao-v2 (v0.13.0) [IPC-041, MET-070].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-12-metadados-unificados", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-12-metadados-unificados/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -62,6 +62,14 @@ type openRPC struct {
 			MaxScanItems       *int `json:"maxScanItems"`
 			MaxScanResultBytes *int `json:"maxScanResultBytes"`
 		} `json:"x-import"`
+		Metadata *struct {
+			MatchAuto          *float64 `json:"matchAuto"`
+			MatchMinSimilarity *float64 `json:"matchMinSimilarity"`
+			MatchMargin        *float64 `json:"matchMargin"`
+			MatchDoubt         *float64 `json:"matchDoubt"`
+			MatchAlternative   *float64 `json:"matchAlternative"`
+			MatchCap           *float64 `json:"matchCap"`
+		} `json:"x-metadata"`
 	} `json:"info"`
 	Methods []struct {
 		Name         string `json:"name"`
@@ -305,6 +313,16 @@ var phase6Methods = map[string]bool{
 	ipc.MethodMediaCancel:         false,
 	ipc.MethodStatsSummary:        false,
 	ipc.MethodStatsWeekly:         false,
+	// Added in v0.14.0 (phase 12) [MET-070]: the eight metadata.* methods and the notification.
+	ipc.MethodMetadataSearch:       false,
+	ipc.MethodMetadataApply:        false,
+	ipc.MethodMetadataBatchStart:   false,
+	ipc.MethodMetadataBatchStatus:  false,
+	ipc.MethodMetadataBatchResults: false,
+	ipc.MethodMetadataBatchApply:   false,
+	ipc.MethodMetadataBatchCancel:  false,
+	ipc.MethodMetadataBatchDiscard: false,
+	ipc.MethodMetadataBatchChanged: true,
 }
 
 func TestContract(t *testing.T) {
@@ -440,6 +458,10 @@ func TestContract(t *testing.T) {
 			// PlatformNotFound shares -32001 with GameNotFound (no separate Go constant).
 			"PlatformNotFound": ipc.CodeGameNotFound,
 			"PlatformInUse":    ipc.CodePlatformInUse,
+			// Batch errors added in v0.14.0 [MET-070].
+			"BatchNotFound":   ipc.CodeBatchNotFound,
+			"BatchBusy":       ipc.CodeBatchBusy,
+			"BatchWrongState": ipc.CodeBatchWrongState,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)
@@ -554,10 +576,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.13.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.14.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.13.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.13.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.14.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.14.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -920,6 +942,10 @@ func TestContract(t *testing.T) {
 			// PlatformNotFound shares -32001 with GameNotFound (no separate Go constant).
 			"PlatformNotFound": ipc.CodeGameNotFound,
 			"PlatformInUse":    ipc.CodePlatformInUse,
+			// Batch errors added in v0.14.0 [MET-070].
+			"BatchNotFound":   ipc.CodeBatchNotFound,
+			"BatchBusy":       ipc.CodeBatchBusy,
+			"BatchWrongState": ipc.CodeBatchWrongState,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)

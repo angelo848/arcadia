@@ -14,6 +14,24 @@ import (
 // contractV012Path is the phase-10-2 contract (v0.12.0), the base of the v0.13.0 delta [IMV-082].
 var contractV012Path = filepath.Join("..", "..", "docs", "specs", "phase-10-2-imagens-ao-vivo", "contracts", "ipc.openrpc.json")
 
+// contractV013Path is the literal phase-11 contract (v0.13.0). contractPath now points to v0.14.0
+// (phase 12), so the v0.13.0 tests read this file [IMV-082, MET-070].
+var contractV013Path = filepath.Join("..", "..", "docs", "specs", "phase-11-importacao-v2", "contracts", "ipc.openrpc.json")
+
+// loadV13Contract parses the v0.13.0 contract file into the openRPC subset.
+func loadV13Contract(t *testing.T) openRPC {
+	t.Helper()
+	raw, err := os.ReadFile(contractV013Path)
+	if err != nil {
+		t.Fatalf("read v0.13.0 contract: %v", err)
+	}
+	var c openRPC
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("parse v0.13.0 contract: %v", err)
+	}
+	return c
+}
+
 // importScanNewProps are the optional params that v0.13.0 adds to ImportScanParams [IMV-070].
 var importScanNewProps = []string{"platform", "recursive", "titleFrom"}
 
@@ -114,7 +132,7 @@ func genericSchemaProps(t *testing.T, doc map[string]any, name string) map[strin
 
 func TestImportV2Contract(t *testing.T) {
 	t.Parallel()
-	c := loadContract(t)
+	c := loadV13Contract(t)
 
 	t.Run("IMV-070/ImportScanParams tem source, path, platform, titleFrom e recursive; os três novos opcionais", func(t *testing.T) {
 		t.Parallel()
@@ -279,7 +297,7 @@ func TestImportV2Contract(t *testing.T) {
 			return m
 		}
 		prev := load(contractV012Path)
-		next := load(contractPath)
+		next := load(contractV013Path)
 
 		// info: only the version, the description and x-import are new.
 		pinfo, ok := prev["info"].(map[string]any)
