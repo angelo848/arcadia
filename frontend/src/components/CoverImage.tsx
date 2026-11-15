@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { JSX } from 'react'
 import placeholder from '../assets/cover-placeholder.svg'
 
@@ -15,13 +15,11 @@ export function CoverImage({
   fit?: 'contain' | 'cover'
   referrerPolicy?: ReferrerPolicy
 }): JSX.Element {
-  const [failed, setFailed] = useState(false)
+  // Remember which src failed instead of a boolean reset by effect: a later src
+  // is shown normally, and a late error event for the old src cannot poison the new one.
+  const [failedSrc, setFailedSrc] = useState<string>()
 
-  useEffect(() => {
-    setFailed(false)
-  }, [src])
-
-  const real = Boolean(src) && !failed
+  const real = Boolean(src) && failedSrc !== src
   const shown = real && src ? src : coverPlaceholderUrl
 
   return (
@@ -31,7 +29,7 @@ export function CoverImage({
         alt=""
         loading="lazy"
         referrerPolicy={referrerPolicy}
-        onError={() => setFailed(true)}
+        onError={() => setFailedSrc(src)}
         data-fit={real ? fit : undefined}
         className={`h-full w-full ${real && fit === 'cover' ? 'object-cover object-center' : 'object-contain'}`}
       />
