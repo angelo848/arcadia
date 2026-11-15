@@ -160,7 +160,25 @@ confirmação), `frontend` (`ImportDialog`).
 **Áreas**: `internal/input` (combinação nova), `internal/tracker` (encerrar a árvore — tracker-specialist),
 `internal/agent` (evento para a UI), `frontend` (Big Box retoma o foco), migração se houver motivo de fim novo.
 
+**Decidido pelo usuário (2026-11-15), antes da spec**
+1. Tempo de segurar igual ao da pausa (1 s), **sem** som de confirmação.
+2. Jogo lançado por URI (Steam/Epic): tenta fechar o processo que o tracker adotou, se houver; sem processo adotado,
+   ignora com o aviso sonoro de recusa.
+3. O atalho funciona fora do Big Box também.
+4. Sem confirmação extra contra acidente: só o 1 s segurado.
+5. Motivo de fim novo: `closed_by_hotkey`.
+6. Com a sessão pausada, encerra normalmente e o tempo pausado não conta.
+7. Só existe uma sessão por vez; não há caso de várias.
+
+**Escopo ampliado (pedido do usuário, 2026-11-15): Big Box novo**
+- Visual refeito, mais parecido com launchers de console e temas do LaunchBox. O tema é escolhido pelo usuário entre os
+  mockups (Faixa, Mosaico, Roda, Vitrine) antes da spec.
+- O Big Box fica só com: navegar por plataformas e pelos jogos de cada uma, ver imagens e vídeos, detalhes do jogo,
+  tempo de jogo total, e navegação pelo gamepad. Saem dele estatísticas, configuração de emuladores, plataformas e
+  provedores (continuam na janela normal).
+- **Vídeo:** entra nesta fase. Procurar uma fonte que forneça vídeo ao menos por plataforma e, se possível, vídeos
+  curtos dos principais jogos, que ocupem pouco espaço em disco.
+
 **A decidir na spec**
-- Tempo de segurar o atalho (recomendado: 1 s, igual ao da pausa) e som de confirmação.
-- Jogo lançado por URI (Steam/Epic) sem processo adotado: o que o atalho faz.
-- O atalho funciona fora do Big Box também (recomendado: sim).
+- Fonte dos vídeos (ver a pesquisa registrada na conversa: ScreenScraper, vídeos do LaunchBox local, Steam, IGDB) e
+  limite de tamanho por vídeo e por biblioteca.
