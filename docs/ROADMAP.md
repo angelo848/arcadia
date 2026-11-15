@@ -182,16 +182,19 @@ confirmação), `frontend` (`ImportDialog`).
 **Decidido pelo usuário (2026-11-15), depois dos mockups**
 - **Tema inicial: Faixa** (estilo PS5). O Big Box nasce com **temas selecionáveis**: a estrutura permite trocar de tema, e
   Mosaico e Roda ficam preparados para mais tarde (Roda com ressalvas, a detalhar). Vitrine fica de fora.
-- **Fonte dos vídeos: ScreenScraper.** Teto de **15 MB por vídeo**.
+- **Fonte dos vídeos: ScreenScraper.** Teto de **20 MB por vídeo** (era 15; o usuário subiu para ter folga). **Sem limite
+  total** de espaço: vale só o limite por vídeo.
+- **Ressalva do tema Roda** (para quando ele for feito): a lista de seleção fica sobre um fundo translúcido, menos opaco
+  que no mockup, e disposta em arco, como uma roda de verdade, no estilo dos temas "Unified" do LaunchBox (logos de
+  plataforma e de jogo em curva à direita, com o vídeo ou a arte aparecendo por trás).
+- **Credenciais do ScreenScraper:** entram pelo app, na mesma janela dos outros provedores (nunca no repositório nem na
+  conversa): as de desenvolvedor do Arcadia e as da conta do usuário.
 - **Medição feita em 2026-11-15** (47 jogos, 11 plataformas, pela página pública do ScreenScraper): o vídeo
   `video-normalized` ficou entre 0,6 e 4,8 MB (média perto de 2 MB); o `video` original ficou entre 0,9 e 21,2 MB, com
   dois acima de 15 MB (God of War: Chains of Olympus, PSP, 21,2 MB; Aero the Acro-Bat, GBA, 15,1 MB). Exemplos: Super
   Mario World 2,0 MB, Ocarina of Time 1,7 MB, Final Fantasy VII 0,7 MB, God of War 2 2,4 MB (todos normalizados).
-  Conclusão: baixar sempre o `video-normalized`; o teto de 15 MB fica como trava de segurança e nunca foi atingido por
-  ele. Mil jogos com vídeo ocupam cerca de 2 GB.
+  Conclusão: baixar sempre o `video-normalized`; o teto fica como trava de segurança e nunca foi atingido por ele. Mil
+  jogos com vídeo ocupam cerca de 2 GB.
 
 **A decidir na spec**
-- Conta e credenciais do ScreenScraper (conta do usuário e credenciais de desenvolvedor do Arcadia), cota diária e nomes
-  exatos dos campos da API; se o ScreenScraper fornece vídeo por plataforma (não confirmado).
-- Limite total de espaço dos vídeos na biblioteca.
-- As ressalvas do tema Roda.
+- Cota diária do ScreenScraper e nomes exatos dos campos da API; se ele fornece vídeo por plataforma (não confirmado).
