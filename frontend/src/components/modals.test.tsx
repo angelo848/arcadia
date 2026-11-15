@@ -124,15 +124,16 @@ describe('modais existentes sobre o Modal', () => {
     }
   })
 
-  it('UIX-038/Importar: a lista de candidatos fica no corpo, sem max-h fixo', async () => {
+  it('UIX-038/Importar: a tabela de revisão fica no corpo; o contêiner rolável é o pai direto, sem max-h fixo', async () => {
     scanMock.mockResolvedValue({ candidates: [candidate()], warnings: [] })
     wrap(<ImportDialog onImported={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
-    const box = await screen.findByRole('checkbox', { name: /Counter-Strike 2/ })
-    const list = box.closest('ul') as HTMLElement
-    expect(list.className).not.toMatch(/max-h-/)
-    expect(list).toHaveClass('flex-1')
-    expect(list).toHaveClass('min-h-0')
+    await screen.findByRole('checkbox', { name: /Counter-Strike 2/ })
+    const table = screen.getByRole('table')
+    const scroller = table.parentElement as HTMLElement
+    expect(scroller.className).not.toMatch(/max-h-/)
+    expect(scroller.getAttribute('style') ?? '').not.toMatch(/max-height/)
+    expect(scroller.contains(screen.getByRole('button', { name: 'Importar selecionados' }))).toBe(false)
   })
 
   it('UIX-039/cada diálogo tem role dialog, aria-modal e nome pelo título', () => {
@@ -165,7 +166,8 @@ describe('modais existentes sobre o Modal', () => {
     const onClose = vi.fn()
     wrap(<ImportDialog onImported={vi.fn()} onClose={onClose} />)
     fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
-    fireEvent.click(await screen.findByRole('checkbox', { name: /Counter-Strike 2/ }))
+    // IMV-041: the row comes already checked, so no click on it.
+    await screen.findByRole('checkbox', { name: /Counter-Strike 2/ })
     fireEvent.click(screen.getByRole('button', { name: 'Importar selecionados' }))
     expect(applyMock).toHaveBeenCalledTimes(1)
 

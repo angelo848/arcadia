@@ -541,10 +541,8 @@ describe('invariantes da UI', () => {
     fireEvent.click(within(topBar()).getByRole('button', { name: 'Importar' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
-    await within(dialog).findByRole('checkbox', { name: 'Jogo 0' })
-    for (let i = 0; i < 60; i++) {
-      fireEvent.click(within(dialog).getByRole('checkbox', { name: `Jogo ${i}` }))
-    }
+    // IMV-041: all rows come already checked; the checkbox name is "Selecionar <título>" (IMV-052).
+    await within(dialog).findByRole('checkbox', { name: 'Selecionar Jogo 0' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
     await waitFor(() => expect(calls('ImportApply')).toHaveLength(3))
     await flush()

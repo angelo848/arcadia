@@ -1509,7 +1509,8 @@ describe('App: importação recarrega o catálogo (PLT-032)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
-    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Counter-Strike 2/ }))
+    // IMV-041: the row comes already checked; no click on it.
+    await within(dialog).findByRole('checkbox', { name: /Counter-Strike 2/ })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
     await waitFor(() => expect(extra.ImportApply).toHaveBeenCalledTimes(1))
     await within(dialog).findByText('Importados: 1')

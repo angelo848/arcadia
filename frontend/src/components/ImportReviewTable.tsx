@@ -18,9 +18,9 @@ export type ImportReviewTableProps = {
 
 const DASH = '—'
 
+// The scroller takes the free height of the dialog body (IMV-051): no fixed max height.
 const scrollerStyle: CSSProperties = {
   overflowY: 'auto',
-  maxHeight: '60vh',
   border: '1px solid var(--arc-border)',
   borderRadius: 6,
 }
@@ -174,7 +174,7 @@ export function ImportReviewTable({ rows, source, busy, repeated, onToggle, onTo
   }, [partial])
 
   return (
-    <div style={scrollerStyle}>
+    <div className="min-h-0 flex-1" style={scrollerStyle}>
       <table style={tableStyle}>
         <thead>
           <tr>
