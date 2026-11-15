@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 )
 
@@ -43,7 +42,7 @@ func decodeMediaChanged(raw json.RawMessage) (MediaChangedView, error) {
 		return MediaChangedView{}, errors.New("gameId não é inteiro")
 	}
 	n := r.Num()
-	if n.Sign() < 1 || !n.IsInt64() || n.Int64() > maxSafeGameID || n.Int64() > math.MaxInt64 {
+	if n.Sign() < 1 || !n.IsInt64() || n.Int64() > maxSafeGameID {
 		return MediaChangedView{}, errors.New("gameId fora da faixa")
 	}
 	return MediaChangedView{GameID: n.Int64()}, nil

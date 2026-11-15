@@ -33,7 +33,7 @@
 | `frontend/src/App.tsx` | monta `useMediaEvents()` ao lado de `useSessionEvents()` | IMG-007, IMG-008, IMG-011 |
 | `frontend/src/lib/games.ts` | `useReloadOnReconnect` inclui `['media']` | IMG-010 |
 | `frontend/src/components/MediaCarousel.tsx` | destaque por id de mídia | IMG-009 |
-| `docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json` (tarefa) | contrato completo v0.12.0 | IMG-004 |
+| `docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json` (criado na T01) | contrato completo v0.12.0 | IMG-004 |
 
 Nada em `internal/tracker`, `cmd/fake-game`, `internal/store`, migrações nem bindings (IMG-013). `MetadataDialog.tsx`
 não muda (a invalidação ao aplicar fica, idempotente).

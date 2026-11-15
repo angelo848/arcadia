@@ -108,6 +108,9 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 		armedCh <-chan time.Time
 	)
 	for {
+		if ctx.Err() != nil { // stopping: pending notices are dropped, not flushed [IMG-003]
+			return nil
+		}
 		q.flushChanges()
 		// The deadline is read before dispatch: a retry that is future now is covered by the timer,
 		// one that is already due is started by dispatch, and a later one calls Notify.

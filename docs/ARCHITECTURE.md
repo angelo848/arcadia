@@ -325,3 +325,15 @@ As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
   nomes `Título-NN` ou `Título.<GUID>-NN`; o agente copia respeitando o limite e contando o que o jogo já tem, e
   registra no log as pastas de imagem não lidas. Tipos que exigiriam um `kind` novo ficam para a fase 12.
 - **Importação em lotes** de 25 candidatos por chamada de `import.apply`, com progresso na janela de importação.
+
+### Imagens que chegam com a UI aberta (fase 10.2)
+
+- A fila de mídia do agente avisa a UI quando um download grava uma imagem nova: notificação IPC `media.changed
+  {gameId}` (contrato v0.12.0, só acréscimo), repassada pelo supervisor como o evento do Wails `media:changed`
+  ([ADR 0031](adr/0031-avisos-de-mudanca-em-segundo-plano-como-notificacoes-de-invalidacao.md)).
+- Os avisos são agrupados por jogo numa janela de 500 ms (`domain.Clock`; o primeiro sai na hora, os seguintes viram
+  um só no fim da janela). Não há aviso para falha, cancelamento, interrupção nem duplicata, nem para chamadas da
+  própria UI (IPC-050). A fila arma um só temporizador e só o rearma quando o prazo muda.
+- No frontend, `useMediaEvents` invalida só `['media', gameId]` (cartão e carrossel leem a mesma chave); a
+  reconexão também recarrega as listas de mídia já carregadas. O carrossel mantém a imagem em destaque por id
+  quando chegam imagens novas.

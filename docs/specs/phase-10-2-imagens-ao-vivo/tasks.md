@@ -10,7 +10,8 @@
 2. A janela do contrato (500 ms) é comparada com a constante do agente por um teste de `internal/agent` que lê `x-media.mediaChangedWindowMs` do JSON; `mediaChangedWindow` não é exportada.
 3. O evento e o decodificador no desktop ficam em arquivo novo, `cmd/arcadia/media_events.go`.
 4. **Prazo de aviso já vencido** entre a descarga e o cálculo do temporizador não pode ser ignorado: `nextDeadline` inclui janelas pendentes já vencidas e `clock.After(d ≤ 0)` dispara na hora. As novas tentativas seguem como hoje.
-5. **T01 fica com a sessão principal** (copiar a v0.11.0 e acrescentar o delta por script), não com o spec-writer: é uma cópia mecânica de um JSON grande. O delta continua na pasta como histórico.
+5. **Desvio registrado na revisão:** o laço de `Run` usa `armTimer` direto (re-arma só quando o prazo muda) e `nextTimer` ficou só como auxiliar dos testes; o laço também não descarrega avisos quando o `ctx` já terminou (IMG-003).
+6. **T01 fica com a sessão principal** (copiar a v0.11.0 e acrescentar o delta por script), não com o spec-writer: é uma cópia mecânica de um JSON grande. O delta continua na pasta como histórico.
 
 ## Premissas
 
