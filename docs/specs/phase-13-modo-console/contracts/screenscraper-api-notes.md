@@ -1,36 +1,63 @@
 # Notas de API do ScreenScraper (conferência)
 
-**Estado: NÃO VERIFICADO.** Este arquivo é preenchido pela tarefa de conferência, **antes** do cliente
-(`internal/scrapers/screenscraper.go`), como o [provider-api-notes.md](../../phase-12-metadados-unificados/contracts/provider-api-notes.md)
-da fase 12. As hipóteses abaixo vêm de memória e de documentação de terceiros; nenhuma foi conferida com a API real.
+**Estado: CONFERIDO POR DOCUMENTAÇÃO PÚBLICA E CÓDIGO DE TERCEIROS (T02), sem credenciais.** Nenhuma chamada à API foi feita.
+O que exige credencial ficou NÃO VERIFICÁVEL e vira o roteiro ao fim. Fontes:
 
-Legenda: CONFIRMADO (fonte citada), DIVERGENTE (valor correto), NÃO VERIFICÁVEL (conferir com credenciais, à mão).
-Credenciais: o usuário cadastra pelo app (SSC-002); **nada** de credencial no repositório, na conversa ou em log. Para conferir
-por linha de comando, as credenciais vão em variáveis de ambiente da sessão, nunca em arquivo versionado.
+- [DOC] documentação oficial da API v2: https://www.screenscraper.fr/webapi2.php (lida em 2026-11-15; página de 187 mil caracteres, lida inteira)
+- [SKY] Skyscraper (Gemba), cliente C++: https://raw.githubusercontent.com/Gemba/skyscraper/master/src/screenscraper.cpp
+- [ESDE] ES-DE, `es-app/src/scrapers/ScreenScraper.cpp`: https://gitlab.com/es-de/emulationstation-de/-/raw/master/es-app/src/scrapers/ScreenScraper.cpp
+- [GO] cliente Go `J-Swift/scraper/ss`: https://pkg.go.dev/github.com/J-Swift/scraper/ss
+- [JS] `screenscraper-js`: https://github.com/SaraVieira/screenscraper-js
 
-| # | Ponto | Hipótese usada na spec | Estado | Se divergir |
+Legenda: CONFIRMADO (fonte), DIVERGENTE (valor correto), NÃO VERIFICÁVEL (conferir com credenciais, à mão).
+Credenciais: o usuário cadastra pelo app (SSC-002); **nada** de credencial no repositório, na conversa ou em log.
+
+## Divergências e alertas (ler primeiro)
+
+Nenhuma divergência derruba uma regra visível (busca por nome existe; `video-normalized` existe). Pontos que pedem decisão ou ajuste:
+
+1. **Restrição de uso (alerta de produto, não de código).** [DOC]: a API "só pode ser integrada em aplicações totalmente gratuitas e distribuídas" (sem autorização prévia), e `devid`/`devpassword` são obtidos pedindo ao ScreenScraper pelo fórum. O app precisa ser gratuito, ou o autor precisa de autorização. Isso já é a premissa de SSC-001 (credencial `screenscraperdev`), mas vale o usuário confirmar que consegue o `devid`.
+2. **Formato da resposta de `jeuInfos` vs `jeuRecherche` (valor, não regra).** [GO] mostra `jeuInfos` com `response.jeu` (singular, objeto); [DOC] diz que `jeuRecherche` devolve tabela de até 30 jogos (`response.jeux[]`, plural). O decodificador de `jeuInfos` (fallback da §2 de rules) deve ler `response.jeu`, não `jeux[0]`. Só ajuste de código.
+3. **Sem campo `size` documentado em `medias[]`.** [DOC] não documenta `size` nas mídias (nem [SKY]/[ESDE] o leem). Tratar `size` como opcional e ausente por padrão: o teto de 20 MB passa a valer na prática por `Content-Length` e `LimitReader` (rules §5 já cobre; a verificação "antes do download" por `size` fica só como bônus). Sem mudança de regra visível.
+4. **`jeuRecherche` ignora ano e o vídeo pode não vir nele (NÃO VERIFICÁVEL).** O plano `jeuInfos?gameid=` segue como fallback (rules §2).
+5. **`401` da API é "API fechada" para não membros/inativos, `423` é "API totalmente fechada", `403` é credencial de **desenvolvedor** errada, `426` é software na lista negra** [DOC]. Isso confirma rules §6. Credencial de **usuário** errada: [ESDE] trata `ssuser` status "0"/mensagem como "usuário ou senha errados" (não por HTTP); o corpo traz texto, não um código documentado. Ver item 11 abaixo.
+6. **Switch 2 não achado** em nenhuma fonte pública: `switch2` fica fora da tabela (como a spec já prevê).
+
+## Tabela de conferência
+
+| # | Ponto | Hipótese usada na spec | Estado | Evidência / valor correto |
 |---|---|---|---|---|
-| 1 | Base e versão | `https://api.screenscraper.fr/api2/` | NÃO VERIFICADO | trocar a constante |
-| 2 | Busca por nome | `jeuRecherche.php?systemeid=&recherche=` devolve até ~30 jogos ordenados por probabilidade | NÃO VERIFICADO | se não existir, `jeuInfos.php?systemeid=&romnom=<SearchTerm>` (sem `romtaille`/hash) e um só candidato |
-| 3 | Campos do jogo | `response.jeux[]` com `id`, `noms[] {region, text}`, `systeme {id}`, `dates[] {region, text}`, `medias[]` | NÃO VERIFICADO | ajustar o decodificador; regra de §3 inalterada |
-| 4 | Mídias na busca | `jeuRecherche` já traz `medias[]` | NÃO VERIFICADO | se não, `jeuInfos.php?gameid=` (uma requisição a mais por jogo) |
-| 5 | Mídia de vídeo | `medias[] {type: "video-normalized", url, region?, format: "mp4", size?}` | NÃO VERIFICADO | se `size` ausente, valem `Content-Length` e o limite de leitura |
-| 6 | URL da mídia | `mediaVideoJeu.php?...&media=video-normalized` com as credenciais **embutidas** | NÃO VERIFICADO | se sem credenciais, o cliente as acrescenta em memória |
-| 7 | Formato | MP4 H.264 (tocável na WebView2) | NÃO VERIFICADO | se outro codec, BBX-012 cai na arte |
-| 8 | Quota | `response.ssuser {maxthreads, maxrequestspermin, requeststoday, maxrequestsperday, requestskotoday, maxrequestskoperday}`; endpoint `ssuserInfos.php` | NÃO VERIFICADO | sem esses campos, só os códigos de §6 pausam |
-| 9 | Cota típica de conta grátis | ~1 thread, ~20.000 requisições/dia | NÃO VERIFICADO | a raia já é de 1 e o intervalo de 1,5 s dá ~57.600/dia no máximo: a pausa por cota cobre |
-| 10 | Download conta na cota | sim | NÃO VERIFICADO | se não, o download sai do limitador (mais rápido) |
-| 11 | Códigos HTTP | 400, 401, 403, 404, 423, 426, 429, 430, 431 com os sentidos de [rules §6](screenscraper-rules.md) | NÃO VERIFICADO | ajustar a tabela de §6 |
-| 12 | Corpo de erro | texto puro (não JSON) em alguns erros, inclusive com status 200 | NÃO VERIFICADO | o decodificador trata corpo não JSON |
-| 13 | Ids de sistema | tabela de [rules §1](screenscraper-rules.md) (`systemesListe.php`) | NÃO VERIFICADO | corrigir a tabela; `switch2` entra se existir |
-| 14 | Vídeo por plataforma | `systemesListe.php` traz `medias[]` do sistema com algum vídeo | NÃO VERIFICADO | só anotar (decisão k: entra com o tema Roda) |
-| 15 | `softname` | texto livre identificando o software (`arcadia`) | NÃO VERIFICADO | ajustar a constante |
+| 1 | Base e versão | `https://api.screenscraper.fr/api2/` | CONFIRMADO | [DOC] exemplo `https://api.screenscraper.fr/api2/jeuInfos.php`. [SKY] usa `https://www.screenscraper.fr/api2/` (mesmo serviço); manter `api.screenscraper.fr`. GET. Saídas xml, json, ini. |
+| 2 | Busca por nome | `jeuRecherche.php?systemeid=&recherche=`, até ~30 jogos por probabilidade | CONFIRMADO | [DOC]: obrigatórios `devid`, `devpassword`, `softname`, `recherche`; opcionais `output`, `ssid`, `sspassword`, `systemeid`; "tabela de no máximo 30 jogos por probabilidade"; exemplo `systemeid=1&recherche=sonic`. [ESDE] usa `recherche=` (url-encoded). `output` padrão é **xml**: mandar `output=json`. |
+| 3 | Campos do jogo | `jeux[] {id, noms[] {region,text}, systeme {id}, dates[] {region,text}, medias[]}` | CONFIRMADO em parte | [DOC]: entradas da busca iguais às de `jeuInfos`, sem dados de ROM. [SKY]: `jeu.noms[]` (filtro por `region`), `jeu.dates[]` (`region`), `jeu.systeme.text`, `jeu.medias[]`. [ESDE] (XML): `noms/nom[region]`, `systeme` com `id` e `parentid`, `dates/date[region]`. Nome do campo de texto em `noms[]`/`dates[]` no JSON é `text` ([SKY]). Id do sistema: `systeme.id` ([ESDE]); no JSON a chave exata (`id`) NÃO VERIFICÁVEL sem chamada. |
+| 4 | Mídias na busca | `jeuRecherche` já traz `medias[]` | NÃO VERIFICÁVEL | [DOC] diz só que as entradas "casam com jeuInfos, sem ROM". Provável que tragam `medias`, mas sem prova. Manter o fallback `jeuInfos.php?gameid=`. |
+| 5 | Mídia de vídeo | `medias[] {type: "video-normalized", url, region?, format: "mp4", size?}` | CONFIRMADO (tipo, url, region, format); `size` NÃO VERIFICÁVEL | [SKY]: `type` `video-normalized` (preferido com `videoPreferNormalized`, senão `video`), campos `type`, `region`, `url`, `text`; `format` existe mas [SKY] não o usa. [ESDE]: `medias/media` com `type`, `region`, `format`, URL = texto do elemento; tipos `video` e `video-normalized`. [DOC]: o tipo `video` e vários `video*` (videotable, videotable4k, videofronton16-9, videofronton4-3, videodmd, videotopper) são MP4; `video-normalized` não aparece na seção lida. `size`: ver divergência 3. |
+| 6 | URL da mídia | `mediaVideoJeu.php?...` com credenciais embutidas | NÃO VERIFICÁVEL | [DOC] documenta `mediaVideoJeu.php` (obrigatórios `devid`, `devpassword`, `softname`; opcionais `ssid`, `sspassword`; `systemeid`, `jeuid`, `media`; devolve o MP4 direto, ou `NOMEDIA`/`CRCOK`/`MD5OK`/`SHA1OK` em texto). Se a URL em `medias[].url` já traz credenciais, só a resposta real diz. [SKY] baixa a URL como veio, o que sugere que sim ou que o cliente acrescenta. Prever os dois casos; a `RedactURL` cobre ambos. Atenção: o corpo `NOMEDIA` pode vir com status 200 e não é MP4: a checagem `ftyp` (rules §5) trata. |
+| 7 | Formato | MP4 H.264 | CONFIRMADO (MP4); codec NÃO VERIFICÁVEL | [DOC] diz MP4. [SKY] valida `Content-Type` `video/` e > 4096 bytes. Codec H.264 não está documentado. |
+| 8 | Quota | `response.ssuser {maxthreads, maxrequestspermin, requeststoday, maxrequestsperday, requestskotoday, maxrequestskoperday}`; `ssuserInfos.php` | CONFIRMADO, com ressalva de grafia | [DOC]: `ssuserInfos.php` (obrigatórios `devid`, `devpassword`, `softname`, `ssid`, `sspassword`; `output`) devolve `maxthreads`, `requeststoday`, `requestskotoday`, `maxrequestsperday`, `maxrequestskoperday`. **A grafia do limite por minuto é inconsistente na própria documentação** (`maxrequestspermin` numa seção, `maxrequestsperdmin` noutra): decodificar os dois nomes. [SKY] lê `response.ssuser.requeststoday` e `maxrequestsperday`. [GO] lê `ssuser>maxthreads`. |
+| 9 | Cota típica de conta grátis | ~1 thread, ~20.000 requisições/dia | NÃO VERIFICÁVEL | [DOC]: threads e cotas dependem do nível do usuário e são ganhas contribuindo ou apoiando financeiramente; números exatos estão na FAQ do site, não na página da API. O app lê `ssuser` da resposta, então o número não precisa ser fixo. |
+| 10 | Download conta na cota | sim | NÃO VERIFICÁVEL | Não documentado. [DOC] fala em "ROMs raspadas" por dia (`jeuInfos`), e `requeststoday` como "total de chamadas". Mantém a premissa conservadora (passa pelo limitador). |
+| 11 | Códigos HTTP | 400, 401, 403, 404, 423, 426, 429, 430, 431 | CONFIRMADO | [DOC]: 400 pedido inválido (URL malformada, campo obrigatório ausente, nome de ROM com caminho, crc/md5/sha1 malformado); 401 API fechada (não membros/inativos, servidor saturado, CPU > 60%); 403 erro de login do **desenvolvedor**; 404 jogo/ROM não encontrado; 423 API totalmente fechada (problema grave); 426 software na lista negra (versão obsoleta); 429 limite de threads (4 variantes: limite do membro, por minuto, "leecher", máximo em uso); 430 cota diária estourada; 431 ROMs não reconhecidas demais (limpar e voltar no dia seguinte). Bate com rules §6 (inclusive 431 → cota). Login de **usuário** errado: não há código documentado; [ESDE] detecta pelo status de usuário "0" e pelo texto. Tratar corpo de texto "Erreur de login"/credencial de usuário como `paused-credentials` se aparecer (NÃO VERIFICÁVEL qual código/mensagem). |
+| 12 | Corpo de erro | texto puro (não JSON) em alguns erros | CONFIRMADO | [SKY] reconhece textos: `"non trouvée"` (não encontrado), `"API totalement fermé"` (API fechada), `"Le logiciel de scrape utilisé a été blacklisté"`, `"Votre quota de scrape est"` (cota diária), `"API closed for non-registered members"` (reintenta até 3), mensagem de limite de threads; resposta vazia reintenta; JSON inválido não reintenta. [ESDE]: resposta começando por `"Erreur : Rom"` = sem resultado; comentário no código diz que a API "agora devolve só uma mensagem de texto" quando não acha jogo. **Mapa útil para o decodificador:** corpo não JSON contendo `non trouvée` ou começando por `Erreur : Rom` → não encontrado; `API totalement fermé`/`API closed` → temporário (401/423); `blacklisté` → como 426; `quota de scrape` → como 430. O status HTTP pode ser 200 ou o do erro ([SKY] e [ESDE] não olham o número), então decodificar o corpo antes de confiar só no status. Também `header.success` diferente de `"true"` em [SKY] é erro retentável. |
+| 13 | Ids de sistema | tabela de rules §1 | CONFIRMADO (12 de 13) | [ESDE]: NES 3, SNES 4, N64 14, GBA 12, GameCube 13, Wii 16, 3DS 17, Switch 225, PS1 57, PS2 58, PS3 59, Windows 138 (também Steam 138). **Todos batem com rules §1.** `switch2`: NÃO ACHADO em nenhuma fonte (pesquisa por "Switch 2" + screenscraper sem resultado; o 224 que aparece é do LaunchBox, não do ScreenScraper). Fica fora da tabela; conferir em `systemesListe.php` (roteiro). |
+| 14 | Vídeo por plataforma | `systemesListe.php` traz `medias[]` do sistema com algum vídeo | CONFIRMADO (existe), cobertura NÃO VERIFICÁVEL | [DOC]: `systemesListe.php` (`devid`, `devpassword`, `softname`, `output`; `ssid`/`sspassword` opcionais) devolve `systemes[]` com id, `parentid`, nomes por região e por frontend (Recalbox, RetroPie, Launchbox, Hyperspin), extensões, fabricante, tipo, anos, tipo de ROM, tipo de suporte e `medias`, incluindo `media_video` (vídeo de apresentação do **sistema**, com CRC32/MD5/SHA1). Só anotar (decisão k). Cobertura por plataforma do seed: não verificável sem a lista. |
+| 15 | `softname` | texto livre (`arcadia`) | CONFIRMADO | [DOC]: `softname` obrigatório em todo endpoint. [SKY] manda `skyscraper` + versão (`softname` identifica o software, e é por ele que o ScreenScraper bloqueia versões, 426). Sugestão: `arcadia` ou `arcadia<versão>`; manter constante, sem dado do usuário. |
+
+### Outros pontos úteis para o cliente
+
+- Parâmetros obrigatórios mínimos em `jeuRecherche`: `devid`, `devpassword`, `softname`, `recherche` ([DOC]); `ssid`/`sspassword` opcionais (sem eles a conta é anônima, com menos threads), `output=json`, `systemeid` opcional.
+- Nome na busca: [ESDE] aparara espaços, troca `_` por espaço, usa `"zzzzzz"` se vazio, remove `the`/`+` finais em nomes curtos; para nomes < 4 caracteres usa `jeuInfos?romnom=` em vez da busca. Para o Arcadia basta `recherche = domain.SearchTerm(título)` url-encoded.
+- `jeuInfos.php` aceita só `romnom` (sem hash) ([SKY] `searchStem`/tamanho zero), mas [DOC] diz que hash+`romtaille` são o caminho principal; sem hash a taxa de acerto é menor (rules §2 já adota a busca por nome).
+- Limite de taxa de referência: [SKY] espera 1,2 s entre requisições; o intervalo de 1,5 s de rules §7 é mais conservador. OK.
+- Timeout de [SKY]: 75 s por requisição; retry 3x. Compatível com MID-008.
+- [JS] confirma `systemeid` obrigatório na busca por nome do wrapper e `systemesListe` sem parâmetros.
 
 ## Para o usuário conferir (com credenciais, nada gravado no repositório)
 
-1. `jeuRecherche.php` com `systemeid=4` e `recherche=Super Mario World`: 200, JSON, `jeux[]` com `noms` e, se vier, `medias`.
-2. `jeuInfos.php` com `systemeid=4` e o `gameid` do passo 1: `medias[]` com `type = video-normalized`, `format`, `size`, `url`.
-3. Baixar a URL do passo 2 (sem salvar no repositório): tamanho ≈ 2 MB, primeiros bytes com `ftyp`, toca no Edge.
-4. `ssuserInfos.php`: os campos de cota do item 8.
-5. `systemesListe.php`: conferir os ids da tabela §1 e procurar `medias` de vídeo do sistema (item 14).
-6. Um erro de propósito (senha errada) para ver o código e o corpo (itens 11 e 12).
+1. `jeuRecherche.php` com `systemeid=4`, `recherche=Super Mario World`, `output=json`: 200, JSON, `response.jeux[]` com `id`, `noms[] {region,text}`, `systeme`, `dates`, e se vem `medias` (item 4).
+2. `jeuInfos.php` com `systemeid=4` e o `gameid` do passo 1: `response.jeu.medias[]` com `type = video-normalized`, `region`, `format`, `url` e se existe `size` (itens 3, 5, divergência 3).
+3. Baixar a URL do passo 2 (sem salvar no repositório): tamanho típico, primeiros bytes com `ftyp`, toca no Edge; ver se a URL traz `devid`/`ssid` embutidos (item 6) e o codec (item 7).
+4. `ssuserInfos.php`: os campos de cota, a grafia do limite por minuto (`maxrequestspermin` ou `maxrequestsperdmin`) e `maxthreads` da conta real (itens 8 e 9).
+5. `systemesListe.php`: achar o sistema do Switch 2 (se existir) e conferir 138, 17, 14, 3, 12, 13, 225, 16, 57, 58, 59, 4; olhar `medias` de vídeo do sistema (itens 13 e 14).
+6. Erros de propósito: senha de **usuário** errada (código e corpo, item 11) e `systemeid` válido com `recherche` sem resultado (404 ou 200 com texto, item 12).
+7. Um download de vídeo e depois `ssuserInfos`: `requeststoday` subiu? (item 10).
