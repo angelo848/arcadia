@@ -27,6 +27,8 @@ export type ImportCandidate = {
   extension?: string
   discs?: number
   discFiles?: string[]
+  // searchName is the name suggested for the metadata search of an Arquivo candidate (MET-040).
+  searchName?: string
 }
 
 export type ImportScanResult = {

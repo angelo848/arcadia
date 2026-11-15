@@ -48,6 +48,24 @@ afterEach(() => {
   delete (window as unknown as { go?: unknown }).go
 })
 
+// Phase 12 (T36): ImportCandidate.searchName is optional; only the Arquivo source fills it (MET-040).
+describe('searchName (MET-040, fase 12 T36)', () => {
+  it('MET-040/searchName ausente em outras fontes não quebra o tipo: candidato de Steam passa por buildReviewRows', () => {
+    const steam = cand({ source: 'steam', title: 'Hades' })
+    expect(steam.searchName).toBeUndefined()
+    const rows = buildReviewRows([steam])
+    expect(rows[0].title).toBe('Hades')
+    expect(rows[0].checked).toBe(true)
+  })
+
+  it('MET-040/searchName do candidato de Arquivo chega à linha de revisão sem alterar o título', () => {
+    const file = cand({ source: 'file', title: 'Hades', searchName: 'Hades' })
+    const rows = buildReviewRows([file])
+    expect(rows[0].candidate.searchName).toBe('Hades')
+    expect(rows[0].title).toBe('Hades')
+  })
+})
+
 describe('scanImport (IMV-063)', () => {
   it('IMV-063/scanImport repassa platform, titleFrom e recursive ao binding', async () => {
     const result: ImportScanResult = { candidates: [cand()], warnings: ['aviso'] }

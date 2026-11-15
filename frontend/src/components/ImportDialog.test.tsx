@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ImportDialog } from './ImportDialog'
 import type { ImportCandidate, ImportSource } from '../lib/imports'
 import type { PlatformView } from '../lib/library'
+import type { MetadataCandidateView, MetadataConfidence, MetadataSearchView } from '../lib/metadata'
 
 // Phase 11 (importação v2): the review window of ImportDialog (IMV-040..IMV-063).
 // Every case starts with the ID of the requirement it covers.
@@ -781,5 +782,414 @@ describe('ImportDialog', () => {
     close.focus()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' })
     expect(document.activeElement).toBe(first)
+  })
+})
+
+// Phase 12 (T35): the "Buscar metadados e imagens" box of the Pasta source and the batch that
+// starts after a successful import (MET-050, MET-051). The agent is faked through window.go,
+// like the IMV cases above, so the dialog may read the batch through the hook or directly.
+describe('ImportDialog · busca de metadados ao importar (fase 12, T35)', () => {
+  const BOX = 'Buscar metadados e imagens'
+  const startSpy = vi.fn()
+  // keys says which providers have a registered key (ProviderKeyStatus, MID-001); the default has both.
+  let keys: Record<string, boolean> = {}
+  // batchStatus is what MetadataBatchStatus returns (MET-052); null means no batch.
+  let batchStatus: unknown = null
+
+  beforeEach(() => {
+    mocks.scan.mockReset()
+    mocks.apply.mockReset()
+    mocks.pickFolder.mockReset()
+    mocks.platforms = [N64, SONY, WINDOWS]
+    mocks.loading = false
+    startSpy.mockReset()
+    startSpy.mockResolvedValue({ batchId: 1, total: 1 })
+    keys = { igdb: true, steamgriddb: true }
+    batchStatus = null
+    ;(window as unknown as { go?: unknown }).go = {
+      main: {
+        App: {
+          ImportApply: (c: unknown, p: unknown) => mocks.apply(c, p),
+          MetadataBatchStart: (ids: unknown) => startSpy(ids),
+          MetadataBatchStatus: async () => ({ batch: batchStatus }),
+          ProviderKeyStatus: async (provider: string) => ({ provider, configured: keys[provider] === true }),
+        },
+      },
+    }
+  })
+
+  // importFolder opens the Pasta source, scans the folder and returns the render handles.
+  async function importFolder(candidates: ImportCandidate[]) {
+    mocks.scan.mockResolvedValue({ candidates, warnings: [] })
+    mocks.pickFolder.mockResolvedValue('E:\\Games\\ps1')
+    const view = renderDialog()
+    chooseSource('folder')
+    await pickPath('Escolher pasta', 'Pasta', 'E:\\Games\\ps1')
+    await scanAndWait()
+    return view
+  }
+
+  it('MET-050/fonte Pasta tem a caixa marcada por padrão', async () => {
+    renderDialog()
+    chooseSource('folder')
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+    expect(screen.getByRole('checkbox', { name: BOX })).toBeChecked()
+  })
+
+  it('MET-050/sem chave de IGDB nem de SteamGridDB: caixa desativada com a mensagem de Configurações', async () => {
+    keys = { igdb: false, steamgriddb: false }
+    renderDialog()
+    chooseSource('folder')
+    expect(await screen.findByText('Cadastre a chave do IGDB ou do SteamGridDB em Configurações.')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: BOX })).toBeDisabled()
+  })
+
+  it.each([
+    ['IGDB', { igdb: true, steamgriddb: false }],
+    ['SteamGridDB', { igdb: false, steamgriddb: true }],
+  ])('MET-050/ativada com só a chave do %s', async (_name, cfg) => {
+    keys = cfg
+    renderDialog()
+    chooseSource('folder')
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+    expect(screen.queryByText('Cadastre a chave do IGDB ou do SteamGridDB em Configurações.')).toBeNull()
+  })
+
+  it.each(['ready', 'cancelled'])(
+    'MET-050/busca em %s: caixa desativada com "Há metadados para revisar..."',
+    async (state) => {
+      batchStatus = { batchId: 4, state, total: 3, done: 3, failed: 0, warnings: [] }
+      renderDialog()
+      chooseSource('folder')
+      expect(
+        await screen.findByText('Há metadados para revisar. Revise ou descarte antes de buscar de novo.'),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('checkbox', { name: BOX })).toBeDisabled()
+    },
+  )
+
+  it('MET-050/Steam, Epic, LaunchBox e Arquivo não têm a caixa', () => {
+    renderDialog()
+    for (const source of ['steam', 'epic', 'launchbox', 'file'] as const) {
+      chooseSource(source)
+      expect(screen.queryByRole('checkbox', { name: BOX }), source).toBeNull()
+    }
+  })
+
+  it('MET-050/desmarcar importa sem chamar batchStart', async () => {
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 7, title: 'Spyro' }], skipped: [] })
+    renderDialog()
+    chooseSource('folder')
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: BOX }))
+    expect(screen.getByRole('checkbox', { name: BOX })).not.toBeChecked()
+    mocks.scan.mockResolvedValue({ candidates: [folderCandidate('Spyro.cue')], warnings: [] })
+    mocks.pickFolder.mockResolvedValue('E:\\Games\\ps1')
+    await pickPath('Escolher pasta', 'Pasta', 'E:\\Games\\ps1')
+    await scanAndWait()
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(startSpy).not.toHaveBeenCalled()
+  })
+
+  it('MET-051/ordem: lotes de import.apply, onImported, depois metadataBatchStart com os gameId na ordem', async () => {
+    mocks.apply.mockResolvedValue({
+      applied: [
+        { gameId: 11, title: 'Spyro' },
+        { gameId: 12, title: 'Crash' },
+      ],
+      skipped: [],
+    })
+    const { onImported } = await importFolder([folderCandidate('Spyro.cue'), folderCandidate('Crash.cue')])
+
+    fireEvent.click(importar())
+    await waitFor(() => expect(startSpy).toHaveBeenCalledTimes(1))
+    expect(startSpy.mock.calls[0][0]).toEqual([11, 12])
+    expect(mocks.apply.mock.invocationCallOrder[0]).toBeLessThan(onImported.mock.invocationCallOrder[0] ?? Infinity)
+    expect(onImported.mock.invocationCallOrder[0]).toBeLessThan(startSpy.mock.invocationCallOrder[0])
+  })
+
+  it('MET-051/nenhum jogo gravado: batchStart não é chamado', async () => {
+    mocks.apply.mockResolvedValue({ applied: [], skipped: [{ title: 'Spyro', reason: 'duplicate' }] })
+    await importFolder([folderCandidate('Spyro.cue')])
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 0')).toBeInTheDocument()
+    expect(startSpy).not.toHaveBeenCalled()
+  })
+
+  it('MET-051/"Importados: N" aparece antes de batchStart responder', async () => {
+    startSpy.mockReturnValue(new Promise(() => {}))
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 3, title: 'Spyro' }], skipped: [] })
+    await importFolder([folderCandidate('Spyro.cue')])
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(startSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('MET-051/falha do batchStart aparece como aviso e a importação não é desfeita', async () => {
+    startSpy.mockRejectedValue(new Error('Nenhuma chave cadastrada.'))
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 3, title: 'Spyro' }], skipped: [] })
+    const { onImported } = await importFolder([folderCandidate('Spyro.cue')])
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nenhuma chave cadastrada.')
+    expect(screen.getByText('já existe')).toBeInTheDocument()
+    expect(mocks.apply).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('MET-051/falha no 2º lote: batchStart só com os gravados dos lotes que passaram', async () => {
+    const candidates = Array.from({ length: 60 }, (_, i) => folderCandidate(`arq${i}.cue`, { title: `Jogo ${i}` }))
+    mocks.apply
+      .mockResolvedValueOnce({
+        applied: Array.from({ length: 25 }, (_, i) => ({ gameId: i, title: `Jogo ${i}` })),
+        skipped: [],
+      })
+      .mockRejectedValueOnce(new Error('O agente não está respondendo.'))
+    await importFolder(candidates)
+
+    fireEvent.click(importar())
+    await waitFor(() => expect(startSpy).toHaveBeenCalledTimes(1))
+    expect(startSpy.mock.calls[0][0]).toEqual(Array.from({ length: 25 }, (_, i) => i))
+  })
+})
+
+// Phase 12 (T36): the "Nome para busca" and "Obter dados" panel of the Arquivo source, and the
+// metadataApply that follows the ImportApply of the chosen file (MET-040..MET-042). The agent is
+// faked through window.go; ImportScan and the file chooser go through the mocked exports above.
+describe('ImportDialog · nome para busca e Obter dados do arquivo avulso (fase 12, T36)', () => {
+  const NAME = 'Nome para busca'
+  const GET = 'Obter dados'
+  const MSG_APPLY_FAILED = 'Jogo importado; os dados não foram aplicados: use Buscar metadados no painel'
+  const OPTIONS = 'Opções de metadados'
+  const FIRST = 'Spyro the Dragon (1998), IGDB'
+  const SECOND = 'Spyro 2 (1999), IGDB'
+  const searchSpy = vi.fn()
+  const metaApplySpy = vi.fn()
+  // keys says which providers have a registered key (ProviderKeyStatus, MID-001).
+  let keys: Record<string, boolean> = {}
+
+  function found(title: string, year: number, providerId: string): MetadataCandidateView {
+    return { refs: [{ provider: 'igdb', providerId }], title, year, platform: 'PlayStation', score: 0.92 }
+  }
+
+  function searchResult(candidates: MetadataCandidateView[], confidence: MetadataConfidence): MetadataSearchView {
+    return { candidates, confidence, warnings: [] }
+  }
+
+  beforeEach(() => {
+    mocks.scan.mockReset()
+    mocks.apply.mockReset()
+    mocks.pickFile.mockReset()
+    mocks.pickFolder.mockReset()
+    mocks.platforms = [N64, SONY, WINDOWS]
+    mocks.loading = false
+    searchSpy.mockReset()
+    searchSpy.mockResolvedValue(searchResult([found('Spyro the Dragon', 1998, '1'), found('Spyro 2', 1999, '2')], 'match'))
+    metaApplySpy.mockReset()
+    metaApplySpy.mockResolvedValue({ queued: 0, skippedByLimit: 0 })
+    keys = { igdb: true, steamgriddb: true }
+    ;(window as unknown as { go?: unknown }).go = {
+      main: {
+        App: {
+          ImportApply: (c: unknown, p: unknown) => mocks.apply(c, p),
+          MetadataSearch: (title: string, platform: string, year: number) => searchSpy(title, platform, year),
+          MetadataApply: (gameId: number, refs: unknown, replace: boolean) => metaApplySpy(gameId, refs, replace),
+          MetadataBatchStatus: async () => ({ batch: null }),
+          ProviderKeyStatus: async (provider: string) => ({ provider, configured: keys[provider] === true }),
+        },
+      },
+    }
+  })
+
+  function nameBox(): HTMLInputElement {
+    return screen.getByRole('textbox', { name: NAME }) as HTMLInputElement
+  }
+
+  function obterDados(): HTMLElement {
+    return screen.getByRole('button', { name: GET })
+  }
+
+  // importFile opens the Arquivo source, optionally picks a platform first (a change resets the list),
+  // scans the file and returns the render handles.
+  async function importFile(candidates: ImportCandidate[], platformName?: string) {
+    mocks.scan.mockResolvedValue({ candidates, warnings: [] })
+    mocks.pickFile.mockResolvedValue('C:\\Games\\Spyro.exe')
+    const view = renderDialog()
+    chooseSource('file')
+    if (platformName !== undefined) {
+      fireEvent.change(platformSelect(), { target: { value: platformName } })
+    }
+    await pickPath('Escolher arquivo', 'Arquivo', 'C:\\Games\\Spyro.exe')
+    await scanAndWait()
+    return view
+  }
+
+  // search clicks Obter dados and waits for the option list.
+  async function search() {
+    fireEvent.click(obterDados())
+    await screen.findByRole('radiogroup', { name: OPTIONS })
+  }
+
+  function spyro(over: Partial<ImportCandidate> = {}): ImportCandidate {
+    return fileCandidate('Spyro.exe', { searchName: 'Spyro', ...over })
+  }
+
+  it('MET-041/campo Nome para busca vem de searchName e é editável', async () => {
+    await importFile([spyro()])
+    expect(nameBox()).toHaveValue('Spyro')
+    fireEvent.change(nameBox(), { target: { value: 'Spyro the Dragon' } })
+    expect(nameBox()).toHaveValue('Spyro the Dragon')
+  })
+
+  it('MET-041/Obter dados chama metadataSearch com o nome, a plataforma escolhida e ano 0', async () => {
+    await importFile([spyro()], 'Sony Playstation')
+    fireEvent.change(nameBox(), { target: { value: 'Spyro' } })
+    await search()
+    expect(searchSpy).toHaveBeenCalledTimes(1)
+    expect(searchSpy).toHaveBeenCalledWith('Spyro', 'Sony Playstation', 0)
+  })
+
+  it('MET-041/opção Nenhuma vem marcada; match pré-seleciona a primeira', async () => {
+    await importFile([spyro()])
+    await search()
+    expect(screen.getByRole('radio', { name: FIRST })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Nenhuma' })).not.toBeChecked()
+  })
+
+  it('MET-041/opção Nenhuma vem marcada quando a confiança é doubt', async () => {
+    searchSpy.mockResolvedValue(searchResult([found('Spyro the Dragon', 1998, '1')], 'doubt'))
+    await importFile([spyro()])
+    await search()
+    expect(screen.getByRole('radio', { name: 'Nenhuma' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: FIRST })).not.toBeChecked()
+  })
+
+  it('MET-041/trocar o nome descarta a lista e a escolha', async () => {
+    await importFile([spyro()])
+    await search()
+    fireEvent.click(screen.getByRole('radio', { name: SECOND }))
+    fireEvent.change(nameBox(), { target: { value: 'Spyro 2' } })
+    expect(screen.queryByRole('radiogroup', { name: OPTIONS })).toBeNull()
+    await search()
+    expect(screen.getByRole('radio', { name: FIRST })).toBeChecked()
+  })
+
+  it('MET-041/trocar o arquivo descarta a lista e a escolha', async () => {
+    await importFile([spyro()])
+    await search()
+    fireEvent.click(screen.getByRole('radio', { name: SECOND }))
+    mocks.pickFile.mockResolvedValue('C:\\Games\\Crash.exe')
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher arquivo' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Arquivo' })).toHaveValue('C:\\Games\\Crash.exe'))
+    await scanAndWait()
+    expect(screen.queryByRole('radiogroup', { name: OPTIONS })).toBeNull()
+    await search()
+    expect(screen.getByRole('radio', { name: FIRST })).toBeChecked()
+  })
+
+  it('MET-041/trocar a plataforma descarta a lista e a escolha', async () => {
+    await importFile([spyro()])
+    await search()
+    fireEvent.click(screen.getByRole('radio', { name: SECOND }))
+    fireEvent.change(platformSelect(), { target: { value: 'Nintendo 64' } })
+    await scanAndWait()
+    expect(screen.queryByRole('radiogroup', { name: OPTIONS })).toBeNull()
+    await search()
+    expect(screen.getByRole('radio', { name: FIRST })).toBeChecked()
+  })
+
+  it('MET-041/botão Obter dados desativado durante a busca', async () => {
+    searchSpy.mockReturnValue(new Promise(() => {}))
+    await importFile([spyro()])
+    fireEvent.click(obterDados())
+    expect(obterDados()).toBeDisabled()
+  })
+
+  it('MET-041/botão Obter dados desativado sem plataforma', async () => {
+    const view = await importFile([spyro()])
+    mocks.platforms = []
+    view.rerender()
+    expect(obterDados()).toBeDisabled()
+  })
+
+  it.each<[string, ImportSource]>([
+    ['Pasta', 'folder'],
+    ['Steam', 'steam'],
+    ['Epic', 'epic'],
+    ['LaunchBox', 'launchbox'],
+  ])('MET-041/fonte %s não tem o painel', (_label, source) => {
+    renderDialog()
+    chooseSource(source)
+    expect(screen.queryByRole('textbox', { name: NAME })).toBeNull()
+    expect(screen.queryByRole('button', { name: GET })).toBeNull()
+  })
+
+  it('MET-041/sem chave de IGDB nem de SteamGridDB: Obter dados desativado com a mensagem de Configurações', async () => {
+    keys = { igdb: false, steamgriddb: false }
+    await importFile([spyro()])
+    expect(await screen.findByText('Cadastre a chave do IGDB ou do SteamGridDB em Configurações.')).toBeInTheDocument()
+    expect(obterDados()).toBeDisabled()
+  })
+
+  it('MET-042/importar chama ImportApply e só depois metadataApply com o gameId e as refs, replace false', async () => {
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 21, title: 'Spyro' }], skipped: [] })
+    const { onImported } = await importFile([spyro()])
+    await search()
+
+    fireEvent.click(importar())
+    await waitFor(() => expect(metaApplySpy).toHaveBeenCalledTimes(1))
+    expect(metaApplySpy).toHaveBeenCalledWith(21, [{ provider: 'igdb', providerId: '1' }], false)
+    expect(mocks.apply.mock.invocationCallOrder[0]).toBeLessThan(metaApplySpy.mock.invocationCallOrder[0])
+    expect(onImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('MET-042/ImportApply recusa o jogo: aviso e metadataApply não é chamado', async () => {
+    mocks.apply.mockResolvedValue({ applied: [], skipped: [{ title: 'Spyro', reason: 'duplicate' }] })
+    await importFile([spyro()])
+    await search()
+
+    fireEvent.click(importar())
+    expect(await screen.findByRole('alert')).toHaveTextContent(MSG_APPLY_FAILED)
+    expect(metaApplySpy).not.toHaveBeenCalled()
+  })
+
+  it('MET-042/metadataApply falha: aviso e o jogo importado fica', async () => {
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 21, title: 'Spyro' }], skipped: [] })
+    metaApplySpy.mockRejectedValue(new Error('Nenhuma chave cadastrada.'))
+    const { onImported } = await importFile([spyro()])
+    await search()
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(MSG_APPLY_FAILED)
+    expect(mocks.apply).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('MET-042/sem opção escolhida (Nenhuma): metadataApply não é chamado', async () => {
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 21, title: 'Spyro' }], skipped: [] })
+    await importFile([spyro()])
+    await search()
+    fireEvent.click(screen.getByRole('radio', { name: 'Nenhuma' }))
+
+    fireEvent.click(importar())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(metaApplySpy).not.toHaveBeenCalled()
+  })
+
+  it('MET-042/metadataApply chamado uma vez só', async () => {
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 21, title: 'Spyro' }], skipped: [] })
+    await importFile([spyro()])
+    await search()
+
+    fireEvent.click(importar())
+    await waitFor(() => expect(metaApplySpy).toHaveBeenCalled())
+    expect(await screen.findByText('Importados: 1')).toBeInTheDocument()
+    expect(metaApplySpy).toHaveBeenCalledTimes(1)
   })
 })

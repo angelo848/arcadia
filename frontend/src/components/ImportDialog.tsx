@@ -2,6 +2,9 @@ import { useCallback, useId, useMemo, useRef, useState, useEffect, type JSX } fr
 import { Modal } from './Modal'
 import { ImportReviewTable } from './ImportReviewTable'
 import { useCatalog } from '../lib/library'
+import { metadataApply, metadataSearch, providerKeyStatus, type MetadataSearchView } from '../lib/metadata'
+import { useMetadataBatch } from '../lib/metadataBatch'
+import { MetadataOptions } from './MetadataOptions'
 import {
   applyImportInLots,
   buildReviewRows,
@@ -48,6 +51,17 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   const [result, setResult] = useState<ImportApplyResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null)
+  // searchMeta: after a Pasta import, look up metadata and images of the new games (MET-050).
+  const [searchMeta, setSearchMeta] = useState(true)
+  // keys tells which provider keys are registered; null while they are not known yet (MET-050).
+  const [keys, setKeys] = useState<{ igdb: boolean; steamgriddb: boolean } | null>(null)
+  // searchName is the "Nome para busca" of the Arquivo source; metaResult is the option list of the
+  // last search and metaSelected the chosen option (null means "Nenhuma") [MET-041].
+  const [searchName, setSearchName] = useState('')
+  const [metaResult, setMetaResult] = useState<MetadataSearchView | null>(null)
+  const [metaSelected, setMetaSelected] = useState<number | null>(null)
+  const [metaBusy, setMetaBusy] = useState(false)
+  const batch = useMetadataBatch()
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -55,11 +69,32 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
       mounted.current = false
     }
   }, [])
+  useEffect(() => {
+    let live = true
+    Promise.all([providerKeyStatus('igdb'), providerKeyStatus('steamgriddb')])
+      .then(([igdb, steamgriddb]) => {
+        if (live) {
+          setKeys({ igdb: igdb.configured, steamgriddb: steamgriddb.configured })
+        }
+      })
+      .catch(() => {
+        if (live) {
+          setKeys({ igdb: false, steamgriddb: false })
+        }
+      })
+    return () => {
+      live = false
+    }
+  }, [])
   const pathId = useId()
   const platformId = useId()
   const titleFromId = useId()
   const subfoldersId = useId()
   const noPlatformId = useId()
+  const searchMetaId = useId()
+  const searchMetaNoteId = useId()
+  const searchNameId = useId()
+  const searchNoteId = useId()
 
   const catalog = useCatalog()
   const platforms = useMemo(
@@ -78,12 +113,24 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
   )
   const counts = rows === null ? null : selectionCounts(rows)
   const hasInvalid = rows?.some((r) => r.checked && titleProblem(r.title) !== null) ?? false
+  // The metadata box needs a registered key and no batch waiting for review (MET-050).
+  const noKeys = keys !== null && !keys.igdb && !keys.steamgriddb
+  const batchWaiting = batch.status?.state === 'ready' || batch.status?.state === 'cancelled'
+  const searchMetaEnabled = !busy && keys !== null && !noKeys && !batchWaiting
+  const searchMetaNote = noKeys
+    ? 'Cadastre a chave do IGDB ou do SteamGridDB em Configurações.'
+    : batchWaiting
+      ? 'Há metadados para revisar. Revise ou descarte antes de buscar de novo.'
+      : null
 
   // resetList drops the review list: the scan that built it no longer matches the form (IMV-049).
+  // The metadata options and the choice go with it (MET-041).
   function resetList() {
     setRows(null)
     setWarnings([])
     setResult(null)
+    setMetaResult(null)
+    setMetaSelected(null)
   }
 
   async function choosePath() {
@@ -111,12 +158,37 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
       })
       setRows(buildReviewRows(res.candidates))
       setWarnings(res.warnings)
+      if (source === 'file') {
+        setSearchName(res.candidates[0]?.searchName ?? '')
+      }
+      setMetaResult(null)
+      setMetaSelected(null)
     } catch (e) {
       setRows(null)
       setWarnings([])
       setError(messageOf(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // searchMeta looks the name up in the providers, with no year and the chosen platform (MET-041).
+  async function searchFileMeta() {
+    if (platform === null) {
+      return
+    }
+    setMetaBusy(true)
+    setError(null)
+    try {
+      const res = await metadataSearch(searchName.trim(), platform, 0)
+      setMetaResult(res)
+      setMetaSelected(res.confidence === 'match' && res.candidates.length > 0 ? 0 : null)
+    } catch (e) {
+      setMetaResult(null)
+      setMetaSelected(null)
+      setError(messageOf(e))
+    } finally {
+      setMetaBusy(false)
     }
   }
 
@@ -131,6 +203,13 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
       title: r.title.trim(),
       platform: fileLike ? (platform ?? '') : r.candidate.platform,
     }))
+    // Captured before busy turns on, because the box is disabled while the import runs.
+    const withSearch = source === 'folder' && searchMeta && searchMetaEnabled
+    // The refs of the option chosen in the Arquivo panel; null for "Nenhuma" or other sources (MET-042).
+    const metaRefs =
+      source === 'file' && metaResult !== null && metaSelected !== null
+        ? (metaResult.candidates[metaSelected]?.refs ?? null)
+        : null
     setBusy(true)
     setError(null)
     setResult(null)
@@ -141,17 +220,45 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
     })
     // Rows not sent because a lot failed stay checked (IMV-050).
     const sent = new Set(chosen.slice(0, chosen.length - out.notSent))
-    if (out.result.applied.length > 0) {
+    const applied = out.result.applied
+    // The metadata is applied once, after the import is written, to the game it created; its failure
+    // or a refused import leaves the import as it is (MET-042).
+    let metaFailed = false
+    if (metaRefs !== null) {
+      if (applied.length === 0) {
+        metaFailed = true
+      } else {
+        try {
+          await metadataApply(applied[0].gameId, metaRefs, false)
+        } catch {
+          metaFailed = true
+        }
+      }
+    }
+    if (applied.length > 0) {
       onImported()
+    }
+    // The batch starts only after the import is written; its failure does not undo the import (MET-051).
+    if (applied.length > 0 && withSearch) {
+      void batch.start(applied.map((a) => a.gameId)).catch((e: unknown) => {
+        if (mounted.current) {
+          setError((prev) => (prev === null ? messageOf(e) : `${prev} ${messageOf(e)}`))
+        }
+      })
     }
     if (!mounted.current) {
       return
     }
     setRows((prev) => markRows(prev, sent, out.result.applied))
     setResult(out.result)
+    const problems: string[] = []
     if (out.error) {
-      setError(`${messageOf(out.error)}. ${out.notSent} jogos não foram enviados.`)
+      problems.push(`${messageOf(out.error)}. ${out.notSent} jogos não foram enviados.`)
     }
+    if (metaFailed) {
+      problems.push(META_APPLY_FAILED)
+    }
+    setError(problems.length > 0 ? problems.join(' ') : null)
     setProgress(null)
     setBusy(false)
   }
@@ -297,6 +404,25 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
               />
               Ler subpastas
             </label>
+            <div className="flex flex-col gap-1 text-sm text-muted">
+              <label htmlFor={searchMetaId} className="flex items-center gap-2 pb-1.5">
+                <input
+                  id={searchMetaId}
+                  type="checkbox"
+                  checked={searchMeta}
+                  disabled={!searchMetaEnabled}
+                  aria-describedby={searchMetaNote !== null ? searchMetaNoteId : undefined}
+                  onChange={(e) => setSearchMeta(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--arc-accent)]"
+                />
+                Buscar metadados e imagens
+              </label>
+              {searchMetaNote !== null && (
+                <span id={searchMetaNoteId} className="text-xs text-warning">
+                  {searchMetaNote}
+                </span>
+              )}
+            </div>
           </>
         )}
 
@@ -349,6 +475,51 @@ export function ImportDialog({ onImported, onClose }: ImportDialogProps): JSX.El
         </>
       )}
 
+      {source === 'file' && rows !== null && rows.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label htmlFor={searchNameId} className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
+              Nome para busca
+              <input
+                id={searchNameId}
+                type="text"
+                value={searchName}
+                onChange={(e) => {
+                  setSearchName(e.target.value)
+                  setMetaResult(null)
+                  setMetaSelected(null)
+                }}
+                className={`${inputClass} w-full`}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void searchFileMeta()}
+              disabled={busy || metaBusy || keys === null || noKeys || noPlatform}
+              aria-describedby={noKeys ? searchNoteId : undefined}
+              className="rounded bg-raised px-4 py-1.5 text-sm text-fg hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Obter dados
+            </button>
+          </div>
+          {noKeys && (
+            <span id={searchNoteId} className="text-xs text-warning">
+              Cadastre a chave do IGDB ou do SteamGridDB em Configurações.
+            </span>
+          )}
+          {metaResult !== null && (
+            <MetadataOptions
+              candidates={metaResult.candidates}
+              confidence={metaResult.confidence}
+              warnings={metaResult.warnings}
+              selected={metaSelected}
+              onSelect={setMetaSelected}
+              allowNone
+            />
+          )}
+        </div>
+      )}
+
       {result !== null && (
         <div role="status" className="text-sm text-muted">
           <p>Importados: {result.applied.length}</p>
@@ -381,6 +552,9 @@ function markRows(
   const sentNow = normalized.filter((_, i) => sent.has(prev[i]))
   return markImported(normalized, sentNow, applied)
 }
+
+// META_APPLY_FAILED is the warning when the chosen metadata did not reach the imported game (MET-042).
+const META_APPLY_FAILED = 'Jogo importado; os dados não foram aplicados: use Buscar metadados no painel'
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : 'Não foi possível importar. Tente de novo.'
