@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, focusManager, useQuery } from '@tanstack/react-query'
 import {
   currentSession,
   currentSessionKey,
@@ -43,6 +43,7 @@ type FakeApp = {
   LaunchGame: Fn
   LaunchGameUntracked: Fn
   ListGames: Fn
+  MediaList: Fn
   PauseSession: Fn
   ResumeSession: Fn
 }
@@ -62,6 +63,7 @@ function install() {
     LaunchGame: vi.fn(() => Promise.resolve(session())),
     LaunchGameUntracked: vi.fn(() => Promise.resolve()),
     ListGames: vi.fn(() => Promise.resolve(listPage([]))),
+    MediaList: vi.fn(() => Promise.resolve({ media: [] })),
     PauseSession: vi.fn(() => Promise.resolve(session({ state: 'paused' }))),
     ResumeSession: vi.fn(() => Promise.resolve(session({ state: 'running' }))),
   }
@@ -603,6 +605,74 @@ describe('useReloadOnReconnect', () => {
       await reload.promise
     })
     await waitFor(() => expect(result.current.current.data).toEqual(fresh))
+  })
+
+  it('IMG-010/Desconectado → Conectado: [media, id] com dados é invalidada; em uso é relida', async () => {
+    const qc = newClient()
+    const mediaFn = app.MediaList
+    const mediaKeyOf = (id: number) => ['media', id]
+    const inUse = renderHook(
+      () =>
+        useQuery({
+          queryKey: mediaKeyOf(10),
+          queryFn: () => (app.MediaList as unknown as (id: number) => Promise<{ media: unknown[] }>)(10),
+          retry: false,
+        }),
+      { wrapper: wrapperFor(qc) },
+    )
+    await waitFor(() => expect(inUse.result.current.isSuccess).toBe(true))
+    qc.setQueryData(mediaKeyOf(20), { media: [] })
+    expect(mediaFn).toHaveBeenCalledTimes(1)
+
+    const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: false },
+    })
+    rerender({ connected: false })
+    expect(qc.getQueryState(mediaKeyOf(20))?.isInvalidated).toBe(false)
+    rerender({ connected: true })
+
+    expect(qc.getQueryState(mediaKeyOf(20))?.isInvalidated).toBe(true)
+    await waitFor(() => expect(mediaFn).toHaveBeenCalledTimes(2))
+    expect(mediaFn).toHaveBeenLastCalledWith(10)
+  })
+
+  it('IMG-010/consulta de mídia ainda sem resposta não é relida de novo', async () => {
+    const qc = newClient()
+    const pending = deferred<{ media: [] }>()
+    const fn = vi.fn(() => pending.promise)
+    void qc.prefetchQuery({ queryKey: ['media', 30], queryFn: () => fn() })
+    await waitFor(() => expect(fn).toHaveBeenCalledTimes(1))
+
+    const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: false },
+    })
+    rerender({ connected: true })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(qc.getQueryState(['media', 30])?.isInvalidated).toBe(false)
+    pending.resolve({ media: [] })
+  })
+
+  it('IMG-010/consulta de mídia com dados fora da tela fica velha, sem leitura', async () => {
+    const qc = newClient()
+    qc.setQueryData(['media', 40], { media: [] })
+
+    const { rerender } = renderHook(({ connected }) => useReloadOnReconnect(connected), {
+      wrapper: wrapperFor(qc),
+      initialProps: { connected: false },
+    })
+    rerender({ connected: true })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+
+    expect(qc.getQueryState(['media', 40])?.isInvalidated).toBe(true)
+    expect(app.MediaList).not.toHaveBeenCalled()
   })
 })
 

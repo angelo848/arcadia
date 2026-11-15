@@ -239,7 +239,7 @@ export function useReloadOnReconnect(connected: boolean): void {
         queryKey: libraryGamesKey,
         predicate: (q) => q.state.data !== undefined,
       })
-      for (const key of [['library', 'game'], ['library', 'sessions']]) {
+      for (const key of [['library', 'game'], ['library', 'sessions'], ['media']]) {
         void qc.invalidateQueries({ queryKey: key, predicate: (q) => q.state.data !== undefined })
       }
       void qc.resetQueries({ queryKey: currentSessionKey })
