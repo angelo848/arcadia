@@ -13,6 +13,54 @@ export const providerLabels: Record<ProviderId, string> = {
   steamstore: 'Steam Store',
 }
 
+// The canonical order of providers in lists (MET-044).
+const providerOrder: ProviderId[] = ['igdb', 'steamgriddb', 'steamstore']
+
+// MetadataRefView points to a provider's entry for the game (contracts/ipc-v0.14.0-delta.md).
+export type MetadataRefView = { provider: ProviderId; providerId: string }
+
+// MetadataConfidence says how sure the search is about its best candidate.
+export type MetadataConfidence = 'match' | 'doubt' | 'none'
+
+// MetadataCandidateView is one scored option of a unified search; refs has one entry per provider that agrees.
+export type MetadataCandidateView = {
+  refs: MetadataRefView[]
+  title: string
+  year: number
+  platform: string
+  score: number
+}
+
+// MetadataSearchView is the unified search result, best candidate first.
+export type MetadataSearchView = {
+  candidates: MetadataCandidateView[]
+  confidence: MetadataConfidence
+  warnings: string[]
+}
+
+// MetadataApplyView is the game after the metadata was applied, the images queued and the ones skipped by the limit.
+export type MetadataApplyView = { game: GameDetailView; queued: number; skippedByLimit: number }
+
+// providersLabel joins the display names of the providers in refs, in canonical order, with " · ".
+export function providersLabel(refs: MetadataRefView[]): string {
+  const present = new Set(refs.map((r) => r.provider))
+  return providerOrder
+    .filter((p) => present.has(p))
+    .map((p) => providerLabels[p])
+    .join(' · ')
+}
+
+// applyResultLabel describes the outcome of an apply; the second sentence appears only when images were skipped.
+export function applyResultLabel(queued: number, skippedByLimit: number): string {
+  const queuedText = queued === 1 ? '1 imagem na fila' : `${queued} imagens na fila`
+  if (skippedByLimit === 0) {
+    return queuedText
+  }
+  const skippedText =
+    skippedByLimit === 1 ? '1 não entrou porque o jogo já tem o máximo' : `${skippedByLimit} não entraram porque o jogo já tem o máximo`
+  return `${queuedText}; ${skippedText}`
+}
+
 // The kinds of image a provider can offer (MID-004).
 export type MediaKind = 'cover' | 'screenshot' | 'title' | 'banner' | 'background' | 'select'
 
@@ -98,6 +146,8 @@ type WailsApp = {
   ProviderDeleteKey?: (provider: string) => Promise<ProviderKeyView>
   ScrapeSearch?: (gameId: number, provider: string) => Promise<{ candidates: ScrapeCandidateView[] }>
   ScrapeApply?: (gameId: number, provider: string, providerId: string, replace: boolean) => Promise<ScrapeApplyView>
+  MetadataSearch?: (title: string, platform: string, year: number) => Promise<MetadataSearchView>
+  MetadataApply?: (gameId: number, refs: MetadataRefView[], replace: boolean) => Promise<MetadataApplyView>
   MediaList?: (gameId: number) => Promise<{ media: MediaItemView[] }>
   MediaQueue?: (gameId: number, provider: string, providerId: string, kinds: string[]) => Promise<number>
   MediaCancel?: (jobId: number) => Promise<void>
@@ -177,6 +227,16 @@ export async function scrapeSearch(gameId: number, provider: ProviderId): Promis
 // scrapeApply applies a candidate's metadata and queues its images (MID-003, MID-004).
 export function scrapeApply(gameId: number, provider: ProviderId, providerId: string, replace: boolean): Promise<ScrapeApplyView> {
   return call<ScrapeApplyView>('ScrapeApply', [gameId, provider, providerId, replace])
+}
+
+// metadataSearch asks every applicable provider at once; year 0 means unknown (MET-043).
+export function metadataSearch(title: string, platform: string, year: number): Promise<MetadataSearchView> {
+  return call<MetadataSearchView>('MetadataSearch', [title, platform, year])
+}
+
+// metadataApply applies the chosen provider entries to the game; replace is always sent explicitly (MET-043).
+export function metadataApply(gameId: number, refs: MetadataRefView[], replace: boolean): Promise<MetadataApplyView> {
+  return call<MetadataApplyView>('MetadataApply', [gameId, refs, replace])
 }
 
 // fetchMedia lists the images of a game (MID-006).
