@@ -2229,6 +2229,201 @@ describe('App: teclado (T19)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Live images: media:changed [IMG-007, IMG-008, IMG-011] (phase 10.2, T10)
+// ---------------------------------------------------------------------------
+
+type MediaItem = { id: number; kind: string; provider: string; path: string; thumbPath: string; url: string; thumbUrl: string }
+
+function mediaItem(id: number, kind = 'cover'): MediaItem {
+  return { id, kind, provider: 'x', path: 'p', thumbPath: 't', url: `/m/${id}.jpg`, thumbUrl: `/m/${id}-t.jpg` }
+}
+
+// mediaByGame is what the fake agent holds; MediaList answers from it.
+function serveMedia(byGame: Record<number, MediaItem[]>) {
+  app.MediaList.mockImplementation((id: number) => Promise.resolve({ media: byGame[id] ?? [] }))
+}
+
+function cardImg(title: string): HTMLImageElement {
+  return rowOf(title).querySelector('img') as HTMLImageElement
+}
+
+function mediaListIds(): number[] {
+  return app.MediaList.mock.calls.map((c) => c[0] as number)
+}
+
+describe('App: imagens ao vivo (media:changed)', () => {
+  it('IMG-007/App montado tem exatamente um handler de media:changed; desmontar o remove', async () => {
+    const qc = newClient()
+    const view = render(<App />, { wrapper: wrapperOf(qc) })
+    await waitConnected()
+    expect(handlers.get('media:changed')?.size).toBe(1)
+
+    view.unmount()
+    expect(handlers.get('media:changed')?.size ?? 0).toBe(0)
+  })
+
+  it('IMG-008/grade com G em foco e H visível sem imagem: media:changed(H) põe a capa no cartão de H; foco, marcação, activeElement e scrollTop iguais', async () => {
+    threePlatformLibrary()
+    const media: Record<number, MediaItem[]> = {}
+    serveMedia(media)
+    renderApp()
+    await focusGame('Hollow Knight')
+    const gCard = rowOf('Hollow Knight')
+    gCard.focus()
+    scrollGridTo(0)
+    const scroller = cards()[0].parentElement as HTMLElement
+    const top = scroller.scrollTop
+    await waitFor(() => expect(cardImg('Hades')).not.toHaveAttribute('data-fit'))
+
+    media[20] = [mediaItem(5)]
+    emit('media:changed', { gameId: 20 })
+
+    await waitFor(() => expect(cardImg('Hades')).toHaveAttribute('src', '/m/5-t.jpg'))
+    expect(cardImg('Hades')).toHaveAttribute('data-fit', 'contain')
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+    expect(selectedCards()).toHaveLength(1)
+    expect(selectedCards()[0]).toBe(rowOf('Hollow Knight'))
+    expect(document.activeElement).toBe(rowOf('Hollow Knight'))
+    expect(scroller.scrollTop).toBe(top)
+  })
+
+  it('IMG-008/cartão de H com substituta passa para a capa quando ela chega', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 20, title: 'Hades' })]))
+    const media: Record<number, MediaItem[]> = { 20: [mediaItem(1, 'screenshot')] }
+    serveMedia(media)
+    renderApp()
+    await findRow('Hades')
+    await waitFor(() => expect(cardImg('Hades')).toHaveAttribute('src', '/m/1-t.jpg'))
+    expect(cardImg('Hades')).toHaveAttribute('data-fit', 'cover')
+
+    media[20] = [mediaItem(1, 'screenshot'), mediaItem(2, 'cover')]
+    emit('media:changed', { gameId: 20 })
+
+    await waitFor(() => expect(cardImg('Hades')).toHaveAttribute('src', '/m/2-t.jpg'))
+    expect(cardImg('Hades')).toHaveAttribute('data-fit', 'contain')
+  })
+
+  it('IMG-008/media:changed(H) não relê ListGames nem MediaList de outras linhas', async () => {
+    threePlatformLibrary()
+    serveMedia({})
+    renderApp()
+    await focusGame('Hollow Knight')
+    await flush()
+    const lists = app.ListGames.mock.calls.length
+    const games = app.GetGame.mock.calls.length
+    const reads = app.MediaList.mock.calls.length
+
+    emit('media:changed', { gameId: 20 })
+    await waitFor(() => expect(app.MediaList.mock.calls.length).toBeGreaterThan(reads))
+    await flush()
+
+    expect(mediaListIds().slice(reads).every((id) => id === 20)).toBe(true)
+    expect(app.ListGames.mock.calls.length).toBe(lists)
+    expect(app.GetGame.mock.calls.length).toBe(games)
+  })
+
+  it('IMG-008/H = G: o cartão em foco troca a imagem e continua em foco', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' })]))
+    const media: Record<number, MediaItem[]> = {}
+    serveMedia(media)
+    renderApp()
+    await focusGame('Hollow Knight')
+    rowOf('Hollow Knight').focus()
+
+    media[10] = [mediaItem(7)]
+    emit('media:changed', { gameId: 10 })
+
+    await waitFor(() => expect(cardImg('Hollow Knight')).toHaveAttribute('src', '/m/7-t.jpg'))
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    expect(document.activeElement).toBe(rowOf('Hollow Knight'))
+    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+  })
+
+  it('IMG-008/lista e Big Box: o mesmo cartão atualiza sem mudar o foco', async () => {
+    layoutBigBox()
+    bigBoxLibrary()
+    const media: Record<number, MediaItem[]> = {}
+    serveMedia(media)
+    renderApp()
+    await focusGame('Hollow Knight')
+
+    // List mode: the foco and the marking stay; the image shows when the grid comes back.
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar em lista' }))
+    await waitFor(() => expect(within(rowOf('Hollow Knight')).getByText('Windows')).toBeInTheDocument())
+    media[20] = [mediaItem(3)]
+    emit('media:changed', { gameId: 20 })
+    await flush()
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar em grade' }))
+    await waitFor(() => expect(cardImg('Hades')).toHaveAttribute('src', '/m/3-t.jpg'))
+
+    // Big Box: the focused card keeps the focus when another card changes.
+    enterBigBoxByKey()
+    rowOf('Hollow Knight').focus()
+    media[30] = [mediaItem(4)]
+    emit('media:changed', { gameId: 30 })
+    await waitFor(() => expect(cardImg('Celeste')).toHaveAttribute('src', '/m/4-t.jpg'))
+    expect(document.activeElement).toBe(rowOf('Hollow Knight'))
+    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
+    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('IMG-011/MetadataDialog aberto, ScrapeApply responde queued = 3, chegam três media:changed(G) com a lista crescendo: carrossel e cartão de G mostram as imagens a cada evento, G em foco, diálogo aberto', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    const media: Record<number, MediaItem[]> = {}
+    serveMedia(media)
+    app.ScrapeSearch.mockResolvedValue({
+      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
+    })
+    app.ScrapeApply.mockResolvedValue({ game: detail(), queued: 3 })
+    renderApp()
+    const aside = await focusGame('Hollow Knight')
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
+    fireEvent.click(apply[0])
+    await waitFor(() => expect(app.ScrapeApply).toHaveBeenCalledWith(10, 'igdb', '7', false))
+    await flush()
+
+    const all = [mediaItem(1, 'screenshot'), mediaItem(2, 'screenshot'), mediaItem(3, 'screenshot')]
+    for (let n = 1; n <= 3; n++) {
+      media[10] = all.slice(0, n)
+      emit('media:changed', { gameId: 10 })
+      await waitFor(() => expect(within(asideOf()).getByText(`1 de ${n}`)).toBeInTheDocument())
+      await waitFor(() => expect(cardImg('Hollow Knight')).toHaveAttribute('src', '/m/1-t.jpg'))
+      expect(screen.getByRole('dialog', { name: 'Buscar metadados e mídia' })).toBeInTheDocument()
+      expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
+      expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    }
+  })
+
+  it('IMG-011/aplicar continua invalidando mediaKey(G)', async () => {
+    app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
+    app.ScrapeSearch.mockResolvedValue({
+      candidates: [{ providerId: '7', title: 'Hollow Knight', platform: 'PC', year: 2017, score: 0.95, accepted: true }],
+    })
+    app.ScrapeApply.mockResolvedValue({ game: detail(), queued: 3 })
+    const qc = renderApp()
+    const aside = await focusGame('Hollow Knight')
+    const invalidate = vi.spyOn(qc, 'invalidateQueries')
+
+    fireEvent.click(within(aside).getByRole('button', { name: 'Buscar metadados' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Buscar metadados e mídia' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
+    const apply = await within(dialog).findAllByRole('button', { name: 'Aplicar' })
+    await flush()
+    const reads = app.MediaList.mock.calls.length
+    fireEvent.click(apply[0])
+
+    await waitFor(() => expect(app.MediaList.mock.calls.length).toBeGreaterThan(reads))
+    expect(app.MediaList).toHaveBeenLastCalledWith(10)
+    expect(invalidate.mock.calls.some((c) => JSON.stringify((c[0] as { queryKey?: unknown })?.queryKey) === JSON.stringify(['media', 10]))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Big Box on the three-column layout (T20)
 // ---------------------------------------------------------------------------
 

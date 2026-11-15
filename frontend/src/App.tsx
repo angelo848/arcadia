@@ -9,7 +9,7 @@ import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
 import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
 import { useEmulators } from './lib/emulators'
-import { useCardImages } from './lib/metadata'
+import { useCardImages, useMediaEvents } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
 import { ErrorBanner } from './components/ErrorBanner'
 import { GameDetailsPanel } from './components/GameDetailsPanel'
@@ -174,6 +174,7 @@ export default function App() {
   const genreNames = useMemo(() => catalog.data?.genres.map((g) => g.name) ?? [], [catalog.data])
   const current = useCurrentSession()
   useSessionEvents()
+  useMediaEvents()
   useReloadOnReconnect(connected)
 
   const launch = useLaunchGame()

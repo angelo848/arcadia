@@ -436,6 +436,58 @@ describe('invariantes da UI', () => {
     expect(calls('ResumeSession')).toHaveLength(0)
   })
 
+  it('IMG-012/eventos media:changed e reconexão chamam só leituras; nenhum LaunchGame, LaunchGameUntracked, Pause/Resume nem escrita; jogo em foco e sessão exibida não mudam', async () => {
+    const handlers = new Map<string, Set<(...d: unknown[]) => void>>()
+    ;(window as unknown as { runtime: unknown }).runtime = {
+      EventsOn: vi.fn((name: string, cb: (...d: unknown[]) => void) => {
+        const set = handlers.get(name) ?? new Set()
+        handlers.set(name, set)
+        set.add(cb)
+        return () => set.delete(cb)
+      }),
+    }
+    const emit = (name: string, ...data: unknown[]) =>
+      act(() => {
+        for (const cb of handlers.get(name) ?? []) cb(...data)
+      })
+    const defaultStatus = (overrides.AgentStatus ?? ((...a: unknown[]) => defaults('AgentStatus', a))) as () => unknown
+    let up = true
+    overrides.AgentStatus = () => (up ? defaultStatus() : { connected: false, version: '', pid: 0, startedAt: '', dataDir: '', uptimeSeconds: 0 })
+    overrides.CurrentSession = () => session('running')
+    renderApp()
+    await screen.findByRole('status', { name: 'Sessão em andamento' })
+    await focusGame('Hades')
+    await flush()
+    const state = () => document.querySelector('[data-state]')?.getAttribute('data-state')
+    await waitFor(() => expect(state()).toBe('connected'))
+
+    // media:changed events: a visible game, a game that is not on screen and a bad payload.
+    emit('media:changed', { gameId: 20 })
+    emit('media:changed', { gameId: 30 })
+    emit('media:changed', { gameId: 999 })
+    emit('media:changed', {})
+    await flush()
+
+    // Disconnect and reconnect.
+    up = false
+    emit('agent:heartbeat')
+    await waitFor(() => expect(state()).toBe('disconnected'), { timeout: 3000 })
+    up = true
+    emit('agent:heartbeat')
+    await waitFor(() => expect(state()).toBe('connected'))
+    emit('media:changed', { gameId: 20 })
+    await flush()
+
+    expect(writeCalls(), 'bindings que escrevem ou lançam').toEqual([])
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', 'PauseSession', 'ResumeSession']) {
+      expect(calls(n), n).toHaveLength(0)
+    }
+    expect(within(aside()).getByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
+    const panel = screen.getByRole('status', { name: 'Sessão em andamento' })
+    expect(within(panel).getByText(/Hollow Knight/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Pausar' })).toBeInTheDocument()
+  })
+
   it('AJU-026/clicar e navegar nas miniaturas, rolar áreas e passar o mouse chamam só leituras', async () => {
     renderApp()
     await focusGame('Hollow Knight')
