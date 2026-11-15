@@ -319,9 +319,11 @@ describe('invariantes da UI', () => {
     }
 
     // Big Box in and out, and the statistics.
-    fireEvent.keyDown(window, { key: 'F11' })
-    fireEvent.click(await screen.findByRole('button', { name: /Sair do Big Box/ }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Sair do Big Box/ })).toBeNull())
+    // alterado em 2026-11-15 (fase 13): Big Box novo, entra pelo botão e sai com Escape (B).
+    fireEvent.click(screen.getByRole('button', { name: 'Big Box' }))
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).not.toBeNull())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
     await screen.findByRole('heading', { name: 'Estatísticas' })
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -362,17 +364,16 @@ describe('invariantes da UI', () => {
       expect(calls('LaunchGameUntracked')).toHaveLength(0)
     })
 
-    it('UIX-046/Y (Shift+Enter) no Big Box', async () => {
+    // alterado em 2026-11-15 (fase 13): A (Enter) no Big Box novo lança o jogo em foco uma vez.
+    it('UIX-046/A (Enter) no Big Box', async () => {
       renderApp()
       await findCard('Hades')
       fireEvent.keyDown(window, { key: 'F11' })
-      await screen.findByRole('button', { name: /Sair do Big Box/ })
-      const card = await findCard('Celeste')
-      card.focus()
-      fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+      await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+      fireEvent.keyDown(window, { key: 'Enter' })
       await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
       await flush()
-      expect(calls('LaunchGame')).toEqual([[30]])
+      expect(calls('LaunchGame')).toHaveLength(1)
       expect(calls('LaunchGameUntracked')).toHaveLength(0)
     })
 
@@ -387,7 +388,8 @@ describe('invariantes da UI', () => {
     })
   })
 
-  it('UIX-046/Enter mantido na grade e Shift+Enter mantido no Big Box chamam LaunchGame exatamente uma vez cada', async () => {
+  // alterado em 2026-11-15 (fase 13): no Big Box novo o repeat do Enter não lança de novo.
+  it('UIX-046/Enter mantido na grade e Enter mantido no Big Box chamam LaunchGame exatamente uma vez cada', async () => {
     renderApp()
     const card = await findCard('Hades')
     card.focus()
@@ -399,15 +401,13 @@ describe('invariantes da UI', () => {
     expect(calls('LaunchGame')).toEqual([[20]])
 
     fireEvent.keyDown(window, { key: 'F11' })
-    await screen.findByRole('button', { name: /Sair do Big Box/ })
-    const bb = await findCard('Celeste')
-    bb.focus()
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true, repeat: true })
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true, repeat: true })
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
     await waitFor(() => expect(calls('LaunchGame')).toHaveLength(2))
     await flush()
-    expect(calls('LaunchGame')).toEqual([[20], [30]])
+    expect(calls('LaunchGame')).toHaveLength(2)
   })
 
   it('UIX-046/ToggleSession só é chamado pelo painel de sessão', async () => {
@@ -422,8 +422,11 @@ describe('invariantes da UI', () => {
     const card = await findCard('Celeste')
     fireEvent.keyDown(card, { key: 'ArrowLeft' })
     expect(screen.queryByRole('status', { name: 'Sessão em andamento' }), 'after arrow').not.toBeNull()
+    // alterado em 2026-11-15 (fase 13): sai do Big Box novo com Escape (B).
     fireEvent.keyDown(window, { key: 'F11' })
-    fireEvent.click(await screen.findByRole('button', { name: /Sair do Big Box/ }))
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).not.toBeNull())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).toBeNull())
     await flush()
     expect(calls('PauseSession')).toHaveLength(0)
     expect(calls('ResumeSession')).toHaveLength(0)

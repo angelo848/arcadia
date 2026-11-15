@@ -7,7 +7,9 @@ import { EmulatorsDialog } from './components/EmulatorsDialog'
 import { ImportDialog } from './components/ImportDialog'
 import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
-import { enterBigBox, exitBigBox, useBigBoxNav } from './lib/bigbox'
+import { BigBox } from './bigbox/BigBox'
+import { BIGBOX_THEMES, resolveTheme } from './bigbox/themes/registry'
+import { enterBigBox, exitBigBox } from './lib/bigbox'
 import { useEmulators } from './lib/emulators'
 import { useCardImages, useMediaEvents } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
@@ -44,6 +46,7 @@ import {
   useUpdateGame,
 } from './lib/library'
 import { readLibraryView, writeLibraryView, type LibraryView } from './lib/libraryView'
+import { readBigBoxTheme, writeBigBoxTheme, type BigBoxThemeId } from './lib/uiPrefs'
 import { useMetadataBatch } from './lib/metadataBatch'
 import type { PendingLaunch } from './lib/pendingLaunch'
 import { focusedGameId, initialSelection, selectionReducer, type SelectionEvent } from './lib/selection'
@@ -200,6 +203,9 @@ export default function App() {
   // An idle import window does not block the confirmation: it is closed when the confirmation opens.
   const importBlocks = importing && importBusy
   const anyModalOpen = importBlocks || emulating || platformsOpen || keying || dialog !== null
+  // Big Box: the new full screen shell; it takes the place of the three columns [BBX-001].
+  const [bigBox, setBigBox] = useState(false)
+  const [bbTheme, setBbTheme] = useState<BigBoxThemeId>(() => readBigBoxTheme())
   const lastBatchState = useRef<string | null>(null)
   // attention blinks the header indicator once, when the batch gets ready while another modal is open [MET-067].
   const [batchAttention, setBatchAttention] = useState(false)
@@ -211,93 +217,36 @@ export default function App() {
     const prev = lastBatchState.current
     lastBatchState.current = batchState
     if (prev === 'searching' && batchState === 'ready') {
-      if (anyModalOpen) {
+      if (bigBox) {
+        // Under the Big Box nothing opens and nothing blinks; the chip is there when it closes [BBX-022].
+      } else if (anyModalOpen) {
         setBatchAttention(true)
       } else {
         setImporting(false)
         setReviewing(true)
       }
     }
-  }, [batchState, anyModalOpen])
+  }, [batchState, anyModalOpen, bigBox])
   // The statistics page replaces the library while it is open (phase 8).
   const [showingStats, setShowingStats] = useState(false)
-  // Big Box: the library in full screen, driven by the gamepad or the keyboard (phase 8).
-  const [bigBox, setBigBox] = useState(false)
-  const leaveBigBox = () => {
+  const leaveBigBox = useCallback(() => {
     void exitBigBox()
     setBigBox(false)
-  }
-  // The game whose "Jogar" gets the focus once the panel shows it (A on a card, a choice in the
-  // statistics) [UIX-044, UIX-045].
-  const pendingPlayFocus = useRef<number | null>(null)
-  const selectionRef = useRef(selection)
-  selectionRef.current = selection
-  const focusPlayOf = (gameId: number): boolean => {
-    const s = selectionRef.current
-    if (s.kind !== 'shown' || s.gameId !== gameId) {
-      return false
-    }
-    const btn = document.querySelector<HTMLElement>('aside [data-bigbox-play]')
-    btn?.focus()
-    return btn !== null
-  }
-  const wantPlayFocus = (gameId: number) => {
-    pendingPlayFocus.current = focusPlayOf(gameId) ? null : gameId
-  }
-  useEffect(() => {
-    const id = pendingPlayFocus.current
-    if (id === null) {
-      return
-    }
-    // The pending focus belongs to one game: another selection or a failed read drops it.
-    if (selection.kind === 'error' || selection.kind === 'empty') {
-      pendingPlayFocus.current = null
-    } else if (selection.kind === 'shown' && selection.gameId === id) {
-      if (focusPlayOf(id)) {
-        pendingPlayFocus.current = null
-      }
-    } else if (focusedGameId(selection) !== null && focusedGameId(selection) !== id) {
-      pendingPlayFocus.current = null
-    }
-  })
-  // B (or Esc): from the panel back to the card of the game in focus; from the statistics back to
-  // the library; on the library it leaves the Big Box [UIX-044].
-  const bigBoxBack = () => {
-    const inPanel = document.activeElement?.closest('aside') != null
-    if (inPanel && !showingStats) {
-      const target =
-        (focusedId !== null
-          ? document.querySelector<HTMLElement>(`[role="option"][data-game-id="${focusedId}"]`)
-          : null) ?? document.querySelector<HTMLElement>('[role="listbox"][aria-label="Jogos"]')
-      if (target) {
-        target.focus()
-        return
-      }
-    }
-    if (showingStats) {
-      setShowingStats(false)
-    } else {
-      leaveBigBox()
-    }
-  }
-  useBigBoxNav({
-    enabled: bigBox,
-    pageKey: showingStats ? 'stats' : 'library',
-    onBack: bigBoxBack,
-    onPlay: (id) => play(id),
-    onOpenCard: wantPlayFocus,
-  })
+  }, [])
+  const enterBigBoxShell = useCallback(() => {
+    void enterBigBox()
+    setBigBox(true)
+  }, [])
   useEffect(() => {
     const onF11 = (e: KeyboardEvent) => {
       if (e.key === 'F11') {
         e.preventDefault()
-        void enterBigBox()
-        setBigBox(true)
+        enterBigBoxShell()
       }
     }
     window.addEventListener('keydown', onF11)
     return () => window.removeEventListener('keydown', onF11)
-  }, [])
+  }, [enterBigBoxShell])
 
   const session = current.data ?? null
 
@@ -398,20 +347,51 @@ export default function App() {
   const topButton =
     'rounded bg-raised px-4 py-1.5 text-sm font-medium text-fg hover:bg-hover'
 
+  if (bigBox) {
+    // The window of the library state: the platform filter and the game in focus open the shell [BBX-001].
+    const platformIds = query.filter.platformIds
+    return (
+      <main className="h-screen overflow-hidden bg-app text-fg">
+        <BigBox
+          initialPlatformId={platformIds?.length === 1 ? platformIds[0] : null}
+          initialGameId={focusedId}
+          themeId={bbTheme}
+          onExit={leaveBigBox}
+        />
+      </main>
+    )
+  }
+
   return (
-    <main className={`flex h-screen flex-col overflow-hidden bg-app text-fg${bigBox ? ' big-box' : ''}`}>
-      {bigBox && (
-        <button
-          type="button"
-          onClick={leaveBigBox}
-          className="fixed right-4 top-4 z-30 rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover"
-        >
-          Sair do Big Box (Esc)
-        </button>
-      )}
+    <main className="flex h-screen flex-col overflow-hidden bg-app text-fg">
       <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
         <h1 className="text-2xl font-semibold">Arcadia</h1>
         <div className="flex items-center gap-4">
+          <button type="button" onClick={enterBigBoxShell} className={topButton}>
+            Big Box
+          </button>
+          <select
+            aria-label="Tema do Big Box"
+            value={bbTheme}
+            onChange={(e) => {
+              const id = e.target.value as BigBoxThemeId
+              // Only available themes are accepted [BBX-023].
+              if (resolveTheme(id).id === id) {
+                setBbTheme(id)
+                writeBigBoxTheme(id)
+              }
+            }}
+            className="rounded bg-raised px-2 py-1.5 text-sm text-fg"
+          >
+            {BIGBOX_THEMES.map((t) => {
+              const label = t.id === 'faixa' ? 'Faixa' : t.id === 'mosaico' ? 'Mosaico' : 'Roda'
+              return (
+                <option key={t.id} value={t.id} disabled={!t.available}>
+                  {t.available ? label : `${label} (em breve)`}
+                </option>
+              )
+            })}
+          </select>
           <button type="button" onClick={() => setShowingStats(true)} className={topButton}>
             Estatísticas
           </button>
@@ -485,9 +465,6 @@ export default function App() {
           <StatsPage
             onOpenGame={(id) => {
               setShowingStats(false)
-              if (bigBox) {
-                wantPlayFocus(id)
-              }
               select(id)
             }}
             onBack={() => setShowingStats(false)}
@@ -533,7 +510,7 @@ export default function App() {
                       total={total}
                       current={session}
                       selectedId={focusedId}
-                      keyboard={!bigBox}
+                      keyboard
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}
@@ -545,7 +522,7 @@ export default function App() {
                       total={total}
                       current={session}
                       selectedId={focusedId}
-                      keyboard={!bigBox}
+                      keyboard
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}

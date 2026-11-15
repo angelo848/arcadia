@@ -6,6 +6,11 @@ import App from './App'
 import type { SessionView } from './lib/games'
 import { gameNotFoundMessage, type CatalogView, type GameDetailView, type GameListView, type GameView } from './lib/library'
 import { readLibraryView, writeLibraryView } from './lib/libraryView'
+import { BIGBOX_THEMES } from './bigbox/themes/registry'
+import type { BigBoxThemeProps } from './bigbox/themes/registry'
+
+// The registry is mutable on purpose; the T41 tests restore this snapshot after registering a fake theme [BBX-024].
+const originalThemes = BIGBOX_THEMES.map((t) => ({ ...t }))
 
 // ---------------------------------------------------------------------------
 // Fakes for window.go.main.App and window.runtime.EventsOn (as in lib/games.test.tsx)
@@ -2347,7 +2352,6 @@ describe('App: imagens ao vivo (media:changed)', () => {
   })
 
   it('IMG-008/lista e Big Box: o mesmo cartão atualiza sem mudar o foco', async () => {
-    layoutBigBox()
     bigBoxLibrary()
     const media: Record<number, MediaItem[]> = {}
     serveMedia(media)
@@ -2364,15 +2368,17 @@ describe('App: imagens ao vivo (media:changed)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar em grade' }))
     await waitFor(() => expect(cardImg('Hades')).toHaveAttribute('src', '/m/3-t.jpg'))
 
-    // Big Box: the focused card keeps the focus when another card changes.
-    enterBigBoxByKey()
-    rowOf('Hollow Knight').focus()
+    // Big Box: the focused cover keeps the focus when another cover changes (the focus starts on
+    // Hollow Knight, the game in focus).
+    fireEvent.click(screen.getByRole('button', { name: 'Big Box' }))
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover')).toHaveLength(3))
+    const focusedBefore = screen.getAllByTestId('bb-cover').findIndex((c) => c.getAttribute('data-focused') === 'true')
     media[30] = [mediaItem(4)]
     emit('media:changed', { gameId: 30 })
-    await waitFor(() => expect(cardImg('Celeste')).toHaveAttribute('src', '/m/4-t.jpg'))
-    expect(document.activeElement).toBe(rowOf('Hollow Knight'))
-    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
-    expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
+    // The ListGames fake answers Hollow Knight, Hades, Celeste in this order: Celeste is the third cover.
+    await waitFor(() => expect(screen.getAllByTestId('bb-cover')[2].querySelector('img')).toHaveAttribute('src', '/m/4-t.jpg'))
+    expect(screen.getAllByTestId('bb-cover').findIndex((c) => c.getAttribute('data-focused') === 'true')).toBe(focusedBefore)
+    expect(document.querySelector('[data-bigbox-theme]')).not.toBeNull()
   })
 
   // alterado em 2026-11-15 (phase-12-metadados-unificados, T34): fluxo novo, Obter dados + MetadataSearch/MetadataApply [MET-043].
@@ -2448,346 +2454,319 @@ describe('App: imagens ao vivo (media:changed)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Big Box on the three-column layout (T20)
+// Big Box: the new shell on top of the library (phase 13, T41)
 // ---------------------------------------------------------------------------
+// Assumed: the header has a button named "Big Box"; F11 does the same. The shell root carries
+// data-bigbox-theme. The theme selector is a native select named "Tema do Big Box" whose options
+// are the three themes, the unavailable ones disabled and with "em breve" in the text. The window
+// goes to full screen through window.runtime.WindowFullscreen (enterBigBox/exitBigBox).
 
-// layoutBigBox gives the items a screen position (jsdom has none): the left column at x = 0, the
-// cards of the grid three per row from x = 300, the details panel at x = 900. Everything else keeps
-// the fixed box, so the grid still computes its window from it.
-function layoutBigBox() {
-  rectSpy?.mockImplementation(function (this: HTMLElement) {
-    const at = (left: number, top: number) =>
-      ({ x: left, y: top, left, top, right: left + 100, bottom: top + 30, width: 100, height: 30, toJSON: () => ({}) }) as DOMRect
-    const option = this.closest('[role="option"]')
-    if (option) {
-      const all = cards()
-      const i = Math.max(all.indexOf(option as HTMLElement), 0)
-      return at(300 + (i % 3) * 120, 100 + Math.floor(i / 3) * 200)
-    }
-    const nav = this.closest('nav')
-    if (nav) {
-      const list = Array.from(nav.querySelectorAll('[data-bigbox-item]'))
-      return at(0, 20 + Math.max(list.indexOf(this), 0) * 40)
-    }
-    const aside = this.closest('aside')
-    if (aside) {
-      const list = Array.from(aside.querySelectorAll('[data-bigbox-item]'))
-      return at(900, 20 + Math.max(list.indexOf(this), 0) * 40)
-    }
-    return {
-      x: 0, y: 0, top: 0, left: 0, bottom: BOX_HEIGHT, right: BOX_WIDTH, width: BOX_WIDTH, height: BOX_HEIGHT, toJSON: () => ({}),
-    } as DOMRect
-  })
+const THEME_KEY = 'arcadia.bigBoxTheme'
+
+let fullscreen = false
+let runtimeFs: { WindowIsFullscreen: Fn; WindowFullscreen: Fn; WindowUnfullscreen: Fn }
+
+function installFullscreen() {
+  fullscreen = false
+  runtimeFs = {
+    WindowIsFullscreen: vi.fn(() => Promise.resolve(fullscreen)),
+    WindowFullscreen: vi.fn(() => {
+      fullscreen = true
+    }),
+    WindowUnfullscreen: vi.fn(() => {
+      fullscreen = false
+    }),
+  }
+  Object.assign((window as unknown as { runtime: object }).runtime, runtimeFs)
 }
 
-function enterBigBoxByKey() {
-  fireEvent.keyDown(window, { key: 'F11' })
-  expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
+function bigBoxRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-bigbox-theme]')
 }
 
-function playButton(): HTMLElement {
-  return within(asideOf()).getByRole('button', { name: 'Jogar' })
+function libraryRegion(): HTMLElement | null {
+  return screen.queryByRole('region', { name: 'Jogos' })
+}
+
+async function enterBigBoxByButton() {
+  fireEvent.click(screen.getByRole('button', { name: 'Big Box' }))
+  await waitFor(() => expect(bigBoxRoot()).not.toBeNull())
+}
+
+function bbCovers(): HTMLElement[] {
+  return screen.queryAllByTestId('bb-cover')
+}
+
+function bbFocusedTitle(): string | null {
+  return bbCovers().find((c) => c.getAttribute('data-focused') === 'true')?.textContent ?? null
+}
+
+function themeSelect(): HTMLSelectElement {
+  return screen.getByRole('combobox', { name: 'Tema do Big Box' }) as HTMLSelectElement
 }
 
 function bigBoxLibrary() {
+  const titles: Record<number, string> = { 10: 'Hollow Knight', 20: 'Hades', 30: 'Celeste' }
   app.ListGames.mockResolvedValue(
     page([game({ id: 10, title: 'Hollow Knight' }), game({ id: 20, title: 'Hades' }), game({ id: 30, title: 'Celeste' })]),
   )
-  app.GetGame.mockImplementation((id: number) =>
-    Promise.resolve(detail({ id, title: ({ 10: 'Hollow Knight', 20: 'Hades', 30: 'Celeste' } as Record<number, string>)[id] })),
-  )
+  app.GetGame.mockImplementation((id: number) => Promise.resolve(detail({ id, title: titles[id] })))
 }
 
-describe('App: Big Box sobre o layout novo (T20)', () => {
+describe('App: Big Box novo (T41)', () => {
   beforeEach(() => {
-    layoutBigBox()
+    installFullscreen()
   })
 
-  it('UIX-044/cada cartão é um item; direções movem cartão a cartão', async () => {
+  afterEach(() => {
+    BIGBOX_THEMES.splice(0, BIGBOX_THEMES.length, ...originalThemes.map((t) => ({ ...t })))
+  })
+
+  it('BBX-001/o botão Big Box mostra o tema escolhido no lugar das três colunas e põe a janela em tela cheia', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    enterBigBoxByKey()
 
-    const all = cards()
-    expect(all).toHaveLength(3)
-    for (const c of all) {
-      expect(c).toHaveAttribute('data-bigbox-item')
-      expect(c).toHaveAttribute('data-bigbox-card')
-      expect(c.querySelectorAll('[data-bigbox-item]')).toHaveLength(0)
-    }
-    all[0].focus()
-    fireEvent.keyDown(window, { key: 'ArrowRight' })
-    expect(all[1]).toHaveFocus()
-    fireEvent.keyDown(window, { key: 'ArrowRight' })
-    expect(all[2]).toHaveFocus()
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(all[1]).toHaveFocus()
+    await enterBigBoxByButton()
+
+    expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'faixa')
+    expect(libraryRegion()).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Filtros da biblioteca' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Detalhes do jogo' })).toBeNull()
+    await waitFor(() => expect(runtimeFs.WindowFullscreen).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(bbCovers().length).toBeGreaterThan(0))
   })
 
-  it('UIX-044/na borda direita da grade o foco vai ao painel e na borda esquerda à coluna esquerda', async () => {
+  it('BBX-001/F11 faz o mesmo que o botão', async () => {
     bigBoxLibrary()
     renderApp()
-    await focusGame('Hollow Knight')
-    await within(asideOf()).findByRole('button', { name: 'Jogar' })
-    enterBigBoxByKey()
+    await findRow('Hollow Knight')
 
-    const all = cards()
-    all[2].focus()
-    fireEvent.keyDown(window, { key: 'ArrowRight' })
-    expect(asideOf().contains(document.activeElement)).toBe(true)
+    fireEvent.keyDown(window, { key: 'F11' })
 
-    all[0].focus()
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(screen.getByRole('navigation', { name: 'Filtros da biblioteca' }).contains(document.activeElement)).toBe(true)
+    await waitFor(() => expect(bigBoxRoot()).not.toBeNull())
+    expect(libraryRegion()).toBeNull()
+    await waitFor(() => expect(runtimeFs.WindowFullscreen).toHaveBeenCalledTimes(1))
   })
 
-  it('UIX-044/busca, Todos, plataformas e filtros são itens navegáveis', async () => {
+  it('BBX-001/filtros, busca, jogo em foco e visualização voltam iguais ao sair', async () => {
     threePlatformLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    const nav = screen.getByRole('navigation', { name: 'Filtros da biblioteca' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar em lista' }))
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'year' } })
+    fireEvent.click(screen.getByRole('button', { name: 'PlayStation 2, 1 jogos' }))
+    await focusGame('Gran Turismo')
+    const callsBefore = pageCalls().length
 
-    expect(nav.querySelector('input')).toHaveAttribute('data-bigbox-item')
-    expect(within(nav).getByRole('button', { name: /^Todos/ })).toHaveAttribute('data-bigbox-item')
-    expect(within(nav).getByRole('button', { name: 'Windows, 2 jogos' })).toHaveAttribute('data-bigbox-item')
-    expect(within(nav).getByRole('button', { name: 'PlayStation 2, 1 jogos' })).toHaveAttribute('data-bigbox-item')
-    // Header and controls of the filters.
-    const controls = Array.from(nav.querySelectorAll('button[aria-expanded], select, input'))
-    expect(controls.length).toBeGreaterThan(1)
-    for (const c of controls) {
-      expect(c).toHaveAttribute('data-bigbox-item')
-    }
+    await enterBigBoxByButton()
+    await waitFor(() => expect(bbCovers().length).toBeGreaterThan(0))
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => expect(bigBoxRoot()).toBeNull())
+    expect(libraryRegion()).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'PlayStation 2, 1 jogos' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByLabelText('Ordenar por')).toHaveValue('year')
+    expect(screen.getByRole('button', { name: 'Mostrar em grade' })).toBeInTheDocument()
+    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Gran Turismo' })).toBeInTheDocument()
+    expect(rowOf('Gran Turismo')).toHaveAttribute('aria-selected', 'true')
+    // The shell has its own reads; the library filter was not reset.
+    expect(app.ListGames).not.toHaveBeenLastCalledWith(expect.objectContaining({ filter: { version: 1 }, sort: 'title' }))
+    expect(callsBefore).toBeGreaterThan(0)
   })
 
-  it('UIX-044/A ou Enter num cartão põe o jogo em foco e leva o foco a "Jogar" do painel', async () => {
+  it('BBX-002/sair restaura a janela (UIX-003) e a biblioteca reaparece', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    enterBigBoxByKey()
+    await enterBigBoxByButton()
+    await waitFor(() => expect(runtimeFs.WindowFullscreen).toHaveBeenCalled())
 
-    rowOf('Hades').focus()
-    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Escape' })
 
-    await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
-    await waitFor(() => expect(playButton()).toHaveFocus())
-    expect(playButton()).toHaveAttribute('data-bigbox-play')
-    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
-    await flush()
-    expect(app.LaunchGame).not.toHaveBeenCalled()
+    await waitFor(() => expect(runtimeFs.WindowUnfullscreen).toHaveBeenCalledTimes(1))
+    expect(bigBoxRoot()).toBeNull()
+    expect(libraryRegion()).not.toBeNull()
+    await findRow('Hollow Knight')
   })
 
-  it('UIX-044/Y ou Shift+Enter num cartão chama LaunchGame do jogo do cartão uma vez', async () => {
-    bigBoxLibrary()
+  it('BBX-001/a aba inicial e o foco inicial vêm da janela normal', async () => {
+    threePlatformLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    enterBigBoxByKey()
+    fireEvent.click(screen.getByRole('button', { name: 'PlayStation 2, 1 jogos' }))
+    await focusGame('Gran Turismo')
 
-    rowOf('Celeste').focus()
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+    await enterBigBoxByButton()
 
-    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
-    expect(app.LaunchGame).toHaveBeenCalledWith(30)
-    await flush()
-    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
-    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
+    await waitFor(() => expect(bbCovers().length).toBeGreaterThan(0))
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.find((t) => t.getAttribute('aria-selected') === 'true')).toHaveTextContent('PlayStation 2')
+    expect(bbFocusedTitle()).toContain('Gran Turismo')
   })
 
-  it('UIX-044/B com foco no painel volta ao cartão do jogo em foco', async () => {
+  it('BBX-001/sem plataforma filtrada começa em Todos com o jogo em foco da janela normal', async () => {
     bigBoxLibrary()
     renderApp()
     await focusGame('Hades')
-    const jogar = await within(asideOf()).findByRole('button', { name: 'Jogar' })
-    enterBigBoxByKey()
 
-    jogar.focus()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    await enterBigBoxByButton()
 
-    expect(rowOf('Hades')).toHaveFocus()
-    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
+    await waitFor(() => expect(bbCovers().length).toBeGreaterThan(0))
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.find((t) => t.getAttribute('aria-selected') === 'true')).toHaveTextContent('Todos')
+    expect(screen.getByRole('heading', { name: /Hades/ })).toBeInTheDocument()
   })
 
-  it('UIX-044/B nas estatísticas volta à biblioteca sem sair do Big Box', async () => {
+  it('BBX-003/o botão antigo "Sair do Big Box (Esc)", a classe big-box e os data-bigbox-* sumiram', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    enterBigBoxByKey()
+    expect(document.querySelector('[data-bigbox-item], [data-bigbox-card], [data-bigbox-play]')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
-    expect(await screen.findByRole('heading', { name: 'Estatísticas' })).toBeInTheDocument()
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(screen.queryByRole('heading', { name: 'Estatísticas' })).toBeNull()
-    await findRow('Hollow Knight')
-    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
-  })
-
-  it('UIX-044/B com foco na grade sai do Big Box', async () => {
-    bigBoxLibrary()
-    renderApp()
-    await findRow('Hollow Knight')
-    enterBigBoxByKey()
-
-    rowOf('Hades').focus()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    await enterBigBoxByButton()
 
     expect(screen.queryByRole('button', { name: /Sair do Big Box/ })).toBeNull()
+    expect(document.querySelector('.big-box')).toBeNull()
+    expect(document.querySelector('[data-bigbox-item], [data-bigbox-card], [data-bigbox-play]')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('UIX-044/no Big Box uma seta move o foco uma vez só (sem o handler da grade)', async () => {
+  it('BBX-023/o seletor lista Faixa, Mosaico e Roda; os dois últimos desativados com "em breve"', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
-    enterBigBoxByKey()
 
-    const all = cards()
-    all[0].focus()
-    // The event starts on the card, so it also bubbles through any handler of the grid.
-    fireEvent.keyDown(all[0], { key: 'ArrowRight' })
-    expect(all[1]).toHaveFocus()
-    expect(all[2]).not.toHaveFocus()
+    const options = within(themeSelect()).getAllByRole('option') as HTMLOptionElement[]
+
+    expect(options).toHaveLength(3)
+    expect(options[0]).toHaveTextContent('Faixa')
+    expect(options[0]).toBeEnabled()
+    expect(options[1]).toHaveTextContent('Mosaico')
+    expect(options[1]).toHaveTextContent(/em breve/i)
+    expect(options[1]).toBeDisabled()
+    expect(options[2]).toHaveTextContent('Roda')
+    expect(options[2]).toHaveTextContent(/em breve/i)
+    expect(options[2]).toBeDisabled()
+    expect(themeSelect()).toHaveValue('faixa')
   })
 
-  it('UIX-045/no Big Box, escolher G nas estatísticas põe G em foco e o foco em "Jogar"', async () => {
-    threePlatformLibrary()
-    app.StatsSummary.mockResolvedValue({
-      games: [
-        { gameId: 20, title: 'Hades', platform: 'Windows', sessions: 1, activeSeconds: 3600, importedSeconds: 0, lastPlayedAt: '' },
-      ],
-      platforms: [],
-      totalSeconds: 3600,
-      importedSeconds: 0,
+  it('BBX-023/a escolha fica em localStorage e vale na próxima entrada', async () => {
+    const mosaico = BIGBOX_THEMES.find((t) => t.id === 'mosaico')!
+    mosaico.available = true
+    mosaico.Component = ({ model }: BigBoxThemeProps) => <div data-testid="fake-theme">{model.games.length}</div>
+    bigBoxLibrary()
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.change(themeSelect(), { target: { value: 'mosaico' } })
+
+    expect(localStorage.getItem(THEME_KEY)).toBe('mosaico')
+    await enterBigBoxByButton()
+    expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'mosaico')
+    expect(await screen.findByTestId('fake-theme')).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(bigBoxRoot()).toBeNull())
+    expect(themeSelect()).toHaveValue('mosaico')
+  })
+
+  it('BBX-023/tema indisponível salvo vira Faixa', async () => {
+    localStorage.setItem(THEME_KEY, 'roda')
+    bigBoxLibrary()
+    renderApp()
+    await findRow('Hollow Knight')
+
+    expect(themeSelect()).toHaveValue('faixa')
+    await enterBigBoxByButton()
+    expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'faixa')
+  })
+
+  it('BBX-024/o seletor só aceita temas disponíveis', async () => {
+    bigBoxLibrary()
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.change(themeSelect(), { target: { value: 'roda' } })
+
+    expect(localStorage.getItem(THEME_KEY)).not.toBe('roda')
+    expect(themeSelect()).toHaveValue('faixa')
+    await enterBigBoxByButton()
+    expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'faixa')
+  })
+
+  describe('BBX-022 confirmação de metadados sob o Big Box', () => {
+    let batch: Record<string, unknown> | null = null
+    const batchOf = (over: Record<string, unknown> = {}) => ({
+      batchId: 7, state: 'searching', total: 3, done: 1, failed: 0, warnings: [], ...over,
     })
-    renderApp()
-    await findRow('Hollow Knight')
-    enterBigBoxByKey()
+    const announce = (b: Record<string, unknown>) =>
+      emit('metadata:batch', { batchId: b.batchId, state: b.state, done: b.done, total: b.total, failed: b.failed })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Hades' }))
-
-    expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
-    await waitFor(() => expect(playButton()).toHaveFocus())
-    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
-  })
-
-  const titleOf = (id: number) => ({ 10: 'Hollow Knight', 20: 'Hades', 30: 'Celeste' } as Record<number, string>)[id]
-
-  it('UIX-037/Big Box com Editar aberto: setas, Enter, Shift+Enter, Y e B não mudam o jogo em foco, não lançam e não saem do Big Box', async () => {
-    bigBoxLibrary()
-    renderApp()
-    await focusGame('Hades')
-    enterBigBoxByKey()
-
-    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Editar' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Editar jogo' })
-    expect(dialog.contains(document.activeElement)).toBe(true)
-
-    for (const init of [
-      { key: 'ArrowRight' },
-      { key: 'ArrowLeft' },
-      { key: 'ArrowDown' },
-      { key: 'ArrowUp' },
-      { key: 'Enter' },
-      { key: 'Enter', shiftKey: true },
-      { key: 'y' },
-      { key: 'Escape' },
-    ]) {
-      fireEvent.keyDown(window, init)
-    }
-    await flush()
-
-    expect(app.LaunchGame).not.toHaveBeenCalled()
-    expect(app.LaunchGameUntracked).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: /Sair do Big Box/ })).toBeInTheDocument()
-    expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hades' })).toBeInTheDocument()
-    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
-    expect(dialog.contains(document.activeElement)).toBe(true)
-  })
-
-  it('UIX-044/A num cartão de G e depois clique em H antes de G carregar: o foco não vai a "Jogar" de H', async () => {
-    bigBoxLibrary()
-    const g = deferred<GameDetailView>()
-    app.GetGame.mockImplementation((id: number) =>
-      id === 20 ? g.promise : Promise.resolve(detail({ id, title: titleOf(id) })),
-    )
-    renderApp()
-    await findRow('Hollow Knight')
-    enterBigBoxByKey()
-
-    rowOf('Hades').focus()
-    fireEvent.keyDown(window, { key: 'Enter' })
-    fireEvent.click(within(rowOf('Celeste')).getByText('Celeste'))
-    await within(asideOf()).findByRole('heading', { level: 2, name: 'Celeste' })
-    await within(asideOf()).findByRole('button', { name: 'Jogar' })
-    await act(async () => {
-      g.resolve(detail({ id: 20, title: 'Hades' }))
+    beforeEach(() => {
+      batch = null
+      const extra: Record<string, Fn> = {
+        MetadataBatchStatus: vi.fn(() => Promise.resolve({ batch })),
+        MetadataBatchResults: vi.fn(() =>
+          Promise.resolve({
+            rows: [{
+              gameId: 10, title: 'Hollow Knight', platform: 'PC', confidence: 'match', selected: 0,
+              candidates: [{ refs: [{ provider: 'igdb', providerId: '1' }], title: 'Hollow Knight (encontrado)', year: 2017, platform: 'PC', score: 0.95 }],
+            }],
+            total: 1,
+            next: null,
+          }),
+        ),
+        MetadataBatchApply: vi.fn(() => Promise.resolve(1)),
+        MetadataBatchCancel: vi.fn(() => Promise.resolve('cancelled')),
+        MetadataBatchDiscard: vi.fn(() => Promise.resolve()),
+        ProviderKeyStatus: vi.fn((provider: string) => Promise.resolve({ provider, configured: true })),
+      }
+      Object.assign(app, extra)
     })
-    await flush()
 
-    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
-  })
+    it('BBX-022/com o Big Box ativo a busca em lote chega a ready e a janela de confirmação não abre sozinha, sem roubar a entrada', async () => {
+      batch = batchOf()
+      bigBoxLibrary()
+      renderApp()
+      await waitConnected()
+      await findRow('Hollow Knight')
+      await enterBigBoxByButton()
+      await waitFor(() => expect(bbCovers().length).toBeGreaterThan(0))
 
-  it('UIX-044/A num cartão de G com GetGame em erro: o foco não vai a "Jogar" (nem depois de "Tentar de novo")', async () => {
-    bigBoxLibrary()
-    let fail = true
-    app.GetGame.mockImplementation((id: number) =>
-      id === 20 && fail ? Promise.reject('Falha ao ler o jogo.') : Promise.resolve(detail({ id, title: titleOf(id) })),
-    )
-    renderApp()
-    await findRow('Hollow Knight')
-    enterBigBoxByKey()
+      batch = batchOf({ state: 'ready', done: 3 })
+      announce(batch)
+      await flush()
 
-    rowOf('Hades').focus()
-    fireEvent.keyDown(window, { key: 'Enter' })
-    await within(asideOf()).findByRole('alert')
-    await flush()
-    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
-
-    fail = false
-    fireEvent.click(within(asideOf()).getByRole('button', { name: 'Tentar de novo' }))
-    await within(asideOf()).findByRole('button', { name: 'Jogar' })
-    await flush()
-    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
-  })
-
-  it('UIX-045/no Big Box, escolher G nas estatísticas com GetGame(G) em -32001: o foco não vai a "Jogar"', async () => {
-    threePlatformLibrary()
-    app.GetGame.mockImplementation((id: number) =>
-      id === 20 ? Promise.reject(gameNotFoundMessage) : Promise.resolve(detail({ id, title: titleOf(id) ?? 'Jogo' })),
-    )
-    app.StatsSummary.mockResolvedValue({
-      games: [
-        { gameId: 20, title: 'Hades', platform: 'Windows', sessions: 1, activeSeconds: 3600, importedSeconds: 0, lastPlayedAt: '' },
-      ],
-      platforms: [],
-      totalSeconds: 3600,
-      importedSeconds: 0,
+      expect(screen.queryByRole('dialog', { name: 'Confirmar metadados' })).toBeNull()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      // The input still belongs to the Big Box: D opens the details, Esc goes back, Esc leaves.
+      fireEvent.keyDown(window, { key: 'd' })
+      expect(await screen.findByRole('button', { name: 'Jogar sem contar tempo' })).toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByRole('button', { name: 'Jogar sem contar tempo' })).toBeNull()
+      expect(bigBoxRoot()).not.toBeNull()
+      expect(screen.queryByRole('dialog')).toBeNull()
     })
-    renderApp()
-    await findRow('Hollow Knight')
-    enterBigBoxByKey()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Estatísticas' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Hades' }))
-    await flush()
-    await flush()
+    it('BBX-022/a janela abre pelo indicador depois de sair do Big Box', async () => {
+      batch = batchOf()
+      bigBoxLibrary()
+      renderApp()
+      await waitConnected()
+      await findRow('Hollow Knight')
+      await enterBigBoxByButton()
+      batch = batchOf({ state: 'ready', done: 3 })
+      announce(batch)
+      await flush()
+      expect(screen.queryByRole('dialog', { name: 'Confirmar metadados' })).toBeNull()
 
-    expect(document.activeElement?.hasAttribute('data-bigbox-play')).toBe(false)
-  })
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => expect(bigBoxRoot()).toBeNull())
 
-  it('UIX-022/entrar e sair do Big Box mantém G no painel', async () => {
-    bigBoxLibrary()
-    renderApp()
-    await focusGame('Hades')
-    const heading = () => within(asideOf()).findByRole('heading', { level: 2, name: 'Hades' })
-
-    enterBigBoxByKey()
-    await heading()
-    expect(within(asideOf()).queryByText('Nenhum jogo selecionado')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /Sair do Big Box/ }))
-    expect(screen.queryByRole('button', { name: /Sair do Big Box/ })).toBeNull()
-    await heading()
-    expect(rowOf('Hades')).toHaveAttribute('aria-selected', 'true')
+      const chip = await screen.findByText(/Revisar metadados \(3\)/)
+      expect(screen.queryByRole('dialog', { name: 'Confirmar metadados' })).toBeNull()
+      fireEvent.click(chip)
+      expect(await screen.findByRole('dialog', { name: 'Confirmar metadados' })).toBeInTheDocument()
+    })
   })
 })

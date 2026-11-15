@@ -125,6 +125,17 @@ export async function exitBigBox(): Promise<void> {
   }
 }
 
+// bringToFront asks the shell to put the Arcadia window in the foreground [CON-022]. The binding is read
+// at call time; a missing binding or a failure is ignored (the Windows refusal is not an error).
+export async function bringToFront(): Promise<void> {
+  try {
+    const app = (window as unknown as { go?: { main?: { App?: { BringToFront?: () => Promise<unknown> } } } }).go?.main?.App
+    await app?.BringToFront?.()
+  } catch {
+    // ignored on purpose
+  }
+}
+
 // bigBoxItems returns the focusable items of the current page, in reading order.
 export function bigBoxItems(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>('[data-bigbox-item]'))
