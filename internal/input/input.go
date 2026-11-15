@@ -9,10 +9,21 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 )
 
-// Trigger is one pause request coming from an input source.
+// Action is what a trigger asks for.
+type Action int
+
+const (
+	// ActionPause toggles the pause (the zero value).
+	ActionPause Action = iota
+	// ActionClose asks to close the running game.
+	ActionClose
+)
+
+// Trigger is one request coming from an input source.
 type Trigger struct {
 	Source domain.PauseReason // PauseHotkey | PauseGamepad
 	At     time.Time
+	Action Action
 }
 
 // Source is an input source that delivers triggers to a channel.

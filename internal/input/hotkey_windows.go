@@ -130,7 +130,7 @@ func (s *hotkey) loop(out chan<- Trigger, ready chan<- hotkeyReady) {
 		if msg.Message != wmHotkeyMsg || msg.WParam != hotkeyID {
 			continue
 		}
-		t := Trigger{Source: domain.PauseHotkey, At: s.clock.Now()}
+		t := Trigger{Source: domain.PauseHotkey, At: s.clock.Now(), Action: ActionPause}
 		select {
 		case out <- t:
 		default:

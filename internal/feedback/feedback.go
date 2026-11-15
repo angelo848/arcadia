@@ -38,6 +38,7 @@ type Cue int
 const (
 	CuePaused Cue = iota + 1
 	CueResumed
+	CueRefused
 )
 
 // Overlay shows a transient notice.
@@ -72,6 +73,7 @@ type Event int
 const (
 	EventPaused Event = iota + 1
 	EventResumed
+	EventRefused
 )
 
 // OverlayDuration is how long the notice stays visible after the last event.
@@ -187,7 +189,9 @@ func (c *Coordinator) run() {
 			return
 		case e := <-c.events:
 			c.handle(e)
-			hide = c.clock.After(OverlayDuration)
+			if e != EventRefused {
+				hide = c.clock.After(OverlayDuration)
+			}
 		case <-hide:
 			hide = nil
 			c.overlay.Hide()
@@ -203,6 +207,8 @@ func (c *Coordinator) handle(e Event) {
 	case EventResumed:
 		c.overlay.Show(NoticeResumed)
 		c.sound.Play(CueResumed)
+	case EventRefused:
+		c.sound.Play(CueRefused)
 	default:
 		c.log.Warn("unknown feedback event", "event", int(e))
 	}

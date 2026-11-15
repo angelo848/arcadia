@@ -135,6 +135,8 @@ func (s *fakeSound) Play(c feedback.Cue) {
 		s.rec.add("play:paused")
 	case feedback.CueResumed:
 		s.rec.add("play:resumed")
+	case feedback.CueRefused: // alterado em 2026-11-15 (fase 13)
+		s.rec.add("play:refused")
 	default:
 		s.rec.add("play:unknown")
 	}
@@ -215,6 +217,73 @@ func TestCoordinator(t *testing.T) {
 		rec.expectNone(t)
 		if n := warns.Load(); n != 0 {
 			t.Errorf("Warn count = %d, want 0", n)
+		}
+	})
+
+	t.Run("CON-015/EventRefused toca só CueRefused e nunca chama Overlay.Show", func(t *testing.T) {
+		rec := newRecorder()
+		log, warns := newLogger()
+		clk := domain.NewFakeClock(startAt())
+		c := start(t, &fakeOverlay{rec: rec}, &fakeSound{rec: rec}, clk, log)
+
+		if feedback.EventRefused != feedback.Event(3) || feedback.CueRefused != feedback.Cue(3) {
+			t.Fatalf("EventRefused = %d, CueRefused = %d, want 3 and 3", feedback.EventRefused, feedback.CueRefused)
+		}
+		c.Send(feedback.EventRefused)
+		rec.expect(t, "play:refused")
+		rec.expectNone(t) // no show, no hide
+		if n := warns.Load(); n != 0 {
+			t.Errorf("Warn count = %d, want 0", n)
+		}
+	})
+
+	t.Run("CON-015/EventRefused não rearma o temporizador: um aviso de pausa visível esconde no prazo original", func(t *testing.T) {
+		rec := newRecorder()
+		log, _ := newLogger()
+		clk := domain.NewFakeClock(startAt())
+		c := start(t, &fakeOverlay{rec: rec}, &fakeSound{rec: rec}, clk, log)
+
+		c.Send(feedback.EventPaused)
+		rec.expectSet(t, "show:Tempo pausado", "play:paused")
+		waitWaiters(t, clk, 1)
+
+		clk.Advance(time.Second) // t + 1 s
+		c.Send(feedback.EventRefused)
+		rec.expect(t, "play:refused")
+
+		clk.Advance(feedback.OverlayDuration - time.Second - time.Nanosecond)
+		rec.expectNone(t)
+		clk.Advance(time.Nanosecond) // t + 2.5 s: original deadline
+		rec.expect(t, "hide")
+		rec.expectNone(t)
+	})
+
+	t.Run("CON-015/EventRefused sem overlay (e sem som) não falha", func(t *testing.T) {
+		t.Run("overlay nil", func(t *testing.T) {
+			rec := newRecorder()
+			log, _ := newLogger()
+			c := start(t, nil, &fakeSound{rec: rec}, domain.NewFakeClock(startAt()), log)
+			c.Send(feedback.EventRefused)
+			rec.expect(t, "play:refused")
+		})
+		t.Run("ambos nil", func(t *testing.T) {
+			c := start(t, nil, nil, domain.NewFakeClock(startAt()), nil)
+			c.Send(feedback.EventRefused)
+		})
+	})
+
+	t.Run("CON-014/EventPaused e EventResumed continuam como antes (FBK-002); sem som de sucesso do fechar", func(t *testing.T) {
+		rec := newRecorder()
+		c := start(t, &fakeOverlay{rec: rec}, &fakeSound{rec: rec}, domain.NewFakeClock(startAt()), nil)
+		c.Send(feedback.EventPaused)
+		rec.expectSet(t, "show:Tempo pausado", "play:paused")
+		c.Send(feedback.EventResumed)
+		rec.expectSet(t, "show:Tempo retomado", "play:resumed")
+		rec.expectNone(t)
+		for _, name := range []string{"play:unknown", "play:refused"} {
+			if rec.count(name) != 0 {
+				t.Errorf("unexpected %s", name)
+			}
 		}
 	})
 

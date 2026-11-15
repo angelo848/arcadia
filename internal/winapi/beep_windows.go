@@ -104,8 +104,10 @@ func (b *Beeper) run() {
 }
 
 func (b *Beeper) signal(c feedback.Cue) {
-	var first, second uint32
+	var first, second, d1, d2 uint32 = 0, 0, 90, 120
 	switch c {
+	case feedback.CueRefused:
+		first, second, d1, d2 = 300, 200, 100, 200
 	case feedback.CuePaused:
 		first, second = 660, 440
 	case feedback.CueResumed:
@@ -113,13 +115,13 @@ func (b *Beeper) signal(c feedback.Cue) {
 	default:
 		return
 	}
-	b.tone(first, 90)
+	b.tone(first, d1)
 	select {
 	case <-b.stop:
 		return
 	default:
 	}
-	b.tone(second, 120)
+	b.tone(second, d2)
 }
 
 func (b *Beeper) tone(freq, ms uint32) {

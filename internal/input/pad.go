@@ -15,6 +15,7 @@ var ErrDisconnected = errors.New("input: controller disconnected")
 // XInput button bits.
 const (
 	ButtonBack uint16 = 0x0020
+	ButtonB    uint16 = 0x2000
 	ButtonY    uint16 = 0x8000
 )
 
@@ -30,6 +31,7 @@ type PadAPI interface {
 type PadConfig struct {
 	Hold, Poll, Rescan time.Duration
 	Mask               uint16
+	CloseMask          uint16 // default Back+B
 }
 
 type pad struct {
@@ -38,6 +40,7 @@ type pad struct {
 	clock  domain.Clock
 	log    *slog.Logger
 	det    comboDetector
+	cdet   comboDetector
 	mu     sync.Mutex
 	stop   chan struct{}
 	wg     sync.WaitGroup
@@ -61,12 +64,16 @@ func NewPad(api PadAPI, cfg PadConfig, clock domain.Clock, log *slog.Logger) Sou
 	if cfg.Mask == 0 {
 		cfg.Mask = defaultMask
 	}
+	if cfg.CloseMask == 0 {
+		cfg.CloseMask = defaultCloseMask
+	}
 	if log == nil {
 		log = slog.Default()
 	}
 	return &pad{
 		api: api, cfg: cfg, clock: clock, log: log,
-		det: comboDetector{Hold: cfg.Hold, Mask: cfg.Mask},
+		det:  comboDetector{Hold: cfg.Hold, Mask: cfg.Mask},
+		cdet: comboDetector{Hold: cfg.Hold, Mask: cfg.CloseMask},
 	}
 }
 
@@ -120,16 +127,24 @@ func (p *pad) read(slot int, now time.Time, connected *[padSlots]bool, lastProbe
 		p.failing[slot] = !errors.Is(err, ErrDisconnected)
 		connected[slot] = false
 		p.det.Observe(slot, 0, false, now)
+		p.cdet.Observe(slot, 0, false, now)
 		return
 	}
 	p.failing[slot] = false
 	connected[slot] = true
 	if p.det.Observe(slot, st.Buttons, true, now) {
-		select {
-		case out <- Trigger{Source: domain.PauseGamepad, At: now}:
-		default:
-			p.log.Warn("gamepad trigger dropped: output queue full", "slot", slot)
-		}
+		p.emit(out, Trigger{Source: domain.PauseGamepad, At: now, Action: ActionPause}, slot)
+	}
+	if p.cdet.Observe(slot, st.Buttons, true, now) {
+		p.emit(out, Trigger{Source: domain.PauseGamepad, At: now, Action: ActionClose}, slot)
+	}
+}
+
+func (p *pad) emit(out chan<- Trigger, t Trigger, slot int) {
+	select {
+	case out <- t:
+	default:
+		p.log.Warn("gamepad trigger dropped: output queue full", "slot", slot, "action", int(t.Action))
 	}
 }
 
