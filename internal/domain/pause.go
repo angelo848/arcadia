@@ -45,3 +45,6 @@ func (r PauseReason) UserInitiated() bool {
 
 // PauseToggleDebounce is the minimum interval between accepted pause toggles.
 const PauseToggleDebounce = 300 * time.Millisecond
+
+// CloseDebounce is the minimum interval between two close-game requests (CON-004).
+const CloseDebounce = 300 * time.Millisecond

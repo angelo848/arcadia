@@ -388,6 +388,34 @@ func TestEndSessionCounted(t *testing.T) {
 	})
 }
 
+func TestEndSessionClosedByHotkey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CON-016/o store grava e lê o motivo closed-by-hotkey (EndSession e GameSessions)", func(t *testing.T) {
+		t.Parallel()
+		s := openStore(t, dbPath(t), true)
+		g := newGame(t, s, "Hades")
+		id := mustStartSession(t, s, g.ID, sesStart)
+		endAt := sesStart.Add(10 * time.Minute)
+		st := mustEndSession(t, s, store.SessionEnd{ID: id, EndedAt: endAt, Active: 9 * time.Minute,
+			Reason: domain.EndClosedByHotkey, WrittenAt: endAt})
+		if st != domain.SessionEnded {
+			t.Errorf("state = %q, want %q", st, domain.SessionEnded)
+		}
+		r := readSessionRow(t, s.DB(), id)
+		if !r.EndReason.Valid || r.EndReason.String != "closed-by-hotkey" {
+			t.Errorf("end_reason = %+v, want closed-by-hotkey", r.EndReason)
+		}
+		page, err := s.GameSessions(t.Context(), g.ID, 0, 10)
+		if err != nil {
+			t.Fatalf("GameSessions: %v", err)
+		}
+		if len(page.Sessions) != 1 || page.Sessions[0].EndReason != "closed-by-hotkey" {
+			t.Errorf("sessions = %+v, want one with EndReason closed-by-hotkey", page.Sessions)
+		}
+	})
+}
+
 func TestEndSessionDiscarded(t *testing.T) {
 	t.Parallel()
 

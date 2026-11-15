@@ -44,6 +44,8 @@ const (
 	// EndClientNoLaunch: a URI launch whose game process never appeared (RUL-003). The
 	// session has no active time, so its outcome is discarded.
 	EndClientNoLaunch SessionEndReason = "client-no-launch"
+	// EndClosedByHotkey: the user closed the game with the close hotkey/combo (CON-004).
+	EndClosedByHotkey SessionEndReason = "closed-by-hotkey"
 )
 
 // errInvalidSessionEndReason is returned when a text value is not a known SessionEndReason.
@@ -53,7 +55,7 @@ var errInvalidSessionEndReason = errors.New("invalid session end reason")
 // The match is exact (case-sensitive, no trimming).
 func ParseSessionEndReason(s string) (SessionEndReason, error) {
 	switch r := SessionEndReason(s); r {
-	case EndExited, EndAgentShutdown, EndRecovered, EndClientNoLaunch:
+	case EndExited, EndAgentShutdown, EndRecovered, EndClientNoLaunch, EndClosedByHotkey:
 		return r, nil
 	default:
 		return "", fmt.Errorf("parse session end reason %q: %w", s, errInvalidSessionEndReason)

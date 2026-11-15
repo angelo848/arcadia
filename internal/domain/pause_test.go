@@ -7,6 +7,22 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 )
 
+func TestCloseDebounce(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CON-004/CloseDebounce é 300 ms e é independente de PauseToggleDebounce", func(t *testing.T) {
+		t.Parallel()
+		if domain.CloseDebounce != 300*time.Millisecond {
+			t.Fatalf("CloseDebounce = %v, want 300ms", domain.CloseDebounce)
+		}
+		// Distinct named constants: changing one must not be an alias of the other.
+		// Both are typed durations, so this only documents the independent values.
+		if domain.PauseToggleDebounce != 300*time.Millisecond {
+			t.Fatalf("PauseToggleDebounce = %v, want 300ms (unchanged)", domain.PauseToggleDebounce)
+		}
+	})
+}
+
 func TestParsePauseReason(t *testing.T) {
 	t.Parallel()
 

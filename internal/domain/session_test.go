@@ -106,6 +106,18 @@ func TestParseSessionEndReason(t *testing.T) {
 			want:   []domain.SessionEndReason{domain.EndExited, domain.EndAgentShutdown, domain.EndRecovered},
 		},
 		{
+			// alterado em 2026-11-15 (fase 13)
+			name:   "CON-016/ParseSessionEndReason aceita exited, agent-shutdown, recovered, client-no-launch e closed-by-hotkey",
+			inputs: []string{"exited", "agent-shutdown", "recovered", "client-no-launch", "closed-by-hotkey"},
+			want: []domain.SessionEndReason{domain.EndExited, domain.EndAgentShutdown, domain.EndRecovered,
+				domain.EndClientNoLaunch, domain.EndClosedByHotkey},
+		},
+		{
+			name:    "CON-016/rejeita vazio, closed_by_hotkey, Closed-By-Hotkey e outro valor",
+			inputs:  []string{"", "closed_by_hotkey", "Closed-By-Hotkey", "closed-by-hotkey ", "closed"},
+			wantErr: true,
+		},
+		{
 			name:    "DOM-007/valor desconhecido é erro",
 			inputs:  []string{"crashed", "Exited", "agent_shutdown", "ended", " recovered"},
 			wantErr: true,
