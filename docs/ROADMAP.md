@@ -79,7 +79,7 @@ plataforma), `internal/importers` (constante `PlatformPC`), `frontend` (diálogo
 
 ## Fase 11 — Importação v2 (pontos 1 e 7, e a janela de revisão)
 
-> **Status:** spec aprovada em [phase-11-importacao-v2](specs/phase-11-importacao-v2/requirements.md) (51 requisitos,
+> **Status:** concluída no código (conferência manual IMV-083 pendente). Spec em [phase-11-importacao-v2](specs/phase-11-importacao-v2/requirements.md) (51 requisitos,
 > IMV-*; [ADR 0032](adr/0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md)). Os itens "A decidir"
 > abaixo foram resolvidos lá.
 
