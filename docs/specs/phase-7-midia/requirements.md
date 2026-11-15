@@ -36,18 +36,25 @@ fica indisponível com a mensagem "Cadastre a chave em Configurações" e nenhum
 Verificação: teste com o Credential Manager trocado por fake; teste de que a chave não aparece em log.
 
 ### MID-002 — Busca e matching
+· substituído em 2026-11-15 (docs/specs/phase-12-metadados-unificados, MET-001..MET-009): a busca passa a consultar todos
+os provedores aplicáveis de uma vez e devolver uma lista única, sem o usuário escolher o provedor; `scrape.search` continua
+no contrato (obsoleto, sem uso na UI).
 Dado um jogo com título, plataforma e ano, quando busco no provedor, então recebo candidatos normalizados (sem ™, ®,
 edição e região no título) ordenados por similaridade, plataforma e ano. Dado que a melhor similaridade fica abaixo do
 limiar, então a UI lista os candidatos e o usuário escolhe, ou ignora a busca.
 Verificação: tabela de casos de título com fixture; sem rede (provedor fake).
 
 ### MID-003 — Metadados do jogo
+· alterado em 2026-11-15 (docs/specs/phase-12-metadados-unificados, MET-030..MET-033): a regra de merge por campo é a
+mesma, mas a entrada passa a ser `metadata.apply` (um candidato unificado, com a referência de cada provedor).
 Dado um candidato escolhido, quando aplico, então os campos vazios do jogo (descrição, gêneros, modos, desenvolvedora,
 editora, ano) são preenchidos pelo provedor de maior prioridade para o campo. Campos já preenchidos pelo usuário não
 mudam, salvo se o usuário pedir "substituir".
 Verificação: teste de merge por campo com dois provedores fake.
 
 ### MID-004 — Mídia de imagem
+· alterado em 2026-11-15 (docs/specs/phase-12-metadados-unificados, MET-021, MET-022): toda imagem que entra na fila,
+por qualquer caminho, respeita o limite por tipo de `domain.MediaKindLimit` contando as imagens atuais e as já enfileiradas.
 Dado um jogo com mídia escolhida (capa, screenshot, title screen), quando baixo, então o arquivo é gravado em
 `data\media\<id>\` com nome pelo hash do conteúdo, deduplicado, e uma miniatura é gerada. O registro da mídia guarda
 tipo, provedor, hash e caminho. Dado que o download falha, então só essa mídia fica de fora e o erro é listado (como

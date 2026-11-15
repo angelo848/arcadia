@@ -459,6 +459,9 @@ ligação de trilhas e discos (IMV-020..IMV-023) é só por nome.
 linha).
 
 ### IMV-081 — A UI nunca influencia o tempo de jogo
+· alterado em 2026-11-15 (docs/specs/phase-12-metadados-unificados, MET-080): com a caixa "Buscar metadados e imagens"
+(Pasta) e o "Obter dados" (Arquivo), a janela de importação também chama os bindings `Metadata*`; continua sem nenhum
+lançamento, pausa, retomada ou escrita de sessão.
 Dado as interações da fase (ler pasta, marcar, editar título, escolher plataforma, importar em lotes), então a UI só chama
 `ImportScan`, `ImportApply`, `PickFile`, `PickFolder` e a leitura do catálogo: nenhum lançamento, `ToggleSession`, pausa,
 retomada ou escrita de sessão. O teste de invariantes de UIX-046 (`App.invariants.test.tsx`) ganha essas interações.

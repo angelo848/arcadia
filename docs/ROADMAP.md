@@ -108,6 +108,12 @@ confirmação), `frontend` (`ImportDialog`).
 
 ## Fase 12 — Metadados unificados (pontos 6 e 8)
 
+> **Status:** spec aprovada em [phase-12-metadados-unificados](specs/phase-12-metadados-unificados/requirements.md)
+> (57 requisitos, MET-*; [ADR 0033](adr/0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md) e
+> [0034](adr/0034-limite-de-imagens-conta-atuais-e-enfileiradas.md)). O ScreenScraper ficou fora; o SteamGridDB traz
+> capa e herói (a API v2 não tem screenshots de gameplay); a janela de confirmação dos matches é separada da janela de
+> revisão de títulos e abre depois da importação.
+
 **Entrega**
 - **Busca unificada**: o usuário só pede "Obter dados". O agente consulta todos os provedores com chave, junta os
   resultados que são o mesmo jogo, pontua por título normalizado + plataforma + ano e devolve uma lista única.

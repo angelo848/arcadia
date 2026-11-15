@@ -46,3 +46,5 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0030](0030-limites-de-imagem-por-tipo-como-tabela-do-dominio.md) | Limites de imagem por tipo como tabela do domínio | aceito |
 | [0031](0031-avisos-de-mudanca-em-segundo-plano-como-notificacoes-de-invalidacao.md) | Avisos de mudança em segundo plano como notificações de invalidação | aceito |
 | [0032](0032-leitura-de-pasta-por-extensoes-fechadas-e-resultado-limitado.md) | Leitura de pasta por extensões fechadas e resultado limitado ao teto do IPC | aceito |
+| [0033](0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md) | Busca unificada de metadados com agregador, pontuação com travas e confirmação em lote | aceito |
+| [0034](0034-limite-de-imagens-conta-atuais-e-enfileiradas.md) | Limite de imagens por tipo conta as atuais e as enfileiradas | aceito |

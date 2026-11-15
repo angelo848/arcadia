@@ -371,6 +371,8 @@ Critérios acrescentados após a revisão (2026-11-14):
 ### UIX-033 — Buscar metadados
 · alterado em 2026-11-14 (docs/specs/phase-10-2-imagens-ao-vivo, IMG-011): as imagens baixadas pela fila depois de
 aplicar aparecem no carrossel e no cartão conforme chegam (`media.changed`), sem trocar o jogo em foco.
+· alterado em 2026-11-15 (docs/specs/phase-12-metadados-unificados, MET-043): o diálogo não tem mais a escolha de provedor;
+tem o campo "Nome para busca" (com o título do jogo) e o botão "Obter dados", e a lista de opções é única.
 Dado G em foco, quando o usuário toca "Buscar metadados", então abre o diálogo de busca de metadados de G (MID-002..MID-004,
 tamanho médio). Depois de aplicar um candidato, o painel mostra os dados novos e o carrossel lê a lista de mídia de novo.
 · verificação: teste de componente.
