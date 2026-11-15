@@ -140,18 +140,6 @@ func provAsync(t *testing.T, fn func()) <-chan struct{} {
 	return done
 }
 
-// provJoin returns a channel closed once every channel in chs is closed.
-func provJoin(chs ...<-chan struct{}) <-chan struct{} {
-	out := make(chan struct{})
-	go func() {
-		for _, c := range chs {
-			<-c
-		}
-		close(out)
-	}()
-	return out
-}
-
 // provDrive moves the fake clock by step each time a request is waiting for it, until done is closed.
 // It never sleeps: it waits on the clock's own waiter registration, with a real timeout as failure guard.
 func provDrive(t *testing.T, clock *domain.FakeClock, done <-chan struct{}, step time.Duration) {
@@ -206,10 +194,13 @@ func TestProviderFactoryLimiters(t *testing.T) {
 		p1 := provGet(t, f, "igdb")
 		p2 := provGet(t, f, "igdb")
 
+		// Uma só goroutine faz as duas chamadas em sequência: o relógio só anda com a espera pendente, sem corrida.
 		start := clock.Now()
-		d1 := provAsync(t, func() { _, _ = p1.Search(ctx, igdbQuery) })
-		d2 := provAsync(t, func() { _, _ = p2.Search(ctx, igdbQuery) })
-		provDrive(t, clock, provJoin(d1, d2), scrapers.IntervalIGDB)
+		done := provAsync(t, func() {
+			_, _ = p1.Search(ctx, igdbQuery)
+			_, _ = p2.Search(ctx, igdbQuery)
+		})
+		provDrive(t, clock, done, scrapers.IntervalIGDB)
 
 		if got := clock.Now().Sub(start); got != scrapers.IntervalIGDB {
 			t.Errorf("tempo gasto = %v, want %v (a segunda requisição espera o intervalo)", got, scrapers.IntervalIGDB)
@@ -231,10 +222,13 @@ func TestProviderFactoryLimiters(t *testing.T) {
 			p2 := provGet(t, f, "steamgriddb")
 
 			// Cada Media faz grids e heroes: quatro requisições, uma a cada 500 ms, a última em 1500 ms.
+			// Uma goroutine, em sequência: o relógio só anda com a espera pendente (determinístico).
 			start := clock.Now()
-			d1 := provAsync(t, func() { _, _ = p1.Media(ctx, "123") })
-			d2 := provAsync(t, func() { _, _ = p2.Media(ctx, "456") })
-			provDrive(t, clock, provJoin(d1, d2), scrapers.IntervalSteamGridDB)
+			done := provAsync(t, func() {
+				_, _ = p1.Media(ctx, "123")
+				_, _ = p2.Media(ctx, "456")
+			})
+			provDrive(t, clock, done, scrapers.IntervalSteamGridDB)
 
 			if got := clock.Now().Sub(start); got != 3*scrapers.IntervalSteamGridDB {
 				t.Errorf("tempo gasto = %v, want %v", got, 3*scrapers.IntervalSteamGridDB)
@@ -253,9 +247,11 @@ func TestProviderFactoryLimiters(t *testing.T) {
 			p2 := provGet(t, f, "steamstore")
 
 			start := clock.Now()
-			d1 := provAsync(t, func() { _, _ = p1.Search(ctx, igdbQuery) })
-			d2 := provAsync(t, func() { _, _ = p2.Search(ctx, igdbQuery) })
-			provDrive(t, clock, provJoin(d1, d2), scrapers.IntervalSteamStore)
+			done := provAsync(t, func() {
+				_, _ = p1.Search(ctx, igdbQuery)
+				_, _ = p2.Search(ctx, igdbQuery)
+			})
+			provDrive(t, clock, done, scrapers.IntervalSteamStore)
 
 			if got := clock.Now().Sub(start); got != scrapers.IntervalSteamStore {
 				t.Errorf("tempo gasto = %v, want %v", got, scrapers.IntervalSteamStore)
