@@ -108,7 +108,7 @@ o título vazio (ex.: `(Disc 1)`), então o título é o nome com os espaços no
 
 ### IMV-003 — `_` e `.` viram espaço
 Dado um nome, quando o título é normalizado, então todo `_` vira espaço. O `.` vira espaço **só** quando o nome (depois
-das regras IMV-002 e do `_`) não tem nenhum espaço, e nunca entre dois dígitos (`Super.Mario.World.USA` →
+das regras IMV-002 e do `_`, **já aparado e cortado como em IMV-005**) não tem nenhum espaço, e nunca entre dois dígitos (`Super.Mario.World.USA` →
 `Super Mario World USA`; `Dr. Mario`, `Super Mario Bros. 3` e `Game v1.2` mantêm o ponto).
 · verificação: teste de unidade (nome com espaços e pontos; nome só com pontos; ponto entre dígitos).
 
@@ -117,14 +117,19 @@ Dado um título com `, <Artigo>` onde o artigo é `The`, `A`, `An`, `Le`, `La`, 
 `Das` (sem diferenciar maiúsculas), e o artigo está **no fim do título** ou **imediatamente antes de ` - ` ou de `: `**,
 quando o título é normalizado, então o artigo passa para o começo, como foi escrito e com a primeira letra maiúscula, e a
 vírgula some (`Legend of Zelda, The` → `The Legend of Zelda`; `Legend of Zelda, The - Majora's Mask` → `The Legend of Zelda -
-Majora's Mask`). Só a primeira ocorrência é movida. `Hello, A World` não muda. O ` - ` **não** vira `: ` (isso é
+Majora's Mask`). Só a primeira ocorrência é movida. `Hello, A World` não muda. Se o título **já começa com um artigo**
+(`The`, `A`, `An`, `Le`, `La`, `Les`, `El`, `Los`, `Las`, `Il`, `Der`, `Die` ou `Das` + espaço, sem diferenciar maiúsculas),
+nada é movido (`Foo, A - Bar, The` → `A Foo - Bar, The`, e normalizar de novo não move o `, The`).
+· alterado em 2026-11-15: a regra "já começa com artigo" torna a normalização idempotente (IMV-008). O ` - ` **não** vira `: ` (isso é
 trabalho da busca de metadados, fase 12).
 · verificação: teste de unidade (fim, antes de ` - `, antes de `: `, no meio da frase, artigos estrangeiros, só a primeira).
 
 ### IMV-005 — Espaços, separadores soltos, tamanho e título nunca vazio
 Dado o resultado das regras anteriores, então: sequências de espaços (inclusive tabulação) viram um espaço; as pontas são
 aparadas de espaços e de `-` ou `,` sobrando (`Game - (USA)` → `Game`); um título com mais de 200 caracteres é cortado em
-200 (limite de `domain.MaxTitleRunes`, contado em runas) e reaparado. Dado que o resultado ainda ficaria vazio, então o
+200 (limite de `domain.MaxTitleRunes`, contado em runas) e reaparado; o aparo e o corte acontecem **antes** de decidir se o
+`.` vira espaço (IMV-003) e de mover o artigo (IMV-004), e o texto é aparado de novo depois de cada um (alterado em
+2026-11-15: ordem necessária para a idempotência, IMV-008). Dado que o resultado ainda ficaria vazio, então o
 título é o nome do arquivo sem a extensão com os espaços normalizados; dado que ele também é vazio, então o arquivo não vira
 candidato.
 · verificação: teste de unidade (espaços repetidos, traço solto, 250 caracteres com acento, nome só de marcações, nome vazio).

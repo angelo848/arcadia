@@ -44,11 +44,18 @@ ordem:
 1. Se `fromFolder`, remove o prefixo `^\d{1,3}\.\s+` quando o caractere seguinte não é dígito (IMV-006).
 2. Remove grupos `\([^()]*\)` e `\[[^\[\]]*\]` até não restar nenhum (IMV-002).
 3. `_` vira espaço (IMV-003).
-4. Se o texto não tem espaço, cada `.` que não está entre dois dígitos vira espaço (IMV-003).
-5. Espaços repetidos (inclusive tabulação) viram um; apara espaços, `-` e `,` das pontas (IMV-005).
-6. Move o artigo (IMV-004): primeira ocorrência de `, <Artigo>` seguida de fim, ` - ` ou `: `.
-7. Corta em 200 runas e apara de novo (IMV-005).
-8. Se o resultado é vazio, usa `stem` com os espaços normalizados (passo 5 sobre o `stem` cru); se ainda vazio, não há título.
+4. **Limpa** (`clean`): espaços repetidos (inclusive tabulação) viram um; apara espaços, `-` e `,` das pontas (IMV-005).
+   Depois corta em 200 runas e **limpa de novo** (IMV-005).
+5. Se o texto (já limpo e cortado) não tem espaço, cada `.` que não está entre dois dígitos vira espaço; **limpa** de novo
+   (IMV-003).
+6. Move o artigo (IMV-004): primeira ocorrência de `, <Artigo>` seguida de fim, ` - ` ou `: `, **a menos que o texto já
+   comece com um artigo** (`the|an|a|les|le|la|el|los|las|il|der|die|das` + espaço, sem diferenciar maiúsculas); **limpa** de
+   novo (a remoção da vírgula pode deixar espaço sobrando).
+7. Se o resultado é vazio, usa `stem` com os espaços normalizados (`clean` sobre o `stem` cru); se ainda vazio, não há título.
+
+Por que esta ordem (IMV-008): toda decisão que depende do texto ("tem espaço?", "começa com artigo?") é tomada sobre o texto
+já limpo e já cortado, e os passos seguintes só encurtam o texto ou preservam os espaços internos; assim a segunda passada
+vê o mesmo texto e não muda nada.
 
 ### Vetores (`fromFolder = false`, salvo indicação)
 
@@ -88,9 +95,15 @@ ordem:
 | 32 | `1942` (`fromFolder = true`) | `1942` |
 | 33 | `2.5D Game` (`fromFolder = true`) | `2.5D Game` |
 | 34 | `10. 4 Game` (`fromFolder = true`) | `10. 4 Game` |
+| 35 | `roeteekhwuIT,.uD9k_` | `roeteekhwuIT, uD9k` (o `_` final some na aparagem antes de decidir "tem espaço"; o ponto vira espaço) |
+| 36 | `Foo, A - Bar, The` | `A Foo - Bar, The` (só a primeira ocorrência move; a 2ª passada não move porque já começa com artigo) |
+| 37 | `The Foo, A` | `The Foo, A` (já começa com artigo: nada é movido) |
+| 38 | `Foo , The - Bar` | `The Foo - Bar` (o espaço antes da vírgula não sobra) |
+| 39 | `Super.Mario.World (USA)` | `Super Mario World` (depois de tirar o grupo e aparar, não há espaço: pontos viram espaço) |
+| 40 | `x.y` + 200 letras `a` + ` z` | `x y` + 197 letras `a` (o corte em 200 runas vem **antes** de decidir "tem espaço": o texto cortado não tem espaço, então o ponto vira espaço) |
 
 Idempotência (IMV-008): `NormalizeTitle(NormalizeTitle(x, false), false) == NormalizeTitle(x, false)` para todos os vetores de
-1 a 29.
+1 a 29 e 35 a 40.
 
 ### 2.1 Extensão do arquivo (IMV-001)
 

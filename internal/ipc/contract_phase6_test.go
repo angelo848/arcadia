@@ -60,7 +60,15 @@ func jsonKeys(t *testing.T, v any) []string {
 func TestImportContract(t *testing.T) {
 	t.Run("IMP-001/import.scan aceita fonte e caminho como no contrato", func(t *testing.T) {
 		t.Parallel()
-		got := jsonKeys(t, ipc.ImportScanParams{Source: ipc.ImportSourceFile, Path: `C:\Games`})
+		// Every field is set so that the key list is the full contract property list (v0.13.0, IMV-070).
+		recursive := false
+		got := jsonKeys(t, ipc.ImportScanParams{
+			Source:    ipc.ImportSourceFile,
+			Path:      `C:\Games`,
+			Platform:  "Windows",
+			TitleFrom: ipc.ImportTitleFromFolder,
+			Recursive: &recursive,
+		})
 		if want := schemaProps(t, "ImportScanParams"); !slices.Equal(got, want) {
 			t.Errorf("ImportScanParams keys = %v, want %v", got, want)
 		}
@@ -68,7 +76,28 @@ func TestImportContract(t *testing.T) {
 
 	t.Run("IMP-001/candidatos usam camelCase com as mesmas chaves do contrato", func(t *testing.T) {
 		t.Parallel()
-		got := jsonKeys(t, ipc.ImportCandidate{Source: ipc.ImportSourceSteam, Title: "x", LaunchType: "uri", LaunchTarget: "steam://rungameid/1"})
+		// Every field is set so that the key list is the full contract property list (v0.13.0, IMV-070).
+		got := jsonKeys(t, ipc.ImportCandidate{
+			Source:        ipc.ImportSourceFile,
+			Title:         "x",
+			Platform:      "Windows",
+			LaunchType:    "exe",
+			LaunchTarget:  `C:\Games\x.exe`,
+			InstallDir:    `C:\Games`,
+			Developers:    []string{"d"},
+			Publishers:    []string{"p"},
+			Genres:        []string{"g"},
+			Year:          new(int),
+			Description:   "desc",
+			PlayModes:     []string{"single"},
+			PlayedSeconds: new(int64),
+			LastPlayed:    new(string),
+			Exists:        true,
+			File:          `Jogo\Jogo (Disc 1).cue`,
+			Extension:     "cue",
+			Discs:         2,
+			DiscFiles:     []string{`Jogo\Jogo (Disc 1).cue`, `Jogo\Jogo (Disc 2).cue`},
+		})
 		if want := schemaProps(t, "ImportCandidate"); !slices.Equal(got, want) {
 			t.Errorf("ImportCandidate keys = %v, want %v", got, want)
 		}

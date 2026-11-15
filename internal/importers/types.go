@@ -22,9 +22,10 @@ const (
 )
 
 // ScanInput carries the folder a source reads from. Steam and Epic find their
-// folders themselves when Path is empty.
+// folders themselves when Path is empty. Folder is read by the folder source only.
 type ScanInput struct {
-	Path string
+	Path   string
+	Folder FolderOptions
 }
 
 // Source is one import origin. Scan only reads (IMP-001, IMP-009).
@@ -49,6 +50,14 @@ type Candidate struct {
 	Description  string
 	PlayModes    []string
 	Played       *Played
+
+	// File is the main file relative to the chosen folder (the file name for the file source); Extension is
+	// its lower-case extension without the dot; Discs is the number of discs (>= 1 for file and folder
+	// candidates, 0 for the other sources); DiscFiles lists the disc files in disc order when Discs >= 2 [IMV-024].
+	File      string
+	Extension string
+	Discs     int
+	DiscFiles []string
 }
 
 // Played is the play time LaunchBox records (IMP-007). LastPlay is in UTC.

@@ -119,7 +119,8 @@ func TestMediaChangedContract(t *testing.T) {
 			return m
 		}
 		prev := load(filepath.Join("..", "..", "docs", "specs", "phase-9-plataformas", "contracts", "ipc.openrpc.json"))
-		next := load(contractPath)
+		// v0.12.0 is pinned to its own file: contractPath now points to v0.13.0 (phase 11).
+		next := load(filepath.Join("..", "..", "docs", "specs", "phase-10-2-imagens-ao-vivo", "contracts", "ipc.openrpc.json"))
 
 		info, ok := next["info"].(map[string]any)
 		if !ok {

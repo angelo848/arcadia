@@ -12,15 +12,26 @@ const (
 	ImportSourceLaunchBox = "launchbox"
 )
 
-// ImportScanParams is the params of import.scan. Path is used by the file and
-// launchbox sources only.
+// Values of ImportScanParams.TitleFrom (contract v0.13.0 [IMV-017, IMV-070]).
+const (
+	ImportTitleFromFile   = "file"
+	ImportTitleFromFolder = "folder"
+)
+
+// ImportScanParams is the params of import.scan. Path is used by the file, folder
+// and launchbox sources only. Platform, TitleFrom and Recursive are used by the
+// file and folder sources only [IMV-070, IMV-071]; Recursive nil means true.
 type ImportScanParams struct {
-	Source string `json:"source"`
-	Path   string `json:"path,omitempty"`
+	Source    string `json:"source"`
+	Path      string `json:"path,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	TitleFrom string `json:"titleFrom,omitempty"`
+	Recursive *bool  `json:"recursive,omitempty"`
 }
 
 // ImportCandidate is one game an import source offers. Exists is set by
-// import.scan only (IMP-006); the apply side ignores it.
+// import.scan only (IMP-006); the apply side ignores it. File, Extension, Discs
+// and DiscFiles are set by the file and folder sources only [IMV-024].
 type ImportCandidate struct {
 	Source        string   `json:"source"`
 	Title         string   `json:"title"`
@@ -37,6 +48,10 @@ type ImportCandidate struct {
 	PlayedSeconds *int64   `json:"playedSeconds"`
 	LastPlayed    *string  `json:"lastPlayed"`
 	Exists        bool     `json:"exists"`
+	File          string   `json:"file,omitempty"`
+	Extension     string   `json:"extension,omitempty"`
+	Discs         int      `json:"discs,omitempty"`
+	DiscFiles     []string `json:"discFiles,omitempty"`
 }
 
 // ImportScanResult is the result of import.scan: candidates and warnings (IMP-008).

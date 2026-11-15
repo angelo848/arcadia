@@ -70,11 +70,16 @@ Implementação (regras e vetores em `import-rules.md` §2):
 - Regexes compiladas no pacote: `reGroupParen = \([^()]*\)`, `reGroupBracket = \[[^\[\]]*\]`, `reOrderPrefix = ^\d{1,3}\.\s+(\D)`
   (o grupo `(\D)` é recolocado), `reDisc` de `import-rules.md` §4. A remoção de grupos é um laço "até não mudar" (cada volta
   remove os grupos mais internos). Limite de voltas = comprimento do texto (nunca infinito).
+- Ordem dos passos (idempotência, IMV-008; detalhe em `import-rules.md` §2): prefixo → grupos → `_` → `clean` → corte em 200
+  runas → `clean` → ponto → `clean` → artigo → `clean` → fallback. `clean` = colapsa espaços/tabulações e apara espaço, `-` e `,`
+  das pontas. A decisão "tem espaço" do ponto e a decisão "já começa com artigo" são tomadas sobre o texto já limpo e cortado.
 - O ponto → espaço roda sobre `[]rune`, com a exceção "entre dois dígitos" olhando o vizinho anterior e o seguinte.
+- O artigo só é movido se o texto **não** começa com `(?i)^(the|an|a|les|le|la|el|los|las|il|der|die|das)\s` (`reStartsArticle`);
+  depois de mover, `clean` de novo (a vírgula some e pode sobrar espaço: `Foo , The - Bar` → `The Foo - Bar`).
 - O artigo usa uma regex única: `(?i)^(.+?),\s+(the|an|a|les|le|la|el|los|las|il|der|die|das)(\s+-\s+|:\s+|\s*$)`; o artigo é
   recomposto como `Artigo + " " + principal + resto`, com a primeira letra do artigo em maiúscula. A ordem na alternância
   coloca os nomes mais longos antes dos curtos (`an` antes de `a`, `las`/`les`/`los` antes de `la`/`le`).
-- Corte em 200 runas: `[]rune(s)[:domain.MaxTitleRunes]` e nova aparagem. `internal/importers` pode importar `internal/domain`
+- Corte em 200 runas (antes do ponto e do artigo; mover o artigo só encurta o texto): `[]rune(s)[:domain.MaxTitleRunes]` e nova aparagem. `internal/importers` pode importar `internal/domain`
   (não é Windows-específico).
 - `NormalizeTitle` não usa `strings.Title` nem `unicode.ToTitle` fora da primeira letra do artigo.
 

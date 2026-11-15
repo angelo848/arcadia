@@ -15,12 +15,12 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-10-2-imagens-ao-vivo contract (v0.12.0)
-// supersedes phase-9-plataformas (v0.11.0) [IPC-041, IMG-013].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-10-2-imagens-ao-vivo", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-11-importacao-v2 contract (v0.13.0)
+// supersedes phase-10-2-imagens-ao-vivo (v0.12.0) [IPC-041, IMV-070].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-11-importacao-v2", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-10-2-imagens-ao-vivo/contracts/ipc.openrpc.json"
+const contractRelPath = "docs/specs/phase-11-importacao-v2/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -57,6 +57,11 @@ type openRPC struct {
 		Media *struct {
 			MediaChangedWindowMs *int `json:"mediaChangedWindowMs"`
 		} `json:"x-media"`
+		Import *struct {
+			MaxScanDepth       *int `json:"maxScanDepth"`
+			MaxScanItems       *int `json:"maxScanItems"`
+			MaxScanResultBytes *int `json:"maxScanResultBytes"`
+		} `json:"x-import"`
 	} `json:"info"`
 	Methods []struct {
 		Name         string `json:"name"`
@@ -549,10 +554,10 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.12.0", func(t *testing.T) {
+	t.Run("IPC-041/versão 0.13.0", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.12.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.12.0\"", contractPath, c.Info.Version)
+		if c.Info.Version != "0.13.0" {
+			t.Fatalf("contract %s info.version = %q, want \"0.13.0\"", contractPath, c.Info.Version)
 		}
 	})
 
