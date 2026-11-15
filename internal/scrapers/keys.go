@@ -69,6 +69,29 @@ func (k *Keys) SetIGDB(clientID, secret string) error {
 	return k.Set("igdb", clientID+"\n"+secret)
 }
 
+// SetPair stores an id and a secret of a provider (ScreenScraper) as "id\nsecret". An empty half
+// is refused with ErrNoKey and nothing is written (SSC-001).
+func (k *Keys) SetPair(provider, id, secret string) error {
+	id, secret = strings.TrimSpace(id), strings.TrimSpace(secret)
+	if id == "" || secret == "" {
+		return ErrNoKey
+	}
+	return k.Set(provider, id+"\n"+secret)
+}
+
+// Pair returns the id and secret stored by SetPair; an entry without a line break is ErrKeyNotFound.
+func (k *Keys) Pair(provider string) (id, secret string, err error) {
+	v, err := k.Value(provider)
+	if err != nil {
+		return "", "", err
+	}
+	id, secret, ok := strings.Cut(v, "\n")
+	if !ok {
+		return "", "", ErrKeyNotFound
+	}
+	return id, secret, nil
+}
+
 // IGDB returns the client id and secret of IGDB.
 func (k *Keys) IGDB() (clientID, secret string, err error) {
 	v, err := k.Value("igdb")
