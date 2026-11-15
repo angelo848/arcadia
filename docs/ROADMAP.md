@@ -179,6 +179,19 @@ confirmação), `frontend` (`ImportDialog`).
 - **Vídeo:** entra nesta fase. Procurar uma fonte que forneça vídeo ao menos por plataforma e, se possível, vídeos
   curtos dos principais jogos, que ocupem pouco espaço em disco.
 
+**Decidido pelo usuário (2026-11-15), depois dos mockups**
+- **Tema inicial: Faixa** (estilo PS5). O Big Box nasce com **temas selecionáveis**: a estrutura permite trocar de tema, e
+  Mosaico e Roda ficam preparados para mais tarde (Roda com ressalvas, a detalhar). Vitrine fica de fora.
+- **Fonte dos vídeos: ScreenScraper.** Teto de **15 MB por vídeo**.
+- **Medição feita em 2026-11-15** (47 jogos, 11 plataformas, pela página pública do ScreenScraper): o vídeo
+  `video-normalized` ficou entre 0,6 e 4,8 MB (média perto de 2 MB); o `video` original ficou entre 0,9 e 21,2 MB, com
+  dois acima de 15 MB (God of War: Chains of Olympus, PSP, 21,2 MB; Aero the Acro-Bat, GBA, 15,1 MB). Exemplos: Super
+  Mario World 2,0 MB, Ocarina of Time 1,7 MB, Final Fantasy VII 0,7 MB, God of War 2 2,4 MB (todos normalizados).
+  Conclusão: baixar sempre o `video-normalized`; o teto de 15 MB fica como trava de segurança e nunca foi atingido por
+  ele. Mil jogos com vídeo ocupam cerca de 2 GB.
+
 **A decidir na spec**
-- Fonte dos vídeos (ver a pesquisa registrada na conversa: ScreenScraper, vídeos do LaunchBox local, Steam, IGDB) e
-  limite de tamanho por vídeo e por biblioteca.
+- Conta e credenciais do ScreenScraper (conta do usuário e credenciais de desenvolvedor do Arcadia), cota diária e nomes
+  exatos dos campos da API; se o ScreenScraper fornece vídeo por plataforma (não confirmado).
+- Limite total de espaço dos vídeos na biblioteca.
+- As ressalvas do tema Roda.
