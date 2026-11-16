@@ -7,6 +7,7 @@ watcher de processos, pausa por teclado/controle, "iniciar sem contar tempo").
 - Decisões registradas: [docs/adr/](docs/adr/README.md)
 - Roadmap das fases 9 a 13: [docs/ROADMAP.md](docs/ROADMAP.md)
 - **Versão 1.0.0** (2026-11-16): primeira versão definitiva, com as fases 1 a 14 no código.
+- **Versão 1.0.1** (2026-11-16): correções e ajustes da grade, da tela cheia e do foco do jogo (ver ROADMAP).
 - Spec atual: [docs/specs/phase-14-edicao-manual/](docs/specs/phase-14-edicao-manual/requirements.md) — **Edição manual** (imagens e tempo total jogado na janela de edição do jogo) (sobre [phase-13-modo-console](docs/specs/phase-13-modo-console/requirements.md) — **Modo console** (atalho Select + B, Big Box novo com tema Faixa e vídeo do ScreenScraper) (sobre [phase-12-metadados-unificados](docs/specs/phase-12-metadados-unificados/requirements.md) — **Metadados unificados** (busca única entre provedores, lote logo após a importação, janela de confirmação dos matches) (sobre [phase-11-importacao-v2](docs/specs/phase-11-importacao-v2/requirements.md) — **Importação v2** (normalização de títulos, subpastas, discos agrupados, janela de revisão), sobre [phase-10-2-imagens-ao-vivo](docs/specs/phase-10-2-imagens-ao-vivo/requirements.md) — **Imagens ao vivo** (aviso `media.changed` do agente para a UI) (sobre [phase-10-1-ajustes](docs/specs/phase-10-1-ajustes/requirements.md) — **Ajustes da nova interface e imagens do LaunchBox**, sobre [phase-10-nova-interface](docs/specs/phase-10-nova-interface/requirements.md) — **Nova interface** (três colunas, jogo em foco, tema escuro por tokens, modais proporcionais, janela maximizada) (sobre [phase-9-plataformas](docs/specs/phase-9-plataformas/requirements.md), [phase-8-estatisticas](docs/specs/phase-8-estatisticas/requirements.md), [phase-7-midia](docs/specs/phase-7-midia/requirements.md), [phase-6b-emulators](docs/specs/phase-6b-emulators/requirements.md), [phase-6-importers](docs/specs/phase-6-importers/requirements.md), [phase-5-1-ajustes](docs/specs/phase-5-1-ajustes/requirements.md), [phase-5-library](docs/specs/phase-5-library/requirements.md), [phase-4-pause](docs/specs/phase-4-pause/requirements.md),
   [phase-3-tracker](docs/specs/phase-3-tracker/requirements.md), [single-exe](docs/specs/single-exe/requirements.md) e a fase 2, [phase-2-skeleton](docs/specs/phase-2-skeleton/requirements.md)))
 - Processo: **Spec-Driven Development** ([ADR 0008](docs/adr/0008-spec-driven-development.md)) — a spec é a fonte da verdade.
@@ -39,7 +40,7 @@ go test ./...
 go vet ./...
 go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente (build "dev" não mexe no registro)
 cd cmd/arcadia && wails dev        # UI em modo dev
-cd cmd/arcadia && wails build -ldflags "-X main.version=1.0.0"   # gera build/bin/arcadia.exe (versão atual: 1.0.0, também em wails.json)
+cd cmd/arcadia && wails build -ldflags "-X main.version=1.0.1"   # gera build/bin/arcadia.exe (versão atual: 1.0.1, também em wails.json)
 sqlc generate                      # depois de alterar internal/store/queries/*.sql
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/phase-4-pause
 ```

@@ -218,3 +218,15 @@ Ficou para depois da 1.0:
 - Conferir a busca de vídeo com a API real do ScreenScraper (T45 da fase 13), que depende das credenciais da conta.
 - Conferências manuais IMV-083 (fase 11) e MET-083 (fase 12).
 - Incluir os três métodos da fase 14 no arquivo de contrato `ipc.openrpc.json`.
+
+## Versão 1.0.1 (2026-11-16)
+
+Correções e ajustes sobre a 1.0.0, sem spec nova:
+- Barra de rolagem da grade e da lista: clicar na trilha ou arrastar não volta mais ao jogo em foco (UIX-019).
+- Cards da grade em 3:4, sem tarjas em cima e embaixo da capa.
+- Ao sair da tela cheia do Big Box, a janela volta maximizada sem ficar atrás da barra de tarefas.
+- O agente leva a janela do jogo (executável ou emulador) ao primeiro plano depois de lançar.
+- A grade do desktop abre ordenada por última vez jogado, com divisória por ano e a data e hora abaixo do título; o Big Box continua por título.
+- Esc na grade ou na lista tira o jogo de foco e o painel volta aos jogados recentemente.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.0.1"`.
