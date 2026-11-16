@@ -126,6 +126,9 @@ func (s *scrapeService) setKey(_ context.Context, params json.RawMessage) (any, 
 	var err error
 	isSS := isScreenScraperProvider(p.Provider)
 	if isSS {
+		if strings.ContainsAny(p.Key, "\r\n") || strings.ContainsAny(p.Secret, "\r\n") {
+			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
+		}
 		if n := utf8.RuneCountInString(strings.TrimSpace(p.Secret)); n < 1 || n > 512 {
 			return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 		}
@@ -135,7 +138,7 @@ func (s *scrapeService) setKey(_ context.Context, params json.RawMessage) (any, 
 	} else {
 		err = s.keys.Set(p.Provider, p.Key)
 	}
-	if errors.Is(err, scrapers.ErrNoKey) {
+	if errors.Is(err, scrapers.ErrNoKey) || errors.Is(err, scrapers.ErrInvalidKey) {
 		return nil, ipc.NewError(ipc.CodeInvalidParams, ipc.MsgInvalidParams)
 	}
 	if err != nil {

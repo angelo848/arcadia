@@ -631,6 +631,7 @@ func TestScreenScraperRedaction(t *testing.T) {
 		t.Parallel()
 		payload := "0000ftypmp42" + strings.Repeat("v", 100)
 		r := newSSRig(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "video/mp4")
 			w.Header().Set("Content-Length", fmt.Sprint(len(payload)))
 			_, _ = io.WriteString(w, payload)
 		}, nil)
@@ -658,7 +659,7 @@ func TestScreenScraperRedaction(t *testing.T) {
 
 	t.Run("VID-020/OpenVideo nao duplica credenciais que a URL ja traz", func(t *testing.T) {
 		t.Parallel()
-		r := newSSRig(t, ssStatus(200, "0000ftypmp42"), nil)
+		r := newSSRig(t, ssVideo, nil)
 		u := r.srv.URL + "/m.mp4?devid=" + ssDevID + "&devpassword=" + ssDevPw + "&ssid=" + ssUser + "&sspassword=" + ssUserPw
 		rc, _, err := r.ss.OpenVideo(ctx, u)
 		if err != nil {

@@ -21,6 +21,7 @@ const (
 	msgVideoNoMatch  = "sem correspondência no ScreenScraper"
 	msgVideoNone     = "sem vídeo no ScreenScraper"
 	msgVideoTooLarge = "vídeo maior que 20 MB"
+	msgVideoFormat   = "formato de vídeo não suportado"
 	msgVideoGone     = "jogo não existe mais"
 )
 
@@ -133,6 +134,8 @@ func (r *videoResolver) apiError(step string, err error, notFound string) error 
 	switch {
 	case errors.Is(err, scrapers.ErrNotFound):
 		return permanent(notFound)
+	case errors.Is(err, scrapers.ErrNotVideo):
+		return permanent(msgVideoFormat)
 	case errors.Is(err, scrapers.ErrBadRequest):
 		r.log.Warn("vídeo: pedido recusado pelo ScreenScraper", "step", step, "error", err.Error())
 		return permanent(err.Error())

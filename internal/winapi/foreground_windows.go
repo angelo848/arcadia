@@ -5,6 +5,7 @@ package winapi
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -18,6 +19,12 @@ const (
 	hwndTopmost   = ^uintptr(0) // (HWND)-1
 	hwndNoTopmost = ^uintptr(1) // (HWND)-2
 	swpKeepGeom   = swpNoMove | swpNoSize
+)
+
+// Test seams for pinning the OS thread.
+var (
+	lockThread   = runtime.LockOSThread
+	unlockThread = runtime.UnlockOSThread
 )
 
 // ForegroundAPI is the Win32 surface ForceForegroundWith needs (CON-023).
@@ -37,6 +44,10 @@ type ForegroundAPI interface {
 // toggle, then SetForegroundWindow; if Windows denies it, it attaches to the foreground thread's input
 // and tries again. The detach always runs. It reports whether hwnd ended up in the foreground.
 func ForceForegroundWith(api ForegroundAPI, hwnd uintptr) bool {
+	// Pin the OS thread so attach and detach see the same thread id; released last.
+	lockThread()
+	defer unlockThread()
+	self := api.CurrentThread()
 	if api.IsIconic(hwnd) {
 		api.ShowWindow(hwnd, swRestore)
 	}
@@ -52,7 +63,7 @@ func ForceForegroundWith(api ForegroundAPI, hwnd uintptr) bool {
 	if fg == 0 {
 		return false
 	}
-	fgThread, self := api.ThreadOf(fg), api.CurrentThread()
+	fgThread := api.ThreadOf(fg)
 	if fgThread == 0 || fgThread == self {
 		return api.BringWindowToTop(hwnd) && api.SetForegroundWindow(hwnd)
 	}

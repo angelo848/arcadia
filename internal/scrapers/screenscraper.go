@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -22,7 +23,72 @@ var (
 	ErrCredentials   = errors.New("scrapers: credenciais do ScreenScraper recusadas")
 	ErrBadRequest    = errors.New("scrapers: pedido inválido ao ScreenScraper")
 	ErrNoCredentials = errors.New("scrapers: credenciais do ScreenScraper ausentes")
+	ErrNotVideo      = errors.New("scrapers: resposta do ScreenScraper não é vídeo")
+
+	errRedirectOffHost = errors.New("scrapers: redirecionamento para fora do ScreenScraper")
 )
+
+// sameHostRedirect follows a redirect only to the same host (case-insensitive, with port) and never
+// from https down to http; the net/http limit of 10 is kept.
+func sameHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	first := via[0].URL
+	if !strings.EqualFold(req.URL.Host, first.Host) || (via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https") {
+		return errRedirectOffHost
+	}
+	return nil
+}
+
+// checkMediaOrigin applies rules §10: https on the BaseURL host or on *.screenscraper.fr; http only when the
+// BaseURL itself is http and the host is the BaseURL host.
+func checkMediaOrigin(base *url.URL, raw string) (*url.URL, error) {
+	bad := fmt.Errorf("%w: URL de vídeo fora do ScreenScraper", ErrBadRequest)
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil {
+		return nil, bad
+	}
+	sameHost := base != nil && strings.EqualFold(u.Host, base.Host)
+	host := strings.ToLower(u.Hostname())
+	switch u.Scheme {
+	case "https":
+		if sameHost || host == "screenscraper.fr" || strings.HasSuffix(host, ".screenscraper.fr") {
+			return u, nil
+		}
+	case "http":
+		if base != nil && base.Scheme == "http" && sameHost {
+			return u, nil
+		}
+	}
+	return nil, bad
+}
+
+// textError maps the known text messages of the API; nil when the text is not one of them.
+func textError(text string) error {
+	switch {
+	case strings.Contains(text, "quota de scrape"):
+		return ErrQuota
+	case strings.Contains(text, "blacklisté"):
+		return ErrCredentials
+	case strings.Contains(text, "API closed"), strings.Contains(text, "API totalement fermé"):
+		return ErrUnavailable
+	case strings.Contains(text, "non trouvée"), strings.HasPrefix(strings.TrimSpace(text), "Erreur : Rom"):
+		return ErrNotFound
+	}
+	return nil
+}
+
+// classifyMediaText is the text branch of classify for a 200 answer that is not a video.
+func classifyMediaText(body []byte) error {
+	if err := textError(string(body)); err != nil {
+		return err
+	}
+	return ErrNotVideo
+}
 
 const ssDefaultBase = "https://api.screenscraper.fr/api2/"
 
@@ -71,11 +137,12 @@ type SSQuota struct {
 
 // ScreenScraper is the ScreenScraper API v2 client. It starts no goroutine.
 type ScreenScraper struct {
-	base  string
-	http  *http.Client
-	lim   *Limiter
-	log   *slog.Logger
-	creds func() (SSCreds, error)
+	base    string
+	baseURL *url.URL
+	http    *http.Client
+	lim     *Limiter
+	log     *slog.Logger
+	creds   func() (SSCreds, error)
 
 	mu    sync.Mutex
 	quota SSQuota
@@ -98,7 +165,10 @@ func NewScreenScraper(cfg SSConfig) *ScreenScraper {
 	if l == nil {
 		l = slog.Default()
 	}
-	return &ScreenScraper{base: base, http: c, lim: cfg.Limiter, log: l, creds: cfg.Creds}
+	cc := *c // shallow copy: the shared client keeps its own CheckRedirect
+	cc.CheckRedirect = sameHostRedirect
+	bu, _ := url.Parse(base)
+	return &ScreenScraper{base: base, baseURL: bu, http: &cc, lim: cfg.Limiter, log: l, creds: cfg.Creds}
 }
 
 // Quota returns the last quota reading.
@@ -165,13 +235,13 @@ func (s *ScreenScraper) OpenVideo(ctx context.Context, rawURL string) (io.ReadCl
 	if err := ctx.Err(); err != nil {
 		return nil, 0, s.ctxErr(err)
 	}
+	u, err := checkMediaOrigin(s.baseURL, rawURL)
+	if err != nil {
+		return nil, 0, err
+	}
 	cr, err := s.creds()
 	if err != nil {
 		return nil, 0, fmt.Errorf("scrapers: credenciais do ScreenScraper: %w", err)
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: url de mídia", ErrBadRequest)
 	}
 	q := u.Query()
 	have := map[string]bool{}
@@ -192,6 +262,11 @@ func (s *ScreenScraper) OpenVideo(ctx context.Context, rawURL string) (io.ReadCl
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, 0, s.classify(resp.StatusCode, b, u.String())
+	}
+	if mt, _, perr := mime.ParseMediaType(resp.Header.Get("Content-Type")); perr == nil && strings.HasPrefix(mt, "text/") {
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, 0, classifyMediaText(b)
 	}
 	return resp.Body, resp.ContentLength, nil
 }
@@ -262,6 +337,9 @@ func (s *ScreenScraper) ctxErr(err error) error {
 func (s *ScreenScraper) netErr(ctx context.Context, err error) error {
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return fmt.Errorf("scrapers: ScreenScraper: %w", context.Canceled)
+	}
+	if errors.Is(err, errRedirectOffHost) {
+		return fmt.Errorf("%w: redirecionamento para fora do ScreenScraper", ErrBadRequest)
 	}
 	return fmt.Errorf("%w: %w", ErrUnavailable, RedactError(err))
 }

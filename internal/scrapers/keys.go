@@ -72,6 +72,9 @@ func (k *Keys) SetIGDB(clientID, secret string) error {
 // SetPair stores an id and a secret of a provider (ScreenScraper) as "id\nsecret". An empty half
 // is refused with ErrNoKey and nothing is written (SSC-001).
 func (k *Keys) SetPair(provider, id, secret string) error {
+	if strings.ContainsAny(id, "\r\n") || strings.ContainsAny(secret, "\r\n") {
+		return ErrInvalidKey
+	}
 	id, secret = strings.TrimSpace(id), strings.TrimSpace(secret)
 	if id == "" || secret == "" {
 		return ErrNoKey

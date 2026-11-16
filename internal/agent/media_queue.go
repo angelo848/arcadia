@@ -51,11 +51,14 @@ func (f imageFetcher) Fetch(ctx context.Context, job store.MediaJob) (media.Stor
 type fetchRouter struct{ images, video mediaFetcher }
 
 func (r fetchRouter) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
-	if job.Kind == "video" {
+	if isVideoJob(job) {
 		return r.video.Fetch(ctx, job)
 	}
 	return r.images.Fetch(ctx, job)
 }
+
+// isVideoJob is the only lane criterion (VID-009): which slot and which fetcher.
+func isVideoJob(job store.MediaJob) bool { return job.Kind == "video" }
 
 // videoPause is why the video lane is not taking jobs.
 type videoPause int
@@ -237,7 +240,7 @@ func (q *mediaQueue) dispatch(ctx context.Context, isem, vsem chan struct{}, wg 
 		if imagesFull && videoBlocked {
 			return
 		}
-		isVideo := job.Provider == store.VideoProvider
+		isVideo := isVideoJob(job)
 		if (isVideo && videoBlocked) || (!isVideo && imagesFull) {
 			continue
 		}

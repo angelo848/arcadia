@@ -23,6 +23,9 @@ const (
 	KindSelect     = "select"
 )
 
+// ErrInvalidKey is returned when an id or secret holds a line break (SSC-006).
+var ErrInvalidKey = errors.New("scrapers: chave com quebra de linha")
+
 // ErrNoKey is returned, without any request, when a provider needs a key the user has not
 // registered (MID-001).
 var ErrNoKey = errors.New("scrapers: chave não cadastrada")
