@@ -7,13 +7,72 @@ import {
   setProviderKey,
   type KeyProviderId,
 } from '../lib/metadata'
+import {
+  queuedLabel,
+  useVideoStatus,
+  videoCancelPending,
+  videoCredentialsKey,
+  videoQueueMissing,
+  videoStatusLine,
+} from '../lib/video'
 
 const inputClass =
   'rounded border border-line bg-raised px-3 py-1.5 text-fg focus:border-accent'
 
 type Configured = Record<KeyProviderId, boolean | null>
 
-const unknownStatus: Configured = { igdb: null, steamgriddb: null }
+const unknownStatus: Configured = { igdb: null, steamgriddb: null, screenscraper: null, screenscraperdev: null }
+
+type CredGroupProps = {
+  title: string
+  status: string
+  firstLabel: string
+  secondLabel: string
+  first: string
+  second: string
+  onFirst: (v: string) => void
+  onSecond: (v: string) => void
+  busy: boolean
+  registered: boolean
+  onSave: () => void
+  onRemove: () => void
+  idPrefix: string
+}
+
+// CredGroup is one pair of password fields with its own Salvar/Remover (ScreenScraper [SSC-002]).
+function CredGroup(p: CredGroupProps): JSX.Element {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm text-fg">{p.title}</h4>
+        <span className="text-xs text-muted">{p.status}</span>
+      </div>
+      <label htmlFor={`${p.idPrefix}-a`} className="flex flex-col gap-1 text-sm text-muted">
+        {p.firstLabel}
+        <input id={`${p.idPrefix}-a`} type="password" autoComplete="off" value={p.first} onChange={(e) => p.onFirst(e.target.value)} className={inputClass} />
+      </label>
+      <label htmlFor={`${p.idPrefix}-b`} className="flex flex-col gap-1 text-sm text-muted">
+        {p.secondLabel}
+        <input id={`${p.idPrefix}-b`} type="password" autoComplete="off" value={p.second} onChange={(e) => p.onSecond(e.target.value)} className={inputClass} />
+      </label>
+      <div className="flex justify-end gap-2">
+        {p.registered && (
+          <button type="button" disabled={p.busy} onClick={p.onRemove} className="rounded px-3 py-1.5 text-sm text-danger hover:bg-hover disabled:text-muted">
+            Remover
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={p.busy || p.first.trim() === '' || p.second.trim() === ''}
+          onClick={p.onSave}
+          className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-raised disabled:text-muted"
+        >
+          Salvar
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.'
@@ -28,12 +87,44 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
   const [igdbId, setIgdbId] = useState('')
   const [igdbSecret, setIgdbSecret] = useState('')
   const [sgdbKey, setSgdbKey] = useState('')
+  const [ssUser, setSsUser] = useState('')
+  const [ssPass, setSsPass] = useState('')
+  const [ssDevId, setSsDevId] = useState('')
+  const [ssDevPass, setSsDevPass] = useState('')
+  const [videoMsg, setVideoMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const videoReady = configured.screenscraper === true && configured.screenscraperdev === true
+  const vstatus = useVideoStatus(videoReady)
 
   async function refresh() {
-    const [igdb, sgdb] = await Promise.all([providerKeyStatus('igdb'), providerKeyStatus('steamgriddb')])
-    setConfigured({ igdb: igdb.configured, steamgriddb: sgdb.configured })
+    const [igdb, sgdb, ss, ssdev] = await Promise.all([
+      providerKeyStatus('igdb'),
+      providerKeyStatus('steamgriddb'),
+      providerKeyStatus('screenscraper'),
+      providerKeyStatus('screenscraperdev'),
+    ])
+    setConfigured({
+      igdb: igdb.configured,
+      steamgriddb: sgdb.configured,
+      screenscraper: ss.configured,
+      screenscraperdev: ssdev.configured,
+    })
+    void qc.invalidateQueries({ queryKey: videoCredentialsKey })
+  }
+
+  async function videoAction(run: () => Promise<string>) {
+    setBusy(true)
+    setError(null)
+    setVideoMsg(null)
+    try {
+      setVideoMsg(await run())
+      void vstatus.refetch()
+    } catch (e) {
+      setError(messageOf(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   useEffect(() => {
@@ -49,6 +140,14 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
         await setProviderKey('igdb', igdbId, igdbSecret)
         setIgdbId('')
         setIgdbSecret('')
+      } else if (provider === 'screenscraper') {
+        await setProviderKey('screenscraper', ssUser, ssPass)
+        setSsUser('')
+        setSsPass('')
+      } else if (provider === 'screenscraperdev') {
+        await setProviderKey('screenscraperdev', ssDevId, ssDevPass)
+        setSsDevId('')
+        setSsDevPass('')
       } else {
         await setProviderKey('steamgriddb', sgdbKey)
         setSgdbKey('')
@@ -173,6 +272,64 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
               Salvar
             </button>
           </div>
+        </section>
+
+        <section className="flex flex-col gap-2 rounded border border-line p-3">
+          <h3 className="text-sm font-medium text-fg">ScreenScraper (vídeos)</h3>
+          <CredGroup
+            title="Conta do usuário"
+            status={label(configured.screenscraper)}
+            firstLabel="Usuário"
+            secondLabel="Senha"
+            first={ssUser}
+            second={ssPass}
+            onFirst={setSsUser}
+            onSecond={setSsPass}
+            busy={busy}
+            registered={configured.screenscraper === true}
+            onSave={() => void save('screenscraper')}
+            onRemove={() => void remove('screenscraper')}
+            idPrefix={`${idPrefix}-ss`}
+          />
+          <CredGroup
+            title="Desenvolvedor do Arcadia"
+            status={label(configured.screenscraperdev)}
+            firstLabel="devid"
+            secondLabel="devpassword"
+            first={ssDevId}
+            second={ssDevPass}
+            onFirst={setSsDevId}
+            onSecond={setSsDevPass}
+            busy={busy}
+            registered={configured.screenscraperdev === true}
+            onSave={() => void save('screenscraperdev')}
+            onRemove={() => void remove('screenscraperdev')}
+            idPrefix={`${idPrefix}-ssdev`}
+          />
+          {videoReady && (
+            <div className="flex flex-col gap-2">
+              {vstatus.data !== undefined && <p className="text-xs text-muted">{videoStatusLine(vstatus.data)}</p>}
+              {videoMsg !== null && <p className="text-sm text-fg">{videoMsg}</p>}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void videoAction(async () => queuedLabel((await videoQueueMissing(0)).queued))}
+                  className="rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover disabled:text-muted"
+                >
+                  Buscar vídeos dos jogos sem vídeo
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void videoAction(async () => `${await videoCancelPending()} buscas canceladas`)}
+                  className="rounded bg-raised px-3 py-1.5 text-sm text-fg hover:bg-hover disabled:text-muted"
+                >
+                  Cancelar buscas pendentes
+                </button>
+              </div>
+            </div>
+          )}
         </section>
     </Modal>
   )

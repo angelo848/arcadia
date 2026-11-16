@@ -66,6 +66,7 @@ export function SessionsList({
               <span className="text-muted">{s.endedAt ? formatLocalDateTime(s.endedAt) : '—'}</span>
               <span className="tabular-nums text-fg">{durationText(s.activeSeconds)}</span>
               <span className={stateClasses[s.state]}>{stateLabels[s.state]}</span>
+              {s.endReason === 'closed-by-hotkey' && <span className="text-muted">Fechado pelo controle</span>}
             </li>
           ))}
         </ul>

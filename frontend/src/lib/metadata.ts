@@ -4,7 +4,7 @@ import type { GameDetailView } from './library'
 
 // Providers of the metadata search (phase 7, MID-002). Only IGDB and SteamGridDB need a key (MID-001).
 export type ProviderId = 'igdb' | 'steamgriddb' | 'steamstore'
-export type KeyProviderId = 'igdb' | 'steamgriddb'
+export type KeyProviderId = 'igdb' | 'steamgriddb' | 'screenscraper' | 'screenscraperdev'
 
 // The labels the UI shows for each provider.
 export const providerLabels: Record<ProviderId, string> = {

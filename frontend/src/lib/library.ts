@@ -45,7 +45,7 @@ export const playModeLabels: Record<PlayModeName, string> = {
 
 export type GameListView = { games: GameView[]; total: number; offset: number }
 
-export type SessionEndReason = 'exited' | 'agent-shutdown' | 'recovered'
+export type SessionEndReason = 'exited' | 'agent-shutdown' | 'recovered' | 'closed-by-hotkey' | 'client-no-launch'
 
 export type SessionItemView = {
   sessionId: number

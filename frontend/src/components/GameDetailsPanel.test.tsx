@@ -504,6 +504,101 @@ describe('GameDetailsPanel', () => {
     expect(top).toBe(0)
   })
 
+  // T30. Premissa: o botão se chama "Buscar vídeo"; credenciais vêm de ProviderKeyStatus (screenscraper e
+  // screenscraperdev); o resultado e o erro aparecem como texto no painel.
+  function installVideo(
+    creds: [boolean, boolean],
+    videoQueue: ReturnType<typeof vi.fn>,
+    items: MediaItemView[] = [],
+  ): Fakes & { ProviderKeyStatus: ReturnType<typeof vi.fn> } {
+    const a = install({ media: items })
+    const extra = {
+      ProviderKeyStatus: vi.fn((p: string) =>
+        Promise.resolve({ provider: p, configured: p === 'screenscraper' ? creds[0] : creds[1] }),
+      ),
+      VideoQueue: videoQueue,
+    }
+    Object.assign(a, extra)
+    return Object.assign(a, { ProviderKeyStatus: extra.ProviderKeyStatus })
+  }
+  const videoButton = () => screen.queryByRole('button', { name: 'Buscar vídeo' })
+
+  it('VID-024/com as duas credenciais e sem vídeo o botão aparece', async () => {
+    installVideo([true, true], vi.fn())
+    renderPanel()
+    await loaded()
+    expect(await screen.findByRole('button', { name: 'Buscar vídeo' })).toBeEnabled()
+  })
+
+  it('VID-024/sem credenciais, ou com vídeo, não aparece', async () => {
+    for (const [creds, items] of [
+      [[true, false], []],
+      [[false, true], []],
+      [[true, true], [media(1, 'video')]],
+    ] as Array<[[boolean, boolean], MediaItemView[]]>) {
+      const a = installVideo(creds, vi.fn(), items)
+      const { unmount } = renderPanel()
+      await loaded()
+      await waitFor(() => expect(a.MediaList).toHaveBeenCalled())
+      await waitFor(() => expect(a.ProviderKeyStatus).toHaveBeenCalled())
+      await settle()
+      expect(videoButton()).toBeNull()
+      unmount()
+    }
+  })
+
+  it('VID-024/chama VideoQueue([id]) uma vez e mostra "Vídeo na fila"', async () => {
+    const q = vi.fn(() => Promise.resolve({ queued: 1, skipped: [] }))
+    installVideo([true, true], q)
+    renderPanel()
+    await loaded()
+    fireEvent.click(await screen.findByRole('button', { name: 'Buscar vídeo' }))
+    expect(await screen.findByText('Vídeo na fila')).toBeInTheDocument()
+    expect(q).toHaveBeenCalledTimes(1)
+    expect(q).toHaveBeenCalledWith([10])
+  })
+
+  it('VID-024/mostra "Este jogo já tem vídeo ou busca em andamento" e "A plataforma não tem vídeo no ScreenScraper"', async () => {
+    const cases: Array<['has-video' | 'platform-unmapped', string]> = [
+      ['has-video', 'Este jogo já tem vídeo ou busca em andamento'],
+      ['platform-unmapped', 'A plataforma não tem vídeo no ScreenScraper'],
+    ]
+    for (const [reason, text] of cases) {
+      installVideo([true, true], vi.fn(() => Promise.resolve({ queued: 0, skipped: [{ gameId: 10, reason }] })))
+      const { unmount } = renderPanel()
+      await loaded()
+      fireEvent.click(await screen.findByRole('button', { name: 'Buscar vídeo' }))
+      expect(await screen.findByText(text)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('VID-024/erro do agente mostra a mensagem', async () => {
+    const message = 'O agente não está respondendo. Tente de novo.'
+    installVideo([true, true], vi.fn(() => Promise.reject(new Error(message))))
+    renderPanel()
+    await loaded()
+    fireEvent.click(await screen.findByRole('button', { name: 'Buscar vídeo' }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+  })
+
+  it('VID-024/o botão fica desativado durante a chamada', async () => {
+    let done: (v: { queued: number; skipped: [] }) => void = () => {}
+    const q = vi.fn(() => new Promise<{ queued: number; skipped: [] }>((r) => (done = r)))
+    installVideo([true, true], q)
+    renderPanel()
+    await loaded()
+    const btn = await screen.findByRole('button', { name: 'Buscar vídeo' })
+    fireEvent.click(btn)
+    await waitFor(() => expect(btn).toBeDisabled())
+    fireEvent.click(btn)
+    expect(q).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      done({ queued: 1, skipped: [] })
+    })
+    await screen.findByText('Vídeo na fila')
+  })
+
   it('UIX-025/Editar, Buscar metadados e Remover chamam os callbacks uma vez', async () => {
     install()
     const { props } = renderPanel()

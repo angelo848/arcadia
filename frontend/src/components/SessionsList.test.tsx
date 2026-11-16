@@ -132,6 +132,31 @@ describe('SessionsList', () => {
     }
   })
 
+  it('CON-018/endReason closed-by-hotkey mostra a duração e "fechado pelo controle"', async () => {
+    install([item({ sessionId: 1, activeSeconds: 5400, endReason: 'closed-by-hotkey' })])
+    renderList()
+    expect(await screen.findByText('1 h 30 min')).toBeInTheDocument()
+    // Premissa: texto "Fechado pelo controle" (CON-017), sem diferenciar maiúscula.
+    expect(screen.getByText(/fechado pelo controle/i)).toBeInTheDocument()
+  })
+
+  it('CON-018/exited, agent-shutdown, recovered e client-no-launch não ganham texto novo', async () => {
+    for (const endReason of ['exited', 'agent-shutdown', 'recovered', 'client-no-launch'] as const) {
+      install([item({ endReason })])
+      const { unmount } = renderList()
+      await screen.findByText('1 h 00 min')
+      expect(screen.queryByText(/fechado pelo controle/i), endReason).toBeNull()
+      unmount()
+    }
+  })
+
+  it('CON-018/sem endReason (sessão aberta) não mostra o texto', async () => {
+    install([item({ state: 'running', endedAt: null, endReason: null })])
+    renderList()
+    await screen.findByText('Em andamento')
+    expect(screen.queryByText(/fechado pelo controle/i)).toBeNull()
+  })
+
   it('UI-038/cada linha mostra início, fim, tempo ativo em UI-005 e estado', async () => {
     const startedAt = '2026-11-08T20:15:00.000Z'
     const endedAt = '2026-11-08T21:45:00.000Z'

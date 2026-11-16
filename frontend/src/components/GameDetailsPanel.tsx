@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, type JSX, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react'
+import { queueResultLabel, useVideoCredentials, videoQueue } from '../lib/video'
 import type { GameStatus } from '../lib/filters'
 import type { SessionView } from '../lib/games'
 import { formatPlayTime } from '../lib/games'
@@ -40,6 +41,22 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
   const q = useGame(gameId)
   const catalog = useCatalog({ staleTime: Infinity })
   const media = useMedia(gameId)
+  const creds = useVideoCredentials()
+  const [videoBusy, setVideoBusy] = useState(false)
+  const [videoMsg, setVideoMsg] = useState<{ gameId: number; text: string; error: boolean } | null>(null)
+
+  async function searchVideo() {
+    setVideoBusy(true)
+    setVideoMsg(null)
+    try {
+      const r = await videoQueue([gameId])
+      setVideoMsg({ gameId, text: queueResultLabel(r), error: false })
+    } catch (e) {
+      setVideoMsg({ gameId, text: e instanceof Error ? e.message : 'Não foi possível buscar o vídeo.', error: true })
+    } finally {
+      setVideoBusy(false)
+    }
+  }
 
   const emitRef = useRef(onSelectionEvent)
   emitRef.current = onSelectionEvent
@@ -105,6 +122,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
   const untrackedLabel = busy && pending.mode === 'untracked' ? 'Iniciando…' : 'Jogar sem contar tempo'
   // A game with only video has no images: the normal window ignores video [VID-023].
   const onlyVideo = media.data !== undefined && media.data.length > 0 && media.data.every((m) => m.kind === 'video')
+  const hasVideo = media.data?.some((m) => m.kind === 'video') ?? false
   const secondary ='rounded bg-raised px-3 py-1 text-sm font-medium text-fg hover:bg-hover'
 
   return (
@@ -160,10 +178,20 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           <button type="button" data-bigbox-item onClick={() => onSearchMetadata()} className={secondary}>
             Buscar metadados
           </button>
+          {creds.ready === true && !hasVideo && (
+            <button type="button" data-bigbox-item disabled={videoBusy} onClick={() => void searchVideo()} className={secondary}>
+              Buscar vídeo
+            </button>
+          )}
           <button type="button" data-bigbox-item onClick={() => onRemove()} className={`${secondary} text-danger`}>
             Remover
           </button>
           </div>
+          {videoMsg !== null && videoMsg.gameId === g.id && (
+            <p role={videoMsg.error ? 'alert' : 'status'} className={`text-sm ${videoMsg.error ? 'text-danger' : 'text-muted'}`}>
+              {videoMsg.text}
+            </p>
+          )}
         </div>
 
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
