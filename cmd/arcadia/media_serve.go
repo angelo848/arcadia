@@ -52,5 +52,9 @@ func (a *App) serveMedia(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if strings.EqualFold(filepath.Ext(full), ".mp4") {
+		// Set explicitly: the system MIME table (registry) must not decide; ServeFile handles Range.
+		w.Header().Set("Content-Type", "video/mp4")
+	}
 	http.ServeFile(w, r, full)
 }

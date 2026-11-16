@@ -242,6 +242,13 @@ func (s *supervisor) handleNote(ctx context.Context, n ipc.Notification) {
 			return
 		}
 		s.cfg.Emit(mediaChangedEvent, v)
+	case ipc.MethodGameClosedByHotkey:
+		v, err := decodeGameClosed(n.Params)
+		if err != nil {
+			s.cfg.Log.Warn("game.closedByHotkey com parâmetros inválidos", "error", err.Error())
+			return
+		}
+		s.cfg.Emit(gameClosedEvent, v)
 	case ipc.MethodMetadataBatchChanged:
 		v, err := decodeBatchChanged(n.Params)
 		if err != nil {

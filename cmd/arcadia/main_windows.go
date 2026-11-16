@@ -132,6 +132,13 @@ func defaultPlatform() platform {
 		emit: func(ctx context.Context, event string, data any) {
 			wailsruntime.EventsEmit(ctx, event, data)
 		},
+		bringToFront: func() (bool, error) {
+			hwnd, err := winapi.MainWindow()
+			if err != nil {
+				return false, err
+			}
+			return winapi.ForceForeground(hwnd), nil
+		},
 		quit: wailsruntime.Quit,
 		showWindow: func(ctx context.Context) {
 			wailsruntime.WindowUnminimise(ctx)

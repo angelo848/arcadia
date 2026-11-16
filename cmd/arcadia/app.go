@@ -73,6 +73,8 @@ type platform struct {
 	openFile func(ctx context.Context, title string, filters []fileFilter) (string, error)
 	// openDir shows the folder dialog; "" means cancelled (IMP-004, IMP-005).
 	openDir func(ctx context.Context, title string) (string, error)
+	// bringToFront forces the window to the foreground; false means Windows refused (CON-023).
+	bringToFront func() (foreground bool, err error)
 }
 
 // App is the Wails-bound application. Its exported methods are the frontend

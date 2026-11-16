@@ -20,6 +20,14 @@ var (
 	procPostQuitMessage  = modUser32.NewProc("PostQuitMessage")
 
 	procAllowSetForegroundWindow = modUser32.NewProc("AllowSetForegroundWindow")
+	procSetForegroundWindow      = modUser32.NewProc("SetForegroundWindow")
+	procIsIconic                 = modUser32.NewProc("IsIconic")
+	procAttachThreadInput        = modUser32.NewProc("AttachThreadInput")
+	procBringWindowToTop         = modUser32.NewProc("BringWindowToTop")
+	procGetWindowThreadProcessId = modUser32.NewProc("GetWindowThreadProcessId")
+	procIsWindowVisibleFG        = modUser32.NewProc("IsWindowVisible")
+	procGetWindowRect            = modUser32.NewProc("GetWindowRect")
+	procEnumWindows              = modUser32.NewProc("EnumWindows")
 )
 
 // Declarations used by the power watcher (T13) and the overlay (T16).

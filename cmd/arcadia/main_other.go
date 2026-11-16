@@ -36,5 +36,6 @@ func defaultPlatform() platform {
 		openDir: func(context.Context, string) (string, error) {
 			return "", errUnsupported
 		},
+		bringToFront: func() (bool, error) { return false, errUnsupported },
 	}
 }
