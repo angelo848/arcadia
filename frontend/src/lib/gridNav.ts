@@ -1,7 +1,7 @@
 // Grid measures and keyboard movement [UIX-005, UIX-014, UIX-019, UIX-020].
 export const CARD_MIN_WIDTH = 160
 export const GRID_GAP = 16
-export const CARD_TITLE_HEIGHT = 44 // two title lines under the 2:3 cover
+export const CARD_TITLE_HEIGHT = 60 // two title lines and the "Jogado" line under the 3:4 cover
 
 export const GRID_INSET = 6 // room for the focus ring on each side [AJU-001]
 export const SCROLLBAR_SIZE = 8 // matches the themed scrollbar [AJU-004]

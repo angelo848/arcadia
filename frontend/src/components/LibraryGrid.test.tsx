@@ -127,6 +127,23 @@ function cardOf(title: string): HTMLElement {
 }
 
 describe('LibraryGrid', () => {
+  it('1.0.1/ordenada por última vez jogado: divisória por ano e data abaixo do título', () => {
+    const games = [
+      game(1, { title: 'A', lastPlayedAt: '2026-06-10T12:00:00.000Z' }),
+      game(2, { title: 'B', lastPlayedAt: '2025-06-10T12:00:00.000Z' }),
+      game(3, { title: 'C', lastPlayedAt: '' }),
+    ]
+    const { rerender } = render(<LibraryGrid {...props({ games, total: 3 })} groupByYear />)
+    expect(screen.getByText('2026')).toBeInTheDocument()
+    expect(screen.getByText('2025')).toBeInTheDocument()
+    expect(screen.getByText('Nunca jogado')).toBeInTheDocument()
+    expect(cardOf('A')).toHaveTextContent(/Jogado \d\d\/\d\d\/2026/)
+    expect(cardOf('C')).not.toHaveTextContent('Jogado')
+
+    rerender(<LibraryGrid {...props({ games, total: 3 })} />)
+    expect(screen.queryByText('2025')).toBeNull()
+  })
+
   it('UIX-016/10 000 jogos: no máximo 100 cartões no DOM com altura e largura fixas', () => {
     render(<LibraryGrid {...props({ games: makeGames(10000), total: 10000 })} />)
 

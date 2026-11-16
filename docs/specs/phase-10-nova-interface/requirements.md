@@ -215,7 +215,7 @@ jogo com estes filtros." com "Limpar filtros") aparecem no lugar da grade.
 ### UIX-014 — Cartão com capa e título
 · alterado em 2026-11-14 (docs/specs/phase-10-1-ajustes, AJU-001, AJU-015): a área da capa pode mostrar a imagem
 substituta; o contorno de seleção aparece inteiro em todas as bordas da grade.
-Dado um jogo na grade, então o cartão mostra a área da capa (proporção 3:4, ajustada na 1.0.1 para as capas não ficarem com tarjas) e, embaixo, o título em até duas linhas
+Dado um jogo na grade, então o cartão mostra a área da capa (proporção 3:4, ajustada na 1.0.1 para as capas não ficarem com tarjas) e, embaixo, o título em até duas linhas (na 1.0.1, mais a linha "Jogado DD/MM/AAAA HH:MM" quando já foi jogado; a grade abre ordenada por última vez jogado, com uma divisória por ano, e o Big Box continua por título)
 (cortado com reticências; o título completo no atributo `title`). O cartão não mostra plataforma, tempo jogado nem
 botões. Dado uma sessão do jogo em `running` ou `grace`, então um selo "Em execução" aparece sobre a capa; em `paused`,
 "Pausado" (UI-006, UI-043); sem sessão do jogo, nenhum selo.

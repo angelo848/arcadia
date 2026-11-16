@@ -125,7 +125,7 @@ describe('FilterPanel', () => {
     }
   })
 
-  it("UI-035/'Limpar filtros' volta o FilterSpec para {version: 1} e a ordenação para title", () => {
+  it("UI-035/'Limpar filtros' volta o FilterSpec para {version: 1} e a ordenação para lastPlayed", () => {
     const onChange = vi.fn<(q: LibraryQuery) => void>()
     const active: LibraryQuery = {
       filter: { version: 1, platformIds: [2], favorite: true, text: 'zelda' },
@@ -137,7 +137,7 @@ describe('FilterPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
 
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange).toHaveBeenCalledWith({ filter: { version: 1 }, sort: 'title' })
+    expect(onChange).toHaveBeenCalledWith({ filter: { version: 1 }, sort: 'lastPlayed' })
   })
 
   it('UIX-011/não há controle "Plataforma" no painel', () => {

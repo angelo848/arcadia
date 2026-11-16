@@ -98,13 +98,13 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText(/^plataforma$/i)).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/gênero/i), { target: { value: '5' } })
-    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1, genreIds: [5] }, sort: 'title' })
+    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1, genreIds: [5] }, sort: 'lastPlayed' })
 
     fireEvent.change(screen.getByLabelText(/status/i), { target: { value: 'playing' } })
-    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1, statuses: ['playing'] }, sort: 'title' })
+    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1, statuses: ['playing'] }, sort: 'lastPlayed' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
-    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1 }, sort: 'title' })
+    expect(onChange).toHaveBeenLastCalledWith({ filter: { version: 1 }, sort: 'lastPlayed' })
   })
 
   it('UIX-012/a seção começa recolhida e aria-expanded alterna', () => {

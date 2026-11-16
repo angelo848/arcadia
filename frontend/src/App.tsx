@@ -511,6 +511,7 @@ export default function App() {
                       current={session}
                       selectedId={focusedId}
                       keyboard
+                      groupByYear={query.sort === 'lastPlayed'}
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}

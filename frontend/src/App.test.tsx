@@ -750,10 +750,10 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
     await waitFor(() =>
       expect(app.ListGames).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: { version: 1 }, sort: 'title', offset: 0 }),
+        expect.objectContaining({ filter: { version: 1 }, sort: 'lastPlayed', offset: 0 }),
       ),
     )
-    expect(screen.getByLabelText('Ordenar por')).toHaveValue('title')
+    expect(screen.getByLabelText('Ordenar por')).toHaveValue('lastPlayed')
     expect(screen.queryByLabelText('Plataforma')).toBeNull()
   })
 
@@ -775,11 +775,11 @@ describe('App: filtros, busca, ordenação e paginação', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }))
     await waitFor(() =>
       expect(app.ListGames).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: { version: 1 }, sort: 'title', offset: 0 }),
+        expect.objectContaining({ filter: { version: 1 }, sort: 'lastPlayed', offset: 0 }),
       ),
     )
     expect(screen.getByRole('button', { name: /^Todos/ })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByLabelText('Ordenar por')).toHaveValue('title')
+    expect(screen.getByLabelText('Ordenar por')).toHaveValue('lastPlayed')
   })
 
   it('UI-035/filtro sem resultado mostra "Nenhum jogo com estes filtros." e o botão Limpar filtros', async () => {
@@ -2571,7 +2571,7 @@ describe('App: Big Box novo (T41)', () => {
     expect(await within(asideOf()).findByRole('heading', { level: 2, name: 'Gran Turismo' })).toBeInTheDocument()
     expect(rowOf('Gran Turismo')).toHaveAttribute('aria-selected', 'true')
     // The shell has its own reads; the library filter was not reset.
-    expect(app.ListGames).not.toHaveBeenLastCalledWith(expect.objectContaining({ filter: { version: 1 }, sort: 'title' }))
+    expect(app.ListGames).not.toHaveBeenLastCalledWith(expect.objectContaining({ filter: { version: 1 }, sort: 'lastPlayed' }))
     expect(callsBefore).toBeGreaterThan(0)
   })
 

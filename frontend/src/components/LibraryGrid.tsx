@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type JSX, type KeyboardEvent, type MouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { GameCard, liveOf } from './GameCard'
-import { GRID_GAP, GRID_INSET, columnsFor, usableWidth, isNavKey, nextIndex } from '../lib/gridNav'
+import { GRID_GAP, GRID_INSET, columnsFor, usableWidth, isNavKey } from '../lib/gridNav'
+import { buildLayout, lastPlayedGroup, moveInLayout } from '../lib/gridLayout'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 import type { CardImage } from '../lib/metadata'
@@ -24,7 +25,10 @@ export function LibraryGrid({
   onSelect,
   onLaunch,
   keyboard,
+  groupByYear = false,
 }: {
+  // groupByYear splits the games by the year they were last played, with a divider per year.
+  groupByYear?: boolean
   // keyboard enables arrows/Home/End/Enter.
   keyboard: boolean
   games: GameView[]
@@ -67,7 +71,10 @@ export function LibraryGrid({
   }, [])
 
   const loaded = games.length
-  const rowCount = Math.ceil(loaded / cols)
+  const groupOf = groupByYear ? (g: GameView) => lastPlayedGroup(g.lastPlayedAt) : undefined
+  const layoutFor = (c: number, rh: number) => buildLayout(games, c, rh, groupOf)
+  const layout = layoutFor(cols, rowHeight)
+  const rowCount = layout.rows.length
 
   // On mount, the game in focus is brought into view once, when it is among the loaded ones [UIX-021].
   // Declared before the virtualizer so that its mount write reads the scroll position set here;
@@ -84,7 +91,8 @@ export function LibraryGrid({
       // and the virtualizer follows the scroll event.
       const box = el.getBoundingClientRect()
       const m = columnsFor(usableWidth(box.width))
-      const top = GRID_INSET + Math.floor(index / m.cols) * m.rowHeight - (box.height - m.rowHeight) / 2
+      const l = layoutFor(m.cols, m.rowHeight)
+      const top = GRID_INSET + (l.tops[l.rowOf[index] ?? 0] ?? 0) - (box.height - m.rowHeight) / 2
       el.scrollTo?.({ top: Math.max(0, top) })
     }
   }
@@ -110,7 +118,7 @@ export function LibraryGrid({
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeight,
+    estimateSize: (i) => (layout.rows[i]?.kind === 'divider' ? (layout.tops[i + 1] ?? 0) - (layout.tops[i] ?? 0) : rowHeight),
     overscan: OVERSCAN_ROWS,
     paddingStart: GRID_INSET,
     paddingEnd: GRID_INSET,
@@ -134,15 +142,21 @@ export function LibraryGrid({
     },
   })
 
-  // A new row height invalidates the sizes the virtualizer measured.
+  // A new row height or a new grouping invalidates the sizes the virtualizer measured.
   useEffect(() => {
     virtualizer.measure()
-  }, [rowHeight, virtualizer])
+  }, [rowHeight, cols, groupByYear, loaded, virtualizer])
 
   const rows = virtualizer.getVirtualItems()
 
   const lastRow = rows.at(-1)?.index ?? -1
-  const lastCard = Math.min(loaded - 1, (lastRow + 1) * cols - 1)
+  let lastCard = -1
+  for (let r = lastRow; r >= 0 && lastCard < 0; r--) {
+    const row = layout.rows[r]
+    if (row?.kind === 'cards') {
+      lastCard = row.first + row.count - 1
+    }
+  }
 
   // Prefetch [UI-036]: one call per set of loaded games, and only while more exist.
   useEffect(() => {
@@ -163,7 +177,7 @@ export function LibraryGrid({
   const selectedLoaded = selectedIndex >= 0
   // The one card that is a Tab stop: the game in focus when loaded, else the first [UIX-019].
   const stopIndex = selectedLoaded ? selectedIndex : 0
-  const stopRendered = rows.some((r) => r.index === Math.floor(stopIndex / cols))
+  const stopRendered = rows.some((r) => r.index === layout.rowOf[stopIndex])
 
   // Scrolls the row of a game into the window (or centers it) [UIX-019].
   const scrollToIndex = (index: number, center: boolean) => {
@@ -172,7 +186,7 @@ export function LibraryGrid({
       return
     }
     const height = el.getBoundingClientRect().height
-    const rowTop = GRID_INSET + Math.floor(index / cols) * rowHeight
+    const rowTop = GRID_INSET + (layout.tops[layout.rowOf[index] ?? 0] ?? 0)
     if (center) {
       el.scrollTo?.({ top: Math.max(0, rowTop - (height - rowHeight) / 2) })
     } else if (rowTop <= GRID_INSET || rowTop - GRID_INSET < el.scrollTop) {
@@ -220,7 +234,7 @@ export function LibraryGrid({
     if (from < 0) {
       return
     }
-    const to = nextIndex(from, e.key, cols, loaded)
+    const to = moveInLayout(layout, from, e.key)
     const target = games[to]
     if (to === from || target === undefined) {
       return
@@ -280,10 +294,32 @@ export function LibraryGrid({
       onBlur={onContainerBlur}
       className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2 [scrollbar-gutter:stable]"
     >
-      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+      <div className="relative w-full" style={{ height: layout.height + 2 * GRID_INSET }}>
         {rows.map((row) => {
-          const first = row.index * cols
-          const cards = games.slice(first, Math.min(first + cols, loaded))
+          const lr = layout.rows[row.index]
+          const top = GRID_INSET + (layout.tops[row.index] ?? 0)
+          if (lr === undefined) {
+            return null
+          }
+          if (lr.kind === 'divider') {
+            return (
+              <div
+                key={row.key}
+                role="presentation"
+                className="absolute top-0 flex items-end border-b border-line pb-2 text-sm text-muted"
+                style={{
+                  height: (layout.tops[row.index + 1] ?? layout.height) - (layout.tops[row.index] ?? 0) - 8,
+                  left: GRID_INSET,
+                  width: `calc(100% - ${2 * GRID_INSET}px)`,
+                  transform: `translateY(${top}px)`,
+                }}
+              >
+                Última vez jogado:&nbsp;<span className="font-semibold text-fg">{lr.label}</span>
+              </div>
+            )
+          }
+          const first = lr.first
+          const cards = games.slice(first, first + lr.count)
           return (
             <div
               key={row.key}
@@ -292,7 +328,7 @@ export function LibraryGrid({
                 height: rowHeight,
                 left: GRID_INSET,
                 width: `calc(100% - ${2 * GRID_INSET}px)`,
-                transform: `translateY(${GRID_INSET + row.index * rowHeight}px)`,
+                transform: `translateY(${top}px)`,
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                 columnGap: GRID_GAP,
               }}

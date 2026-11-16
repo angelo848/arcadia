@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import type { SessionView } from '../lib/games'
 import type { GameView } from '../lib/library'
 import type { CardImage } from '../lib/metadata'
+import { formatLocalDateTime } from '../lib/formatDate'
 import { CoverImage } from './CoverImage'
 
 // LiveMark is the session marking of a card [UI-006, UI-043]: "running" (running or
@@ -50,6 +51,7 @@ export function GameCard({
     <div
       role="option"
       aria-selected={selected}
+      aria-label={game.title}
       data-game-id={game.id}
       tabIndex={tabbable ? 0 : -1}
       onClick={() => onSelect(game.id)}
@@ -63,6 +65,9 @@ export function GameCard({
         {game.title}
       </span>
       {' '}
+      {game.lastPlayedAt !== '' && (
+        <span className="-mt-1 truncate text-xs text-muted">{`Jogado ${formatLocalDateTime(game.lastPlayedAt)}`}</span>
+      )}
       {live === 'running' && (
         <span className="absolute left-2 top-2 rounded bg-overlay px-1.5 py-0.5 text-xs font-medium text-running">
           Em execução

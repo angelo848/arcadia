@@ -34,17 +34,17 @@ describe('filters', () => {
     expect(JSON.stringify(defaultQuery.filter)).toBe('{"version":1}')
   })
 
-  it('UI-035/resetQuery volta a {version: 1} e sort title', () => {
+  it('UI-035/resetQuery volta a {version: 1} e sort lastPlayed', () => {
     const r = resetQuery()
-    expect(r).toStrictEqual({ filter: { version: 1 }, sort: 'title' })
+    expect(r).toStrictEqual({ filter: { version: 1 }, sort: 'lastPlayed' })
     expect(r).toStrictEqual(defaultQuery)
 
     // Devolve uma cópia nova: alterar o resultado não muda o padrão nem a próxima chamada.
     r.filter.platformIds = [1]
     r.filter.text = 'hades'
     r.sort = 'year'
-    expect(resetQuery()).toStrictEqual({ filter: { version: 1 }, sort: 'title' })
-    expect(defaultQuery).toStrictEqual({ filter: { version: 1 }, sort: 'title' })
+    expect(resetQuery()).toStrictEqual({ filter: { version: 1 }, sort: 'lastPlayed' })
+    expect(defaultQuery).toStrictEqual({ filter: { version: 1 }, sort: 'lastPlayed' })
   })
 
   it('UI-033/withText com texto vazio ou só espaços tira o filtro text', () => {
@@ -122,7 +122,7 @@ describe('filters', () => {
       sort: 'year',
     })
 
-    expect(withPlatforms(defaultQuery, [3])).toStrictEqual({ filter: { version: 1, platformIds: [3] }, sort: 'title' })
-    expect(withPlatforms(defaultQuery, undefined)).toStrictEqual({ filter: { version: 1 }, sort: 'title' })
+    expect(withPlatforms(defaultQuery, [3])).toStrictEqual({ filter: { version: 1, platformIds: [3] }, sort: 'lastPlayed' })
+    expect(withPlatforms(defaultQuery, undefined)).toStrictEqual({ filter: { version: 1 }, sort: 'lastPlayed' })
   })
 })

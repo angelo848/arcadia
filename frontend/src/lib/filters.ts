@@ -28,7 +28,8 @@ export type FilterSpec = {
 
 export type LibraryQuery = { filter: FilterSpec; sort: SortKey }
 
-const defaultSort: SortKey = 'title'
+// The desktop library opens by the last played games; Big Box keeps its own order by title.
+const defaultSort: SortKey = 'lastPlayed'
 
 function makeDefaultQuery(): LibraryQuery {
   return { filter: { version: 1 }, sort: defaultSort }
