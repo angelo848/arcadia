@@ -991,3 +991,115 @@ Os 94 requisitos ativos têm tarefa (um requisito foi removido). Os três marcad
 ## Decisões novas que merecem ADR
 
 Nenhuma além de **0035** (fechar o jogo pelo controle), **0036** (Big Box com temas selecionáveis) e **0037** (vídeo do ScreenScraper como mídia `video` na fila), já escritos. Se a T02 ou a T45 revelarem divergência da API que mude uma regra visível (ex.: sem busca por nome, vídeo com outro nome de tipo), registrar no 0037. O único ponto fora do que os ADRs dizem é a abertura do roteador ao cancelamento no `Close()` (achado 1), que é detalhe do 0035 e não pede ADR próprio.
+
+---
+
+# Correções da revisão do diff (2026-11-15)
+
+Acrescentadas pelo spec-writer depois da revisão do diff (T44), sem renumerar nada. Requisitos novos: **VID-027, VID-028, VID-029, SSC-006**; alterado: **VID-009**; CON-023 sem mudança de texto (detalhe em [design §2.5](design.md)). `prefers-reduced-motion` não é requisito desta fase (nenhuma tarefa). Mesmas premissas: test-writer primeiro, implementer depois, uma tarefa por commit, sem rede nem `Sleep`, todo caso começa pelo ID. Ao fim: `go build ./...`, `go vet ./...`, `CGO_ENABLED=0 go build ./...`, `go test ./...` e `-race` em `internal/scrapers` e `internal/agent`.
+
+## T46 — Scrapers: origem da URL de mídia antes das credenciais
+- Requisitos: VID-027, VID-020, VID-012, SSC-004. **implementer:** `internal/scrapers/screenscraper.go` (campo `baseURL *url.URL` analisado em `NewScreenScraper`; `OpenVideo` chama a conferência antes de `Creds`, do acréscimo das credenciais e de `do`).
+```go
+// checkMediaOrigin applies rules §10: https on the BaseURL host or on *.screenscraper.fr; http only when the BaseURL itself is
+// http and the host is the BaseURL host. Refusal: fmt.Errorf("%w: URL de vídeo fora do ScreenScraper", ErrBadRequest).
+func checkMediaOrigin(base *url.URL, raw string) (*url.URL, error)
+```
+- **test-writer:** `internal/scrapers/screenscraper_origin_test.go` (novo; tabela com os vetores de [rules §10](contracts/screenscraper-rules.md)), `screenscraper_test.go`, `internal/agent/video_resolver_test.go`:
+  - `VID-027/checkMediaOrigin: um caso por linha dos vetores de rules §10 (aceita ou recusa)`;
+  - `VID-027/URL recusada: OpenVideo devolve ErrBadRequest com "URL de vídeo fora do ScreenScraper", sem requisição (dois httptest: o do BaseURL e o "alheio" contam zero), sem chamar Creds (contador) e sem reservar o Limiter (relógio fake: a próxima requisição não espera)`;
+  - `VID-027/URL recusada: valores marcados de devid, devpassword, ssid e sspassword não aparecem no erro nem no log capturado`;
+  - `VID-027/URL aceita (mesmo host do httptest) recebe as quatro credenciais e softname como antes`;
+  - `VID-027/http aceito só com BaseURL http e no mesmo host; com BaseURL https um http de *.screenscraper.fr é recusado`;
+  - `VID-027/resolvedor: mídia com URL fora vira *media.PermanentError (sem nova tentativa), FetchVideo não é chamado, last_error sem credencial`.
+- Dependência: nenhuma (T21 e T23 já feitas). Arquivo compartilhado: `screenscraper.go` e `screenscraper_test.go` (T46, depois T47, depois T48).
+
+## T47 — Scrapers: redirecionamento só no mesmo host
+- Requisitos: VID-028, VID-020, VID-015. **implementer:** `internal/scrapers/screenscraper.go` (`NewScreenScraper` copia o `*http.Client` e põe `CheckRedirect`; `netErr` reconhece o sentinela).
+```go
+var errRedirectOffHost = errors.New("scrapers: redirecionamento para fora do ScreenScraper") // unexported
+// sameHostRedirect: follows only when req.URL.Host equals via[0].URL.Host (case-insensitive, with port) and the scheme does not
+// go from https to http; keeps the net/http limit of 10. Otherwise errRedirectOffHost, mapped to
+// fmt.Errorf("%w: redirecionamento para fora do ScreenScraper", ErrBadRequest).
+func sameHostRedirect(req *http.Request, via []*http.Request) error
+```
+- **test-writer:** `internal/scrapers/screenscraper_redirect_test.go` (novo; dois `httptest`):
+  - `VID-028/busca, informações e vídeo redirecionados ao mesmo host são seguidos`;
+  - `VID-028/redirecionamento a outro host: o segundo servidor conta zero requisições, o erro é ErrBadRequest com "redirecionamento para fora do ScreenScraper" e não é ErrUnavailable`;
+  - `VID-028/redirecionamento de https para http no mesmo host é recusado (sameHostRedirect com requisições montadas, sem rede)`;
+  - `VID-028/mais de 10 redirecionamentos no mesmo host continuam falhando como no net/http`;
+  - `VID-028/o *http.Client passado em SSConfig.HTTP não é alterado (CheckRedirect continua nil depois de NewScreenScraper)`;
+  - `VID-028/valores marcados das credenciais não aparecem no erro nem no log capturado`;
+  - `VID-028/resolvedor: redirecionamento recusado no download vira *media.PermanentError sem nova tentativa`.
+- Dependência: T46 (mesmo arquivo).
+
+## T48 — Scrapers e agente: 200 `text/*` no download passa pela classificação
+- Requisitos: VID-029, VID-014, VID-016, VID-017, VID-018. **implementer:** `internal/scrapers/screenscraper.go` (`OpenVideo`: `mime.ParseMediaType` do `Content-Type`; `text/*` lê até 4.096 bytes, fecha e classifica), `internal/agent/video_resolver.go` (`apiError` traduz `ErrNotVideo`).
+```go
+var ErrNotVideo = errors.New("scrapers: resposta do ScreenScraper não é vídeo") // text body with no known message
+// classifyMediaText(body []byte) error: the text branch of classify (ErrQuota, ErrCredentials, ErrUnavailable, ErrNotFound); otherwise ErrNotVideo.
+```
+- **test-writer:** `internal/scrapers/screenscraper_test.go`, `internal/agent/video_resolver_test.go`, `internal/agent/video_lane_test.go`:
+  - `VID-029/200 text/plain com "Votre quota de scrape est dépassée" vira ErrQuota`; `VID-029/200 text/html com "blacklisté" vira ErrCredentials`; `VID-029/200 text/plain com "API closed" vira ErrUnavailable`; `VID-029/200 text/plain com "non trouvée" vira ErrNotFound`; `VID-029/200 text/plain "NOMEDIA" vira ErrNotVideo`;
+  - `VID-029/Content-Type com parâmetros e caixa variada (text/plain; charset=utf-8, TEXT/HTML) é reconhecido`; `VID-029/video/mp4 e Content-Type ausente seguem para o corpo como antes`; `VID-029/corpo de texto lido no máximo até 4.096 bytes e fechado (leitor espião)`;
+  - `VID-029/resolvedor: cota no texto pausa a raia (paused-quota) sem gastar tentativa; credencial no texto dá paused-credentials; API fechada segue MID-008`; `VID-029/resolvedor: não encontrado vira permanente "sem vídeo no ScreenScraper" e ErrNotVideo vira permanente "formato de vídeo não suportado"`; `VID-029/FetchVideo nunca é chamado e a pasta de mídia fica sem temporário`.
+- Dependência: T47 (mesmo arquivo).
+
+## T49 — Chaves e agente: `id` e `secret` sem `\n` nem `\r`
+- Requisitos: SSC-006, SSC-001, VID-017. **implementer:** `internal/scrapers/keys.go`, `internal/scrapers/provider.go` (só o sentinela), `internal/agent/scrape.go`.
+```go
+var ErrInvalidKey = errors.New("scrapers: chave com quebra de linha") // provider.go
+// SetPair: strings.ContainsAny(id, "\r\n") || strings.ContainsAny(secret, "\r\n") -> ErrInvalidKey, nothing written (checked before any trim).
+// scrapeService.setKey (screenscraper*): same check before SetPair -> -32602; ErrInvalidKey from SetPair also -> -32602; no notifyVideoCreds.
+```
+- **test-writer:** `internal/scrapers/keys_test.go`, `internal/agent/scrape_test.go`:
+  - `SSC-006/SetPair recusa \n e \r no começo, no meio e no fim do id e do secret com ErrInvalidKey e o KeyStore falso não recebe escrita`;
+  - `SSC-006/provider.setKey screenscraper e screenscraperdev com \n ou \r em key ou secret: -32602, nada gravado, a credencial anterior continua (Pair devolve a antiga)`;
+  - `SSC-006/secret "senha\n" (só quebra no fim) é recusado, não aparado`; `SSC-006/o gancho de credenciais não é chamado na recusa`;
+  - `SSC-006/igdb e steamgriddb não mudam (SSC-001)`.
+- Dependência: nenhuma. Arquivo compartilhado: `scrape.go` só aqui nesta seção.
+
+## T50 — Fila: critério único `kind == "video"` no despacho e no roteador
+- Requisitos: VID-009, VID-003, VID-007, VID-021. **implementer:** `internal/agent/media_queue.go`.
+```go
+// isVideoJob is the only lane criterion (VID-009): used by dispatch (which slot) and by fetchRouter.Fetch (which fetcher).
+func isVideoJob(job store.MediaJob) bool { return job.Kind == "video" }
+```
+`CancelVideo` e a contagem de vídeos em andamento (`active` da raia) usam o mesmo critério.
+- **test-writer:** `internal/agent/video_lane_test.go`, `media_queue_test.go`:
+  - `VID-009/job kind video com provider diferente de screenscraper ocupa a vaga de vídeo e vai ao resolvedor`;
+  - `VID-009/job kind cover com provider screenscraper (montado direto no store) ocupa uma vaga de imagem e vai ao media.Store`;
+  - `VID-009/com a raia de vídeo pausada, um job de imagem de qualquer provider começa na hora e nenhum job kind video é despachado`;
+  - `VID-009/despacho e roteador concordam para cada combinação de kind e provider (tabela)`.
+- Dependência: nenhuma.
+
+## T51 — `winapi`: `ForceForeground` com a thread fixa
+- Requisitos: CON-023, CON-022. **implementer:** `internal/winapi/foreground_windows.go`.
+```go
+var ( lockThread = runtime.LockOSThread; unlockThread = runtime.UnlockOSThread ) // test seam
+// ForceForegroundWith: lockThread() first; defer unlockThread() registered before the defer of AttachThreadInput(..., false),
+// so the detach runs on the same OS thread and the thread is released last.
+```
+- **test-writer:** `internal/winapi/foreground_windows_test.go`:
+  - `CON-023/ForceForegroundWith fixa a thread antes de CurrentThread e a solta depois do AttachThreadInput(..., false) (seams gravando a ordem junto das chamadas da API falsa)`;
+  - `CON-023/o desanexar e o soltar rodam mesmo quando BringWindowToTop ou SetForegroundWindow falham`;
+  - `CON-023/foreground já é a janela: lock e unlock em par, nenhum AttachThreadInput`;
+  - `CON-023/os ids de thread do SO vistos por CurrentThread, pelo anexar e pelo desanexar são iguais (API falsa que lê windows.GetCurrentThreadId)`;
+  - `CON-023/chamada a partir de uma goroutine já fixa (LockOSThread no teste) continua fixa depois (contagem aninhada)`.
+- Dependência: nenhuma.
+
+## Ordem e rastreabilidade desta seção
+
+- T46 → T47 → T48 (mesmo `screenscraper.go`); T49, T50 e T51 em paralelo entre si e com a cadeia; depois repetir os passos 1, 2 e 4 da T44 (`spec-trace.ps1 -Spec docs/specs/phase-13-modo-console`) e a revisão do diff.
+- A T45 (manual) ganha um item: anotar o host real de `medias[].url` (se fora de `*.screenscraper.fr`, volta ao spec-writer, VID-027).
+
+| Requisito | Tarefas |
+|---|---|
+| VID-009 (alterado) | T24, T50 |
+| VID-027 | T46 |
+| VID-028 | T47 |
+| VID-029 | T48 |
+| SSC-006 | T49 |
+| CON-023 (sem mudança de texto) | T15, T51 |
+
+Com elas, os requisitos ativos passam a 98 (94 + 4 novos).

@@ -642,9 +642,14 @@ ScreenScraper já informou, `requestsToday` e `maxRequestsPerDay`.
 · verificação: teste do agente.
 
 ### VID-009 — Raia de vídeo separada das imagens
+· alterado em 2026-11-15: critério único de raia (revisão do diff: o despacho usava `provider` e o roteador do fetch, `kind`).
 Dado jobs de vídeo pendentes, então eles rodam numa raia própria com **um** download por vez, que não ocupa as 2 vagas das
 imagens: com 100 vídeos pendentes, um job de imagem novo começa na hora. A raia pausada (VID-016, VID-017) não atrasa imagens.
-· verificação: teste da fila com relógio fake e fetchers falsos (ordem e concorrência).
+Um job é de vídeo **se e somente se** `kind = video`: o despacho da fila (qual vaga ocupa) e o roteador do fetch (quem baixa)
+usam esse mesmo critério, então um job com `kind = video` ocupa a vaga de vídeo e vai ao resolvedor de vídeo e qualquer outro
+ocupa uma vaga de imagem e vai ao `media.Store`, seja qual for o `provider`.
+· verificação: teste da fila com relógio fake e fetchers falsos (ordem e concorrência; job com `kind` e `provider`
+cruzados).
 
 ### VID-010 — Identificação por nome e sistema
 Dado um job de vídeo do jogo `G`, então a busca usa `domain.SearchTerm(título de G)` e o `systemeid` da chave de seed da
@@ -746,6 +751,36 @@ vídeo" para a biblioteca, então os vídeos chegam (≤ 20 MB, `.mp4`), aparece
 cerca de 2 MB por jogo, a cota mostrada sobe, e nenhuma credencial aparece em `data\logs`.
 · verificação: manual.
 
+### VID-027 — Credencial só vai ao ScreenScraper
+· acrescentado em 2026-11-15 (revisão do diff: a URL de mídia vem da resposta JSON e recebia as quatro credenciais sem
+conferência).
+Dado uma URL de mídia vinda da resposta da API (`medias[].url`), quando o cliente vai abri-la, então, **antes** de acrescentar
+`devid`, `devpassword`, `ssid` e `sspassword` e antes do limitador, ela só é aceita com esquema `https` e host igual ao do
+`BaseURL` ou terminado em `.screenscraper.fr`; `http` só é aceito quando o próprio `BaseURL` é `http` (o `httptest` dos
+testes) e o host é o do `BaseURL` ([rules §10](contracts/screenscraper-rules.md)). Recusada (inclusive URL inválida, relativa
+ou sem host), nenhuma requisição é feita, o erro é `scrapers.ErrBadRequest` e o job falha de vez (`*media.PermanentError`, sem
+nova tentativa) com "URL de vídeo fora do ScreenScraper"; nenhuma credencial aparece no erro, no `last_error` nem no log.
+· verificação: teste do cliente com `httptest` (vetores de rules §10; servidores que contam requisições) e do resolvedor.
+
+### VID-028 — Redirecionamento só para o mesmo host
+· acrescentado em 2026-11-15 (revisão do diff).
+Dado qualquer requisição do cliente do ScreenScraper (busca, informações e vídeo), quando a resposta redireciona, então o
+redirecionamento só é seguido se o host de destino for igual ao da requisição original (sem diferença de caixa, com a porta) e o
+esquema não cair de `https` para `http`; senão, a requisição ao outro host não é feita (nenhuma credencial é reenviada a ele),
+o erro é `scrapers.ErrBadRequest` e o job falha de vez com "redirecionamento para fora do ScreenScraper", sem credencial no erro,
+no `last_error` nem no log ([rules §11](contracts/screenscraper-rules.md)).
+· verificação: teste do cliente com dois `httptest` (o segundo conta requisições e nunca é chamado).
+
+### VID-029 — Aviso em texto no lugar do vídeo
+· acrescentado em 2026-11-15 (revisão do diff: um aviso de cota no corpo virava "formato de vídeo não suportado").
+Dado o download do vídeo com status 200 e `Content-Type` `text/*` (qualquer subtipo e parâmetros, sem diferença de caixa), então
+o corpo (lido até 4.096 bytes e fechado) passa pela classificação de erros em texto de [rules §6](contracts/screenscraper-rules.md)
+em vez de ir a `FetchVideo`: aviso de cota → cota esgotada (VID-016), software bloqueado → credencial recusada (VID-017), API
+fechada → falha temporária (VID-018), não encontrado → falha de vez com "sem vídeo no ScreenScraper"; texto não reconhecido →
+falha de vez com "formato de vídeo não suportado" (VID-014). Em todos os casos nenhum arquivo temporário e nenhuma linha de
+`media` são criados.
+· verificação: teste do cliente e do resolvedor com `httptest` (um caso por texto; pasta de mídia sem resto).
+
 ---
 
 ## SSC — Credenciais do ScreenScraper
@@ -779,6 +814,15 @@ Dado `metadata.search`, `metadata.apply` e o lote, então o ScreenScraper não �
 aplicabilidade da fase 12 não muda.
 · verificação: teste do agregador (nenhuma chamada ao fake do ScreenScraper).
 
+### SSC-006 — Credencial do ScreenScraper sem quebra de linha
+· acrescentado em 2026-11-15 (revisão do diff: o valor é gravado como `id\nsenha`, e uma quebra de linha dentro de uma das
+metades troca o par lido por `Pair`).
+Dado `provider.setKey` de `screenscraper` ou `screenscraperdev`, quando `key` ou `secret` contém `\n` ou `\r` em qualquer
+posição (inclusive no começo ou no fim, sem `trim` antes da conferência), então a resposta é `-32602`, nada é gravado no Credential
+Manager, a credencial anterior continua valendo e o gancho de credenciais (VID-017) não é chamado. `scrapers.Keys.SetPair`
+recusa o mesmo caso com erro, sem gravar, para qualquer chamador.
+· verificação: teste do agente com `KeyStore` falso e teste de `Keys` (um caso por posição e por caractere).
+
 ---
 
 ## Fora desta spec
@@ -791,6 +835,10 @@ aplicabilidade da fase 12 não muda.
 - **Configurar combos, tempo de segurar e teto de vídeo** pelo usuário.
 - **Escolher o vídeo manualmente** quando a busca dá "em dúvida".
 - **Logos, caixa 3D e ícones** como mídia.
+- **Movimento reduzido (`prefers-reduced-motion`)** no Big Box (rolagem da faixa, transições, vídeo de fundo): **não é requisito
+  desta fase** (revisão do diff, 2026-11-15); nenhum teste da fase o exige e nenhum ID o cobre.
+- **Recusar quebra de linha nas credenciais do IGDB** (`SetIGDB`, mesmo formato `id\nsegredo`): fora desta fase; SSC-006 vale
+  só para `screenscraper` e `screenscraperdev`.
 
 ## Limitações conhecidas
 
@@ -821,6 +869,21 @@ aplicabilidade da fase 12 não muda.
    (decisão m; BBX-002, BBX-013..BBX-016, [bigbox-faixa §2](contracts/bigbox-faixa.md)).
 7. **Número de discos:** não gravar. Sem `game.disc_count`, sem `GameDetail.discs`, sem mudança na importação; a migração 9 só
    acrescenta o tipo `video`; o Faixa não mostra discos (BBX-031 removido; VID-001, BBX-009, BBX-016 alterados).
+
+## Correções da revisão do diff (2026-11-15)
+
+Achados do reviewer registrados na spec antes do código (tarefas T46..T51):
+
+| Achado | Requisito | Requisitos ativos afetados (texto inalterado) |
+|---|---|---|
+| Credenciais anexadas a uma URL de mídia de qualquer host | VID-027 (novo) | VID-012, VID-020, SSC-004 |
+| Redirecionamento podia levar as credenciais a outro host | VID-028 (novo) | VID-015, VID-020 |
+| 200 `text/*` com aviso de cota virava "formato não suportado" | VID-029 (novo) | VID-014, VID-016, VID-017, VID-018 |
+| `\n`/`\r` em `id` ou `secret` corrompia o par gravado | SSC-006 (novo) | SSC-001, VID-017, VID-019 |
+| Despacho por `provider`, roteamento por `kind` | VID-009 (alterado) | VID-003, VID-007, VID-021 |
+| `AttachThreadInput` sem a thread fixa (`runtime.LockOSThread`) | nenhum novo: detalhe de implementação de CON-023 ([design §2.5](design.md)) | CON-022, CON-023 |
+
+`prefers-reduced-motion` não é requisito desta fase (ver "Fora desta spec").
 
 ## ADRs propostos
 

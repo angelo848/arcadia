@@ -1,6 +1,6 @@
 # ScreenScraper — regras do provedor de vídeo
 
-Requisitos: VID-003, VID-009..VID-020, SSC-001, SSC-004. Os pontos marcados **(a conferir)** dependem da conferência
+Requisitos: VID-003, VID-009..VID-020, VID-027..VID-029, SSC-001, SSC-004, SSC-006. Os pontos marcados **(a conferir)** dependem da conferência
 ([screenscraper-api-notes.md](screenscraper-api-notes.md)); uma divergência que mude regra visível volta à spec antes do código.
 
 ## 1. Sistemas por chave de seed (a conferir)
@@ -32,7 +32,7 @@ Base `https://api.screenscraper.fr/api2/`. Parâmetros comuns de toda requisiç�
 |---|---|---|---|
 | Busca | `jeuRecherche.php` | `systemeid`, `recherche` = `domain.SearchTerm(título)` | lista de jogos (até ~30), cada um com `id`, `noms[] {region, text}`, `systeme.id`, `dates[]`, talvez `medias[]` |
 | Informações | `jeuInfos.php` | `systemeid`, `gameid` | só quando a busca não trouxe `medias[]` |
-| Download | URL de `medias[].url` | (credenciais já embutidas pela API ou acrescentadas pelo cliente) | o arquivo do vídeo |
+| Download | URL de `medias[].url` | (credenciais já embutidas pela API ou acrescentadas pelo cliente, **só depois** da conferência de origem do §10) | o arquivo do vídeo |
 
 Toda resposta JSON pode trazer `response.ssuser` com `maxthreads`, `maxrequestspermin`, `requeststoday`, `maxrequestsperday`,
 `requestskotoday`, `maxrequestskoperday`, guardados em `SSQuota` (última leitura vale).
@@ -75,6 +75,7 @@ Vetores (todos com o sistema pedido e sem ano, salvo indicação):
 | `Content-Length` > 20.971.520 | cabeçalho da resposta | idem, corpo não lido |
 | corpo > 20.971.520 bytes | durante a leitura (`LimitReader` de 20 MiB + 1) | idem, temporário apagado |
 | bytes 4..8 ≠ `ftyp` | primeiros 12 bytes | permanente "formato de vídeo não suportado" |
+| 200 com `Content-Type` `text/*` | cabeçalho da resposta, antes de `FetchVideo` | classificação do texto (§6, VID-029); corpo lido até 4.096 bytes, nenhum temporário |
 
 Gravação: `<mediaRoot>/<gameId>/<sha256>.mp4`, `thumb_path = ''`, `kind = video`, `provider = screenscraper`,
 `source_url = RedactURL(url da mídia)`.
@@ -92,8 +93,24 @@ Gravação: `<mediaRoot>/<gameId>/<sha256>.mp4`, `thumb_path = ''`, `kind = vide
 | 430, 431 | cota diária (ou de não encontrados) esgotada | raia `paused-quota` por 1 h; job volta a pendente sem gastar tentativa |
 | 5xx, rede, prazo | temporária | MID-008 |
 | `requeststoday ≥ maxrequestsperday` na última resposta | cota esgotada (preventivo) | `paused-quota` antes da próxima requisição |
+| URL de mídia fora da origem (§10) | pedido inválido (`ErrBadRequest`), **sem requisição** | permanente "URL de vídeo fora do ScreenScraper" (VID-027) |
+| Redirecionamento para outro host ou de `https` para `http` (§11) | pedido inválido (`ErrBadRequest`), o outro host não é chamado | permanente "redirecionamento para fora do ScreenScraper" (VID-028) |
 
 Credencial ausente (qualquer das duas) → `no-credentials`, nenhuma requisição.
+
+**Texto no corpo (download do vídeo, VID-029).** Um 200 com `Content-Type` `text/*` (subtipo e parâmetros livres, sem diferença de
+caixa: `text/plain; charset=utf-8`, `TEXT/HTML`) no download não é vídeo: o corpo, lido até 4.096 bytes e fechado, passa pela
+mesma classificação de texto dos endpoints JSON, nesta ordem:
+
+| Texto contém | Classe | Efeito |
+|---|---|---|
+| `quota de scrape` | cota (`ErrQuota`) | `paused-quota`, sem gastar tentativa (VID-016) |
+| `blacklisté` | credencial (`ErrCredentials`) | `paused-credentials`, sem gastar tentativa (VID-017) |
+| `API closed` ou `API totalement fermé` | temporária (`ErrUnavailable`) | MID-008 (VID-018) |
+| `non trouvée`, ou começa por `Erreur : Rom` | não encontrado (`ErrNotFound`) | permanente "sem vídeo no ScreenScraper" |
+| nenhum dos acima (ex.: `NOMEDIA`) | formato | permanente "formato de vídeo não suportado" (VID-014) |
+
+Outro `Content-Type` (ou ausente) segue para `FetchVideo`, que confere `ftyp` (§5).
 
 ## 7. Limites
 
@@ -108,6 +125,9 @@ Credencial ausente (qualquer das duas) → `no-credentials`, nenhuma requisiçã
 - `RedactURL(raw)`: remove os parâmetros `devid`, `devpassword`, `ssid` e `sspassword` (qualquer caixa) da query; URL inválida
   vira `"<url inválida>"`. Usada em: `media.source_url`, `media_job.last_error`, todo log, todo erro que sobe.
 - Erros de `net/http` (`*url.Error`) são reconstruídos com `URL = RedactURL(...)` antes de embrulhar.
+- As credenciais só são acrescentadas a uma URL que passou pelo §10, e só seguem num redirecionamento permitido pelo §11.
+- `Keys.SetPair` e `provider.setKey` recusam `\n` e `\r` em qualquer posição do `id` ou do `secret` (SSC-006): `-32602` no IPC,
+  nada gravado, a credencial anterior continua.
 
 ## 9. Estados da raia
 
@@ -119,3 +139,50 @@ Credencial ausente (qualquer das duas) → `no-credentials`, nenhuma requisiçã
 | `no-credentials` | uma das duas credenciais ausente ao despachar | as duas passam a existir |
 
 O estado vive só em memória (some ao reiniciar o agente; a primeira requisição o refaz).
+
+Qual raia: um job é de vídeo **se e somente se** `kind = video` (VID-009). O despacho (vaga de 1 ou vagas de 2) e o roteador do
+fetch (resolvedor de vídeo ou `media.Store`) usam esse único critério; `provider` não decide raia.
+
+## 10. Origem da URL de mídia (VID-027)
+
+A URL de `medias[].url` vem da resposta JSON e não é confiável. `OpenVideo` a confere **antes** de ler as credenciais, de
+acrescentá-las e de passar pelo limitador. Com `b` = `BaseURL` analisado e `u` = a URL da mídia analisada:
+
+1. `url.Parse` falha, `u` não é absoluta ou `u.Host` é vazio → recusa.
+2. Esquema (sem diferença de caixa): `https` aceito; `http` aceito **só** quando `b.Scheme == "http"` **e** `u.Host == b.Host`
+   (o `httptest` dos testes; em produção o `BaseURL` é `https` e `http` nunca passa); qualquer outro → recusa.
+3. Host (sem diferença de caixa): `u.Host == b.Host` (com a porta), ou `u.Hostname()` termina em `.screenscraper.fr`
+   (sufixo com o ponto) → aceito; senão → recusa.
+
+Recusa: `ErrBadRequest` embrulhado com "URL de vídeo fora do ScreenScraper", nenhuma requisição, nenhuma reserva do limitador,
+nenhuma leitura de `Creds`; o `Warn` do resolvedor traz só o passo e a mensagem (nunca a URL nem credencial).
+
+Vetores (`BaseURL` = `https://api.screenscraper.fr/api2/`, salvo indicação):
+
+| URL da mídia | Resultado |
+|---|---|
+| `https://api.screenscraper.fr/api2/mediaVideoJeu.php?systemeid=4&jeuid=1&media=video-normalized` | aceita (mesmo host) |
+| `https://neoclone.screenscraper.fr/api2/mediaVideoJeu.php?...` | aceita (sufixo) |
+| `HTTPS://NEOCLONE.SCREENSCRAPER.FR/v.mp4` | aceita (caixa não importa) |
+| `http://neoclone.screenscraper.fr/v.mp4` | recusa (`http` com `BaseURL` `https`) |
+| `https://screenscraper.fr.evil.example/v.mp4` | recusa |
+| `https://evilscreenscraper.fr/v.mp4` | recusa (sem o ponto antes do sufixo) |
+| `https://x.screenscraper.fr@evil.example/v.mp4` | recusa (o host é `evil.example`) |
+| `ftp://neoclone.screenscraper.fr/v.mp4` | recusa (esquema) |
+| `/api2/mediaVideoJeu.php?...` e `//evil.example/v.mp4` | recusa (relativa / sem esquema) |
+| `%zz` (inválida) | recusa |
+| `BaseURL` = `http://127.0.0.1:P/`: `http://127.0.0.1:P/v.mp4` | aceita (o `httptest`) |
+| `BaseURL` = `http://127.0.0.1:P/`: `http://127.0.0.1:Q/v.mp4` (outra porta) | recusa |
+| `BaseURL` = `http://127.0.0.1:P/`: `http://neoclone.screenscraper.fr/v.mp4` | recusa (`http` fora do host do `BaseURL`) |
+
+## 11. Redirecionamentos (VID-028)
+
+Toda requisição do cliente (busca, informações e vídeo) usa um `http.Client` próprio do `ScreenScraper`: cópia rasa do
+`SSConfig.HTTP` (ou do padrão) com `CheckRedirect` próprio; o cliente compartilhado do agente nunca é alterado. O `CheckRedirect`:
+
+- segue só se `req.URL.Host` é igual a `via[0].URL.Host` (sem diferença de caixa, com a porta) **e** o esquema não passa de
+  `https` para `http`;
+- mantém o teto de 10 redirecionamentos do `net/http`;
+- senão devolve erro: o pedido ao outro host não é feito (nenhuma credencial é reenviada a ele) e o cliente devolve
+  `ErrBadRequest` embrulhado com "redirecionamento para fora do ScreenScraper" (permanente, nunca `ErrUnavailable`), com o
+  `*url.Error` passado por `RedactError`.

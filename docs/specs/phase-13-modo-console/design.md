@@ -197,6 +197,13 @@ type windowCloser interface {
   `SetForegroundWindow`; se `GetForegroundWindow() != hwnd`, `AttachThreadInput(fg, self, true)` → `BringWindowToTop` →
   `SetForegroundWindow` → `AttachThreadInput(..., false)`. Devolve `bool` só para o `Debug`. A chance boa: logo depois de o jogo
   morrer **não há processo em primeiro plano**, e o Windows aceita o pedido.
+- **Thread fixa (revisão do diff, 2026-11-15; CON-023):** `AttachThreadInput` liga a fila de entrada da thread **do SO** que
+  chamou `GetCurrentThreadId`; se o runtime trocar a goroutine de thread entre o anexar e o desanexar, o desanexar vai para outra
+  thread e a primeira fica presa à fila do primeiro plano. `ForceForegroundWith` faz `runtime.LockOSThread()` no começo e
+  `defer runtime.UnlockOSThread()` registrado **antes** do `defer` do desanexar (então desanexa e só depois solta a thread),
+  cobrindo `CurrentThread`, os dois `AttachThreadInput`, `BringWindowToTop` e `SetForegroundWindow`. O par é aninhável (Go conta
+  os `LockOSThread`), então chamar de uma thread já fixa (o laço da janela) é seguro. Seam para teste: variáveis de pacote
+  `lockThread`/`unlockThread` (padrão `runtime.LockOSThread`/`runtime.UnlockOSThread`).
 - **Frontend:** o shell do Big Box assina `game:closedByHotkey`; se o Big Box está ativo: `BringToFront()`, `enterBigBox()`,
   `dispatch({type: 'gameClosed', gameId})` (sai de Detalhes, libera a suspensão, foca o jogo se estiver na aba). Big Box inativo:
   ignora.
@@ -316,7 +323,7 @@ receba `BigBoxThemeProps` e um bloco de tokens.
   provavelmente vídeo por plataforma (conferência da API, decisão k): por isso fica para uma fase própria.
 - **Vitrine:** fora (decisão do usuário).
 
-## 5. Vídeo [VID-001..VID-026, SSC-001..SSC-005]
+## 5. Vídeo [VID-001..VID-029, SSC-001..SSC-006]
 
 ### 5.1 Quando o vídeo é buscado [VID-004..VID-007]
 
@@ -333,8 +340,10 @@ revisado e confirmado; o pedido explícito cobre a biblioteca importada antes de
 
 ### 5.2 Fila [VID-002, VID-003, VID-009, VID-016..VID-019]
 
-- `mediaQueue.dispatch` separa os jobs por raia: `provider == "screenscraper"` → `videoLane` (semáforo de 1); o resto → o
-  semáforo de 2 atual. A raia guarda `pause{kind: quota|credentials, until}` em memória (sob `q.mu`); pausada, seus jobs não são
+- `mediaQueue.dispatch` separa os jobs por raia: `kind == "video"` → `videoLane` (semáforo de 1); o resto → o
+  semáforo de 2 atual. · alterado em 2026-11-15 (VID-009, revisão do diff): o critério era `provider == "screenscraper"` no
+  despacho e `kind == "video"` no roteador do fetch; os dois passam a chamar **uma** função, `isVideoJob(job store.MediaJob) bool`
+  (`job.Kind == "video"`), em `media_queue.go`, para a vaga e para o baixador nunca divergirem. A raia guarda `pause{kind: quota|credentials, until}` em memória (sob `q.mu`); pausada, seus jobs não são
   despachados e o `nextDeadline` inclui `until` (quota). `provider.setKey`/`deleteKey` de `screenscraper*` chamam
   `q.VideoCredentialsChanged()` (limpa a pausa de credencial e `Notify`).
 - Erros do resolvedor classificados por tipo (`errors.As`): `*media.PermanentError` → `failed` na hora;
@@ -344,7 +353,7 @@ revisado e confirmado; o pedido explícito cobre a biblioteca importada antes de
   manda `kind == "video"` ao `videoFetcher` e o resto ao `media.Store.Fetch` atual.
 - `video.status` lê contagens do store e o estado da raia.
 
-### 5.3 Resolvedor e cliente [VID-010..VID-015, VID-020, SSC-004]
+### 5.3 Resolvedor e cliente [VID-010..VID-015, VID-020, VID-027..VID-029, SSC-004]
 
 ```go
 // internal/scrapers
@@ -372,10 +381,37 @@ confere `size` → `OpenVideo` → `FetchVideo`. Cada requisição passa pelo `L
 `FetchVideo` escreve em `<dir>/<rand>.tmp` com `io.TeeReader` para o `sha256`, limita a 20 MiB + 1, confere `ftyp` nos primeiros
 12 bytes, renomeia para `<hash>.mp4` (ou apaga o temporário se já existe) e apaga o temporário em qualquer erro.
 
-### 5.4 Credenciais [SSC-001..SSC-003, VID-019, VID-020]
+**Correções da revisão do diff (2026-11-15) [VID-027, VID-028, VID-029, VID-020].** Ordem de `OpenVideo`:
+
+1. `ctx.Err()`.
+2. `checkMediaOrigin(base *url.URL, raw string) (*url.URL, error)` (pura, [rules §10](contracts/screenscraper-rules.md)):
+   recusa → `fmt.Errorf("%w: URL de vídeo fora do ScreenScraper", ErrBadRequest)`, **sem** ler `Creds`, sem `Limiter.Wait` e
+   sem requisição. O `BaseURL` é analisado uma vez em `NewScreenScraper` (campo não exportado `baseURL *url.URL`).
+3. `Creds()` e o acréscimo das quatro credenciais em memória (como hoje).
+4. `do` (limitador e GET) com o cliente próprio (abaixo).
+5. Status ≠ 200 → `classify` (como hoje). Status 200 com `mime.ParseMediaType(Content-Type)` começando por `text/` → lê até
+   4.096 bytes, fecha o corpo e devolve `classifyMediaText(body)`: o `classify` de texto quando reconhece (cota, credencial,
+   API fechada, não encontrado) e, senão, o sentinela novo `scrapers.ErrNotVideo` (o pacote `scrapers` não importa `media`); o
+   `apiError` do resolvedor traduz `ErrNotVideo` em `media.Permanent("formato de vídeo não suportado")` e já traduz
+   `ErrNotFound` do passo "baixar" em "sem vídeo no ScreenScraper".
+6. Senão devolve o corpo e o `Content-Length` (como hoje).
+
+`NewScreenScraper` monta `s.http` como **cópia rasa** de `cfg.HTTP` (ou de `http.DefaultClient`) com
+`CheckRedirect = sameHostRedirect` ([rules §11](contracts/screenscraper-rules.md)); o `*http.Client` compartilhado do agente
+(usado pelas imagens e pelos outros provedores) não é tocado. `sameHostRedirect(req, via)` devolve
+`errRedirectOffHost` quando `!strings.EqualFold(req.URL.Host, via[0].URL.Host)` ou `via[0].URL.Scheme == "https" &&
+req.URL.Scheme != "https"`, e `http.ErrUseLastResponse` nunca (o 3xx não é tratado como sucesso). Em `netErr`,
+`errors.Is(err, errRedirectOffHost)` → `fmt.Errorf("%w: redirecionamento para fora do ScreenScraper", ErrBadRequest)` antes do
+caminho de `ErrUnavailable`; a mensagem não leva a URL. O `apiError` do resolvedor mantém `ErrBadRequest` → permanente.
+
+### 5.4 Credenciais [SSC-001..SSC-003, SSC-006, VID-019, VID-020]
 
 `scrapers.Keys` ganha `SetPair(provider, id, secret)`/`Pair(provider)` (mesmo formato `id\nsenha` do IGDB) para
-`screenscraper` e `screenscraperdev`. O agente valida o enum novo em `provider.*`. A UI (`ProviderKeysDialog`) ganha a seção
+`screenscraper` e `screenscraperdev`. O agente valida o enum novo em `provider.*`.
+· alterado em 2026-11-15 (SSC-006, revisão do diff): `SetPair` recusa `id` ou `secret` com `\n` ou `\r` em qualquer posição
+(`strings.ContainsAny(v, "\r\n")`, antes de qualquer `trim`) com o sentinela novo `scrapers.ErrInvalidKey`, sem gravar;
+`scrapeService.setKey` confere o mesmo antes de chamar `SetPair` e responde `-32602` (também mapeia `ErrInvalidKey` para
+`-32602`, por defesa), sem chamar `notifyVideoCreds`. `SetIGDB` não muda nesta fase. A UI (`ProviderKeysDialog`) ganha a seção
 ScreenScraper e o bloco de vídeos (`VideoStatus` a cada 5 s com a janela aberta, `setInterval` limpo ao fechar).
 
 ### 5.5 Servir o vídeo [VID-022]
@@ -390,6 +426,12 @@ tarefa; se não repassar, o `<video>` ainda toca do começo com 200 (o Faixa nã
   [contracts/screenscraper-api-notes.md](contracts/screenscraper-api-notes.md) **antes** do cliente; divergência que mude regra
   visível volta à spec.
 - **URL de mídia com credenciais embutidas** na resposta: `RedactURL` em tudo que é gravado ou registrado (VID-020).
+- **URL de mídia apontando para outro host** (resposta adulterada ou servidor comprometido): as credenciais só vão a
+  `https` no host do `BaseURL` ou em `*.screenscraper.fr`, e só seguem redirecionamento no mesmo host (VID-027, VID-028).
+  Risco residual: um subdomínio de `screenscraper.fr` fora do controle do ScreenScraper; aceito.
+- **Espelho real em outro domínio:** se a conferência (T45) mostrar que `medias[].url` usa um host fora de `*.screenscraper.fr`,
+  o vídeo passa a falhar com "URL de vídeo fora do ScreenScraper"; a lista de hosts volta à spec (questão em aberto).
+- **`prefers-reduced-motion`** não é requisito desta fase (requirements, "Fora desta spec").
 - **Fila grande consumindo a cota:** raia de 1, intervalo ≥ 1,5 s, pausa por cota sem gastar tentativa, `video.cancelPending`.
 - **Disco:** ~2 MB por jogo (medição de 2026-11-15), sem limite total por decisão do usuário; o teto de 20 MB é a trava.
 
