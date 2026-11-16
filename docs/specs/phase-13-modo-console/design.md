@@ -251,7 +251,7 @@ Nenhuma tabela referencia `media`/`media_job`, então a reconstrução não prec
 `video.cancelPending`, `video.status`; notificação `game.closedByHotkey`; enums ampliados; blocos `x-console` e `x-video`.
 Contrato completo: [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.15.0 = v0.14.0 + o delta).
 
-## 4. Big Box novo [BBX-001..BBX-044]
+## 4. Big Box novo [BBX-001..BBX-045]
 
 ### 4.1 Estrutura
 
@@ -289,7 +289,7 @@ frontend/src/bigbox/
 
 - Abas: `Catalog` (plataformas com `gameCount`). Lista: ~~`useInfiniteQuery(['bigbox', tabPlatformId])` sobre `ListGames` com
   `FilterSpec{platformIds}` e `sort: 'title'`, páginas de 200; próxima página quando `focus ≥ loaded − 10`~~ · alterado em
-  2026-11-16: a aba é lida inteira antes de aparecer (§4.7.3, BBX-038).
+  2026-11-16 (aprovado): páginas de `V + 3` com pré-busca à frente do foco (§4.7.3, BBX-007, BBX-038).
 - Jogo em foco: `GetGame` (`['game', id]`), `MediaList` (`['media', id]`, a mesma chave de IMG-008), `CurrentSession`.
 - Eventos: `media:changed` (já invalida `['media', id]`), `session:changed` (marca e relê `['game', id]` ao fim),
   `game:closedByHotkey` (§2.5).
@@ -324,7 +324,7 @@ receba `BigBoxThemeProps` e um bloco de tokens.
   provavelmente vídeo por plataforma (conferência da API, decisão k): por isso fica para uma fase própria.
 - **Vitrine:** fora (decisão do usuário).
 
-### 4.7 Ajustes do teste com controle (2026-11-16) [BBX-006, BBX-015, BBX-016, BBX-024..BBX-026, BBX-032..BBX-044]
+### 4.7 Ajustes do teste com controle (2026-11-16, aprovados) [BBX-006, BBX-007, BBX-015, BBX-016, BBX-024..BBX-027, BBX-032..BBX-045]
 
 Prevalece sobre §4.2..§4.5 onde divergir. Contrato: [bigbox-faixa §1, §1.1, §2, §3, §3.1, §4..§7](contracts/bigbox-faixa.md).
 Nenhuma mudança no Go, no IPC nem no banco; só `frontend/src/bigbox/`, `frontend/src/index.css` e os testes.
@@ -342,10 +342,10 @@ a "troca" de imagem era um contorno movendo-se fora da tela. Nenhum teste passav
 export type DetailsFocus = 'play' | 'playUntracked' | 'gallery'
 export type DetailsButton = 'play' | 'playUntracked'
 export type NavState = { /* ... */ detailsFocus: DetailsFocus; detailsButton: DetailsButton; gallery: number /* ... */ }
-export type NavCtx = { tabs: number; total: number; galleryCount: number; focusedGameId: number | null; videoVisible: boolean } // sem loaded
+export type NavCtx = { tabs: number; total: number /* T */; loaded: number /* L */; galleryCount: number; focusedGameId: number | null; videoVisible: boolean }
 export type NavAction = /* ... */ | { type: 'galleryChanged'; count: number }
 export type NavEffect = { kind: 'launch' | 'launchUntracked'; gameId: number } | { kind: 'exit' } | { kind: 'bringToFront' } | { kind: 'enterBigBox' }
-// sem 'fetchNextPage'; PREFETCH_BEFORE_END removido
+// sem 'fetchNextPage' (a pré-busca é do shell, §4.7.3); PREFETCH_BEFORE_END removido; next limitado a min(total, loaded) − 1
 ```
 
 Transições: tabela de [bigbox-faixa §3](contracts/bigbox-faixa.md). `galleryChanged` fica fora de `inputTypes` (vale suspenso).
@@ -355,7 +355,8 @@ O shell despacha `galleryChanged(galleryOf(media).length)` num `useEffect` depen
 o analógico direito continua emitindo `scrollUp`/`scrollDown`. As direções nos detalhes continuam `prev`/`next`/`up`/`down`.
 
 `hints.ts`: `hintsFor('details', { detailsFocus, hasGallery, ... })` — botão: `A <rótulo do botão>`, `↓ Imagens` se
-`hasGallery`; galeria: `←/→ Imagem`, `↑ Botões`; sempre `B Voltar`, `Select+B Fechar o jogo` e o `Y Som` de BBX-013.
+`hasGallery`; galeria: `←/→ Imagem`, `↑ Botões`; sempre `B Voltar` e `Select+B Fechar o jogo`; nunca `Y Som` nos detalhes (Y
+nessa tela está fora da spec, BBX-015).
 
 `BigBoxDetails` (props): troca `detailsFocus: 'play' | 'playUntracked' | 'description'` por `DetailsFocus`; o resto igual.
 Estrutura (§1.1): `section[data-bb-details]` em grid; coluna de texto `Panel`; visor `figure[data-bb-viewer]` com o item
@@ -373,27 +374,61 @@ protegida: jsdom não implementa). O visor usa `min(gallery, N − 1)` antes do 
 - O shell deixa de pintar a faixa do rodapé com `--arc-bb-scrim`; o rodapé é um `Panel` dentro da área segura.
 - A descrição dos detalhes deixa de usar `--arc-bb-scrim` como fundo (já está no painel da coluna).
 
-#### 4.7.3 Lista completa e faixa sem buracos [BBX-006, BBX-024, BBX-038, BBX-039]
+#### 4.7.3 Leitura por páginas, pré-busca e faixa sem buracos [BBX-006, BBX-007, BBX-024, BBX-027, BBX-038, BBX-039, BBX-045]
+
+Decisão do usuário na aprovação: **nada de ler a aba inteira**. A primeira página tem `V + 3` jogos e as seguintes vêm à frente do
+foco (contrato §3.2). Reconciliação com a paginação original (T39, BBX-007 de 2026-11-15): continua `useInfiniteQuery` com
+`offset`, mas a página deixa de ser fixa em 200, o gatilho deixa de ser "10 antes do fim" e passa a ser "menos de `V + 3` lidos a
+partir do foco", e quem dispara é o shell (efeito sobre `f`, `L`, `V`), não um efeito do reducer: assim o resize e o foco inicial
+também disparam, sem duas fontes para o mesmo pedido.
 
 `useBigBoxData.ts`:
 
 ```ts
-export const PAGE_SIZE = 500
-export type TabGames = { games: GameView[]; total: number; isPending: boolean; error: Error | null } // sem loaded/fetchNextPage
-export function useTabGames(platformId: number | null): TabGames
-// useQuery(['bigbox', 'games', platformId]); queryFn({ signal }) lê offset 0, 500, 1000...; para quando a página vem vazia
-// ou offset >= page.total; confere signal.aborted entre páginas (troca de aba cancela o resto); total = games.length.
-// staleTime: Infinity e gcTime de pelo menos a visita (aba já lida não relê); retry: false.
+export const PAGE_EXTRA = 3, PAGE_MAX = 500
+export function pageSize(capacity: number): number // min(clamp(capacity, 1, STRIP_MAX − 1) + PAGE_EXTRA, PAGE_MAX)
+export function shouldPrefetch(loaded: number, total: number, focus: number, capacity: number, exhausted: boolean): boolean // §3.2
+export type TabGames = {
+  games: GameView[]; total: number /* T: GameListResult.total da 1ª página */; loaded: number /* L */
+  exhausted: boolean; isPending: boolean /* sem a 1ª página */; isFetchingNextPage: boolean; error: Error | null
+  fetchNextPage(): void // no-op com leitura em voo, exhausted ou loaded >= total
+}
+export function useTabGames(platformId: number | null, capacity: number): TabGames
+// useInfiniteQuery(['bigbox', 'games', platformId]) (capacity fora da chave: resize não relê);
+// initialPageParam 0; queryFn({ pageParam: offset, signal }) chama ListGames(filtro só de plataforma, 'title', offset,
+// limitRef.current) com limitRef.current = pageSize(capacity) atualizado a cada render;
+// getNextPageParam: soma das páginas, ou undefined com página vazia ou soma >= total;
+// fetchNextPage chamado com { cancelRefetch: false } e protegido por isFetchingNextPage (nunca dois em voo, nunca cancela);
+// troca de platformId: queryClient.cancelQueries({ queryKey: ['bigbox', 'games', anterior] }) num efeito (resposta tardia
+// descartada pelo react-query; páginas já lidas ficam no cache); staleTime: Infinity, gcTime ≥ a visita, retry: false,
+// refetchOnWindowFocus: false.
 ```
+
+O binding do Wails não aceita `AbortSignal`; "cancelar" é descartar: a promessa antiga resolve, mas o react-query não grava o
+resultado numa consulta cancelada, e nenhuma página nova da aba antiga é pedida porque nenhum observador a pede.
 
 `viewModel.ts`:
 
 ```ts
 export const STRIP_ANCHOR = 2, STRIP_MAX = 15, STRIP_FALLBACK_CAPACITY = 12
 export function stripWindow(total: number, focus: number, capacity: number): { start: number; end: number } // §3.1
-// ViewModelInput ganha capacity: number e loading: boolean; BigBoxViewModel ganha loading e stripStart (§4)
-// windowAround e STRIP_WINDOW saem
+export function stripCounter(total: number, focus: number, loading: boolean): string | null // "f + 1 / T"; null com loading ou T = 0
+// ViewModelInput ganha capacity, loading, total (T) e loaded (L); BigBoxViewModel ganha loading, stripStart e counter (§4)
+// games = jogos de [start, min(end, loaded)); windowAround e STRIP_WINDOW saem
 ```
+
+Shell (pré-busca e entrada):
+
+```ts
+// efeito em [focus, tabGames.loaded, tabGames.total, capacity, tabGames.exhausted]:
+//   if (shouldPrefetch(loaded, total, focus, capacity, exhausted) && !tabGames.isFetchingNextPage) tabGames.fetchNextPage()
+//   com tabGames.error de página seguinte, só tenta de novo quando focus muda (ref do último foco que falhou)
+// entrada (ref initialDone): com a 1ª página, i = índice do jogo da janela normal; f0 = i ?? 0;
+//   shouldPrefetch(L, T, f0, V) → fetchNextPage e segue loading; senão listLoaded(i) e initialDone = true
+// model.loading = tabGames.isPending || (entrada && !initialDone)
+```
+
+`FaixaStrip` mostra `model.counter` num `Panel` (`data-testid="bb-strip-counter"`) abaixo da faixa [BBX-045].
 
 `themes/types.ts` e `themes/registry.ts`: `BigBoxTheme.listCapacity`; `faixaCapacity(vp)` em
 `themes/faixa/capacity.ts` (novo, pura, §3.1). Mosaico e Roda: `() => STRIP_FALLBACK_CAPACITY`.
@@ -401,9 +436,9 @@ export function stripWindow(total: number, focus: number, capacity: number): { s
 Shell: `useViewport()` (novo, em `BigBox.tsx` ou `bigbox/useViewport.ts`) devolve `{width, height}` de `window.inner*` e
 assina `resize` num `useEffect` com remoção no retorno (sem goroutine/timer solto). `capacity = theme.listCapacity(vp)`. O
 `useCardImages` recebe os ids de `games.slice(start, end)`. `FaixaStrip` recebe `stripStart` do modelo e usa
-`index = stripStart + i` (não recalcula a janela). Enquanto `tabGames.isPending`, `model.loading = true`, `focused = null`, e o
-`Faixa` mostra o `Panel` "Carregando jogos…" com as abas; `listLoaded` só é despachado quando a leitura termina (BBX-027
-passa a achar o jogo inicial mesmo além da primeira página).
+`index = stripStart + i` (não recalcula a janela). Com `model.loading`, `focused = null`, `counter = null`, e o `Faixa` mostra
+o `Panel` "Carregando jogos…" com as abas. `listLoaded` é despachado uma vez na entrada, quando a faixa do jogo inicial está
+completa (BBX-027 só acha o jogo inicial na primeira página da aba).
 
 #### 4.7.4 Fundo, capas e miniaturas inteiros [BBX-040, BBX-041]
 
@@ -426,9 +461,15 @@ passa a achar o jogo inicial mesmo além da primeira página).
 
 #### 4.7.6 Riscos
 
-- **Corrida na leitura de várias páginas:** o `signal` do react-query é a única condição de saída do laço; o laço não guarda
-  estado fora do `queryFn` e não agenda nada. Biblioteca de 20.000 jogos = 40 leituras de 500 em sequência (aceitável; medir em
-  BBX-030).
+- **Corrida na pré-busca:** o efeito do shell pode rodar várias vezes com a condição verdadeira enquanto a página está em voo;
+  a guarda `isFetchingNextPage` mais `cancelRefetch: false` garante um pedido só e nenhum cancelamento ao mover o foco. O
+  `offset` vem de `getNextPageParam` (soma das páginas), nunca do foco, então pedidos fora de ordem não acontecem.
+- **Biblioteca grande:** cada página é pequena (15 com `V = 12`); andar 1.000 jogos com o direcional = ~67 leituras locais,
+  uma a cada 15 passos (≥ 1,8 s com repetição de 120 ms). Margem de 3 jogos lidos além da última capa: a página tem 3 passos
+  (≥ 360 ms) para chegar antes que `next` pare em `L − 1` (medir em BBX-030).
+- **Foco inicial longe do começo:** BBX-027 só procura na primeira página; um jogo perto do fim dela pede a segunda antes de
+  aparecer (até 2 leituras na entrada).
+- **Falha em página seguinte:** sem `retry`; a nova tentativa depende de o foco mudar, então não há laço de pedidos.
 - **`scrollIntoView` e `ResizeObserver` em jsdom:** não usamos `ResizeObserver` (capacidade vem do `resize` da janela);
   `scrollIntoView` é chamado com `?.`.
 - **Um só `<video>` na tela Detalhes:** o `BackgroundStage` já fica `active = false` nos detalhes; o visor é o único dono do

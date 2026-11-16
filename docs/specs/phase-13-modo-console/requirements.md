@@ -2,7 +2,9 @@
 
 - **Status:** aprovada pelo usuário em 2026-11-15, com as respostas registradas em "Respostas do usuário" no fim (motivo
   `closed-by-hotkey`, `WM_CLOSE` por até 3 s antes de matar, sem número de discos; as demais recomendações aceitas).
-  Ajustes do teste com controle (BBX-032..BBX-044, 2026-11-16): **aguardam aprovação**.
+  Ajustes do teste com controle (BBX-032..BBX-045, 2026-11-16): **aprovados pelo usuário em 2026-11-16**, com as mudanças
+  registradas em "Ajustes do teste com controle" no fim (aba lida por páginas com pré-busca à frente, contador na faixa, Y fora
+  dos detalhes).
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.15.0-delta.md](contracts/ipc-v0.15.0-delta.md) (só o
   acréscimo sobre a v0.14.0 de [phase-12-metadados-unificados](../phase-12-metadados-unificados/contracts/ipc.openrpc.json); o
   JSON completo v0.15.0 é uma tarefa, como nas fases 11 e 12),
@@ -439,15 +441,25 @@ ordem por título) e o foco vai para o primeiro jogo dela.
 
 ### BBX-006 — Faixa de capas
 · alterado em 2026-11-16: a janela de capas no DOM passa a ser a de BBX-039 (a janela centrada deixava a faixa vazia à direita
-no começo da lista).
+no começo da lista); as pontas são as da aba inteira (`total`), e o foco não entra em jogo ainda não lido (BBX-007).
 Dado a tela Navegar do Faixa, então os jogos da aba aparecem numa faixa horizontal no topo, com a capa em foco maior que as
 outras; ←/→ (direcional, analógico esquerdo, setas) movem o foco um jogo por vez, sem dar a volta nas pontas; a faixa rola para
 manter o jogo em foco à vista. No máximo 15 capas ficam no DOM, na janela de BBX-039.
 · verificação: teste do reducer (pontas) e de componente (contagem de nós).
 
-### ~~BBX-007 — Paginação da faixa~~
-· status: removido em 2026-11-16 (teste com controle: a lista aparecia aos pedaços conforme o foco andava). Substituído por
-BBX-038 (a aba é lida inteira antes de aparecer); o efeito `fetchNextPage` e `PREFETCH_BEFORE_END` saem do reducer.
+### BBX-007 — Pré-busca à frente do foco
+· alterado em 2026-11-16: volta como pré-busca à frente do foco, com páginas do tamanho de BBX-038 (aprovação do usuário: a aba
+não é lida inteira; a remoção proposta no mesmo dia não foi aprovada). Antes: próxima página de 200 com o foco a 10 do fim do
+carregado.
+Dado a aba com `T` jogos (BBX-039), `L` jogos lidos, o foco `f` e a capacidade `V` (BBX-024), quando `L < T` e há menos de
+`V + 3` jogos lidos a partir do foco, contando-o (`L − f < V + 3`), então o Big Box pede a próxima página (`offset = L`, tamanho
+de BBX-038), sem nenhuma ação extra do usuário. A condição é reavaliada a cada mudança de `f`, de `L` e de `V` (redimensionar a
+janela). Há no máximo uma leitura em voo por aba; enquanto ela não chega, a condição verdadeira não pede outra. Com `L ≥ T`, ou
+depois de uma página vazia, não pede mais nada. Se a página atrasar, → no jogo `L − 1` não faz nada (o foco nunca entra em jogo
+não lido) e a faixa só desenha jogos lidos.
+· verificação: teste da função pura `shouldPrefetch` (limiar, `L ≥ T`, página vazia, `V` maior depois de resize) e de componente
+do shell com `ListGames` falso controlado por promessas (andar para a direita pede cada página uma vez, nunca duas em voo; →
+parado em `L − 1` com a página pendente).
 
 ### BBX-008 — Capa ou substituto
 Dado um jogo da faixa, então a capa é a mídia `cover`; sem capa, a mesma substituta da janela normal (`useCardImages`: tela de
@@ -496,7 +508,8 @@ recebe mais foco, BBX-036).
 Dado a tela Navegar, então o rodapé mostra, em texto, "A Jogar", "X Detalhes", "LB/RB Plataforma", "Select+B Fechar o jogo" e
 "B Sair". Na tela Detalhes com o foco num botão, "A Jogar" ou "A Jogar sem contar tempo" (o botão focado) e, se houver galeria,
 "↓ Imagens"; com o foco na galeria, "←/→ Imagem" e "↑ Botões"; nos dois casos, "B Voltar" e "Select+B Fechar o jogo". "Y Som"
-segue BBX-013.
+segue BBX-013 na tela Navegar; na tela Detalhes ela não aparece (Y nos detalhes está fora desta spec, decisão do usuário de
+2026-11-16).
 · verificação: teste de componente.
 
 ### BBX-016 — Tela de detalhes
@@ -575,6 +588,8 @@ Dado o tema Faixa, então `--arc-bb-text`, `--arc-bb-text-muted` e `--arc-bb-dan
 · verificação: teste que lê os tokens de `index.css` e calcula o contraste (WCAG 2.x), como UIX-007.
 
 ### BBX-027 — Foco inicial
+· alterado em 2026-11-16: "carregada" é a primeira página da aba (BBX-038); se o jogo está nela, o aviso de carregamento dura
+até a faixa dele estar completa (BBX-038).
 Dado a entrada no Big Box, então o foco vai para o jogo em foco da janela normal se ele estiver na aba inicial carregada; senão,
 para o primeiro jogo.
 · verificação: teste de componente.
@@ -600,8 +615,10 @@ devolve ao Big Box no mesmo jogo; o texto é legível a 3 m.
 
 ### Ajustes do teste com controle (2026-11-16)
 
-· status: **proposto, aguarda aprovação do usuário** (BBX-032..BBX-044 novos; BBX-006, BBX-015, BBX-016, BBX-024, BBX-025 e
-BBX-026 alterados; BBX-007 removido). Layout dos detalhes em [bigbox-faixa §1.1](contracts/bigbox-faixa.md); estados em §3.
+· status: **aprovado pelo usuário em 2026-11-16** (BBX-032..BBX-045 novos; BBX-006, BBX-007, BBX-015, BBX-016, BBX-024..BBX-027
+alterados). Na aprovação: a aba é lida por páginas de `V + 3` com pré-busca à frente do foco (BBX-007, BBX-038, BBX-039; a
+leitura inteira proposta saiu), entrou o contador "posição / total" (BBX-045) e Y nos detalhes ficou fora desta spec. Layout dos
+detalhes em [bigbox-faixa §1.1](contracts/bigbox-faixa.md); estados em §3.
 
 **Lacuna registrada:** o reducer já movia `detailsFocus` com ↑/↓ e `gallery` com ←/→, mas a spec não definia **uma** marca de
 foco nem um visor: a tela desenhava o contorno de foco no botão **e** na miniatura selecionada ao mesmo tempo, a galeria era uma
@@ -644,29 +661,42 @@ continuam trocando de aba (BBX-005).
 Dado o Big Box (Navegar e Detalhes), então todo texto desenhado sobre a arte ou o vídeo de fundo fica dentro de um painel
 semitransparente escuro com a cor `--arc-bb-panel` (`data-bb-panel`): a barra de abas; o bloco de informações (título, linha de
 dados, descrição curta, tempo jogado, última vez, sessões e botões); o aviso de lista vazia e o de carregamento; o rodapé com as
-dicas; na tela Detalhes, a coluna de texto (título, linhas de dado, tempo, botões e descrição) e o contador da galeria. O aviso de
+dicas; o contador da faixa (BBX-045); na tela Detalhes, a coluna de texto (título, linhas de dado, tempo, botões e descrição) e o
+contador da galeria. O aviso de
 erro (`role="alert"`) e os selos de sessão continuam sobre `--arc-bb-surface` (opaco). O contraste do painel é o de BBX-026.
 · verificação: teste de componente (cada texto listado tem um ancestral `data-bb-panel` antes de chegar à raiz) e o teste de
 tokens de BBX-026.
 
-### BBX-038 — Lista completa da aba
-Dado a entrada no Big Box ou a troca de aba, então o Big Box lê **todas** as páginas da aba (`ListGames` com o filtro só de
-plataforma, ordem por título, páginas de 500, uma por vez, sem depender do foco) e só então mostra a faixa e o bloco de
-informações; enquanto lê, mostra "Carregando jogos…" e LB/RB continuam trocando de aba. A leitura para quando uma página vem vazia
-ou o carregado chega ao `total`; o fim da faixa é o número de jogos carregados. Trocar de aba no meio da leitura não pede as
-páginas restantes da aba antiga. Falha numa página: o aviso de BBX-020 com a mensagem do erro e o texto de aba vazia de BBX-021;
-voltar à aba tenta de novo. Uma aba já lida volta sem nova leitura enquanto o Big Box está aberto.
-· verificação: teste de componente com leitura falsa paginada (1.234 jogos em 3 páginas; troca de aba no meio; falha na
-segunda página).
+### BBX-038 — Leitura da aba por páginas
+· alterado em 2026-11-16 (aprovação do usuário): a aba não é mais lida inteira antes de aparecer; é lida por páginas pequenas,
+com pré-busca à frente do foco (BBX-007).
+Dado a entrada no Big Box ou a troca de aba, com a capacidade `V` (BBX-024), então o Big Box lê a aba por páginas de `ListGames`
+(filtro só de plataforma, ordem por título, `limit = V + 3`, com `V` do momento do pedido; nunca acima de 500), começando pelo
+`offset` 0, e mostra a faixa e o bloco de informações assim que a primeira página chega. "Carregando jogos…" aparece só na
+primeira leitura da aba (a primeira página; na entrada do Big Box, também a página seguinte quando o jogo inicial, BBX-027, precisa
+dela para completar a faixa); as páginas seguintes chegam sem aviso, e LB/RB continuam trocando de aba durante qualquer leitura.
+Mover o foco dentro da aba nunca cancela nem repete uma leitura em voo. Trocar de aba cancela a leitura em voo da aba antiga (a
+resposta que chegar depois é descartada) e não pede mais páginas dela. Falha na primeira página: o aviso de BBX-020 com a mensagem
+do erro e o texto de aba vazia de BBX-021; voltar à aba tenta de novo. Falha numa página seguinte: o aviso de BBX-020, a faixa
+mantém o que já foi lido e a nova tentativa vem na próxima mudança de foco que ainda pedir página (BBX-007), nunca em laço. As
+páginas de uma aba já lidas voltam sem nova leitura enquanto o Big Box está aberto.
+· verificação: teste do hook de dados com `ListGames` falso controlado por promessas (primeira página `offset 0`/`limit V + 3`;
+sem leitura repetida ao mover o foco; troca de aba no meio descarta a resposta tardia; falha na primeira e na segunda página;
+volta sem releitura) e de componente do shell ("Carregando jogos…" só antes da primeira página).
 
 ### BBX-039 — Faixa sem buracos
-Dado a aba com `T` jogos, o foco `f` e `V` capas que cabem inteiras na largura da faixa (capacidade do tema, BBX-024, de 1 a 14),
-então a faixa desenha os jogos `[s, min(s + V + 1, T))` com `s = clamp(f − 2, 0, max(T − V, 0))`: com `T > V`, a faixa fica cheia
-até a borda direita (a capa `V + 1` aparece cortada na borda, como sinal de que há mais) e nunca há espaço vazio à direita antes
-do último jogo; a capa em foco fica sempre inteira à vista (posição ≤ `V − 1`). Ao trocar de aba, a faixa aparece cheia desde a
-primeira capa.
-· verificação: teste da função pura `stripWindow` (começo, meio, fim, `T ≤ V`, `T = 0`) e de componente (nós e índices
-desenhados ao entrar numa aba de 40 jogos com `V = 12`).
+· alterado em 2026-11-16 (aprovação do usuário): `T` é o total da aba informado pela primeira página, não o número de jogos lidos;
+com a pré-busca de BBX-007 a janela cai sempre dentro do que já foi lido.
+Dado a aba com `T` jogos (o `total` devolvido pela primeira página de `ListGames`, igual ao `gameCount` da plataforma no catálogo,
+PLT-032; em "Todos", a biblioteca inteira), o foco `f` e `V` capas que cabem inteiras na largura da faixa (capacidade do tema,
+BBX-024, de 1 a 14), então a faixa desenha os jogos `[s, min(s + V + 1, T))` com `s = clamp(f − 2, 0, max(T − V, 0))`: com
+`T > V`, a faixa fica cheia até a borda direita (a capa `V + 1` aparece cortada na borda, como sinal de que há mais) e nunca há
+espaço vazio à direita antes do último jogo da aba; a capa em foco fica sempre inteira à vista (posição ≤ `V − 1`). Ao trocar de
+aba, a faixa aparece cheia desde a primeira capa (a primeira página tem `V + 3` jogos). Andando para a direita com as páginas
+chegando no tempo de BBX-007, todo índice da janela já está lido.
+· verificação: teste da função pura `stripWindow` (começo, meio, fim, `T ≤ V`, `T = 0`), varredura de `f` de 0 a `T − 1` com
+a regra de BBX-007 (janela sempre dentro de `[0, L)`) e de componente (nós e índices desenhados ao entrar numa aba de 40 jogos
+com `V = 12`, com só a primeira página de 15 lida).
 
 ### BBX-040 — Fundo inteiro, sem corte
 Dado a arte ou o vídeo de fundo do jogo em foco (Navegar e Detalhes), então ele é desenhado inteiro, centrado, com
@@ -700,6 +730,14 @@ jogo; tempo jogado · última vez · sessões) formam um bloco único (`data-bb-
 no máximo 0,25em entre linhas e altura de linha de no máximo 1,4; entre título, bloco de dados, botões e descrição, no máximo
 0,75em.
 · verificação: teste de componente (espaçamentos declarados no bloco) e manual (BBX-030).
+
+### BBX-045 — Contador de posição na faixa
+· novo em 2026-11-16 (aprovação do usuário).
+Dado a tela Navegar com a aba de `T ≥ 1` jogos (`T` de BBX-039) e o foco `f`, então a faixa mostra, em texto e dentro de um
+painel (BBX-037), o contador "`f + 1` / `T`" (ex.: "7 / 120"), que acompanha cada movimento do foco e usa o total da aba mesmo
+antes de todas as páginas serem lidas. Enquanto "Carregando jogos…" aparece ou com a aba vazia, o contador não aparece.
+· verificação: teste do modelo (`position` e `total`) e de componente do Faixa (texto "7 / 120" com foco 6 e `T` 120 e só a
+primeira página lida; ausente com `loading` e com `T = 0`; ancestral `data-bb-panel`).
 
 ---
 
@@ -954,6 +992,9 @@ recusa o mesmo caso com erro, sem gravar, para qualquer chamador.
 - **Logos, caixa 3D e ícones** como mídia.
 - **Movimento reduzido (`prefers-reduced-motion`)** no Big Box (rolagem da faixa, transições, vídeo de fundo): **não é requisito
   desta fase** (revisão do diff, 2026-11-15); nenhum teste da fase o exige e nenhum ID o cobre.
+- **Ligar e desligar o som com Y (M) na tela Detalhes** (decisão do usuário, 2026-11-16): não é exigido. O vídeo do visor segue a
+  escolha de som feita em Navegar (BBX-013, BBX-034), a dica "Y Som" não aparece nos detalhes (BBX-015) e nenhum teste exige Y
+  nessa tela.
 - **Recusar quebra de linha nas credenciais do IGDB** (`SetIGDB`, mesmo formato `id\nsegredo`): fora desta fase; SSC-006 vale
   só para `screenscraper` e `screenscraperdev`.
 
@@ -1004,13 +1045,21 @@ Achados do reviewer registrados na spec antes do código (tarefas T46..T51):
 
 ## Ajustes do teste com controle (2026-11-16)
 
-Pedidos do usuário depois de usar o Faixa com controle, registrados antes do código (tarefas T52..T61). **Aguardam aprovação.**
+Pedidos do usuário depois de usar o Faixa com controle, registrados antes do código (tarefas T52..T61). **Aprovados pelo usuário
+em 2026-11-16**, com estas mudanças sobre a proposta:
+
+- **Leitura da aba (decisão 2 da proposta, alterada):** a aba **não** é lida inteira. A primeira página tem `V + 3` jogos (a
+  capacidade da tela do usuário é 12, então 15) e as seguintes são pedidas à frente do foco, para que a faixa nunca tenha buracos
+  nem espere (BBX-007 volta como pré-busca, BBX-038 reescrito, BBX-039 com o total da aba, BBX-027 esclarecido).
+- **Contador "posição / total" na faixa (decisão 5):** sim, BBX-045.
+- **Y (som) nos detalhes (decisão 6):** não precisa funcionar; registrado em "Fora desta spec" (BBX-015 alterado).
+- Itens 1, 3 e 4 da proposta: aprovados como estavam.
 
 | Pedido | Requisitos novos | Alterados / removidos |
 |---|---|---|
 | Foco nos detalhes não chega aos botões; imagem da galeria não troca | BBX-032, BBX-033, BBX-034, BBX-035, BBX-036 | BBX-015, BBX-016 (alterados) |
 | Texto ilegível sobre algumas artes | BBX-037 | BBX-025, BBX-026 (alterados) |
-| Lista da aba aparece aos pedaços | BBX-038, BBX-039 | BBX-006, BBX-024 (alterados), BBX-007 (removido) |
+| Lista da aba aparece aos pedaços | BBX-038, BBX-039, BBX-045 | BBX-006, BBX-007, BBX-024, BBX-027 (alterados) |
 | Capas e fundos cortados | BBX-040, BBX-041 | — (BBX-010 continua) |
 | Galeria cortada, texto colado na borda, linhas espaçadas | BBX-042, BBX-043, BBX-044 | — |
 
