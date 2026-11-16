@@ -14,6 +14,10 @@ export function AgentStatus() {
   return window['go']['main']['App']['AgentStatus']();
 }
 
+export function BringToFront() {
+  return window['go']['main']['App']['BringToFront']();
+}
+
 export function Catalog() {
   return window['go']['main']['App']['Catalog']();
 }
@@ -188,4 +192,20 @@ export function StatsWeekly(arg1) {
 
 export function UpdateGame(arg1, arg2) {
   return window['go']['main']['App']['UpdateGame'](arg1, arg2);
+}
+
+export function VideoCancelPending() {
+  return window['go']['main']['App']['VideoCancelPending']();
+}
+
+export function VideoQueue(arg1) {
+  return window['go']['main']['App']['VideoQueue'](arg1);
+}
+
+export function VideoQueueMissing(arg1) {
+  return window['go']['main']['App']['VideoQueueMissing'](arg1);
+}
+
+export function VideoStatus() {
+  return window['go']['main']['App']['VideoStatus']();
 }

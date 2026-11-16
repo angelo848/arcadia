@@ -374,3 +374,33 @@ Spec em [phase-12-metadados-unificados](specs/phase-12-metadados-unificados/requ
 - **Limitação conhecida:** o IPC atende uma requisição por vez por conexão; um `metadata.search` ou
   `metadata.apply` em curso pode atrasar `batchCancel`/`batchStatus` na mesma conexão da UI.
 - A UI nunca influencia o tempo de jogo: nada em `internal/tracker`, `play_session` ou `tracking_rule`.
+
+### Modo console (fase 13)
+
+Spec em [phase-13-modo-console](specs/phase-13-modo-console/requirements.md); decisões nos
+[ADR 0035](adr/0035-fechar-o-jogo-pelo-controle.md), [0036](adr/0036-big-box-com-temas-selecionaveis.md) e
+[0037](adr/0037-video-do-screenscraper-como-midia-na-fila.md); IPC v0.15.0 (só acréscimos); migração 9.
+
+- **Fechar pelo controle (Select + B, 1 s):** `internal/input` tem um segundo detector (`CloseMask`) ao lado do da
+  pausa; o `triggerRouter` do agente despacha `ActionPause` e `ActionClose` (antirrepique de 300 ms). O tracker ganha
+  o estado `Closing` (`CloseByHotkey`): envia `WM_CLOSE` às janelas dos processos do jogo, espera até 3 s pelo
+  `domain.Clock` e, se ainda houver processos vivos, mata a árvore do Job Object (jogo adotado: só os PIDs que ainda
+  casam com a regra). A sessão fecha com o tempo até o instante do gatilho e o motivo `closed-by-hotkey`; o tempo
+  pausado não conta. Sem processo para fechar, toca o som de recusa. O agente publica `game.closedByHotkey` e a UI
+  só usa isso para trazer a janela à frente (`BringToFront`).
+- **Jogo sem contar tempo:** nasce num Job Object guardado pelo tracker (`DetachedJob`), apenas para poder ser
+  fechado; um jogo por vez (lançar outro durante o job vivo é recusado).
+- **Big Box novo:** `frontend/src/bigbox/` (reducer de navegação, modelo de exibição, entrada por Gamepad API, palco
+  de fundo com vídeo após 2 s, rodapé de dicas, detalhes) e temas selecionáveis por `themes/registry.ts` com tokens
+  `--arc-bb-*`. Só o tema **Faixa** existe; Mosaico e Roda estão reservados. A escolha fica em `uiPrefs`
+  (`arcadia.bigBoxTheme`). O Big Box só navega, mostra e lança jogo (`LaunchGame`, `LaunchGameUntracked`).
+- **Vídeo (ScreenScraper):** tipo de mídia `video` (limite 1 por jogo, MP4 `video-normalized`, teto de 20 MB). O
+  cliente `scrapers.ScreenScraper` identifica o jogo por nome + sistema (sem hash) com a pontuação da fase 12; só
+  "match" baixa. A fila de mídia ganhou uma raia própria de 1 trabalhador (`fetchRouter` separa imagem e vídeo),
+  que pausa por cota (1 h) ou credencial inválida (até o usuário regravar a chave) sem gastar tentativa. O
+  `videoService` expõe `video.queue`, `video.queueMissing`, `video.cancelPending` e `video.status`, e busca o vídeo
+  sozinho depois de aplicar metadados quando as duas credenciais existem. As credenciais (desenvolvedor e usuário)
+  ficam no Credential Manager, entram pela janela de provedores e nunca vão para log, banco ou URL registrada. O
+  `.mp4` é servido ao WebView pelo mesmo servidor de mídia, com `Range`.
+- A UI nunca influencia o tempo de jogo; `cmd/fake-game`, `play_session`, `pause_interval`, `tracking_rule` e a
+  tabela `game` não mudaram.

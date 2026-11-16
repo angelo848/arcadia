@@ -9,6 +9,8 @@ export function AgentElevated():Promise<boolean>;
 
 export function AgentStatus():Promise<main.StatusView>;
 
+export function BringToFront():Promise<void>;
+
 export function Catalog():Promise<main.CatalogView>;
 
 export function CurrentSession():Promise<main.SessionView>;
@@ -96,3 +98,11 @@ export function StatsSummary(arg1:string):Promise<main.StatsSummaryView>;
 export function StatsWeekly(arg1:number):Promise<main.StatsWeeklyView>;
 
 export function UpdateGame(arg1:number,arg2:jsontext.Value):Promise<main.GameDetailView>;
+
+export function VideoCancelPending():Promise<number>;
+
+export function VideoQueue(arg1:Array<number>):Promise<main.VideoQueueView>;
+
+export function VideoQueueMissing(arg1:number):Promise<main.VideoQueueMissingView>;
+
+export function VideoStatus():Promise<main.VideoStatusView>;

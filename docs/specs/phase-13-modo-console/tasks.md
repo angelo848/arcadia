@@ -1,7 +1,7 @@
 # Fase 13 — Modo console: tarefas
 
 - **Status:** gerado pelo planner em 2026-11-15; a spec foi aprovada e o usuário pediu a execução contínua das tarefas.
-- **Requisitos:** [requirements.md](requirements.md) (CON-001..CON-033, BBX-001..BBX-030, VID-001..VID-026, SSC-001..SSC-005; BBX-031 removido) · **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.15.0-delta.md](contracts/ipc-v0.15.0-delta.md), [contracts/session-close-state-machine.md](contracts/session-close-state-machine.md), [contracts/bigbox-faixa.md](contracts/bigbox-faixa.md), [contracts/screenscraper-rules.md](contracts/screenscraper-rules.md), [contracts/screenscraper-api-notes.md](contracts/screenscraper-api-notes.md) e `contracts/ipc.openrpc.json` (v0.15.0, criado na T01).
+- **Requisitos:** [requirements.md](requirements.md) (CON-001..CON-033, BBX-001..BBX-030, VID-001..VID-026, SSC-001..SSC-005; um requisito removido) · **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.15.0-delta.md](contracts/ipc-v0.15.0-delta.md), [contracts/session-close-state-machine.md](contracts/session-close-state-machine.md), [contracts/bigbox-faixa.md](contracts/bigbox-faixa.md), [contracts/screenscraper-rules.md](contracts/screenscraper-rules.md), [contracts/screenscraper-api-notes.md](contracts/screenscraper-api-notes.md) e `contracts/ipc.openrpc.json` (v0.15.0, criado na T01).
 - **ADRs:** 0005, 0016, 0017, 0018, 0019 (em parte substituído), 0025, 0029, 0030, 0031, 0033, 0034, 0035, 0036, 0037 (0035 a 0037 já escritos).
 
 ## Resumo
@@ -986,7 +986,7 @@ Lançamento por `useLaunchGame`/`useLaunchGameUntracked` (um por ação, bloquea
 | SSC-004 | T02, T20, T21 |
 | SSC-005 | T22, T26 |
 
-Os 94 requisitos ativos têm tarefa (BBX-031 está removido). Os três marcados `· verificação: manual` (CON-025, BBX-030, VID-026) ficam na T45. Lacunas para o spec-writer (nenhuma bloqueia): achados 1 a 3, 6 e 7 do topo; e, se a T02 divergir, os pontos de [rules](contracts/screenscraper-rules.md) §1, §2 e §6.
+Os 94 requisitos ativos têm tarefa (um requisito foi removido). Os três marcados `· verificação: manual` (CON-025, BBX-030, VID-026) ficam na T45. Lacunas para o spec-writer (nenhuma bloqueia): achados 1 a 3, 6 e 7 do topo; e, se a T02 divergir, os pontos de [rules](contracts/screenscraper-rules.md) §1, §2 e §6.
 
 ## Decisões novas que merecem ADR
 
