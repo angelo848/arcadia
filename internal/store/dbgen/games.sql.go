@@ -256,6 +256,27 @@ func (q *Queries) PlatformExists(ctx context.Context, id int64) (int64, error) {
 	return count, err
 }
 
+const setTotalPlaySeconds = `-- name: SetTotalPlaySeconds :execrows
+UPDATE game
+SET total_play_seconds = ?1,
+    updated_at = ?2
+WHERE id = ?3
+`
+
+type SetTotalPlaySecondsParams struct {
+	Seconds   int64
+	UpdatedAt int64
+	ID        int64
+}
+
+func (q *Queries) SetTotalPlaySeconds(ctx context.Context, arg SetTotalPlaySecondsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setTotalPlaySeconds, arg.Seconds, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateGameFields = `-- name: UpdateGameFields :execrows
 UPDATE game
 SET title = ?1,

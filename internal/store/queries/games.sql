@@ -47,3 +47,9 @@ WHERE game_id = ? AND ended_at IS NULL;
 -- name: DeleteGameRow :execrows
 DELETE FROM game
 WHERE id = ?;
+
+-- name: SetTotalPlaySeconds :execrows
+UPDATE game
+SET total_play_seconds = sqlc.arg(seconds),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id);

@@ -103,3 +103,8 @@ SELECT
   CAST(COALESCE(SUM(state = 'failed' AND last_error <> 'cancelado'), 0) AS INTEGER) AS failed
 FROM media_job
 WHERE kind = 'video';
+
+-- name: GetMedia :one
+SELECT id, game_id, kind, provider, source_url, hash, path, thumb_path, created_at
+FROM media
+WHERE id = ?;

@@ -39,11 +39,15 @@ export function LaunchGameUntracked(arg1:number):Promise<void>;
 
 export function ListGames(arg1:main.LibraryQuery):Promise<main.GameListView>;
 
+export function MediaAdd(arg1:number,arg2:string,arg3:string):Promise<void>;
+
 export function MediaCancel(arg1:number):Promise<void>;
 
 export function MediaList(arg1:number):Promise<main.MediaListView>;
 
 export function MediaQueue(arg1:number,arg2:string,arg3:string,arg4:Array<string>):Promise<number>;
+
+export function MediaRemove(arg1:number):Promise<void>;
 
 export function MetadataApply(arg1:number,arg2:Array<main.MetadataRefView>,arg3:boolean):Promise<main.MetadataApplyView>;
 
@@ -71,6 +75,8 @@ export function PickFolder():Promise<string>;
 
 export function PickGameExecutable():Promise<string>;
 
+export function PickGameImage():Promise<string>;
+
 export function PickPlatformIcon():Promise<string>;
 
 export function PlatformDelete(arg1:number):Promise<void>;
@@ -92,6 +98,8 @@ export function ResumeSession():Promise<main.SessionView>;
 export function ScrapeApply(arg1:number,arg2:string,arg3:string,arg4:boolean):Promise<main.ScrapeApplyView>;
 
 export function ScrapeSearch(arg1:number,arg2:string):Promise<main.ScrapeSearchView>;
+
+export function SetPlayTime(arg1:number,arg2:number):Promise<main.GameDetailView>;
 
 export function StatsSummary(arg1:string):Promise<main.StatsSummaryView>;
 

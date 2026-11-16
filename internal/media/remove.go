@@ -124,3 +124,26 @@ func canonicalID(name string) (int64, bool) {
 	}
 	return id, true
 }
+
+// RemoveFiles deletes files of one game by their paths relative to the media root, such as the
+// image and the thumbnail of a media row. A path outside <root>\<id> is refused; an empty path and
+// a file already gone are skipped.
+func (s *Store) RemoveFiles(gameID int64, rels ...string) error {
+	dir, err := s.gameFolder(gameID)
+	if err != nil {
+		return err
+	}
+	for _, rel := range rels {
+		if rel == "" {
+			continue
+		}
+		target := filepath.Clean(filepath.Join(s.root, rel))
+		if filepath.Dir(target) != filepath.Clean(dir) {
+			return fmt.Errorf("media: %q fora da pasta do jogo %d", rel, gameID)
+		}
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("media: apagar arquivo: %w", err)
+		}
+	}
+	return nil
+}

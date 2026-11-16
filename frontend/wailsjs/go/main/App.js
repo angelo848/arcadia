@@ -74,6 +74,10 @@ export function ListGames(arg1) {
   return window['go']['main']['App']['ListGames'](arg1);
 }
 
+export function MediaAdd(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MediaAdd'](arg1, arg2, arg3);
+}
+
 export function MediaCancel(arg1) {
   return window['go']['main']['App']['MediaCancel'](arg1);
 }
@@ -84,6 +88,10 @@ export function MediaList(arg1) {
 
 export function MediaQueue(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['MediaQueue'](arg1, arg2, arg3, arg4);
+}
+
+export function MediaRemove(arg1) {
+  return window['go']['main']['App']['MediaRemove'](arg1);
 }
 
 export function MetadataApply(arg1, arg2, arg3) {
@@ -138,6 +146,10 @@ export function PickGameExecutable() {
   return window['go']['main']['App']['PickGameExecutable']();
 }
 
+export function PickGameImage() {
+  return window['go']['main']['App']['PickGameImage']();
+}
+
 export function PickPlatformIcon() {
   return window['go']['main']['App']['PickPlatformIcon']();
 }
@@ -180,6 +192,10 @@ export function ScrapeApply(arg1, arg2, arg3, arg4) {
 
 export function ScrapeSearch(arg1, arg2) {
   return window['go']['main']['App']['ScrapeSearch'](arg1, arg2);
+}
+
+export function SetPlayTime(arg1, arg2) {
+  return window['go']['main']['App']['SetPlayTime'](arg1, arg2);
 }
 
 export function StatsSummary(arg1) {

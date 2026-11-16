@@ -1,3 +1,4 @@
+import { setPlayTime } from './manualEdit'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InfiniteData, UseInfiniteQueryResult, UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import type { FilterSpec, GameStatus, LibraryQuery, SortKey } from './filters'
@@ -163,8 +164,14 @@ function catalog(): Promise<CatalogView> {
   return call(() => libraryBinding('Catalog')())
 }
 
-function updateGame(id: number, patch: Record<string, unknown>): Promise<GameDetailView> {
-  return call(() => libraryBinding('UpdateGame')(id, patch))
+// updateGame saves the edit of a game. The total play time, when the form sends it, goes first through its own
+// method; the detail returned by UpdateGame then already has it (EDM-005).
+async function updateGame(id: number, patch: Record<string, unknown>): Promise<GameDetailView> {
+  const { totalPlaySeconds, ...rest } = patch
+  if (typeof totalPlaySeconds === 'number') {
+    await setPlayTime(id, totalPlaySeconds)
+  }
+  return call(() => libraryBinding('UpdateGame')(id, rest))
 }
 
 function deleteGame(id: number): Promise<void> {

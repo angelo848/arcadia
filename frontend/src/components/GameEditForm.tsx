@@ -5,6 +5,8 @@ import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
 import { pickGameExecutable } from '../lib/games'
 import { playModeLabels, type GameDetailView, type PlayModeName } from '../lib/library'
 import { validateDraft } from '../lib/validation'
+import { playTimeParts, playTimeSeconds } from '../lib/manualEdit'
+import { GameImagesEditor } from './GameImagesEditor'
 import type { EmulatorView } from '../lib/emulators'
 import { TagInput } from './TagInput'
 
@@ -38,6 +40,9 @@ type FormValues = {
   launchArgs: string
   // Emulator of the game as the select has it: '' is the platform default (EMU-002).
   emulatorId: string
+  // Total play time as typed, in whole hours and minutes (EDM-005).
+  playHours: string
+  playMinutes: string
 }
 
 export type GameEditFormProps = {
@@ -74,6 +79,8 @@ function initialValues(game: GameDetailView): FormValues {
     launchTarget: game.path,
     launchArgs: game.launchArgs,
     emulatorId: game.emulatorId === null ? '' : String(game.emulatorId),
+    playHours: playTimeParts(game.totalPlaySeconds).hours,
+    playMinutes: playTimeParts(game.totalPlaySeconds).minutes,
   }
 }
 
@@ -124,7 +131,8 @@ export function GameEditForm({
   const [pickError, setPickError] = useState<string | null>(null)
   const draft = toDraft(values)
   const errors = validateDraft(draft)
-  const canSave = !pending && Object.keys(errors).length === 0
+  const playSeconds = playTimeSeconds(values.playHours, values.playMinutes)
+  const canSave = !pending && Object.keys(errors).length === 0 && playSeconds !== null
 
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -155,7 +163,13 @@ export function GameEditForm({
     if (!canSave) {
       return
     }
-    onSave(diffPatch(game, draft))
+    const patch = diffPatch(game, draft)
+    // The total only goes when the hours or the minutes changed, so seconds already counted are kept (EDM-005).
+    const before = playTimeParts(game.totalPlaySeconds)
+    if (playSeconds !== null && playSeconds !== playTimeSeconds(before.hours, before.minutes)) {
+      patch.totalPlaySeconds = playSeconds
+    }
+    onSave(patch)
   }
 
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -246,6 +260,33 @@ export function GameEditForm({
               </option>
             ))}
           </select>
+        </Row>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Row
+          id={id('playHours')}
+          label="Tempo jogado (horas)"
+          message={playSeconds === null ? 'Informe horas inteiras e minutos de 0 a 59.' : undefined}
+        >
+          <input
+            id={id('playHours')}
+            type="text"
+            inputMode="numeric"
+            value={values.playHours}
+            onChange={(e) => set('playHours', e.target.value)}
+            className={inputClass}
+          />
+        </Row>
+        <Row id={id('playMinutes')} label="Minutos" message={undefined}>
+          <input
+            id={id('playMinutes')}
+            type="text"
+            inputMode="numeric"
+            value={values.playMinutes}
+            onChange={(e) => set('playMinutes', e.target.value)}
+            className={inputClass}
+          />
         </Row>
       </div>
 
@@ -373,6 +414,8 @@ export function GameEditForm({
           className={inputClass}
         />
       </Row>
+
+      <GameImagesEditor gameId={game.id} />
 
       {error !== null && (
         <p role="alert" className="text-sm text-danger">

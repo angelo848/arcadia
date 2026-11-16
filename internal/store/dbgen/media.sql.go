@@ -92,6 +92,29 @@ func (q *Queries) DeleteMediaJob(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getMedia = `-- name: GetMedia :one
+SELECT id, game_id, kind, provider, source_url, hash, path, thumb_path, created_at
+FROM media
+WHERE id = ?
+`
+
+func (q *Queries) GetMedia(ctx context.Context, id int64) (Medium, error) {
+	row := q.db.QueryRowContext(ctx, getMedia, id)
+	var i Medium
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Kind,
+		&i.Provider,
+		&i.SourceUrl,
+		&i.Hash,
+		&i.Path,
+		&i.ThumbPath,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getMediaJob = `-- name: GetMediaJob :one
 SELECT id, game_id, kind, provider, source_url, state, attempts, last_error, created_at
 FROM media_job
