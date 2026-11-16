@@ -1,3 +1,4 @@
+import { Panel } from '../../Panel'
 import { infoLine } from '../../viewModel'
 import type { BigBoxFocused } from '../../viewModel'
 
@@ -16,7 +17,7 @@ export function FaixaInfo({ focused: f, activeTab, onPlay, onDetails }: Props) {
   // The active tab already names the platform; do not repeat it when it is the only part.
   if (line === activeTab) line = ''
   return (
-    <div className="flex max-w-[40%] flex-col gap-3 px-8">
+    <Panel className="flex max-w-[40%] flex-col gap-3">
       <div className="flex items-center gap-4">
         <h1 className="text-[clamp(2.4rem,4vw,4rem)] font-bold leading-tight text-bb-text">{f.game.title}</h1>
         {f.game.session && (
@@ -38,6 +39,6 @@ export function FaixaInfo({ focused: f, activeTab, onPlay, onDetails }: Props) {
           Detalhes
         </button>
       </div>
-    </div>
+    </Panel>
   )
 }

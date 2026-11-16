@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildTabs, infoLine, pickBackground, pickVideo, sessionMark, shortDescription, windowAround, SHORT_DESCRIPTION_MAX, STRIP_WINDOW } from './viewModel'
-import type { CatalogView } from '../lib/library'
+import {
+  buildTabs, buildViewModel, infoLine, pickBackground, pickVideo, sessionMark, shortDescription, stripCounter, stripWindow,
+  SHORT_DESCRIPTION_MAX, STRIP_ANCHOR, STRIP_FALLBACK_CAPACITY, STRIP_MAX,
+} from './viewModel'
+import type { ViewModelInput } from './viewModel'
+import type { CatalogView, GameView } from '../lib/library'
 import type { MediaItemView } from '../lib/metadata'
 import type { SessionView } from '../lib/games'
 
@@ -31,20 +35,81 @@ describe('viewModel', () => {
     expect(buildTabs(undefined, null).tabs).toEqual([{ platformId: null, label: 'Todos' }])
   })
 
-  it('BBX-006/windowAround devolve no máximo 15 itens (foco−7..foco+7) nas pontas e no meio', () => {
-    expect(STRIP_WINDOW).toBe(7)
-    const items = Array.from({ length: 100 }, (_, i) => i)
-    const mid = windowAround(items, 50)
-    expect(mid.slice).toHaveLength(15)
-    expect(mid.offset).toBe(43)
-    expect(mid.slice[0]).toBe(43)
-    const start = windowAround(items, 2)
-    expect(start.offset).toBe(0)
-    expect(start.slice).toEqual(items.slice(0, 10))
-    const end = windowAround(items, 99)
-    expect(end.offset).toBe(92)
-    expect(end.slice).toHaveLength(8)
-    expect(windowAround([], 0)).toEqual({ slice: [], offset: 0 })
+  it('BBX-039/constantes da janela', () => {
+    expect(STRIP_ANCHOR).toBe(2)
+    expect(STRIP_MAX).toBe(15)
+    expect(STRIP_FALLBACK_CAPACITY).toBe(12)
+  })
+
+  it.each([
+    [40, 0, 12, 0, 13],
+    [40, 2, 12, 0, 13],
+    [40, 3, 12, 1, 14],
+    [40, 39, 12, 28, 40],
+    [8, 5, 12, 0, 8],
+    [0, 0, 12, 0, 0],
+    [100, 50, 30, 48, 63],
+  ])('BBX-039/stripWindow(T %i, f %i, V %i) = [%i, %i)', (t, f, v, start, end) => {
+    expect(stripWindow(t, f, v)).toEqual({ start, end })
+  })
+
+  it('BBX-039/a capa em foco fica sempre em posição ≤ V − 1 (varredura de f em 0..T − 1 para T 40 e V 12)', () => {
+    for (let f = 0; f < 40; f++) {
+      const w = stripWindow(40, f, 12)
+      expect(f - w.start).toBeGreaterThanOrEqual(0)
+      expect(f - w.start).toBeLessThanOrEqual(11)
+      expect(w.end - w.start).toBeLessThanOrEqual(STRIP_MAX)
+    }
+  })
+
+  const gv = (id: number) =>
+    ({ id, title: `J${id}`, platform: 'N64', year: 1996, totalPlaySeconds: 0, lastPlayedAt: '', playCount: 0 }) as unknown as GameView
+  const input = (o: Partial<ViewModelInput> = {}): ViewModelInput => {
+    const loaded = o.loaded ?? 40
+    return {
+      screen: 'browse', tabs: [{ platformId: null, label: 'Todos' }], tab: 0,
+      games: Array.from({ length: loaded }, (_, i) => gv(i + 1)), total: 40, loaded, focus: 0, capacity: 12, loading: false,
+      covers: {}, media: [], description: '', genres: null, session: null, sound: false, videoFailed: null, alert: null,
+      ...o,
+    } as ViewModelInput
+  }
+
+  it('BBX-039/buildViewModel devolve stripStart e games da janela', () => {
+    const m = buildViewModel(input({ focus: 20 }))
+    expect(m.stripStart).toBe(18)
+    expect(m.games).toHaveLength(13)
+    expect(m.games[0].id).toBe(19)
+    expect(buildViewModel(input({ focus: 0 })).stripStart).toBe(0)
+  })
+
+  it('BBX-039/total do modelo é T mesmo com loaded menor (T 120, loaded 15)', () => {
+    const m = buildViewModel(input({ total: 120, loaded: 15, focus: 0 }))
+    expect(m.total).toBe(120)
+  })
+
+  it('BBX-039/janela recortada em loaded quando a página atrasa (nunca item indefinido em games)', () => {
+    const m = buildViewModel(input({ total: 120, loaded: 15, focus: 14 }))
+    expect(m.games.length).toBe(15 - m.stripStart)
+    expect(m.games.every((g) => g !== undefined && g !== null)).toBe(true)
+    expect(m.games[m.games.length - 1].id).toBe(15)
+  })
+
+  it('BBX-045/stripCounter(120, 6, false) é "7 / 120"; null com loading; null com T 0', () => {
+    expect(stripCounter(120, 6, false)).toBe('7 / 120')
+    expect(stripCounter(120, 6, true)).toBeNull()
+    expect(stripCounter(0, 0, false)).toBeNull()
+  })
+
+  it('BBX-045/buildViewModel põe counter com T da aba e só a primeira página lida', () => {
+    expect(buildViewModel(input({ total: 120, loaded: 15, focus: 6 })).counter).toBe('7 / 120')
+  })
+
+  it('BBX-038/loading verdadeiro: focused null, counter null e lista vazia no modelo', () => {
+    const m = buildViewModel(input({ loading: true, loaded: 0, total: 0, games: [] }))
+    expect(m.loading).toBe(true)
+    expect(m.focused).toBeNull()
+    expect(m.counter).toBeNull()
+    expect(m.games).toEqual([])
   })
 
   it('BBX-009/a linha plataforma · ano · gênero omite partes vazias com o separador e usa o primeiro gênero', () => {

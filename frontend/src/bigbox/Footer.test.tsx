@@ -27,4 +27,13 @@ describe('Footer', () => {
     render(<Footer hints={hintsFor('browse', { empty: false, videoVisible: false })} />)
     expect(screen.queryByText('Y')).toBeNull()
   })
+
+  it('BBX-037/as dicas do rodapé ficam num painel', () => {
+    const hints = hintsFor('browse', { empty: false, videoVisible: true })
+    render(<Footer hints={hints} />)
+    for (const h of hints) {
+      expect(screen.getByText(h.button).closest('[data-bb-panel]')).not.toBeNull()
+      expect(screen.getByText(h.label).closest('[data-bb-panel]')).not.toBeNull()
+    }
+  })
 })

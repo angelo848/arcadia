@@ -147,6 +147,7 @@ const bbTokens: Record<string, string> = {
   '--arc-bb-bg': 'bb-bg',
   '--arc-bb-bg-2': 'bb-bg-2',
   '--arc-bb-scrim': 'bb-scrim',
+  '--arc-bb-panel': 'bb-panel',
   '--arc-bb-text': 'bb-text',
   '--arc-bb-text-muted': 'bb-text-muted',
   '--arc-bb-accent': 'bb-accent',
@@ -186,7 +187,7 @@ function over(top: RGBA, base: string): string {
 const solid = (name: string) => toHex(parseColor(bb(name)))
 
 describe('theme: tokens do Big Box (fase 13)', () => {
-  it('BBX-025/cada um dos tokens (bg, bg-2, scrim, text, text-muted, accent, on-accent, surface, focus, danger) tem valor sob [data-bigbox-theme="faixa"] e utilitário em @theme inline', () => {
+  it('BBX-025/cada um dos tokens (bg, bg-2, scrim, panel, text, text-muted, accent, on-accent, surface, focus, danger) tem valor sob [data-bigbox-theme="faixa"] e utilitário em @theme inline', () => {
     expect(faixaBlock).not.toBe('')
     for (const [name, util] of Object.entries(bbTokens)) {
       expect(bb(name), `valor de ${name}`).not.toBe('')
@@ -195,13 +196,13 @@ describe('theme: tokens do Big Box (fase 13)', () => {
     }
   })
 
-  it('BBX-026/text, text-muted e danger ≥ 4,5:1 sobre o scrim composto sobre branco e sobre preto', () => {
-    const scrim = parseColor(bb('--arc-bb-scrim'))
+  it('BBX-026/text, text-muted e danger ≥ 4,5:1 sobre o panel composto sobre branco e sobre preto', () => {
+    const panel = parseColor(bb('--arc-bb-panel'))
     for (const base of ['#ffffff', '#000000']) {
-      const bg = over(scrim, base)
+      const bg = over(panel, base)
       for (const t of ['--arc-bb-text', '--arc-bb-text-muted', '--arc-bb-danger']) {
         const r = contrast(solid(t), bg)
-        expect(r, `${t} sobre scrim/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+        expect(r, `${t} sobre panel/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
       }
     }
   })
@@ -214,16 +215,17 @@ describe('theme: tokens do Big Box (fase 13)', () => {
     expect(contrast(solid('--arc-bb-text'), solid('--arc-bb-surface'))).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('BBX-026/focus ≥ 3:1 contra o scrim composto nos dois casos', () => {
-    const scrim = parseColor(bb('--arc-bb-scrim'))
+  it('BBX-026/focus ≥ 3:1 contra o panel composto nos dois casos', () => {
+    const panel = parseColor(bb('--arc-bb-panel'))
     for (const base of ['#ffffff', '#000000']) {
-      const r = contrast(solid('--arc-bb-focus'), over(scrim, base))
-      expect(r, `focus sobre scrim/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+      const r = contrast(solid('--arc-bb-focus'), over(panel, base))
+      expect(r, `focus sobre panel/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
     }
   })
 
-  it('BBX-026/o scrim tem alfa ≥ 0,72 na zona do texto', () => {
-    expect(parseColor(bb('--arc-bb-scrim'))[3]).toBeGreaterThanOrEqual(0.72)
+  it('BBX-042/--arc-bb-safe-y é 5vh e --arc-bb-safe-x é 5vw no bloco do Faixa', () => {
+    expect(bb('--arc-bb-safe-y')).toBe('5vh')
+    expect(bb('--arc-bb-safe-x')).toBe('5vw')
   })
 })
 

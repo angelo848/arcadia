@@ -1,4 +1,4 @@
-import { STRIP_WINDOW } from '../../viewModel'
+import { Panel } from '../../Panel'
 import type { BigBoxTab, BigBoxGame } from '../../viewModel'
 
 type Props = {
@@ -6,33 +6,36 @@ type Props = {
   tab: number
   games: BigBoxGame[]
   focus: number
+  stripStart: number
+  counter: string | null
   onPick: (index: number) => void
   onPlay: (index: number) => void
 }
 
 const sessionText = { running: 'Em execução', paused: 'Pausado' } as const
 
-// Tab bar plus the cover strip; `games` is the window around `focus` [BBX-006, BBX-008, BBX-017].
-export function FaixaStrip({ tabs, tab, games, focus, onPick, onPlay }: Props) {
-  const offset = Math.max(0, focus - STRIP_WINDOW)
+// Tab bar plus the cover strip; `games` is the window of the model starting at `stripStart` [BBX-006, BBX-008, BBX-017, BBX-039, BBX-045].
+export function FaixaStrip({ tabs, tab, games, focus, stripStart, counter, onPick, onPlay }: Props) {
   return (
     <div>
-      <div role="tablist" className="flex gap-6 overflow-hidden px-8 py-3 text-bb-text-muted">
-        {tabs.map((t, i) => (
-          <button
-            key={`${t.platformId ?? 'all'}`}
-            role="tab"
-            aria-selected={i === tab}
-            tabIndex={-1}
-            className={i === tab ? 'whitespace-nowrap border-b-2 border-bb-focus font-semibold text-bb-text' : 'whitespace-nowrap'}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-4 overflow-hidden px-8 py-6">
+      <Panel className="w-fit max-w-full">
+        <div role="tablist" className="flex gap-6 overflow-hidden text-bb-text-muted">
+          {tabs.map((t, i) => (
+            <button
+              key={`${t.platformId ?? 'all'}`}
+              role="tab"
+              aria-selected={i === tab}
+              tabIndex={-1}
+              className={i === tab ? 'whitespace-nowrap border-b-2 border-bb-focus font-semibold text-bb-text' : 'whitespace-nowrap'}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <div className="flex items-center gap-4 overflow-hidden px-2 py-6">
         {games.map((g, i) => {
-          const index = offset + i
+          const index = stripStart + i
           const focused = index === focus
           return (
             <div
@@ -48,7 +51,7 @@ export function FaixaStrip({ tabs, tab, games, focus, onPick, onPlay }: Props) {
               }`}
             >
               {g.coverUrl ? (
-                <img src={g.coverUrl} alt="" className="h-full w-full object-cover" />
+                <img src={g.coverUrl} alt="" className="h-full w-full object-contain" />
               ) : (
                 <span className="px-2 text-sm">{g.title}</span>
               )}
@@ -59,6 +62,13 @@ export function FaixaStrip({ tabs, tab, games, focus, onPick, onPlay }: Props) {
           )
         })}
       </div>
+      {counter !== null && (
+        <div className="flex justify-end">
+          <Panel>
+            <span data-testid="bb-strip-counter">{counter}</span>
+          </Panel>
+        </div>
+      )}
     </div>
   )
 }

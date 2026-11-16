@@ -1,14 +1,14 @@
 // Pure navigation reducer of the Big Box [BBX-002, BBX-005..BBX-007, BBX-012..BBX-018, BBX-027, CON-022].
 
-export const PREFETCH_BEFORE_END = 10
-
-export type DetailsFocus = 'play' | 'playUntracked' | 'description'
+export type DetailsFocus = 'play' | 'playUntracked' | 'gallery'
+export type DetailsButton = 'play' | 'playUntracked'
 
 export type NavState = {
   screen: 'browse' | 'details'
   tab: number
   focus: number
   detailsFocus: DetailsFocus
+  detailsButton: DetailsButton
   gallery: number
   suspended: boolean
   awaitingFocusAfterBlur: boolean
@@ -44,9 +44,8 @@ export type NavAction =
   | { type: 'gameClosed'; gameId: number; indexInTab: number | null }
   | { type: 'listLoaded'; initialIndex: number | null }
   | { type: 'videoFailed'; gameId: number }
-
+  | { type: 'galleryChanged'; count: number }
 export type NavEffect =
-  | { kind: 'fetchNextPage' }
   | { kind: 'launch'; gameId: number }
   | { kind: 'launchUntracked'; gameId: number }
   | { kind: 'exit' }
@@ -58,6 +57,7 @@ export const initialNav: NavState = {
   tab: 0,
   focus: 0,
   detailsFocus: 'play',
+  detailsButton: 'play',
   gallery: 0,
   suspended: false,
   awaitingFocusAfterBlur: false,
@@ -69,8 +69,6 @@ export const initialNav: NavState = {
 const inputTypes = new Set<NavAction['type']>([
   'prev', 'next', 'up', 'down', 'tabPrev', 'tabNext', 'accept', 'details', 'back', 'toggleSound',
 ])
-
-const detailsOrder: DetailsFocus[] = ['play', 'playUntracked', 'description']
 
 export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavState; effects: NavEffect[] } {
   const none = (state: NavState = s) => ({ state, effects: [] as NavEffect[] })
@@ -84,23 +82,32 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     case 'next': {
       const dir = a.type === 'next' ? 1 : -1
       if (s.screen === 'details') {
-        const gallery = Math.min(Math.max(s.gallery + dir, 0), Math.max(c.galleryCount - 1, 0))
-        return none({ ...s, gallery })
+        if (s.detailsFocus === 'gallery') {
+          const gallery = Math.min(Math.max(s.gallery + dir, 0), Math.max(c.galleryCount - 1, 0))
+          return none({ ...s, gallery })
+        }
+        const button: DetailsButton = dir > 0 ? 'playUntracked' : 'play'
+        return none({ ...s, detailsFocus: button, detailsButton: button })
       }
-      const max = Math.max(c.total - 1, 0)
+      const max = Math.max(Math.min(c.total, c.loaded) - 1, 0)
       const focus = Math.min(Math.max(s.focus + dir, 0), max)
-      const effects: NavEffect[] = []
-      if (focus !== s.focus && c.loaded < c.total && focus >= c.loaded - PREFETCH_BEFORE_END) {
-        effects.push({ kind: 'fetchNextPage' })
-      }
-      return { state: { ...s, focus, videoFailed: null }, effects }
+      return none({ ...s, focus, videoFailed: null })
     }
     case 'up':
     case 'down': {
       if (s.screen !== 'details') return none()
-      const i = detailsOrder.indexOf(s.detailsFocus) + (a.type === 'down' ? 1 : -1)
-      const detailsFocus = detailsOrder[Math.min(Math.max(i, 0), detailsOrder.length - 1)]
-      return none({ ...s, detailsFocus })
+      if (a.type === 'down' && s.detailsFocus !== 'gallery' && c.galleryCount > 0) {
+        return none({ ...s, detailsFocus: 'gallery' })
+      }
+      if (a.type === 'up' && s.detailsFocus === 'gallery') {
+        return none({ ...s, detailsFocus: s.detailsButton })
+      }
+      return none()
+    }
+    case 'galleryChanged': {
+      const gallery = Math.min(s.gallery, Math.max(a.count - 1, 0))
+      const detailsFocus = a.count === 0 && s.detailsFocus === 'gallery' ? s.detailsButton : s.detailsFocus
+      return none({ ...s, gallery, detailsFocus })
     }
     case 'tabPrev':
     case 'tabNext': {
@@ -122,7 +129,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     }
     case 'details':
       if (s.screen !== 'browse' || c.focusedGameId === null) return none()
-      return none({ ...s, screen: 'details', detailsFocus: 'play', gallery: 0 })
+      return none({ ...s, screen: 'details', detailsFocus: 'play', detailsButton: 'play', gallery: 0 })
     case 'back':
       if (s.screen === 'details') return none({ ...s, screen: 'browse' })
       return { state: s, effects: [{ kind: 'exit' }] }

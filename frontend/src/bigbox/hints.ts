@@ -1,16 +1,23 @@
 // Footer hints of the Big Box [BBX-013, BBX-015, BBX-021].
 
+import type { DetailsFocus } from './nav'
+
 export type Hint = { button: string; label: string }
 
 export function hintsFor(
   screen: 'browse' | 'details',
-  o: { empty: boolean; videoVisible: boolean; detailsFocus?: string },
+  o: { empty: boolean; videoVisible: boolean; detailsFocus?: DetailsFocus; hasGallery?: boolean },
 ): Hint[] {
   const close: Hint = { button: 'Select+B', label: 'Fechar o jogo' }
   const sound: Hint[] = o.videoVisible ? [{ button: 'Y', label: 'Som' }] : []
   if (screen === 'details') {
-    const play = o.detailsFocus === 'playUntracked' ? 'Jogar sem contar tempo' : o.detailsFocus === 'description' ? 'Rolar' : 'Jogar'
-    return [{ button: 'A', label: play }, { button: 'B', label: 'Voltar' }, close, ...sound]
+    const back: Hint = { button: 'B', label: 'Voltar' }
+    if (o.detailsFocus === 'gallery') {
+      return [{ button: '←/→', label: 'Imagem' }, { button: '↑', label: 'Botões' }, back, close]
+    }
+    const play = o.detailsFocus === 'playUntracked' ? 'Jogar sem contar tempo' : 'Jogar'
+    const images: Hint[] = o.hasGallery ? [{ button: '↓', label: 'Imagens' }] : []
+    return [{ button: 'A', label: play }, ...images, back, close]
   }
   if (o.empty) {
     return [{ button: 'LB/RB', label: 'Plataforma' }, { button: 'B', label: 'Sair' }]

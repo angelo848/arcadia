@@ -31,6 +31,9 @@
     --arc-bb-bg: #0b0d12;
     --arc-bb-bg-2: #161a22;
     --arc-bb-scrim: #000000d9;
+    --arc-bb-panel: #0b0d12e6;
+    --arc-bb-safe-y: 5vh;
+    --arc-bb-safe-x: 5vw;
     --arc-bb-text: #f2f4f8;
     --arc-bb-text-muted: #c9ced8;
     --arc-bb-accent: #1f6feb;
@@ -113,6 +116,7 @@
   --color-bb-bg: var(--arc-bb-bg);
   --color-bb-bg-2: var(--arc-bb-bg-2);
   --color-bb-scrim: var(--arc-bb-scrim);
+  --color-bb-panel: var(--arc-bb-panel);
   --color-bb-text: var(--arc-bb-text);
   --color-bb-text-muted: var(--arc-bb-text-muted);
   --color-bb-accent: var(--arc-bb-accent);

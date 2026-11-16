@@ -963,7 +963,7 @@ describe('invariantes da UI', () => {
     await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
     fireEvent.keyDown(window, { key: 'd' })
     await flush()
-    fireEvent.keyDown(window, { key: 'ArrowDown' })
+    fireEvent.keyDown(window, { key: 'ArrowRight' }) // BBX-033
     fireEvent.keyDown(window, { key: 'Enter' })
     fireEvent.keyDown(window, { key: 'Enter', repeat: true })
     fireEvent.keyDown(window, { key: 'Enter', repeat: true })

@@ -48,8 +48,10 @@ export function useBigBoxInput(o: Opts): void {
         }
         return
       }
+      const inDetails = ref.current.screen === 'details'
       const keys: Record<string, InputAction> = {
-        Enter: 'accept', d: 'details', D: 'details', PageUp: 'tabPrev', PageDown: 'tabNext',
+        Enter: 'accept', d: 'details', D: 'details',
+        PageUp: inDetails ? 'scrollUp' : 'tabPrev', PageDown: inDetails ? 'scrollDown' : 'tabNext',
         Escape: 'back', m: 'toggleSound', M: 'toggleSound',
       }
       const a = keys[e.key]

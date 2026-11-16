@@ -153,7 +153,7 @@ T = 0 → {0, 0}
 | 0 | 0 | 12 | 0 | 0 | aba vazia |
 | 100 | 50 | 30 | 48 | 63 | V limitado a 14 → no máximo 15 nós |
 
-Capacidade do Faixa (`faixa.listCapacity({width, height})`, pura): largura útil `W = width × 0,9` (área segura) menos os recuos
+Capacidade do Faixa (`faixa.listCapacity({width, height})`, pura): largura útil `W = width × 0,9` (área segura) menos os recuos (`STRIP_INSET_PX = 8`, ou seja `W = 0,9 × width − 8`)
 laterais da faixa; capa `c = 0,18 × height × 2/3`; vão `g` = 16 px; `V = max(1, floor((W − 0,25 × c + g) / (c + g)))` (a folga
 de `0,25 × c` é a escala 1,25 da capa em foco). Sem tamanho conhecido (0 × 0, jsdom): `STRIP_FALLBACK_CAPACITY = 12`. O shell lê
 `window.innerWidth`/`innerHeight` e assina `resize` (removido ao desmontar).

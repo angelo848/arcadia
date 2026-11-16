@@ -123,22 +123,173 @@ describe('BigBoxDetails', () => {
     expect(sel()).toEqual([false, false, true])
   })
 
-  it('BBX-016/os botões Jogar e Jogar sem contar tempo chamam onPlay e onPlayUntracked; o foco atual tem contorno', () => {
+  it('BBX-016/os botões Jogar e Jogar sem contar tempo chamam onPlay e onPlayUntracked', () => {
     const p = props({ detailsFocus: 'playUntracked' })
-    const { rerender } = render(<BigBoxDetails {...p} />)
-    const play = screen.getByRole('button', { name: 'Jogar' })
-    const untracked = screen.getByRole('button', { name: 'Jogar sem contar tempo' })
-    fireEvent.click(play)
-    fireEvent.click(untracked)
+    render(<BigBoxDetails {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Jogar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Jogar sem contar tempo' }))
     expect(p.onPlay).toHaveBeenCalledTimes(1)
     expect(p.onPlayUntracked).toHaveBeenCalledTimes(1)
-    expect(untracked.getAttribute('data-focused')).toBe('true')
-    expect(play.getAttribute('data-focused')).not.toBe('true')
-    rerender(<BigBoxDetails {...p} detailsFocus="play" />)
-    expect(play.getAttribute('data-focused')).toBe('true')
-    expect(untracked.getAttribute('data-focused')).not.toBe('true')
-    rerender(<BigBoxDetails {...p} detailsFocus="description" />)
-    expect(screen.getByRole('region', { name: /descrição/i }).getAttribute('data-focused')).toBe('true')
+  })
+
+  it('BBX-035/foco em play: só o botão Jogar tem data-focused true; foco em playUntracked: só ele; foco na galeria: só a fileira de miniaturas', () => {
+    const { container, rerender } = render(<BigBoxDetails {...props({ detailsFocus: 'play' })} />)
+    const play = screen.getByRole('button', { name: 'Jogar' })
+    const untracked = screen.getByRole('button', { name: 'Jogar sem contar tempo' })
+    const thumbs = () => container.querySelector('[data-bb-thumbs]') as HTMLElement
+    const focused = () => Array.from(container.querySelectorAll('[data-focused="true"]'))
+    expect(focused()).toEqual([play])
+    rerender(<BigBoxDetails {...props({ detailsFocus: 'playUntracked' })} />)
+    expect(focused()).toEqual([untracked])
+    rerender(<BigBoxDetails {...props({ detailsFocus: 'gallery' })} />)
+    expect(focused()).toEqual([thumbs()])
+    expect(thumbs()).toBeTruthy()
+  })
+
+  it('BBX-035/a miniatura selecionada tem aria-current e não tem o contorno de foco', () => {
+    const { container } = render(<BigBoxDetails {...props({ detailsFocus: 'gallery', gallery: 1 })} />)
+    const items = galleryItems(container) as HTMLElement[]
+    expect(items[1].getAttribute('aria-current')).toBe('true')
+    expect(items[1].getAttribute('data-focused')).not.toBe('true')
+    expect(items[1].style.outline).not.toContain('--arc-bb-focus')
+    expect(items.filter((e) => e.getAttribute('aria-current') === 'true')).toHaveLength(1)
+  })
+
+  const viewer = (c: HTMLElement) => c.querySelector('[data-bb-viewer]') as HTMLElement
+  const fitsContain = (el: Element) => el.className.includes('object-contain') || (el as HTMLElement).style.objectFit === 'contain'
+
+  it('BBX-034/o visor mostra o item gallery em object-contain e o contador "i+1 / N"', () => {
+    const { container } = render(<BigBoxDetails {...props({ gallery: 1 })} />)
+    const v = viewer(container)
+    expect(v).toBeTruthy()
+    const img = v.querySelector('img') as HTMLImageElement
+    expect(img.getAttribute('src')).toBe('/media/1.png') // galleryOf: video 2, screenshot 1, screenshot 3
+    expect(fitsContain(img)).toBe(true)
+    expect(v.textContent).toContain('2 / 3')
+  })
+
+  it('BBX-034/gallery 2 mostra o terceiro screenshot no visor', () => {
+    const { container } = render(<BigBoxDetails {...props({ gallery: 2 })} />)
+    expect(viewer(container).querySelector('img')?.getAttribute('src')).toBe('/media/3.png')
+    expect(viewer(container).textContent).toContain('3 / 3')
+  })
+
+  it('BBX-034/gallery maior que N − 1 mostra o último', () => {
+    const { container } = render(<BigBoxDetails {...props({ gallery: 9 })} />)
+    expect(viewer(container).querySelector('img')?.getAttribute('src')).toBe('/media/3.png')
+    expect(viewer(container).textContent).toContain('3 / 3')
+  })
+
+  it('BBX-034/vídeo selecionado toca no visor (muted sem som, loop, playsInline) e a miniatura dele não tem video', () => {
+    const { container } = render(<BigBoxDetails {...props({ gallery: 0 })} />)
+    const v = viewer(container).querySelector('video') as HTMLVideoElement
+    expect(v).not.toBeNull()
+    expect(v.getAttribute('src')).toBe('/media/2.mp4')
+    expect(v.muted).toBe(true)
+    expect(v.loop).toBe(true)
+    expect(v.hasAttribute('playsinline') || v.playsInline).toBe(true)
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled()
+    const thumb = galleryItems(container)[0]
+    expect(thumb.querySelector('video')).toBeNull()
+    expect(thumb.textContent).toContain('Vídeo')
+  })
+
+  it('BBX-034/trocar do vídeo para um screenshot desmonta o video sem src', () => {
+    const { container, rerender } = render(<BigBoxDetails {...props({ gallery: 0 })} />)
+    rerender(<BigBoxDetails {...props({ gallery: 1 })} />)
+    const after = container.querySelector('video')
+    expect(after === null || !after.hasAttribute('src')).toBe(true)
+  })
+
+  it('BBX-034/no máximo um video na tela', () => {
+    const { container, rerender } = render(<BigBoxDetails {...props({ gallery: 0 })} />)
+    for (const g of [0, 1, 2, 0]) {
+      rerender(<BigBoxDetails {...props({ gallery: g })} />)
+      expect(container.querySelectorAll('video').length).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('BBX-034/a troca de gallery chama scrollIntoView da miniatura (espião) sem quebrar quando ausente', () => {
+    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: unknown }
+    const spy = vi.fn()
+    proto.scrollIntoView = spy
+    try {
+      const { rerender } = render(<BigBoxDetails {...props({ gallery: 0 })} />)
+      spy.mockClear()
+      rerender(<BigBoxDetails {...props({ gallery: 2 })} />)
+      expect(spy).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' })
+      expect(spy.mock.instances.at(-1)).toBe(galleryItems(document.body)[2])
+    } finally {
+      delete proto.scrollIntoView
+    }
+    const { rerender: again } = render(<BigBoxDetails {...props({ gallery: 0 })} />)
+    expect(() => again(<BigBoxDetails {...props({ gallery: 1 })} />)).not.toThrow()
+  })
+
+  it('BBX-041/miniaturas em object-contain', () => {
+    const { container } = render(<BigBoxDetails {...props()} />)
+    const imgs = galleryItems(container).flatMap((e) => Array.from(e.querySelectorAll('img')))
+    expect(imgs.length).toBeGreaterThan(0)
+    for (const i of imgs) expect(fitsContain(i)).toBe(true)
+  })
+
+  it('BBX-037/título, linhas de dado, tempo, botões, descrição e contador têm ancestral data-bb-panel', () => {
+    const { container } = render(<BigBoxDetails {...props({ gallery: 1 })} />)
+    const inPanel = (el: Element | null) => el?.closest('[data-bb-panel]') != null
+    expect(inPanel(screen.getByRole('heading', { name: 'Chrono Quest' }))).toBe(true)
+    expect(inPanel(screen.getByText(/Squaresoft/))).toBe(true)
+    expect(inPanel(screen.getByText(/Enix/))).toBe(true)
+    expect(inPanel(screen.getByText(/Sessões: 4/))).toBe(true)
+    expect(inPanel(screen.getByRole('button', { name: 'Jogar' }))).toBe(true)
+    expect(inPanel(screen.getByRole('button', { name: 'Jogar sem contar tempo' }))).toBe(true)
+    expect(inPanel(screen.getByRole('region', { name: /descrição/i }))).toBe(true)
+    const counter = Array.from(viewer(container).querySelectorAll('*')).find((e) => e.children.length === 0 && /2 \/ 3/.test(e.textContent ?? ''))
+    expect(counter).toBeTruthy()
+    expect(inPanel(counter ?? null)).toBe(true)
+  })
+
+  it('BBX-043/a raiz data-bb-details tem altura 100%, min-height 0 e overflow hidden; visor e miniaturas estão dentro dela; só a descrição tem overflow-y auto', () => {
+    const { container } = render(<BigBoxDetails {...props()} />)
+    const root = container.querySelector('[data-bb-details]') as HTMLElement
+    expect(root).toBeTruthy()
+    expect(root.style.height).toBe('100%')
+    expect(['0', '0px']).toContain(root.style.minHeight)
+    expect(root.style.overflow).toBe('hidden')
+    expect(root.contains(viewer(container))).toBe(true)
+    expect(root.contains(container.querySelector('[data-bb-thumbs]'))).toBe(true)
+    const scrollers = Array.from(root.querySelectorAll<HTMLElement>('*')).filter((e) => e.style.overflowY === 'auto')
+    expect(scrollers).toEqual([screen.getByRole('region', { name: /descrição/i })])
+  })
+
+  it('BBX-043/sem galeria não há visor nem miniaturas e a coluna de texto vai a 60%', () => {
+    const { container } = render(<BigBoxDetails {...props({ media: [item(4, 'cover')] })} />)
+    expect(viewer(container)).toBeNull()
+    expect(container.querySelector('[data-bb-thumbs]')).toBeNull()
+    const column = screen.getByRole('heading', { name: 'Chrono Quest' }).closest('[data-bb-panel]') as HTMLElement
+    expect(column.style.maxWidth).toBe('60%')
+  })
+
+  const em = (v: string) => (v === '' ? NaN : parseFloat(v))
+
+  it('BBX-044/data-bb-facts agrupa plataforma·ano·gêneros, desenvolvedores, editoras, modos e tempo·última vez·sessões; rowGap ≤ 0,25em, lineHeight ≤ 1,4 e parágrafos sem margem', () => {
+    const { container } = render(<BigBoxDetails {...props()} />)
+    const facts = container.querySelector('[data-bb-facts]') as HTMLElement
+    expect(facts).toBeTruthy()
+    const t = facts.textContent ?? ''
+    for (const s of ['Super Nintendo', '1995', 'RPG', 'Desenvolvedores: Squaresoft', 'Editoras: Enix', 'Um jogador', 'Sessões: 4']) {
+      expect(t).toContain(s)
+    }
+    expect(em(facts.style.rowGap)).toBeLessThanOrEqual(0.25)
+    expect(em(facts.style.lineHeight)).toBeLessThanOrEqual(1.4)
+    const ps = Array.from(facts.querySelectorAll('p'))
+    expect(ps.length).toBeGreaterThanOrEqual(5)
+    for (const p of ps) expect(['0', '0px']).toContain(p.style.margin)
+  })
+
+  it('BBX-044/o gap entre título, fatos, botões e descrição é ≤ 0,75em', () => {
+    render(<BigBoxDetails {...props()} />)
+    const column = screen.getByRole('heading', { name: 'Chrono Quest' }).closest('[data-bb-panel]') as HTMLElement
+    expect(em(column.style.gap)).toBeLessThanOrEqual(0.75)
   })
 
   it('BBX-016/scrollSignal rola a descrição', () => {
@@ -158,6 +309,21 @@ describe('BigBoxDetails', () => {
     const last = scrollBy.mock.calls.at(-1)?.[0] as { top?: number } | number | undefined
     const top = typeof last === 'object' ? last?.top : undefined
     expect(top === undefined || top < 0).toBe(true)
+  })
+
+  it('BBX-036/scrollSignal rola a descrição com o foco em qualquer zona', () => {
+    const scrollBy = vi.fn()
+    ;(HTMLElement.prototype as unknown as { scrollBy: unknown }).scrollBy = scrollBy
+    for (const detailsFocus of ['play', 'playUntracked', 'gallery'] as const) {
+      const { rerender, unmount } = render(<BigBoxDetails {...props({ detailsFocus, scrollSignal: 0 })} />)
+      scrollBy.mockClear()
+      act(() => {
+        rerender(<BigBoxDetails {...props({ detailsFocus, scrollSignal: 1 })} />)
+      })
+      expect(scrollBy, detailsFocus).toHaveBeenCalled()
+      expect(scrollBy.mock.instances.at(-1)).toBe(screen.getByRole('region', { name: /descrição/i }))
+      unmount()
+    }
   })
 
   it('BBX-016/jogo sem descrição e sem mídia não quebra', () => {

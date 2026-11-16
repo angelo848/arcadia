@@ -93,6 +93,25 @@ describe('varredura do Big Box', () => {
     expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
   })
 
+  it('BBX-025/Panel.tsx, capacity.ts e useViewport.ts entram na varredura e não têm cor literal nem classe de paleta', () => {
+    for (const f of ['./Panel.tsx', './themes/faixa/capacity.ts', './useViewport.ts']) {
+      const hit = files.find(([p]) => p === f)
+      expect(hit, `${f} entra na varredura`).toBeDefined()
+      const src = hit![1]
+      const bad = [...src.matchAll(palette), ...src.matchAll(literalColor)].map((m) => `${f}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      expect(bad, `cores literais ou paleta:\n${bad.join('\n')}`).toEqual([])
+    }
+  })
+
+  it('BBX-037/nenhum arquivo de bigbox/ pinta fundo de texto com --arc-bb-scrim (só o preenchimento de BackgroundStage o usa)', () => {
+    const hits: string[] = []
+    for (const [p, src] of files) {
+      if (p === './BackgroundStage.tsx') continue
+      for (const m of src.matchAll(/--arc-bb-scrim|\bbg-bb-scrim\b|\bbb-scrim\b/g)) hits.push(`${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(hits, `scrim fora do fundo:\n${hits.join('\n')}`).toEqual([])
+  })
+
   it('BBX-029/os arquivos de bigbox/ não importam nenhum binding Video*, MediaQueue nem MetadataApply', () => {
     const bad: string[] = []
     const name = /\b(Video\w*|video(Queue|QueueMissing|CancelPending|Status)\w*|MediaQueue|MetadataApply|queueMedia|applyMetadata)\b/

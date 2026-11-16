@@ -103,7 +103,7 @@ describe('BackgroundStage', () => {
     expect(VIDEO_DELAY_MS).toBe(2000)
     const { container } = render(<BackgroundStage {...base} />)
     act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
-    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    const art = container.querySelector('[data-testid="bb-art-layer"]') as HTMLElement
     const vid = container.querySelector('[data-testid="bb-video"]') as HTMLElement
     expect(art.style.transition).toContain('opacity')
     expect(art.style.transition).toContain('300ms')
@@ -154,10 +154,60 @@ describe('BackgroundStage', () => {
     const arts = Array.from(container.querySelectorAll('[data-testid="bb-art"]')) as HTMLElement[]
     expect(arts.map((a) => a.getAttribute('src'))).toContain('http://media/2/bg.jpg')
     expect(arts.length).toBeLessThanOrEqual(2)
-    arts.forEach((a) => expect(a.style.transition).toContain('300ms'))
+    arts.forEach((a) => expect(a.closest('[data-testid="bb-art-layer"]')).not.toBeNull())
     act(() => { vi.advanceTimersByTime(ART_FADE_MS) })
     const after = Array.from(container.querySelectorAll('[data-testid="bb-art"]'))
     expect(after.map((a) => a.getAttribute('src'))).toEqual(['http://media/2/bg.jpg'])
+  })
+
+  it('BBX-010/a transição de 300 ms vale para o par preenchimento + arte (as duas camadas na troca, uma depois de ART_FADE_MS)', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} videoUrl={null} />)
+    rerender(<BackgroundStage {...base} gameId={2} artUrl="http://media/2/bg.jpg" videoUrl={null} />)
+    const layers = Array.from(container.querySelectorAll('[data-testid="bb-art-layer"]')) as HTMLElement[]
+    expect(layers).toHaveLength(2)
+    for (const l of layers) {
+      expect(l.style.transition).toContain('opacity')
+      expect(l.style.transition).toContain('300ms')
+      expect(l.querySelector('[data-testid="bb-art-fill"]')).not.toBeNull()
+      expect(l.querySelector('[data-testid="bb-art"]')).not.toBeNull()
+    }
+    act(() => { vi.advanceTimersByTime(ART_FADE_MS) })
+    expect(container.querySelectorAll('[data-testid="bb-art-layer"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-testid="bb-art-fill"]')).toHaveLength(1)
+  })
+
+  it('BBX-040/com arte: um preenchimento (bb-art-fill) em object-cover com desfoque ≥ 24px e véu de --arc-bb-scrim, e a arte (bb-art) em object-contain acima', () => {
+    const { container } = render(<BackgroundStage {...base} videoUrl={null} />)
+    const fill = container.querySelector('[data-testid="bb-art-fill"]') as HTMLElement
+    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    expect(fill.getAttribute('src')).toBe('http://media/1/bg.jpg')
+    expect(fill.className).toContain('object-cover')
+    const blur = /blur-\[(\d+)px\]/.exec(fill.className) ?? /blur\(\s*(\d+)px\s*\)/.exec(fill.getAttribute('style') ?? '')
+    expect(blur, 'blur do preenchimento').not.toBeNull()
+    expect(Number(blur![1])).toBeGreaterThanOrEqual(24)
+    expect(art.className).toContain('object-contain')
+    expect(art.className).not.toContain('object-cover')
+    // veil with the scrim token between the fill and the art
+    const layer = fill.closest('[data-testid="bb-art-layer"]') as HTMLElement
+    expect(layer.innerHTML).toMatch(/--arc-bb-scrim|bb-scrim/)
+    const kids = Array.from(layer.children)
+    expect(kids.indexOf(art)).toBeGreaterThan(kids.indexOf(fill))
+  })
+
+  it('BBX-040/o vídeo usa object-contain sobre o preenchimento', () => {
+    const { container } = render(<BackgroundStage {...base} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    const v = container.querySelector('[data-testid="bb-video"]') as HTMLElement
+    expect(v.className).toContain('object-contain')
+    expect(v.className).not.toContain('object-cover')
+    expect(container.querySelector('[data-testid="bb-art-fill"]')).not.toBeNull()
+  })
+
+  it('BBX-040/sem arte: só o gradiente, sem preenchimento', () => {
+    const { container } = render(<BackgroundStage {...base} artUrl={null} videoUrl={null} />)
+    expect(container.querySelector('[data-testid="bb-art-fill"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-art-layer"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-gradient"]')).not.toBeNull()
   })
 
   it('BBX-010/sem arte: gradiente de tokens', () => {

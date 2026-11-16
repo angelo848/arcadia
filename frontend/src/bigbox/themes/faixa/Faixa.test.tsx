@@ -27,10 +27,12 @@ function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
   return {
     screen: 'browse',
     tabs: [{ platformId: null, label: 'Todos' }, { platformId: 7, label: 'Nintendo 64' }, { platformId: 8, label: 'Super Nintendo' }],
-    tab: 1, games, total: 40, focus: 7, focused: focused(games[7]), videoVisible: false, sound: false,
+    tab: 1, loading: false, games, total: 40, focus: 7, stripStart: 0, counter: '8 / 40', focused: focused(games[7]),
+    videoVisible: false, sound: false,
     hints: hintsFor('browse', { empty: false, videoVisible: false }), alert: null, ...o,
   }
 }
+const inPanel = (el: HTMLElement) => el.closest('[data-bb-panel]') !== null
 function setup(m = model()) {
   const cb = { onPick: vi.fn(), onPlay: vi.fn(), onDetails: vi.fn() }
   const r = render(<Faixa model={m} details={<div>DETALHES</div>} {...cb} />)
@@ -132,6 +134,91 @@ describe('Faixa', () => {
   it('BBX-021/biblioteca vazia: "Nenhum jogo na biblioteca"', () => {
     setup(model({ tabs: [{ platformId: null, label: 'Todos' }], tab: 0, games: [], total: 0, focus: 0, focused: null }))
     expect(screen.getByText('Nenhum jogo na biblioteca')).toBeInTheDocument()
+  })
+
+  it('BBX-037/abas, título, linha de dados, descrição curta, tempo jogado, última vez, sessões e botões têm um ancestral data-bb-panel', () => {
+    setup()
+    expect(inPanel(screen.getByRole('tablist'))).toBe(true)
+    for (const el of [
+      screen.getByRole('heading', { name: /Jogo 8/ }),
+      screen.getByText('Nintendo 64 · 1996 · Ação'),
+      screen.getByText('Uma aventura curta.'),
+      screen.getByText(/12 h 5 min/),
+      screen.getByText(/10\/11\/2026/),
+      screen.getByText(/Sessões: 14/),
+      screen.getByRole('button', { name: 'Jogar' }),
+      screen.getByRole('button', { name: 'Detalhes' }),
+    ]) {
+      expect(inPanel(el), el.textContent ?? '').toBe(true)
+    }
+  })
+
+  it('BBX-037/"Nenhum jogo nesta plataforma", "Nenhum jogo na biblioteca" e "Carregando jogos…" ficam num painel', () => {
+    const empty = { games: [], total: 0, focus: 0, focused: null, counter: null }
+    const a = setup(model(empty))
+    expect(inPanel(screen.getByText('Nenhum jogo nesta plataforma'))).toBe(true)
+    a.unmount()
+    const b = setup(model({ ...empty, tabs: [{ platformId: null, label: 'Todos' }], tab: 0 }))
+    expect(inPanel(screen.getByText('Nenhum jogo na biblioteca'))).toBe(true)
+    b.unmount()
+    setup(model({ ...empty, loading: true }))
+    expect(inPanel(screen.getByText('Carregando jogos…'))).toBe(true)
+  })
+
+  it('BBX-038/model.loading mostra "Carregando jogos…" com as abas e sem bloco de informações', () => {
+    setup(model({ loading: true, games: [], total: 0, focus: 0, focused: null, counter: null }))
+    expect(screen.getByText('Carregando jogos…')).toBeInTheDocument()
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Jogar' })).toBeNull()
+    expect(screen.queryByText('Nenhum jogo nesta plataforma')).toBeNull()
+  })
+
+  it('BBX-039/aba de 40 jogos, foco 0, stripStart 0 e 13 jogos no modelo: 13 capas, índices 0..12, a primeira em foco', () => {
+    const games = Array.from({ length: 13 }, (_, i) => game(i + 1))
+    setup(model({ games, focus: 0, stripStart: 0, total: 40, focused: focused(games[0]), counter: '1 / 40' }))
+    const covers = screen.getAllByTestId('bb-cover')
+    expect(covers).toHaveLength(13)
+    expect(covers[0]).toHaveAttribute('data-focused', 'true')
+    expect(covers.filter((c) => c.getAttribute('data-focused') === 'true')).toHaveLength(1)
+  })
+
+  it('BBX-039/clique na capa i chama onPick(stripStart + i), duplo clique onPlay(stripStart + i)', () => {
+    const games = Array.from({ length: 13 }, (_, i) => game(i + 19))
+    const { onPick, onPlay } = setup(model({ games, focus: 20, stripStart: 18, total: 40, focused: focused(games[2]) }))
+    const covers = screen.getAllByTestId('bb-cover')
+    expect(covers[2]).toHaveAttribute('data-focused', 'true')
+    fireEvent.click(covers[4])
+    expect(onPick).toHaveBeenCalledWith(22)
+    fireEvent.doubleClick(covers[4])
+    expect(onPlay).toHaveBeenCalledWith(22)
+  })
+
+  it('BBX-006/nunca mais de 15 capas no DOM', () => {
+    setup(model({ games: Array.from({ length: 15 }, (_, i) => game(i + 1)), total: 500 }))
+    expect(screen.getAllByTestId('bb-cover').length).toBeLessThanOrEqual(15)
+  })
+
+  it('BBX-041/a imagem da capa usa object-contain', () => {
+    setup()
+    const img = screen.getAllByTestId('bb-cover')[0].querySelector('img')!
+    expect(img.className).toContain('object-contain')
+    expect(img.className).not.toContain('object-cover')
+  })
+
+  it('BBX-045/counter "7 / 120" aparece em bb-strip-counter com ancestral data-bb-panel', () => {
+    setup(model({ counter: '7 / 120', total: 120 }))
+    const c = screen.getByTestId('bb-strip-counter')
+    expect(c).toHaveTextContent('7 / 120')
+    expect(inPanel(c)).toBe(true)
+  })
+
+  it('BBX-045/counter null (loading ou aba vazia): bb-strip-counter ausente', () => {
+    const a = setup(model({ counter: null }))
+    expect(screen.queryByTestId('bb-strip-counter')).toBeNull()
+    a.unmount()
+    setup(model({ counter: null, loading: true, games: [], total: 0, focused: null }))
+    expect(screen.queryByTestId('bb-strip-counter')).toBeNull()
   })
 
   it('BBX-006/em Detalhes o tema mostra o elemento details', () => {

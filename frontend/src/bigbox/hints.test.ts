@@ -14,13 +14,30 @@ describe('hintsFor', () => {
     ])
   })
 
-  it('BBX-015/dicas de Detalhes: A sobre o botão focado, B Voltar, Select+B Fechar o jogo', () => {
-    const p = pairs(hintsFor('details', { empty: false, videoVisible: false, detailsFocus: 'play' }))
-    expect(p).toHaveLength(3)
-    expect(p[0]).toMatch(/^A /)
-    expect(p.slice(1)).toEqual(['B Voltar', 'Select+B Fechar o jogo'])
-    const q = pairs(hintsFor('details', { empty: false, videoVisible: false, detailsFocus: 'playUntracked' }))
-    expect(q[0]).not.toBe(p[0])
+  it('BBX-015/details com foco em botão: A com o rótulo do botão, ↓ Imagens só com galeria, B Voltar, Select+B Fechar o jogo', () => {
+    const p = pairs(hintsFor('details', { empty: false, videoVisible: false, detailsFocus: 'play', hasGallery: true }))
+    expect(p).toEqual(['A Jogar', '↓ Imagens', 'B Voltar', 'Select+B Fechar o jogo'])
+    const q = pairs(hintsFor('details', { empty: false, videoVisible: false, detailsFocus: 'playUntracked', hasGallery: false }))
+    expect(q).toEqual(['A Jogar sem contar tempo', 'B Voltar', 'Select+B Fechar o jogo'])
+  })
+
+  it('BBX-015/details com foco na galeria: ←/→ Imagem, ↑ Botões, B Voltar, Select+B Fechar o jogo, sem A', () => {
+    const p = pairs(hintsFor('details', { empty: false, videoVisible: false, detailsFocus: 'gallery', hasGallery: true }))
+    expect(p).toEqual(['←/→ Imagem', '↑ Botões', 'B Voltar', 'Select+B Fechar o jogo'])
+    expect(p.some((x) => x.startsWith('A '))).toBe(false)
+  })
+
+  it('BBX-015/nenhuma dica "Rolar"', () => {
+    for (const detailsFocus of ['play', 'playUntracked', 'gallery'] as const) {
+      const p = pairs(hintsFor('details', { empty: false, videoVisible: true, detailsFocus, hasGallery: true }))
+      expect(p.join('|')).not.toContain('Rolar')
+    }
+  })
+
+  it('BBX-015/details nunca mostra "Y Som", mesmo com videoVisible', () => {
+    for (const detailsFocus of ['play', 'playUntracked', 'gallery'] as const) {
+      expect(pairs(hintsFor('details', { empty: false, videoVisible: true, detailsFocus, hasGallery: true }))).not.toContain('Y Som')
+    }
   })
 
   it('BBX-013/"Y Som" só com vídeo visível', () => {

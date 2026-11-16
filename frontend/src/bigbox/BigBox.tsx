@@ -8,10 +8,11 @@ import { bigBoxNav, initialNav } from './nav'
 import type { NavAction, NavCtx, NavEffect, NavState } from './nav'
 import { resolveTheme } from './themes/registry'
 import { useBigBoxEvents } from './useBigBoxEvents'
-import { useFocusedData, useTabGames } from './useBigBoxData'
+import { shouldPrefetch, useFocusedData, useTabGames } from './useBigBoxData'
+import { useViewport } from './useViewport'
 import { useBigBoxInput } from './useBigBoxInput'
 import type { InputAction } from './useBigBoxInput'
-import { buildTabs, buildViewModel, sessionMark, windowAround } from './viewModel'
+import { buildTabs, buildViewModel, sessionMark, stripWindow } from './viewModel'
 import type { BigBoxThemeId, BigBoxTab } from './viewModel'
 import { Faixa } from './themes/faixa/Faixa'
 import { bringToFront, enterBigBox } from '../lib/bigbox'
@@ -70,32 +71,58 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   }, [])
 
   const tabDef = tabs[nav.tab] ?? tabs[0]
-  const tabGames = useTabGames(tabDef.platformId)
+  const viewport = useViewport()
+  const capacity = theme.listCapacity(viewport)
+  const tabGames = useTabGames(tabDef.platformId, capacity)
   const games = tabGames.games
   gamesRef.current = games
-  const focusedGame = games[nav.focus]
-  const focusedId = focusedGame?.id ?? null
+  const { loaded, total, exhausted, error: pageError, isPending, isFetchingNextPage, fetchNextPage } = tabGames
+
+  // Entry [BBX-027]: the first tab shows "Carregando jogos…" until the game of the normal window has its strip complete.
+  const [entryDone, setEntryDone] = useState(false)
+  const entering = !entryDone && nav.tab === initialTab
+  const loading = isPending || entering
+  const { initialGameId } = p
+  useEffect(() => {
+    if (!entering || isPending) return
+    const idx = initialGameId !== null ? games.findIndex((g) => g.id === initialGameId) : -1
+    if (!pageError && shouldPrefetch(loaded, total, idx >= 0 ? idx : 0, capacity, exhausted)) {
+      if (!isFetchingNextPage) fetchNextPage()
+      return
+    }
+    dispatchNav({ type: 'listLoaded', initialIndex: idx >= 0 ? idx : null })
+    setEntryDone(true)
+  }, [entering, isPending, games, initialGameId, pageError, loaded, total, capacity, exhausted, isFetchingNextPage, fetchNextPage, dispatchNav])
+
+  // Read ahead of the focus: one page at a time, retried after a failure only when the focus moves [BBX-007].
+  const lastAsk = useRef<string | null>(null)
+  useEffect(() => {
+    if (entering || isPending || isFetchingNextPage) return
+    if (!shouldPrefetch(loaded, total, nav.focus, capacity, exhausted)) return
+    const ask = `${nav.tab}:${nav.focus}`
+    if (pageError && lastAsk.current === ask) return
+    lastAsk.current = ask
+    fetchNextPage()
+  }, [entering, isPending, isFetchingNextPage, loaded, total, nav.focus, nav.tab, capacity, exhausted, pageError, fetchNextPage])
+
+  const focusedId = loading ? null : (games[nav.focus]?.id ?? null)
   const data = useFocusedData(focusedId)
 
-  // First load of each tab: the focus goes to the game of the normal window (first tab only) or the first game [BBX-027].
-  const loadedTab = useRef<number | null>(null)
-  useEffect(() => {
-    if (tabGames.isPending || loadedTab.current === nav.tab) return
-    const first = loadedTab.current === null
-    loadedTab.current = nav.tab
-    const idx = first && p.initialGameId !== null ? games.findIndex((g) => g.id === p.initialGameId) : -1
-    dispatchNav({ type: 'listLoaded', initialIndex: idx >= 0 ? idx : null })
-  })
-
-  const { slice } = windowAround(games, nav.focus)
-  const covers = useCardImages(useMemo(() => slice.map((g) => g.id), [slice]))
+  const win = stripWindow(total, nav.focus, capacity)
+  const coverKey = loading ? '' : games.slice(win.start, Math.min(win.end, loaded)).map((g) => g.id).join(',')
+  const covers = useCardImages(useMemo(() => (coverKey === '' ? [] : coverKey.split(',').map(Number)), [coverKey]))
+  const gallery = galleryOf(data.media)
   const model = buildViewModel({
     screen: nav.screen,
     detailsFocus: nav.detailsFocus,
+    hasGallery: gallery.length > 0,
     tabs,
     tab: nav.tab,
     games,
-    total: tabGames.total,
+    total,
+    loaded,
+    capacity,
+    loading,
     focus: nav.focus,
     covers,
     media: data.media,
@@ -104,17 +131,22 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
     session: data.session,
     sound: nav.sound,
     videoFailed: nav.videoFailed,
-    alert,
+    alert: alert ?? (pageError ? `Falha ao ler os jogos: ${errorMessage(pageError)}` : null),
   })
-  const gallery = galleryOf(data.media)
   ctxRef.current = {
     tabs: tabs.length,
-    total: tabGames.total,
-    loaded: tabGames.loaded,
+    total,
+    loaded,
     galleryCount: gallery.length,
     focusedGameId: focusedId,
     videoVisible: model.videoVisible,
   }
+
+  // The gallery of the focused game can shrink while the details are open [BBX-032, BBX-034].
+  const galleryCount = gallery.length
+  useEffect(() => {
+    dispatchNav({ type: 'galleryChanged', count: galleryCount })
+  }, [galleryCount, dispatchNav])
 
   const startLaunch = useCallback((gameId: number, untracked: boolean) => {
     if (pendingRef.current || navRef.current.suspended) return
@@ -132,12 +164,8 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   }, [dispatchNav])
 
   const { onExit } = p
-  const { fetchNextPage } = tabGames
   effectRef.current = (e: NavEffect) => {
     switch (e.kind) {
-      case 'fetchNextPage':
-        fetchNextPage()
-        break
       case 'launch':
         startLaunch(e.gameId, false)
         break
@@ -189,7 +217,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
     ) : null
 
   return (
-    <div data-bigbox-theme={theme.id} className="relative flex h-full w-full flex-col overflow-hidden bg-bb-bg text-bb-text">
+    <div data-bigbox-theme={theme.id} className="relative h-full w-full overflow-hidden bg-bb-bg text-bb-text">
       <BackgroundStage
         gameId={focusedId}
         artUrl={model.focused?.backgroundUrl ?? null}
@@ -200,19 +228,23 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
         onVideoError={(gameId) => dispatchNav({ type: 'videoFailed', gameId })}
         onVideoVisible={() => {}}
       />
-      <div className="relative z-10 min-h-0 flex-1">
-        <Theme
-          model={model}
-          details={details}
-          onPick={(index) => dispatchNav({ type: 'listLoaded', initialIndex: index })}
-          onPlay={(index) => {
-            const g = games[index]
-            if (g) startLaunch(g.id, false)
-          }}
-          onDetails={() => dispatchNav({ type: 'details' })}
-        />
-      </div>
-      <div className="relative z-10 px-8 py-3" style={{ background: 'var(--arc-bb-scrim)' }}>
+      <div
+        data-bb-safe=""
+        className="relative z-10 flex h-full min-h-0 flex-col gap-3"
+        style={{ padding: 'var(--arc-bb-safe-y) var(--arc-bb-safe-x)' }}
+      >
+        <div className="min-h-0 flex-1">
+          <Theme
+            model={model}
+            details={details}
+            onPick={(index) => dispatchNav({ type: 'listLoaded', initialIndex: index })}
+            onPlay={(index) => {
+              const g = games[index]
+              if (g) startLaunch(g.id, false)
+            }}
+            onDetails={() => dispatchNav({ type: 'details' })}
+          />
+        </div>
         <Footer hints={model.hints} />
       </div>
     </div>

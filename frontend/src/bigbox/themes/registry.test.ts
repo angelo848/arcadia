@@ -26,6 +26,17 @@ describe('registro de temas do Big Box', () => {
     expect(BIGBOX_THEMES.find((t) => t.id === 'faixa')?.axis).toBe('horizontal')
   })
 
+  it('BBX-024/todo tema do registro tem listCapacity; mosaico e roda devolvem 12', () => {
+    for (const t of BIGBOX_THEMES) expect(t.listCapacity, t.id).toBeTypeOf('function')
+    for (const id of ['mosaico', 'roda']) {
+      const t = BIGBOX_THEMES.find((x) => x.id === id)!
+      expect(t.listCapacity({ width: 1920, height: 1080 }), id).toBe(12)
+      expect(t.listCapacity({ width: 0, height: 0 }), id).toBe(12)
+    }
+    const f = BIGBOX_THEMES.find((x) => x.id === 'faixa')!
+    expect(f.listCapacity({ width: 0, height: 0 })).toBe(12)
+  })
+
   it('BBX-024/resolveTheme devolve o tema de teste vertical quando registrado (tema falso)', () => {
     const fake = BIGBOX_THEMES.find((t) => t.id === 'mosaico')!
     const saved = { ...fake }

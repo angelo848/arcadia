@@ -171,6 +171,26 @@ describe('useBigBoxInput gamepad', () => {
     expect(calls).toEqual(['scrollUp', 'scrollDown'])
   })
 
+  it('BBX-036/analógico direito emite scrollUp/scrollDown em details com qualquer foco (a tela não sabe do foco)', () => {
+    const { calls } = setup({ screen: 'details' })
+    axes[3] = -0.9; advance(16); axes[3] = 0; advance(32)
+    axes[3] = 0.9; advance(16); axes[3] = 0; advance(32)
+    expect(calls).toEqual(['scrollUp', 'scrollDown'])
+  })
+
+  it('BBX-032/em details direcional e analógico esquerdo emitem up, down, prev e next', () => {
+    const { calls } = setup({ screen: 'details' })
+    pressed.add(UP); advance(16); pressed.clear(); advance(16)
+    pressed.add(DOWN); advance(16); pressed.clear(); advance(16)
+    pressed.add(LEFT); advance(16); pressed.clear(); advance(16)
+    pressed.add(RIGHT); advance(16); pressed.clear(); advance(16)
+    axes[1] = -0.9; advance(16); axes[1] = 0; advance(32)
+    axes[1] = 0.9; advance(16); axes[1] = 0; advance(32)
+    axes[0] = -0.9; advance(16); axes[0] = 0; advance(32)
+    axes[0] = 0.9; advance(16)
+    expect(calls).toEqual(['up', 'down', 'prev', 'next', 'up', 'down', 'prev', 'next'])
+  })
+
   it('BBX-019/Select apertado: B e Y são ignorados', () => {
     const { calls } = setup()
     pressed.add(SELECT); advance(32)
@@ -283,6 +303,24 @@ describe('useBigBoxInput teclado', () => {
     const { calls } = setup({ screen: 'details' })
     key('ArrowDown')
     expect(calls.every((c) => ['down', 'scrollDown'].includes(c))).toBe(true)
+  })
+
+  it('BBX-036/em details PageUp e PageDown emitem scrollUp e scrollDown', () => {
+    const { calls } = setup({ screen: 'details' })
+    key('PageUp'); key('PageDown')
+    expect(calls).toEqual(['scrollUp', 'scrollDown'])
+  })
+
+  it('BBX-036/em browse PageUp e PageDown continuam tabPrev e tabNext', () => {
+    const { calls } = setup({ screen: 'browse' })
+    key('PageUp'); key('PageDown')
+    expect(calls).toEqual(['tabPrev', 'tabNext'])
+  })
+
+  it('BBX-032/em details as setas emitem up, down, prev e next', () => {
+    const { calls } = setup({ screen: 'details' })
+    key('ArrowUp'); key('ArrowDown'); key('ArrowLeft'); key('ArrowRight')
+    expect(calls).toEqual(['up', 'down', 'prev', 'next'])
   })
 
   it('BBX-019/desabilitado ignora o teclado e desmontar remove o listener', () => {

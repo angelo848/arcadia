@@ -70,14 +70,21 @@ export function BackgroundStage(p: BackgroundStageProps) {
         />
       )}
       {[...layers].reverse().map((url, i, arr) => (
-        <img
+        <div
           key={url}
-          data-testid="bb-art"
-          alt=""
-          src={url}
-          className="absolute inset-0 h-full w-full object-cover"
+          data-testid="bb-art-layer"
+          className="absolute inset-0"
           style={{ opacity: i === 0 && arr.length > 1 ? 0 : 1, transition: `opacity ${ART_FADE_MS}ms` }}
-        />
+        >
+          <img
+            data-testid="bb-art-fill"
+            alt=""
+            src={url}
+            className="absolute inset-0 h-full w-full scale-110 object-cover blur-[32px]"
+          />
+          <div className="absolute inset-0" style={{ background: 'var(--arc-bb-scrim)' }} />
+          <img data-testid="bb-art" alt="" src={url} className="absolute inset-0 h-full w-full object-contain" />
+        </div>
       ))}
       {showVideo && (
         <video
@@ -88,7 +95,7 @@ export function BackgroundStage(p: BackgroundStageProps) {
           loop
           playsInline
           autoPlay
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-contain"
           style={{ opacity: shown ? 1 : 0, transition: `opacity ${VIDEO_FADE_MS}ms` }}
           onError={() => {
             setReadyId(null)

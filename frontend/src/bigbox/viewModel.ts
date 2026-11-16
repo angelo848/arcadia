@@ -5,9 +5,12 @@ import type { CatalogView, GameView } from '../lib/library'
 import type { CardImage, MediaItemView } from '../lib/metadata'
 import { hintsFor } from './hints'
 import type { Hint } from './hints'
+import type { DetailsFocus } from './nav'
 
 export const SHORT_DESCRIPTION_MAX = 280
-export const STRIP_WINDOW = 7
+export const STRIP_ANCHOR = 2
+export const STRIP_MAX = 15
+export const STRIP_FALLBACK_CAPACITY = 12
 
 export type BigBoxThemeId = 'faixa' | 'mosaico' | 'roda'
 export type BigBoxTab = { platformId: number | null; label: string }
@@ -31,9 +34,12 @@ export type BigBoxViewModel = {
   screen: 'browse' | 'details'
   tabs: BigBoxTab[]
   tab: number
+  loading: boolean
   games: BigBoxGame[]
   total: number
   focus: number
+  stripStart: number
+  counter: string | null
   focused: BigBoxFocused | null
   videoVisible: boolean
   sound: boolean
@@ -43,11 +49,15 @@ export type BigBoxViewModel = {
 
 export type ViewModelInput = {
   screen: 'browse' | 'details'
-  detailsFocus?: string
+  detailsFocus?: DetailsFocus
+  hasGallery?: boolean
   tabs: BigBoxTab[]
   tab: number
   games: GameView[] // loaded games of the tab
-  total: number
+  total: number // T: total of the tab
+  loaded: number // L: games read so far
+  capacity: number // V: whole covers the theme fits
+  loading: boolean // first page of the tab not read yet
   focus: number
   covers: Record<number, CardImage> // useCardImages result
   media: MediaItemView[] // media of the focused game
@@ -98,10 +108,18 @@ export function pickVideo(media: MediaItemView[]): string | null {
   return media.find((m) => m.kind === 'video')?.url ?? null
 }
 
-export function windowAround<T>(items: T[], focus: number): { slice: T[]; offset: number } {
-  if (items.length === 0) return { slice: [], offset: 0 }
-  const offset = Math.max(0, focus - STRIP_WINDOW)
-  return { slice: items.slice(offset, focus + STRIP_WINDOW + 1), offset }
+// stripWindow is the half-open range [start, end) of covers drawn for a tab of `total` games [BBX-039].
+export function stripWindow(total: number, focus: number, capacity: number): { start: number; end: number } {
+  if (total <= 0) return { start: 0, end: 0 }
+  const v = Math.min(Math.max(capacity, 1), STRIP_MAX - 1)
+  const start = Math.min(Math.max(focus - STRIP_ANCHOR, 0), Math.max(total - v, 0))
+  return { start, end: Math.min(start + v + 1, total) }
+}
+
+// stripCounter renders "position / total" of the focused game [BBX-045].
+export function stripCounter(total: number, focus: number, loading: boolean): string | null {
+  if (loading || total <= 0) return null
+  return `${focus + 1} / ${total}`
 }
 
 export function sessionMark(session: SessionView | null, gameId: number): 'running' | 'paused' | null {
@@ -130,9 +148,9 @@ export function buildViewModel(i: ViewModelInput): BigBoxViewModel {
     coverUrl: i.covers[g.id]?.url ?? null,
     session: sessionMark(i.session, g.id),
   })
-  const { slice } = windowAround(i.games, i.focus)
-  const games = slice.map(toGame)
-  const g = i.games[i.focus]
+  const win = stripWindow(i.total, i.focus, i.capacity)
+  const games = i.loading ? [] : i.games.slice(win.start, Math.min(win.end, i.loaded)).map(toGame)
+  const g = i.loading ? undefined : i.games[i.focus]
   const videoUrl = g ? pickVideo(i.media) : null
   const videoVisible = !!g && videoUrl !== null && i.videoFailed !== g.id && i.screen === 'browse'
   const focused: BigBoxFocused | null = g
@@ -156,13 +174,21 @@ export function buildViewModel(i: ViewModelInput): BigBoxViewModel {
     screen: i.screen,
     tabs: i.tabs,
     tab: i.tab,
+    loading: i.loading,
     games,
     total: i.total,
     focus: i.focus,
+    stripStart: win.start,
+    counter: stripCounter(i.total, i.focus, i.loading),
     focused,
     videoVisible,
     sound: i.sound,
-    hints: hintsFor(i.screen, { empty: i.total === 0, videoVisible, detailsFocus: i.detailsFocus }),
+    hints: hintsFor(i.screen, {
+      empty: i.total === 0,
+      videoVisible,
+      detailsFocus: i.detailsFocus,
+      hasGallery: i.hasGallery,
+    }),
     alert: i.alert,
   }
 }

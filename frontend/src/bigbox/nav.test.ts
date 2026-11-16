@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bigBoxNav, initialNav, PREFETCH_BEFORE_END } from './nav'
+import { bigBoxNav, initialNav } from './nav'
 import type { NavAction, NavCtx, NavState } from './nav'
 
 const ctx = (o: Partial<NavCtx> = {}): NavCtx => ({
@@ -17,7 +17,6 @@ const run = (s: NavState, a: NavAction, c: NavCtx = ctx()) => bigBoxNav(s, a, c)
 describe('bigBoxNav', () => {
   it('BBX-006/estado inicial', () => {
     expect(initialNav).toMatchObject({ screen: 'browse', tab: 0, focus: 0, suspended: false, sound: false, videoFailed: null, launchedGameId: null })
-    expect(PREFETCH_BEFORE_END).toBe(10)
   })
 
   it('BBX-006/prev e next movem o foco de um em um e não dão a volta nas pontas', () => {
@@ -27,9 +26,29 @@ describe('bigBoxNav', () => {
     expect(run(st({ focus: 99 }), { type: 'next' }, ctx({ loaded: 100 })).state.focus).toBe(99)
   })
 
-  it('BBX-007/next com foco ≥ carregado − 10 pede fetchNextPage; antes disso não pede', () => {
+  it('BBX-006/prev e next em browse não devolvem efeito algum (sem fetchNextPage)', () => {
     expect(run(st({ focus: 30 }), { type: 'next' }).effects).toEqual([])
-    expect(run(st({ focus: 45 }), { type: 'next' }).effects).toContainEqual({ kind: 'fetchNextPage' })
+    expect(run(st({ focus: 49 }), { type: 'next' }).effects).toEqual([])
+    expect(run(st({ focus: 45 }), { type: 'prev' }).effects).toEqual([])
+  })
+
+  it('BBX-006/next no jogo total − 1 com tudo lido não muda', () => {
+    const c = ctx({ total: 20, loaded: 20 })
+    const r = run(st({ focus: 19 }), { type: 'next' }, c)
+    expect(r.state.focus).toBe(19)
+    expect(r.effects).toEqual([])
+  })
+
+  it('BBX-007/next no jogo loaded − 1 com loaded < total não muda o foco (página pendente)', () => {
+    const c = ctx({ total: 120, loaded: 15 })
+    const r = run(st({ focus: 14 }), { type: 'next' }, c)
+    expect(r.state.focus).toBe(14)
+    expect(r.effects).toEqual([])
+  })
+
+  it('BBX-007/com loaded maior, o mesmo next avança', () => {
+    const c = ctx({ total: 120, loaded: 30 })
+    expect(run(st({ focus: 14 }), { type: 'next' }, c).state.focus).toBe(15)
   })
 
   it('BBX-005/tabNext e tabPrev circulares e foco 0', () => {
@@ -43,36 +62,72 @@ describe('bigBoxNav', () => {
     expect(run(st(), { type: 'accept' }, ctx({ focusedGameId: null })).effects).toEqual([])
   })
 
-  it('BBX-016/details abre Detalhes com detailsFocus play e galeria 0', () => {
-    const s = run(st({ gallery: 2, detailsFocus: 'description' }), { type: 'details' }).state
-    expect(s).toMatchObject({ screen: 'details', detailsFocus: 'play', gallery: 0 })
+  it('BBX-016/details abre com detailsFocus e detailsButton em play e galeria 0', () => {
+    const s = run(st({ gallery: 2, detailsFocus: 'gallery', detailsButton: 'playUntracked' }), { type: 'details' }).state
+    expect(s).toMatchObject({ screen: 'details', detailsFocus: 'play', detailsButton: 'play', gallery: 0 })
     expect(run(st(), { type: 'details' }, ctx({ focusedGameId: null })).state.screen).toBe('browse')
   })
 
-  it('BBX-016/up e down percorrem play, playUntracked e description sem dar a volta', () => {
-    let s = st({ screen: 'details', detailsFocus: 'play' })
-    expect(run(s, { type: 'up' }).state.detailsFocus).toBe('play')
-    s = run(s, { type: 'down' }).state
-    expect(s.detailsFocus).toBe('playUntracked')
-    s = run(s, { type: 'down' }).state
-    expect(s.detailsFocus).toBe('description')
-    expect(run(s, { type: 'down' }).state.detailsFocus).toBe('description')
-    expect(run(s, { type: 'up' }).state.detailsFocus).toBe('playUntracked')
+  const det = (o: Partial<NavState> = {}) => st({ screen: 'details', ...o })
+
+  it('BBX-032/down de um botão com galleryCount > 0 vai à galeria; com galleryCount 0 não muda', () => {
+    expect(run(det({ detailsFocus: 'play', detailsButton: 'play' }), { type: 'down' }).state.detailsFocus).toBe('gallery')
+    expect(run(det({ detailsFocus: 'playUntracked', detailsButton: 'playUntracked' }), { type: 'down' }).state.detailsFocus).toBe('gallery')
+    const s = det({ detailsFocus: 'play' })
+    expect(run(s, { type: 'down' }, ctx({ galleryCount: 0 })).state).toEqual(s)
   })
 
-  it('BBX-016/prev e next movem a galeria nos limites', () => {
-    const d = st({ screen: 'details', gallery: 0, focus: 4 })
-    expect(run(d, { type: 'prev' }).state.gallery).toBe(0)
-    expect(run(d, { type: 'next' }).state.gallery).toBe(1)
-    expect(run(d, { type: 'next' }).state.focus).toBe(4)
-    expect(run({ ...d, gallery: 2 }, { type: 'next' }).state.gallery).toBe(2)
+  it('BBX-032/up na galeria volta ao último botão (play ou playUntracked)', () => {
+    expect(run(det({ detailsFocus: 'gallery', detailsButton: 'play' }), { type: 'up' }).state.detailsFocus).toBe('play')
+    expect(run(det({ detailsFocus: 'gallery', detailsButton: 'playUntracked' }), { type: 'up' }).state.detailsFocus).toBe('playUntracked')
+  })
+
+  it('BBX-032/up num botão e down na galeria não mudam nada', () => {
+    const b = det({ detailsFocus: 'play' })
+    expect(run(b, { type: 'up' }).state).toEqual(b)
+    const g = det({ detailsFocus: 'gallery', gallery: 1 })
+    expect(run(g, { type: 'down' }).state).toEqual(g)
+  })
+
+  it('BBX-032/galleryChanged(0) com foco na galeria volta ao último botão; vale com suspended', () => {
+    const g = det({ detailsFocus: 'gallery', detailsButton: 'playUntracked' })
+    expect(run(g, { type: 'galleryChanged', count: 0 }).state.detailsFocus).toBe('playUntracked')
+    const susp = det({ detailsFocus: 'gallery', detailsButton: 'play', suspended: true, launchedGameId: 7 })
+    expect(run(susp, { type: 'galleryChanged', count: 0 }).state.detailsFocus).toBe('play')
+  })
+
+  it('BBX-033/next em play vai a playUntracked e prev volta, sem dar a volta; gallery não muda', () => {
+    const p = det({ detailsFocus: 'play', detailsButton: 'play', gallery: 1 })
+    const n = run(p, { type: 'next' }).state
+    expect(n).toMatchObject({ detailsFocus: 'playUntracked', detailsButton: 'playUntracked', gallery: 1 })
+    expect(run(n, { type: 'next' }).state.detailsFocus).toBe('playUntracked')
+    expect(run(n, { type: 'prev' }).state).toMatchObject({ detailsFocus: 'play', detailsButton: 'play' })
+    expect(run(p, { type: 'prev' }).state.detailsFocus).toBe('play')
+  })
+
+  it('BBX-034/com foco na galeria prev e next movem gallery em [0, galleryCount − 1] sem dar a volta; detailsFocus não muda', () => {
+    const g = det({ detailsFocus: 'gallery', gallery: 0, focus: 4 })
+    expect(run(g, { type: 'prev' }).state.gallery).toBe(0)
+    const n = run(g, { type: 'next' }).state
+    expect(n).toMatchObject({ gallery: 1, detailsFocus: 'gallery', focus: 4 })
+    expect(run({ ...g, gallery: 2 }, { type: 'next' }).state.gallery).toBe(2)
+    expect(run({ ...g, gallery: 2 }, { type: 'prev' }).state.gallery).toBe(1)
+  })
+
+  it('BBX-034/galleryChanged(n) limita gallery a n − 1', () => {
+    const g = det({ detailsFocus: 'gallery', gallery: 5 })
+    expect(run(g, { type: 'galleryChanged', count: 3 }).state.gallery).toBe(2)
+    expect(run(det({ gallery: 1 }), { type: 'galleryChanged', count: 4 }).state.gallery).toBe(1)
+  })
+
+  it('BBX-016/accept na galeria não pede efeito', () => {
+    expect(run(det({ detailsFocus: 'gallery' }), { type: 'accept' }).effects).toEqual([])
   })
 
   it('BBX-016/accept em play e playUntracked pede launch e launchUntracked', () => {
     const d = st({ screen: 'details' })
     expect(run({ ...d, detailsFocus: 'play' }, { type: 'accept' }).effects).toEqual([{ kind: 'launch', gameId: 7 }])
     expect(run({ ...d, detailsFocus: 'playUntracked' }, { type: 'accept' }).effects).toEqual([{ kind: 'launchUntracked', gameId: 7 }])
-    expect(run({ ...d, detailsFocus: 'description' }, { type: 'accept' }).effects).toEqual([])
   })
 
   it('BBX-002/back em browse pede exit; em details volta a browse com o mesmo foco', () => {
