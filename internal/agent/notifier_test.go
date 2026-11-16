@@ -38,6 +38,64 @@ func nextMediaChangedID(t *testing.T, c *ipc.Client, d time.Duration) (int64, bo
 	}
 }
 
+func TestGameClosedNotifier(t *testing.T) {
+	t.Run("CON-019/gameClosedNotifier sem servidor e depois de set(nil) não faz nada e não bloqueia", func(t *testing.T) {
+		returns := func(fn func()) bool {
+			done := make(chan struct{})
+			go func() { defer close(done); fn() }()
+			select {
+			case <-done:
+				return true
+			case <-time.After(testTimeout):
+				return false
+			}
+		}
+		var n gameClosedNotifier
+		if !returns(func() { n.GameClosedByHotkey(1) }) {
+			t.Fatal("GameClosedByHotkey before set blocked")
+		}
+
+		srv := ipc.NewServer(testClock(), map[string]ipc.Handler{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		ctx, cancel := context.WithCancel(context.Background())
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = srv.Serve(ctx, ln) }()
+		t.Cleanup(func() {
+			cancel()
+			_ = srv.Close()
+			wg.Wait()
+		})
+		c := dialRaw(t, ln.Addr().String())
+		c.rpc(t, "x.register", nil) // the answer proves the connection is registered
+
+		n.set(srv)
+		if !returns(func() { n.GameClosedByHotkey(7) }) {
+			t.Fatal("GameClosedByHotkey with server blocked")
+		}
+		all := c.waitAll(t, "game.closedByHotkey", func(all []rawMsg) bool {
+			return countMethod(all, ipc.MethodGameClosedByHotkey) == 1
+		})
+		for _, m := range all {
+			if m.method() == ipc.MethodGameClosedByHotkey && string(m["params"]) != `{"gameId":7}` {
+				t.Errorf("params = %s, want {\"gameId\":7}", m["params"])
+			}
+		}
+
+		n.set(nil)
+		if !returns(func() { n.GameClosedByHotkey(8) }) {
+			t.Fatal("GameClosedByHotkey after set(nil) blocked")
+		}
+		c.rpc(t, "x.register", nil) // round trip: anything sent before it has arrived
+		if got := countMethod(c.snapshotAll(), ipc.MethodGameClosedByHotkey); got != 1 {
+			t.Errorf("game.closedByHotkey count after set(nil) = %d, want 1 (only the first)", got)
+		}
+	})
+}
+
 func TestMediaNotifier(t *testing.T) {
 	t.Run("IMG-001/mediaNotifier sem servidor e depois de set(nil) não faz nada e não bloqueia", func(t *testing.T) {
 		returns := func(fn func()) bool {

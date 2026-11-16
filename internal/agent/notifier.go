@@ -44,6 +44,24 @@ func (n *batchNotifier) BatchChanged(p ipc.MetadataBatchChangedParams) {
 	srv.Notify(ipc.MethodMetadataBatchChanged, p)
 }
 
+// gameClosedNotifier bridges the close router to the IPC server [CON-019]. Before set, and
+// after set(nil), GameClosedByHotkey is a no-op; it never blocks.
+type gameClosedNotifier struct{ srv atomic.Pointer[ipc.Server] }
+
+// set points the notifier at s (nil detaches it).
+func (n *gameClosedNotifier) set(s *ipc.Server) { n.srv.Store(s) }
+
+// GameClosedByHotkey broadcasts game.closedByHotkey for gameID to every connected client.
+func (n *gameClosedNotifier) GameClosedByHotkey(gameID int64) {
+	srv := n.srv.Load()
+	if srv == nil {
+		return
+	}
+	srv.Notify(ipc.MethodGameClosedByHotkey, struct {
+		GameID int64 `json:"gameId"`
+	}{gameID})
+}
+
 // set points the notifier at s (nil detaches it).
 func (n *sessionNotifier) set(s *ipc.Server) { n.srv.Store(s) }
 

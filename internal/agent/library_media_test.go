@@ -100,7 +100,9 @@ type ctxFetcher struct {
 	started chan struct{}
 }
 
-func (f *ctxFetcher) Fetch(ctx context.Context, gameID int64, _ string) (media.Stored, bool, error) {
+// alterado em 2026-11-15 (fase 13): o mediaFetcher recebe o job.
+func (f *ctxFetcher) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
+	gameID := job.GameID
 	f.started <- struct{}{}
 	select {
 	case <-f.gate:
@@ -134,7 +136,7 @@ func newMediaDeleteHarness(t *testing.T, med gameMedia, log *callLog) (*gamesHar
 func wireMedia(t *testing.T, h *gamesHarness, med *lateMedia, root string) *media.Store {
 	t.Helper()
 	files := media.New(root, nil)
-	med.q = newMediaQueue(h.st, files, h.clock, slog.New(h.logs), nil)
+	med.q = newMediaQueue(h.st, imageFetcher{files: files}, h.clock, slog.New(h.logs), nil)
 	med.files = files
 	return files
 }

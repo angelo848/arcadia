@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
 	"github.com/arcadia-launcher/arcadia/internal/media"
+	"github.com/arcadia-launcher/arcadia/internal/scrapers"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 )
 
@@ -18,6 +20,9 @@ const (
 	mediaMaxAttempts = 3
 	mediaRetryDelay  = 30 * time.Second
 	mediaHTTPTimeout = 60 * time.Second // one download, including the image body
+
+	videoConcurrency = 1         // the video lane downloads one at a time (VID-009)
+	videoQuotaPause  = time.Hour // pause after the daily quota is spent (VID-016)
 )
 
 // mediaQueueStore is what the queue needs from the store.
@@ -27,11 +32,46 @@ type mediaQueueStore interface {
 	SetMediaJobState(ctx context.Context, id int64, state string, attempts int, lastErr string) error
 	CancelMediaJob(ctx context.Context, id int64) error
 	AddMedia(ctx context.Context, m store.MediaRow) (bool, error)
+	CancelVideoJobs(ctx context.Context) (pending int, running []int64, err error)
 }
 
-// mediaFetcher downloads one image (media.Store).
+// mediaFetcher downloads the media of one job.
 type mediaFetcher interface {
-	Fetch(ctx context.Context, gameID int64, url string) (media.Stored, bool, error)
+	Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error)
+}
+
+// imageFetcher downloads images with the media store.
+type imageFetcher struct{ files *media.Store }
+
+func (f imageFetcher) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
+	return f.files.Fetch(ctx, job.GameID, job.SourceURL)
+}
+
+// fetchRouter sends video jobs to the video resolver and the rest to the image fetcher.
+type fetchRouter struct{ images, video mediaFetcher }
+
+func (r fetchRouter) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
+	if job.Kind == "video" {
+		return r.video.Fetch(ctx, job)
+	}
+	return r.images.Fetch(ctx, job)
+}
+
+// videoPause is why the video lane is not taking jobs.
+type videoPause int
+
+const (
+	videoActive videoPause = iota
+	videoPausedQuota
+	videoPausedCredentials
+	videoNoCredentials
+)
+
+// videoLane is the state of the video lane; guarded by mediaQueue.mu.
+type videoLane struct {
+	kind   videoPause
+	until  time.Time // end of the quota pause
+	warned bool      // the Warn of this pause was already logged
 }
 
 // mediaQueue runs the media downloads in the background (MID-005). One goroutine owns the loop;
@@ -48,6 +88,10 @@ type mediaQueue struct {
 	changes *mediaChangeCoalescer // guarded by mu
 	active  map[int64]*activeJob  // jobs running now, by job id; guarded by mu
 	retryAt map[int64]time.Time   // failed jobs waiting for their next attempt
+
+	video      videoLane               // guarded by mu
+	videoReady func() bool             // set once before Run; nil = always ready
+	videoQuota func() scrapers.SSQuota // set once before Run; nil = unknown
 }
 
 // activeJob is a download in progress: its game (for CancelGame), the cancel of its context and
@@ -136,6 +180,7 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 		return fmt.Errorf("agent: retomar fila de mídia: %w", err)
 	}
 	sem := make(chan struct{}, mediaConcurrency)
+	vsem := make(chan struct{}, videoConcurrency)
 	var wg sync.WaitGroup
 	defer func() { // runs after wg.Wait: pending notices are dropped when Run returns
 		q.mu.Lock()
@@ -158,7 +203,7 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 		// The deadline is read before dispatch: a retry that is future now is covered by the timer,
 		// one that is already due is started by dispatch, and a later one calls Notify.
 		deadline, ok := q.nextDeadline()
-		q.dispatch(ctx, sem, &wg)
+		q.dispatch(ctx, sem, vsem, &wg)
 		switch {
 		case !ok:
 			armedCh = nil
@@ -176,16 +221,25 @@ func (q *mediaQueue) Run(ctx context.Context) error {
 }
 
 // dispatch starts the pending jobs that have a free slot and are due for their attempt.
-func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.WaitGroup) {
+func (q *mediaQueue) dispatch(ctx context.Context, isem, vsem chan struct{}, wg *sync.WaitGroup) {
 	jobs, err := q.st.PendingMediaJobs(ctx)
 	if err != nil {
 		q.log.Error("fila de mídia: listar jobs", "error", err.Error())
 		return
 	}
 	now := q.clock.Now()
+	videoOpen := q.videoOpen(now)
+	imagesFull, videoBlocked := false, !videoOpen
 	for _, job := range jobs {
 		if ctx.Err() != nil {
 			return
+		}
+		if imagesFull && videoBlocked {
+			return
+		}
+		isVideo := job.Provider == store.VideoProvider
+		if (isVideo && videoBlocked) || (!isVideo && imagesFull) {
+			continue
 		}
 		q.mu.Lock()
 		due, waiting := q.retryAt[job.ID]
@@ -193,10 +247,19 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 		if waiting && now.Before(due) {
 			continue
 		}
+		sem := isem
+		if isVideo {
+			sem = vsem
+		}
 		select {
 		case sem <- struct{}{}:
-		default:
-			return
+		default: // this lane is full; the other one is not held back
+			if isVideo {
+				videoBlocked = true
+			} else {
+				imagesFull = true
+			}
+			continue
 		}
 		if err := q.st.SetMediaJobState(ctx, job.ID, store.JobRunning, job.Attempts, ""); err != nil {
 			<-sem
@@ -212,6 +275,9 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 		go func(job store.MediaJob) {
 			defer wg.Done()
 			q.run(ctx, jobCtx, cancel, job)
+			if isVideo {
+				q.checkVideoQuota()
+			}
 			q.finish(job.ID)
 			<-sem
 			q.Notify() // a slot is free: the loop starts the next pending job now
@@ -224,11 +290,15 @@ func (q *mediaQueue) dispatch(ctx context.Context, sem chan struct{}, wg *sync.W
 // pending again for the next start.
 func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFunc, job store.MediaJob) {
 	defer cancel()
-	stored, _, err := q.fetch.Fetch(jobCtx, job.GameID, job.SourceURL)
+	stored, _, err := q.fetch.Fetch(jobCtx, job)
 	if err == nil {
 		var added bool
+		sourceURL := job.SourceURL
+		if stored.SourceURL != "" {
+			sourceURL = stored.SourceURL
+		}
 		added, err = q.st.AddMedia(jobCtx, store.MediaRow{
-			GameID: job.GameID, Kind: job.Kind, Provider: job.Provider, SourceURL: job.SourceURL,
+			GameID: job.GameID, Kind: job.Kind, Provider: job.Provider, SourceURL: sourceURL,
 			Hash: stored.Hash, Path: stored.Path, ThumbPath: stored.ThumbPath, CreatedAt: q.clock.Now(),
 		})
 		if err == nil && added && parent.Err() == nil && jobCtx.Err() == nil {
@@ -254,6 +324,28 @@ func (q *mediaQueue) run(parent, jobCtx context.Context, cancel context.CancelFu
 	case jobCtx.Err() != nil:
 		// Cancelled by the user: Cancel already wrote the state.
 	default:
+		var perm *media.PermanentError
+		switch {
+		case errors.As(err, &perm):
+			q.log.Info("mídia: recusada de vez", "job", job.ID, "error", err.Error())
+			q.setState(writeCtx, job.ID, store.JobFailed, job.Attempts+1, err.Error())
+			return
+		case errors.Is(err, scrapers.ErrQuota):
+			q.pauseVideo(videoPausedQuota, q.clock.Now().Add(videoQuotaPause), "cota do ScreenScraper esgotada")
+			q.setState(writeCtx, job.ID, store.JobPending, job.Attempts, "")
+			q.Notify()
+			return
+		case errors.Is(err, scrapers.ErrCredentials):
+			q.pauseVideo(videoPausedCredentials, time.Time{}, "credenciais do ScreenScraper recusadas")
+			q.setState(writeCtx, job.ID, store.JobPending, job.Attempts, "")
+			q.Notify()
+			return
+		case errors.Is(err, scrapers.ErrNoCredentials):
+			q.pauseVideo(videoNoCredentials, time.Time{}, "")
+			q.setState(writeCtx, job.ID, store.JobPending, job.Attempts, "")
+			q.Notify()
+			return
+		}
 		attempts := job.Attempts + 1
 		if attempts >= mediaMaxAttempts {
 			q.log.Warn("mídia: falha definitiva", "job", job.ID, "attempts", attempts, "error", err.Error())
@@ -314,7 +406,105 @@ func (q *mediaQueue) nextDeadline() (time.Time, bool) {
 	if end, ok := q.changes.next(); ok && (!found || end.Before(first)) {
 		first, found = end, true
 	}
+	if q.video.kind == videoPausedQuota && q.video.until.After(now) && (!found || q.video.until.Before(first)) {
+		first, found = q.video.until, true
+	}
 	return first, found
+}
+
+// ConfigureVideo sets the video lane hooks; call it once before Run. ready reports whether both
+// ScreenScraper credentials exist; quota is the last quota reading of the client.
+func (q *mediaQueue) ConfigureVideo(ready func() bool, quota func() scrapers.SSQuota) {
+	q.videoReady, q.videoQuota = ready, quota
+}
+
+// VideoCredentialsChanged lifts the credentials pauses and wakes the loop (VID-017, VID-019).
+func (q *mediaQueue) VideoCredentialsChanged() {
+	q.mu.Lock()
+	if q.video.kind == videoPausedCredentials || q.video.kind == videoNoCredentials {
+		q.video = videoLane{}
+	}
+	q.mu.Unlock()
+	q.Notify()
+}
+
+// VideoLaneStatus is the state of the video lane: active, paused-quota (with the end of the pause),
+// paused-credentials or no-credentials (VID-008).
+func (q *mediaQueue) VideoLaneStatus() (string, time.Time) {
+	if q.videoReady != nil && !q.videoReady() {
+		return "no-credentials", time.Time{}
+	}
+	now := q.clock.Now()
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	switch q.video.kind {
+	case videoPausedQuota:
+		if now.Before(q.video.until) {
+			return "paused-quota", q.video.until
+		}
+	case videoPausedCredentials:
+		return "paused-credentials", time.Time{}
+	case videoNoCredentials:
+		return "no-credentials", time.Time{}
+	}
+	return "active", time.Time{}
+}
+
+// CancelVideo cancels the pending video jobs and interrupts the running ones; it returns how many (VID-007).
+func (q *mediaQueue) CancelVideo(ctx context.Context) (int, error) {
+	pending, running, err := q.st.CancelVideoJobs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("agent: cancelar vídeos: %w", err)
+	}
+	q.mu.Lock()
+	for _, id := range running {
+		delete(q.retryAt, id)
+		if act := q.active[id]; act != nil {
+			act.cancel()
+		}
+	}
+	q.mu.Unlock()
+	return pending + len(running), nil
+}
+
+// videoOpen reports whether the video lane may start a job now, ending an elapsed quota pause.
+func (q *mediaQueue) videoOpen(now time.Time) bool {
+	if q.videoReady != nil && !q.videoReady() {
+		return false
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	switch q.video.kind {
+	case videoPausedQuota:
+		if now.Before(q.video.until) {
+			return false
+		}
+		q.video = videoLane{}
+	case videoPausedCredentials, videoNoCredentials:
+		return false
+	}
+	return true
+}
+
+// pauseVideo puts the lane in a pause and logs msg once per pause.
+func (q *mediaQueue) pauseVideo(kind videoPause, until time.Time, msg string) {
+	q.mu.Lock()
+	warn := !(q.video.kind == kind && q.video.warned)
+	q.video = videoLane{kind: kind, until: until, warned: true}
+	q.mu.Unlock()
+	if warn && msg != "" {
+		q.log.Warn(msg)
+	}
+}
+
+// checkVideoQuota pauses the lane when the last reading says today's requests are spent (VID-016).
+func (q *mediaQueue) checkVideoQuota() {
+	if q.videoQuota == nil {
+		return
+	}
+	if sq := q.videoQuota(); sq.Known && sq.MaxPerDay > 0 && sq.RequestsToday >= sq.MaxPerDay {
+		q.pauseVideo(videoPausedQuota, q.clock.Now().Add(videoQuotaPause), "cota do ScreenScraper esgotada")
+	}
 }
 
 // nextTimer returns a channel that fires at nextDeadline, or nil when there is none (a nil channel

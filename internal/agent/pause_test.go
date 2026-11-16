@@ -53,10 +53,19 @@ type pauseFake struct {
 	toggleFn  func(ctx context.Context, reason domain.PauseReason, at time.Time) (tracker.PauseResult, error)
 	suspendFn func(ctx context.Context, at time.Time) error
 	wakeFn    func(ctx context.Context, at time.Time, userPresent bool) error
+
+	// CloseByHotkey (T13): closes has one entry per call, in order; closeFn nil
+	// answers Closed for game 1.
+	closes  chan closeCall
+	closeFn func(ctx context.Context, at time.Time) (tracker.CloseResult, error)
 }
 
 func newPauseFake() *pauseFake {
-	return &pauseFake{fakeTracker: &fakeTracker{}, toggles: make(chan pauseCall, 64)}
+	return &pauseFake{
+		fakeTracker: &fakeTracker{},
+		toggles:     make(chan pauseCall, 64),
+		closes:      make(chan closeCall, 64),
+	}
 }
 
 func (f *pauseFake) record(c pauseCall) {
@@ -164,22 +173,36 @@ func pauseLogger(buf *pauseLogBuf) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// pauseRig is a router wired to a pauseFake and a captured log.
+// pauseRig is a router wired to a pauseFake and a captured log. fb and sink
+// are the fakes of the feedback sender and of the close notification (T13).
 type pauseRig struct {
-	tr  *pauseFake
-	in  chan input.Trigger
-	log *pauseLogBuf
-	r   *pauseRouter
+	tr   *pauseFake
+	in   chan input.Trigger
+	log  *pauseLogBuf
+	r    *triggerRouter
+	fb   *fbFake
+	sink *sinkFake
+
+	sentinels int // used by flush (close_router_test.go)
 }
 
 // startPauseRig registers the goleak check first, then starts the router and
 // registers its Close, so Close runs before the leak check [PAU-005].
 func startPauseRig(t *testing.T, tr *pauseFake) *pauseRig {
 	t.Helper()
+	fb, sink := newFBFake(), newSinkFake()
+	return startRigWith(t, tr, fb, fb, sink, sink)
+}
+
+// startRigWith is startPauseRig with the feedback sender and the sink given by
+// the caller (fb and sink are the fakes the rig exposes for assertions; fbS and
+// sinkS are what the router receives).
+func startRigWith(t *testing.T, tr *pauseFake, fb *fbFake, fbS feedbackSender, sink *sinkFake, sinkS closeSink) *pauseRig {
+	t.Helper()
 	verifyNoLeaks(t)
 	buf := &pauseLogBuf{}
-	rig := &pauseRig{tr: tr, in: make(chan input.Trigger, triggerQueueSize), log: buf}
-	rig.r = newPauseRouter(tr, rig.in, pauseLogger(buf))
+	rig := &pauseRig{tr: tr, in: make(chan input.Trigger, triggerQueueSize), log: buf, fb: fb, sink: sink}
+	rig.r = newTriggerRouter(tr, rig.in, pauseLogger(buf), fbS, sinkS)
 	rig.r.Start()
 	t.Cleanup(rig.r.Close)
 	return rig

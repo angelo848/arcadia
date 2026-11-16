@@ -130,7 +130,9 @@ type fakeFetcher struct {
 	gate     chan struct{}
 }
 
-func (f *fakeFetcher) Fetch(ctx context.Context, _ int64, url string) (media.Stored, bool, error) {
+// alterado em 2026-11-15 (fase 13): o mediaFetcher recebe o job.
+func (f *fakeFetcher) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
+	url := job.SourceURL
 	f.mu.Lock()
 	f.calls[url]++
 	first := f.calls[url] == 1
@@ -319,7 +321,8 @@ func newCancelFetcher(urls ...string) *cancelFetcher {
 	return f
 }
 
-func (f *cancelFetcher) Fetch(ctx context.Context, _ int64, url string) (media.Stored, bool, error) {
+func (f *cancelFetcher) Fetch(ctx context.Context, job store.MediaJob) (media.Stored, bool, error) {
+	url := job.SourceURL
 	defer func() {
 		f.mu.Lock()
 		f.exited[url]++

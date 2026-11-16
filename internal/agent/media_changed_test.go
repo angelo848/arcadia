@@ -295,7 +295,7 @@ func newMediaWire(t *testing.T, gameCount int) *mediaWire {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mediaRoot := root + string(os.PathSeparator) + "media"
 	notes := &mediaNotifier{}
-	queue := newMediaQueue(st, media.New(mediaRoot, nil), w.clock, log, notes)
+	queue := newMediaQueue(st, imageFetcher{files: media.New(mediaRoot, nil)}, w.clock, log, notes)
 	svc := &scrapeService{
 		st:   st,
 		keys: scrapers.NewKeys(&memKeyStore{values: map[string]string{}}),

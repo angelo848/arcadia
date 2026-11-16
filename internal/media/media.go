@@ -50,6 +50,9 @@ type Stored struct {
 	Hash      string
 	Path      string
 	ThumbPath string
+	// SourceURL, when not empty, is the URL to record for the file (videos: the media URL without
+	// credentials). Empty means the caller keeps the URL it asked for.
+	SourceURL string
 }
 
 // Fetch downloads the image at url for the game of gameID. It returns the file, and whether the

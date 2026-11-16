@@ -193,7 +193,7 @@ func newMetaFixture(t *testing.T, fakes map[string]scrapers.MetadataProvider, no
 	clock := domain.NewFakeClock(time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC))
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sink := &metaSinkSpy{}
-	queue := newMediaQueue(st, media.New(filepath.Join(root, "media"), nil), clock, log, sink)
+	queue := newMediaQueue(st, imageFetcher{files: media.New(filepath.Join(root, "media"), nil)}, clock, log, sink)
 	svc := &scrapeService{
 		st: st,
 		providers: func(name string) (scrapers.MetadataProvider, error) {

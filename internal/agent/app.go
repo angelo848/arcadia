@@ -65,6 +65,9 @@ type config struct {
 	// Providers builds a metadata provider by name; nil => newProviderFactory with the agent keys
 	// and the HTTP client (tests inject blocking fakes).
 	Providers func(name string) (scrapers.MetadataProvider, error)
+
+	// ScreenScraperURL is the ScreenScraper API base URL (tests point it at httptest); empty = the real one.
+	ScreenScraperURL string
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -124,10 +127,12 @@ type instance struct {
 	// onShutdownStep, when set (tests only), is called with each shutdown step in order.
 	onShutdownStep func(step string)
 
-	coord   *feedback.Coordinator
-	router  *pauseRouter
-	sources []input.Source
-	power   io.Closer
+	coord  *feedback.Coordinator
+	router *triggerRouter
+
+	closeNotifier *gameClosedNotifier
+	sources       []input.Source
+	power         io.Closer
 
 	logCloser io.Closer
 
@@ -277,7 +282,31 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
 	keys := scrapers.NewKeys(credentialStore{})
 	mediaNotes := &mediaNotifier{}
-	queue := newMediaQueue(st, media.New(mediaRoot, httpClient), clock, log, mediaNotes)
+	// Video (phase 13): the ScreenScraper client reads the credentials on every request (VID-017).
+	ssClient := scrapers.NewScreenScraper(scrapers.SSConfig{
+		BaseURL: cfg.ScreenScraperURL,
+		HTTP:    httpClient,
+		Limiter: scrapers.NewLimiter(clock, scrapers.IntervalScreenScraper),
+		Log:     log,
+		Creds: func() (scrapers.SSCreds, error) {
+			devID, devPass, err := keys.Pair("screenscraperdev")
+			if err != nil {
+				return scrapers.SSCreds{}, scrapers.ErrNoCredentials
+			}
+			user, pass, err := keys.Pair("screenscraper")
+			if err != nil {
+				return scrapers.SSCreds{}, scrapers.ErrNoCredentials
+			}
+			return scrapers.SSCreds{DevID: devID, DevPassword: devPass, User: user, Password: pass}, nil
+		},
+	})
+	videoResolver := newVideoResolver(st, ssClient, media.New(mediaRoot, httpClient), log)
+	queue := newMediaQueue(st, fetchRouter{images: imageFetcher{files: media.New(mediaRoot, httpClient)}, video: videoResolver}, clock, log, mediaNotes)
+	queue.ConfigureVideo(func() bool {
+		_, _, errDev := keys.Pair("screenscraperdev")
+		_, _, errUser := keys.Pair("screenscraper")
+		return errDev == nil && errUser == nil
+	}, videoResolver.Quota)
 	// game.delete cleans the media of the game it removes (DEL-007, DEL-008).
 	maps.Copy(handlers, gameHandlersWithMedia(st, tr, clock, os.Stat, log, gameMediaOf{q: queue, files: mediaFiles}))
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
@@ -297,6 +326,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		clock:     clock,
 		log:       log,
 	}
+	scrapeSvc.videoCredsChanged = queue.VideoCredentialsChanged
 	maps.Copy(handlers, scrapeHandlers(scrapeSvc))
 	// Unified metadata (phase 12): jobs are children of metaCtx, cancelled at shutdown (MET-059).
 	metaCtx, stopMetadata := context.WithCancel(ctx)
@@ -308,9 +338,11 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	notifier.set(server)
 	mediaNotes.set(server)
 	batchNotes.set(server)
+	closeNotes := &gameClosedNotifier{}
+	closeNotes.set(server)
 
 	triggers := make(chan input.Trigger, triggerQueueSize)
-	router := newPauseRouter(tr, triggers, log)
+	router := newTriggerRouter(tr, triggers, log, coord, closeNotes)
 	router.Start()
 
 	var startedSources []input.Source
@@ -347,6 +379,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		batchNotifier: batchNotes,
 		coord:         coord,
 		router:        router,
+		closeNotifier: closeNotes,
 		sources:       startedSources,
 		power:         powerCloser,
 		logCloser:     logCloser,
@@ -469,6 +502,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		if a.router != nil {
 			a.router.Close()
 		}
+		a.step("router.close")
 
 		dctx, cancel := context.WithTimeout(ctx, a.drainTimeout)
 		err := a.server.Drain(dctx, ipc.MethodShutdown, ipc.ShutdownParams{Reason: string(reason)})
@@ -497,6 +531,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		a.notifier.set(nil)
 		a.mediaNotifier.set(nil)
 		a.batchNotifier.set(nil)
+		a.closeNotifier.set(nil)
 		// After the server (no request can reach the tracker) and before the
 		// store (the tracker writes the end of the session) [AGT-010, SES-011].
 		a.step("tracker.close")
