@@ -283,7 +283,6 @@ describe('GameDetailsPanel', () => {
     expect(props.onPlayUntracked).toHaveBeenCalledTimes(1)
     expect(props.onPlayUntracked).toHaveBeenCalledWith(10)
     expect(props.onPlay).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[data-bigbox-play]')).toHaveTextContent('Jogar')
   })
 
   async function buttonsAfterCarousel(): Promise<HTMLButtonElement[]> {
@@ -306,8 +305,7 @@ describe('GameDetailsPanel', () => {
     expect(classesOf(buttons[0])).toEqual(
       expect.arrayContaining(['w-full', 'min-h-12', 'text-lg', 'font-bold', 'bg-play', 'hover:bg-play-hover', 'text-on-accent']),
     )
-    expect(buttons[0]).toHaveAttribute('data-bigbox-play')
-    expect(buttons[0]).toHaveAttribute('data-bigbox-item')
+    // alterado em 2026-11-15 (fase 13): sem data-bigbox-play / data-bigbox-item (BBX-003)
   })
 
   it('AJU-006/com pendência continua "Iniciando…" e desativado', async () => {

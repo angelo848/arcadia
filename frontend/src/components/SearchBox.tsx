@@ -48,7 +48,6 @@ export function SearchBox({
     <input
       type="search"
       role="searchbox"
-      data-bigbox-item
       aria-label="Buscar na biblioteca"
       placeholder="Buscar jogos"
       value={value}

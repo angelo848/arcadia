@@ -311,15 +311,5 @@ describe('LibraryList', () => {
     expect(p.onLaunch).toHaveBeenCalledWith(1)
   })
 
-  it('UIX-020/lista: com keyboard=false as setas não fazem nada', () => {
-    const p = props({ selectedId: 1, keyboard: false })
-    render(<LibraryList {...p} />)
-
-    rowOf('Jogo 1').focus()
-    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'ArrowDown' })
-    fireEvent.keyDown(rowOf('Jogo 1'), { key: 'ArrowUp' })
-
-    expect(p.onSelect).not.toHaveBeenCalled()
-    expect(rowOf('Jogo 1')).toHaveFocus()
-  })
+  // alterado em 2026-11-15 (fase 13): removido o caso keyboard=false (o Big Box antigo acabou; a prop fica sempre verdadeira).
 })

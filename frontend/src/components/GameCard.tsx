@@ -51,8 +51,6 @@ export function GameCard({
       role="option"
       aria-selected={selected}
       data-game-id={game.id}
-      data-bigbox-item
-      data-bigbox-card
       tabIndex={tabbable ? 0 : -1}
       onClick={() => onSelect(game.id)}
       onDoubleClick={() => onLaunch(game.id)}

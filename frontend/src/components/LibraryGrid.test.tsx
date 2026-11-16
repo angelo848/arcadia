@@ -531,16 +531,5 @@ describe('LibraryGrid: teclado (3 colunas)', () => {
     expect(p.onLaunch).toHaveBeenCalledWith(4)
   })
 
-  it('UIX-019/com keyboard=false as setas não fazem nada na grade', () => {
-    const p = props({ selectedId: 4, keyboard: false })
-    render(<LibraryGrid {...p} />)
-
-    cardOf('Jogo 4').focus()
-    for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End']) {
-      fireEvent.keyDown(cardOf('Jogo 4'), { key })
-    }
-
-    expect(p.onSelect).not.toHaveBeenCalled()
-    expect(cardOf('Jogo 4')).toHaveFocus()
-  })
+  // alterado em 2026-11-15 (fase 13): removido o caso keyboard=false (o Big Box antigo acabou; a prop fica sempre verdadeira).
 })

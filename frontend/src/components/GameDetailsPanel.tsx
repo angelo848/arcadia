@@ -92,8 +92,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
         </p>
         <button
           type="button"
-          data-bigbox-item
-          onClick={() => {
+                   onClick={() => {
             emitRef.current({ type: 'retry' })
             void q.refetch()
           }}
@@ -154,8 +153,6 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
         <div className="flex flex-col gap-2">
           <button
             type="button"
-            data-bigbox-item
-            data-bigbox-play
             disabled={busy}
             onClick={() => onPlay(g.id)}
             className="w-full min-h-12 rounded text-lg font-bold bg-play hover:bg-play-hover text-on-accent disabled:opacity-50"
@@ -164,7 +161,6 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           </button>
           <button
             type="button"
-            data-bigbox-item
             disabled={busy}
             onClick={() => onPlayUntracked(g.id)}
             className="w-full min-h-10 rounded text-base bg-raised hover:bg-hover border border-play text-fg disabled:opacity-50"
@@ -172,18 +168,18 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
             {untrackedLabel}
           </button>
           <div className="flex flex-wrap items-center gap-2">
-          <button type="button" data-bigbox-item onClick={() => onEdit()} className={secondary}>
+          <button type="button" onClick={() => onEdit()} className={secondary}>
             Editar
           </button>
-          <button type="button" data-bigbox-item onClick={() => onSearchMetadata()} className={secondary}>
+          <button type="button" onClick={() => onSearchMetadata()} className={secondary}>
             Buscar metadados
           </button>
           {creds.ready === true && !hasVideo && (
-            <button type="button" data-bigbox-item disabled={videoBusy} onClick={() => void searchVideo()} className={secondary}>
+            <button type="button" disabled={videoBusy} onClick={() => void searchVideo()} className={secondary}>
               Buscar vídeo
             </button>
           )}
-          <button type="button" data-bigbox-item onClick={() => onRemove()} className={`${secondary} text-danger`}>
+          <button type="button" onClick={() => onRemove()} className={`${secondary} text-danger`}>
             Remover
           </button>
           </div>

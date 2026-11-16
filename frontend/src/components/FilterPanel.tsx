@@ -90,7 +90,6 @@ export function FilterPanel({
       <button
         type="button"
         aria-expanded={open}
-        data-bigbox-item
         aria-controls={bodyId}
         onClick={toggle}
         className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm font-medium text-fg hover:bg-hover"
@@ -104,7 +103,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.genreIds?.[0] ?? ''}
             onChange={(e) => {
@@ -126,7 +124,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.playMode ?? 'all'}
             onChange={(e) => {
@@ -148,7 +145,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.developerIds?.[0] ?? ''}
             onChange={(e) => {
@@ -170,7 +166,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.publisherIds?.[0] ?? ''}
             onChange={(e) => {
@@ -192,7 +187,6 @@ export function FilterPanel({
         {(id) => (
           <input
             id={id}
-            data-bigbox-item
             type="number"
             inputMode="numeric"
             className={controlClass}
@@ -206,7 +200,6 @@ export function FilterPanel({
         {(id) => (
           <input
             id={id}
-            data-bigbox-item
             type="number"
             inputMode="numeric"
             className={controlClass}
@@ -220,7 +213,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.statuses?.[0] ?? ''}
             onChange={(e) => {
@@ -242,7 +234,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.favorite === true ? 'true' : f.favorite === false ? 'false' : ''}
             onChange={(e) => {
@@ -261,7 +252,6 @@ export function FilterPanel({
         {(id) => (
           <select
             id={id}
-            data-bigbox-item
             className={controlClass}
             value={f.played ?? 'any'}
             onChange={(e) => {
@@ -283,7 +273,6 @@ export function FilterPanel({
         {(id) => (
           <input
             id={id}
-            data-bigbox-item
             type="number"
             min={0}
             step="any"
@@ -301,7 +290,6 @@ export function FilterPanel({
         {(id) => (
           <input
             id={id}
-            data-bigbox-item
             type="number"
             min={0}
             step="any"
@@ -317,7 +305,6 @@ export function FilterPanel({
 
       <button
         type="button"
-        data-bigbox-item
         onClick={() => onChange(resetQuery())}
         className="rounded bg-raised px-3 py-1.5 text-sm font-medium text-fg hover:bg-hover"
       >

@@ -48,7 +48,6 @@ export function PanelEmpty({ onSelect }: { onSelect: (id: number) => void }): JS
               <li key={g.id}>
                 <button
                   type="button"
-                  data-bigbox-item
                   onClick={() => onSelect(g.id)}
                   className="flex w-full items-center gap-3 rounded bg-surface p-2 text-left hover:bg-hover"
                 >

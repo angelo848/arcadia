@@ -25,7 +25,7 @@ export function LibraryGrid({
   onLaunch,
   keyboard,
 }: {
-  // keyboard enables arrows/Home/End/Enter; false while Big Box owns the keys [UIX-041].
+  // keyboard enables arrows/Home/End/Enter.
   keyboard: boolean
   games: GameView[]
   // images maps a game id to its card image [AJU-015]; a game without one shows the placeholder.

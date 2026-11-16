@@ -75,7 +75,6 @@ export function MediaThumbStrip({
               refs.current[i] = el
             }}
             type="button"
-            data-bigbox-item
             aria-label={`${label}, ${i + 1} de ${n}`}
             aria-current={current ? 'true' : undefined}
             tabIndex={current ? 0 : -1}
