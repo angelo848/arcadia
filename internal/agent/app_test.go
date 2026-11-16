@@ -26,7 +26,9 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/feedback"
 	"github.com/arcadia-launcher/arcadia/internal/input"
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
+	"github.com/arcadia-launcher/arcadia/internal/media"
 	"github.com/arcadia-launcher/arcadia/internal/paths"
+	"github.com/arcadia-launcher/arcadia/internal/scrapers"
 	"github.com/arcadia-launcher/arcadia/internal/store"
 	"github.com/arcadia-launcher/arcadia/internal/tracker"
 )
@@ -724,4 +726,93 @@ func (l *tcpListenOrder) listen() (net.Listener, error) {
 	}
 	l.addr = ln.Addr().String()
 	return ln, nil
+}
+
+// TestVideoHandlersWired covers CON-026 (T26): the agent registers the four video.* handlers and keeps the others.
+func TestVideoHandlersWired(t *testing.T) {
+	t.Run("CON-026/o agente registra os 4 handlers video.* e continua com todos os outros", func(t *testing.T) {
+		w := newWiring(t, wiringOpts{})
+		c := w.client(t)
+		methods := []string{
+			ipc.MethodVideoQueue, ipc.MethodVideoQueueMissing, ipc.MethodVideoCancelPending, ipc.MethodVideoStatus,
+			// the rest of the surface the agent had before phase 13 stays registered
+			ipc.MethodStatus, ipc.MethodGameList, ipc.MethodGameDelete, ipc.MethodMediaList, ipc.MethodMediaQueue,
+			ipc.MethodScrapeSearch, ipc.MethodScrapeApply, ipc.MethodProviderKeyStatus, ipc.MethodProviderSetKey,
+			ipc.MethodMetadataSearch, ipc.MethodMetadataApply, ipc.MethodMetadataBatchStart,
+			ipc.MethodPlatformList, ipc.MethodSessionList, ipc.MethodImportScan,
+		}
+		for _, m := range methods {
+			t.Run("CON-026/"+m+" registrado", func(t *testing.T) {
+				resp := c.rpc(t, m, nil)
+				if resp.Error != nil && resp.Error.Code == ipc.CodeMethodNotFound {
+					t.Errorf("%s: method not found; the handler is not registered", m)
+				}
+			})
+		}
+		t.Run("CON-026/video.nope continua -32601", func(t *testing.T) {
+			resp := c.rpc(t, "video.nope", nil)
+			if resp.Error == nil || resp.Error.Code != ipc.CodeMethodNotFound {
+				t.Errorf("video.nope: error = %+v, want code %d", resp.Error, ipc.CodeMethodNotFound)
+			}
+		})
+	})
+}
+
+// TestVideoConstantsMatchContract covers CON-026: info.x-video of the phase 13 contract (v0.15.0) equals the
+// constants of the agent, scrapers, domain and media.
+func TestVideoConstantsMatchContract(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "specs", "phase-13-modo-console", "contracts", "ipc.openrpc.json"))
+	if err != nil {
+		t.Fatalf("read contract: %v", err)
+	}
+	var doc struct {
+		Info struct {
+			XVideo map[string]json.RawMessage `json:"x-video"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("decode contract: %v", err)
+	}
+	x := doc.Info.XVideo
+	if x == nil {
+		t.Fatal("contract has no info.x-video block")
+	}
+	ms := func(d time.Duration) float64 { return float64(d / time.Millisecond) }
+	nums := []struct {
+		key string
+		got float64
+	}{
+		{"maxQueueGames", maxVideoQueueGames},
+		{"laneWorkers", videoConcurrency},
+		{"quotaPauseMs", ms(videoQuotaPause)},
+		{"requestIntervalMs", ms(scrapers.IntervalScreenScraper)},
+		{"kindLimit", float64(domain.MediaKindLimit("video"))},
+		{"maxVideoBytes", media.MaxVideoBytes},
+	}
+	for _, c := range nums {
+		t.Run("CON-026/x-video."+c.key, func(t *testing.T) {
+			var want float64
+			if err := json.Unmarshal(x[c.key], &want); err != nil {
+				t.Fatalf("x-video.%s: %v", c.key, err)
+			}
+			if c.got != want {
+				t.Errorf("%s = %v, contract %v", c.key, c.got, want)
+			}
+		})
+	}
+	strs := []struct{ key, got string }{
+		{"softname", scrapers.SoftName},
+		{"mediaType", scrapers.SSVideoMediaType},
+	}
+	for _, c := range strs {
+		t.Run("CON-026/x-video."+c.key, func(t *testing.T) {
+			var want string
+			if err := json.Unmarshal(x[c.key], &want); err != nil {
+				t.Fatalf("x-video.%s: %v", c.key, err)
+			}
+			if c.got != want {
+				t.Errorf("%s = %q, contract %q", c.key, c.got, want)
+			}
+		})
+	}
 }

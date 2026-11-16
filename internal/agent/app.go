@@ -68,6 +68,9 @@ type config struct {
 
 	// ScreenScraperURL is the ScreenScraper API base URL (tests point it at httptest); empty = the real one.
 	ScreenScraperURL string
+
+	// KeyStore holds the provider credentials; nil => credentialStore{} (Windows Credential Manager).
+	KeyStore scrapers.KeyStore
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -280,7 +283,11 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	mediaRoot := filepath.Join(p.Root, "media")
 	mediaFiles := media.New(mediaRoot, httpClient)
 	maps.Copy(handlers, platformHandlers(newPlatformService(st, media.New(mediaRoot, httpClient), mediaRoot, os.Stat, log)))
-	keys := scrapers.NewKeys(credentialStore{})
+	var keyStore scrapers.KeyStore = credentialStore{}
+	if cfg.KeyStore != nil {
+		keyStore = cfg.KeyStore
+	}
+	keys := scrapers.NewKeys(keyStore)
 	mediaNotes := &mediaNotifier{}
 	// Video (phase 13): the ScreenScraper client reads the credentials on every request (VID-017).
 	ssClient := scrapers.NewScreenScraper(scrapers.SSConfig{

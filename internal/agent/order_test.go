@@ -172,6 +172,36 @@ func TestMetadataShutdownOrder(t *testing.T) {
 	})
 }
 
+// TestVideoShutdown covers VID-016 (T26): Shutdown with a video download in flight cancels it, waits for the
+// lane and leaves no goroutine (newWiring registers the goleak check; run with -race).
+func TestVideoShutdown(t *testing.T) {
+	t.Run("VID-016/Shutdown com job de vídeo em andamento não deixa goroutine (-race)", func(t *testing.T) {
+		ss := newSSServer(t, mappedSystem(t))
+		ss.setMode("hold")
+		vw := newVideoWire(t, ss, videoWireOpts{games: 1, credentials: true})
+		vw.apply(t, vw.games[0])
+		pumpUntil(t, vw.clock, "download started", func() bool {
+			select {
+			case <-ss.inDownload:
+				return true
+			default:
+				return false
+			}
+		})
+		_ = vw.c1.conn.Close()
+		_ = vw.c2.conn.Close()
+
+		if err := vw.a.Shutdown(contextWithTestTimeout(t), ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		select {
+		case <-ss.cancelled:
+		case <-time.After(testTimeout):
+			t.Error("the in-flight video download was not cancelled by Shutdown")
+		}
+	})
+}
+
 // indexOf returns the position of s in list, or -1 (used by the call-order assertions of app and shutdown tests).
 func indexOf(list []string, s string) int {
 	for i, v := range list {
