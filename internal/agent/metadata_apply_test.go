@@ -7,6 +7,7 @@ package agent
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,6 +68,90 @@ func refsOf(id string, providers ...string) []ipc.MetadataRef {
 		out = append(out, ipc.MetadataRef{Provider: p, ProviderID: id})
 	}
 	return out
+}
+
+// newVideoApplyFixture is the metadata fixture with the video hook of VID-004 wired to a real videoService
+// (fake queue). platform is the platform of the game ("" keeps the default). withHook=false leaves the hook
+// out, to compare the result of metadata.apply with and without it.
+func newVideoApplyFixture(t *testing.T, dev, user bool, platform string, withHook bool) (metaFixture, *videoQueueFake, *recordHandler) {
+	t.Helper()
+	igdb := &metaFetchProv{metaProv: metaProv{id: "igdb", meta: scrapers.Metadata{Description: "Texto do IGDB"}}}
+	f := newMetaFixture(t, map[string]scrapers.MetadataProvider{"igdb": igdb})
+	svc, q, logs, _ := newVideoService(t, f.st, dev, user)
+	if withHook {
+		f.meta.video = svc
+	}
+	if platform != "" {
+		setGamePlatform(t, f.st, f.gameID, platform)
+	}
+	return f, q, logs
+}
+
+func TestMetadataApplyVideo(t *testing.T) {
+	t.Parallel()
+	params := func(f metaFixture) ipc.MetadataApplyParams {
+		return ipc.MetadataApplyParams{GameID: f.gameID, Refs: refsOf("7", ipc.MetadataProviderIGDB)}
+	}
+
+	t.Run("VID-004/metadata.apply com as duas credenciais, plataforma mapeada e VID-002 livre cria um job de vídeo; o resultado de metadata.apply é o mesmo de antes", func(t *testing.T) {
+		t.Parallel()
+		f, q, _ := newVideoApplyFixture(t, true, true, platMapped, true)
+		got := applyOK(t, f, params(f))
+		if n := len(videoJobsOfGame(t, f.st, f.gameID)); n != 1 {
+			t.Fatalf("video jobs = %d, want 1", n)
+		}
+		if q.notified() == 0 {
+			t.Error("the video queue was not notified")
+		}
+		base, _, _ := newVideoApplyFixture(t, true, true, platMapped, false)
+		want := applyOK(t, base, params(base))
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("result with the hook = %+v, without = %+v; must be the same", got, want)
+		}
+	})
+
+	t.Run("VID-004/cada condição que falta (devid, conta, plataforma sem sistema, já tem vídeo) não cria e registra Debug", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name      string
+			dev, user bool
+			platform  string
+			hasVideo  bool
+		}{
+			{"VID-004/falta devid", false, true, platMapped, false},
+			{"VID-004/falta a conta do usuário", true, false, platMapped, false},
+			{"VID-004/plataforma sem sistema", true, true, platUnmapped, false},
+			{"VID-004/já tem vídeo", true, true, platMapped, true},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f, q, logs := newVideoApplyFixture(t, tc.dev, tc.user, tc.platform, true)
+				if tc.hasVideo {
+					addVideoRow(t, f.st, f.gameID)
+				}
+				applyOK(t, f, params(f)) // the apply itself still succeeds
+				if n := len(videoJobsOfGame(t, f.st, f.gameID)); n != 0 {
+					t.Errorf("video jobs = %d, want 0", n)
+				}
+				if q.notified() != 0 {
+					t.Error("video queue notified without a job")
+				}
+				if debugRecords(logs) == 0 {
+					t.Error("no Debug record naming the missing condition")
+				}
+			})
+		}
+	})
+
+	t.Run("VID-004/nenhuma notificação nova é enviada", func(t *testing.T) {
+		t.Parallel()
+		f, _, _ := newVideoApplyFixture(t, true, true, platMapped, true)
+		applyOK(t, f, params(f))
+		if n := f.sink.count(); n != 0 {
+			t.Errorf("media.changed notices = %d after apply, want 0 (the video arrives later, with the download)", n)
+		}
+	})
 }
 
 func TestMetadataApply(t *testing.T) {

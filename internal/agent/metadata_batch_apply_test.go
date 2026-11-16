@@ -419,6 +419,40 @@ func TestBatchApplyChoices(t *testing.T) {
 // TestBatchApply checks the application of the choices in the background [MET-064..MET-066, MET-022, MET-023,
 // MET-065]: the answer at once, one worker in order, the text and the images of each group, the failures,
 // the counters of the result, the queue that is not waited for, and the image limit shared with metadata.apply.
+// TestBatchApplyVideo checks the video hook of the batch application [VID-004].
+func TestBatchApplyVideo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("VID-004/a aplicação do lote cria um job por jogo aplicado", func(t *testing.T) {
+		t.Parallel()
+		w := newApplyWorld(t, applyCfg{titles: []string{"Hades", "Dead Cells"}, igdb: true})
+		svc, q, _, _ := newVideoService(t, w.st, true, true)
+		w.meta.video = svc
+		id, ids := w.readyBatch(t)
+		for _, gid := range ids {
+			setGamePlatform(t, w.st, gid, platMapped)
+		}
+		// one game of the batch is on a platform without a ScreenScraper system: it is applied, with no video job
+		unmapped := ids[len(ids)-1]
+		setGamePlatform(t, w.st, unmapped, platUnmapped)
+
+		batchApplyOK(t, w, id, ids)
+		awaitDone(t, w, id)
+		for _, gid := range ids {
+			want := 1
+			if gid == unmapped {
+				want = 0
+			}
+			if n := len(videoJobsOfGame(t, w.st, gid)); n != want {
+				t.Errorf("game %d: video jobs = %d, want %d", gid, n, want)
+			}
+		}
+		if q.notified() == 0 {
+			t.Error("the video queue was not notified")
+		}
+	})
+}
+
 func TestBatchApply(t *testing.T) {
 	t.Parallel()
 

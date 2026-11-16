@@ -333,6 +333,9 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	metadata := newMetadataService(scrapeSvc, st, metaCtx)
 	batchNotes := &batchNotifier{}
 	metadata.notify = batchNotes
+	videoSvc := &videoService{st: st, keys: keys, q: queue, quota: videoResolver.Quota, clock: clock, log: log}
+	metadata.video = videoSvc
+	maps.Copy(handlers, videoHandlers(videoSvc))
 	maps.Copy(handlers, metadataHandlers(metadata))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
 	notifier.set(server)

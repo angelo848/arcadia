@@ -49,10 +49,11 @@ type metadataService struct {
 	root   context.Context // the agent's context: jobs are children of it, never of a request
 	wg     sync.WaitGroup  // every goroutine of every job; Wait at shutdown [MET-059]
 
-	notify      batchSink  // receives metadata.batchChanged (MET-054); nil = none
-	batchMu     sync.Mutex // guards batch and lastBatchID; taken before a job's mu, never after
-	batch       *batchJob  // the one batch of the agent, in memory only [MET-058]
-	lastBatchID int64      // the last batchId issued, so ids grow even with a stopped clock
+	video       *videoService // automatic video search after apply (VID-004); nil = none
+	notify      batchSink     // receives metadata.batchChanged (MET-054); nil = none
+	batchMu     sync.Mutex    // guards batch and lastBatchID; taken before a job's mu, never after
+	batch       *batchJob     // the one batch of the agent, in memory only [MET-058]
+	lastBatchID int64         // the last batchId issued, so ids grow even with a stopped clock
 }
 
 // newMetadataService builds the service over the scrape service, which keeps the providers, the
@@ -235,6 +236,9 @@ func (m *metadataService) commitApply(ctx context.Context, gameID int64, texts m
 	res, err := m.scrape.queueImages(ctx, gameID, offers, nil, now)
 	if err != nil {
 		return d, queueResult{}, m.scrape.storeError("enfileirar mídia", err)
+	}
+	if m.video != nil {
+		m.video.maybeQueue(ctx, gameID) // silent; never changes the result [VID-004]
 	}
 	return d, res, nil
 }
