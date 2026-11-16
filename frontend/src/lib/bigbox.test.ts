@@ -6,11 +6,15 @@ const rt = vi.hoisted(() => ({
   WindowIsFullscreen: vi.fn(),
   WindowFullscreen: vi.fn(),
   WindowUnfullscreen: vi.fn(),
+  WindowMaximise: vi.fn(),
+  WindowUnmaximise: vi.fn(),
 }))
 vi.mock('../../wailsjs/runtime/runtime', () => ({
   WindowIsFullscreen: rt.WindowIsFullscreen,
   WindowFullscreen: rt.WindowFullscreen,
   WindowUnfullscreen: rt.WindowUnfullscreen,
+  WindowMaximise: rt.WindowMaximise,
+  WindowUnmaximise: rt.WindowUnmaximise,
 }))
 
 import { bringToFront, enterBigBox, exitBigBox } from './bigbox'
@@ -46,6 +50,19 @@ describe('lib/bigbox (alterado em 2026-11-15, fase 13)', () => {
     rt.WindowIsFullscreen.mockRejectedValue(new Error('no runtime'))
     await expect(enterBigBox()).resolves.toBeUndefined()
     await expect(exitBigBox()).resolves.toBeUndefined()
+  })
+
+  it('BBX-003/ao sair da tela cheia a janela é maximizada de novo, para não cobrir a barra de tarefas', async () => {
+    vi.useFakeTimers()
+    try {
+      rt.WindowIsFullscreen.mockResolvedValue(true)
+      await exitBigBox()
+      await vi.advanceTimersByTimeAsync(200)
+      expect(rt.WindowUnmaximise).toHaveBeenCalledTimes(1)
+      expect(rt.WindowMaximise).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('BBX-003/bringToFront chama o binding e ignora falha', async () => {

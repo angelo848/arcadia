@@ -48,5 +48,5 @@ export function nextIndex(index: number, key: NavKey, cols: number, loaded: numb
 export function columnsFor(width: number): { cols: number; cardWidth: number; rowHeight: number } {
   const cols = Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN_WIDTH + GRID_GAP)))
   const cardWidth = (width - (cols - 1) * GRID_GAP) / cols
-  return { cols, cardWidth, rowHeight: (cardWidth * 3) / 2 + CARD_TITLE_HEIGHT + GRID_GAP }
+  return { cols, cardWidth, rowHeight: (cardWidth * 4) / 3 + CARD_TITLE_HEIGHT + GRID_GAP }
 }

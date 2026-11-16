@@ -1,4 +1,10 @@
-import { WindowFullscreen, WindowIsFullscreen, WindowUnfullscreen } from '../../wailsjs/runtime/runtime'
+import {
+  WindowFullscreen,
+  WindowIsFullscreen,
+  WindowMaximise,
+  WindowUnfullscreen,
+  WindowUnmaximise,
+} from '../../wailsjs/runtime/runtime'
 
 // Big Box window helpers: full screen and foreground (BBX-001, CON-022).
 
@@ -14,11 +20,20 @@ export async function enterBigBox(): Promise<void> {
   }
 }
 
-// exitBigBox leaves full screen (BIG-001), only when the window is in full screen.
+// exitBigBox leaves full screen (BIG-001), only when the window is in full screen. Leaving it restores the
+// maximised window over the whole monitor, under the taskbar; maximising again fits the work area.
 export async function exitBigBox(): Promise<void> {
   try {
     if (await WindowIsFullscreen()) {
       WindowUnfullscreen()
+      setTimeout(() => {
+        try {
+          WindowUnmaximise()
+          WindowMaximise()
+        } catch {
+          // no window runtime: nothing to change
+        }
+      }, 150)
     }
   } catch {
     // no window runtime: nothing to change

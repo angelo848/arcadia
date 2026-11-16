@@ -61,7 +61,7 @@ describe('GameCard', () => {
     // The full title is in a title attribute, whichever element carries it.
     expect(container.querySelector(`[title="${long}"]`)).not.toBeNull()
     // The cover area keeps the 2:3 ratio.
-    expect(container.querySelector('[class*="aspect-[2/3]"]')).not.toBeNull()
+    expect(container.querySelector('[class*="aspect-[3/4]"]')).not.toBeNull()
     expect(container.querySelector('img')).not.toBeNull()
 
     expect(screen.queryByText('Windows')).toBeNull()
@@ -114,12 +114,12 @@ describe('GameCard', () => {
     expect(container.querySelector('img')).not.toHaveAttribute('data-fit')
   })
 
-  it('AJU-015/a área continua aspect-[2/3] nos três casos', () => {
+  it('AJU-015/a área continua aspect-[3/4] nos três casos', () => {
     const imgs = [{ url: '/a.jpg', fit: 'contain' as const }, { url: '/b.jpg', fit: 'cover' as const }, undefined]
     for (const image of imgs) {
       const { container, unmount } = render(<GameCard {...props({ image })} />)
       const box = container.querySelector('img')?.parentElement as HTMLElement
-      expect(box.className).toContain('aspect-[2/3]')
+      expect(box.className).toContain('aspect-[3/4]')
       unmount()
     }
   })

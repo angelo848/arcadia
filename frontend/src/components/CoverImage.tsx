@@ -4,7 +4,7 @@ import placeholder from '../assets/cover-placeholder.svg'
 
 export const coverPlaceholderUrl: string = placeholder
 
-// CoverImage shows a cover inside a 2:3 area with object-fit contain [UIX-015]. With no
+// CoverImage shows a cover inside a 3:4 area with object-fit contain [UIX-015]. With no
 // src, or when the image fails to load, it shows the placeholder in the same box.
 export function CoverImage({
   src,
@@ -23,7 +23,7 @@ export function CoverImage({
   const shown = real && src ? src : coverPlaceholderUrl
 
   return (
-    <div className="aspect-[2/3] w-full overflow-hidden rounded bg-raised">
+    <div className="aspect-[3/4] w-full overflow-hidden rounded bg-raised">
       <img
         src={shown}
         alt=""

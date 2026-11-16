@@ -91,10 +91,10 @@ describe('columnsFor', () => {
     expect(columnsFor(0).cols).toBe(1)
   })
 
-  it('UIX-014/rowHeight = cardWidth × 3/2 + CARD_TITLE_HEIGHT + GRID_GAP', () => {
+  it('UIX-014/rowHeight = cardWidth × 4/3 + CARD_TITLE_HEIGHT + GRID_GAP', () => {
     for (const w of [300, 484, 800, 1132]) {
       const { cardWidth, rowHeight } = columnsFor(w)
-      expect(rowHeight).toBeCloseTo((cardWidth * 3) / 2 + CARD_TITLE_HEIGHT + GRID_GAP, 5)
+      expect(rowHeight).toBeCloseTo((cardWidth * 4) / 3 + CARD_TITLE_HEIGHT + GRID_GAP, 5)
     }
   })
 })

@@ -9,14 +9,14 @@ function imgOf(container: HTMLElement): HTMLImageElement {
 }
 
 describe('CoverImage', () => {
-  it('UIX-015/com src mostra a imagem com object-fit contain na área 2:3', () => {
+  it('UIX-015/com src mostra a imagem com object-fit contain na área 3:4', () => {
     const { container } = render(<CoverImage src="/media/1/c.jpg" />)
     const img = imgOf(container)
     expect(img.getAttribute('src')).toBe('/media/1/c.jpg')
     const all = [container, ...Array.from(container.querySelectorAll<HTMLElement>('*'))]
     const styled = all.map((e) => `${e.getAttribute('class') ?? ''} ${e.getAttribute('style') ?? ''}`).join(' ')
     expect(styled).toMatch(/object-contain|object-fit:\s*contain/)
-    expect(styled).toMatch(/aspect-\[2\/3\]|aspect-ratio:\s*2\s*\/\s*3/)
+    expect(styled).toMatch(/aspect-\[3\/4\]|aspect-ratio:\s*3\s*\/\s*4/)
   })
 
   it('UIX-015/src vazio ou ausente mostra o placeholder do mesmo tamanho', () => {
