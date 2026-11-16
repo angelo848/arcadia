@@ -851,4 +851,161 @@ describe('invariantes da UI', () => {
     const writesOutside = writeCalls().filter((n) => !allowed.has(n))
     expect(writesOutside, 'escritas fora das ações da fase 12').toEqual([])
   })
+
+  // Fase 13 (CON-024, CON-003): the Big Box and the video actions never touch the session or close a game.
+  function captureEvents() {
+    const handlers = new Map<string, Set<(...d: unknown[]) => void>>()
+    ;(window as unknown as { runtime: unknown }).runtime = {
+      EventsOn: vi.fn((name: string, cb: (...d: unknown[]) => void) => {
+        const set = handlers.get(name) ?? new Set()
+        handlers.set(name, set)
+        set.add(cb)
+        return () => set.delete(cb)
+      }),
+    }
+    return (name: string, ...data: unknown[]) =>
+      act(() => {
+        for (const cb of handlers.get(name) ?? []) cb(...data)
+      })
+  }
+
+  const closeLike = /(Close|Kill|Stop|Terminate|EndSession|Discard)/
+  const forbiddenSession = ['ToggleSession', 'PauseSession', 'ResumeSession']
+
+  function calledNames(): string[] {
+    return Array.from(spies.entries())
+      .filter(([, spy]) => spy.mock.calls.length > 0)
+      .map(([name]) => name)
+  }
+
+  it('CON-024/Big Box, temas, detalhes, galeria, som, "Buscar vídeo", "Buscar vídeos dos jogos sem vídeo", cancelar buscas, janela dos provedores e o evento game:closedByHotkey: os bindings chamados são só leituras, LaunchGame, LaunchGameUntracked, BringToFront, Video* e ProviderSetKey/ProviderDeleteKey; nenhum ToggleSession, Pause, Resume, nem ação de fechar jogo ou encerrar sessão', async () => {
+    const emit = captureEvents()
+    overrides.ProviderKeyStatus = (provider) => ({ provider, configured: true })
+    overrides.VideoQueue = () => ({ queued: 1, skipped: [] })
+    overrides.VideoQueueMissing = () => ({ queued: 2, skipped: 0 })
+    overrides.VideoCancelPending = () => 1
+    overrides.VideoStatus = () => ({
+      pending: 0,
+      running: 0,
+      failed: 0,
+      lane: 'active',
+      pausedUntil: '',
+      requestsToday: 0,
+      maxRequestsPerDay: 0,
+    })
+    renderApp()
+    await focusGame('Hades')
+
+    // Desktop video actions: "Buscar vídeo" in the details and the batch actions in the providers window.
+    const searchVideo = await within(aside()).findByRole('button', { name: 'Buscar vídeo' })
+    fireEvent.click(searchVideo)
+    await flush()
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Provedores' }))
+    const providers = await screen.findByRole('dialog')
+    fireEvent.click(await within(providers).findByRole('button', { name: 'Buscar vídeos dos jogos sem vídeo' }))
+    await flush()
+    fireEvent.click(within(providers).getByRole('button', { name: 'Cancelar buscas pendentes' }))
+    await flush()
+    fireEvent.keyDown(providers, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // The theme select, then the Big Box: details, gallery, sound, back and the hotkey close notice.
+    const themeSel = screen.getByLabelText('Tema do Big Box') as HTMLSelectElement
+    fireEvent.change(themeSel, { target: { value: themeSel.value } })
+    fireEvent.click(screen.getByRole('button', { name: 'Big Box' }))
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+    for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', 'd', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'm', 'Escape']) {
+      fireEvent.keyDown(window, { key })
+    }
+    await flush()
+    emit('game:closedByHotkey', { gameId: 20 })
+    await flush()
+    // Whatever screen is showing, leave the Big Box if still in it.
+    if (document.querySelector('[data-bigbox-theme]') !== null) {
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).toBeNull())
+    }
+
+    const called = calledNames()
+    for (const n of forbiddenSession) expect(calls(n), n).toHaveLength(0)
+    expect(called.filter((n) => closeLike.test(n)), 'ação de fechar jogo ou encerrar sessão').toEqual([])
+    const allowedWrites = new Set(['LaunchGame', 'LaunchGameUntracked', 'BringToFront', 'ProviderSetKey', 'ProviderDeleteKey'])
+    const writesOutside = writeCalls().filter((n) => !allowedWrites.has(n))
+    expect(writesOutside, 'escritas fora da lista').toEqual([])
+    const outside = called.filter(
+      (n) => !allowedWrites.has(n) && !/^(Video|EnterBigBox|ExitBigBox)/.test(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats|ProviderKeyStatus|Metadata)/.test(n),
+    )
+    expect(outside, 'bindings fora da lista da fase 13').toEqual([])
+    expect(calls('LaunchGame')).toHaveLength(0)
+    expect(calls('LaunchGameUntracked')).toHaveLength(0)
+  })
+
+  it('CON-024/LaunchGame e LaunchGameUntracked uma vez por ação, sem repetição por tecla mantida', async () => {
+    renderApp()
+    await findCard('Hades')
+    fireEvent.keyDown(window, { key: 'F11' })
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+
+    // Held Enter on the strip: one launch.
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    await waitFor(() => expect(calls('LaunchGame')).toHaveLength(1))
+    await flush()
+    expect(calls('LaunchGame')).toHaveLength(1)
+    expect(calls('LaunchGameUntracked')).toHaveLength(0)
+  })
+
+  it('CON-024/LaunchGameUntracked uma vez com Enter mantido em "Jogar sem contar tempo" nos detalhes', async () => {
+    renderApp()
+    await findCard('Hades')
+    fireEvent.keyDown(window, { key: 'F11' })
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+    fireEvent.keyDown(window, { key: 'd' })
+    await flush()
+    fireEvent.keyDown(window, { key: 'ArrowDown' })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    await waitFor(() => expect(calls('LaunchGameUntracked')).toHaveLength(1))
+    await flush()
+    expect(calls('LaunchGameUntracked')).toHaveLength(1)
+    expect(calls('LaunchGame')).toHaveLength(0)
+  })
+
+  it('CON-003/o Big Box não tem botão nem atalho de teclado para fechar o jogo (nenhuma tecla além das do mapa de entrada o aciona)', async () => {
+    overrides.CurrentSession = () => session('running')
+    renderApp()
+    await findCard('Hades')
+    fireEvent.keyDown(window, { key: 'F11' })
+    await waitFor(() => expect(screen.queryAllByTestId('bb-cover').length).toBeGreaterThan(0))
+
+    expect(screen.queryByRole('button', { name: /fechar jogo|encerrar|fechar o jogo|sair do jogo/i })).toBeNull()
+
+    const mapped = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', 'd', 'D', 'PageUp', 'PageDown', 'Escape', 'm', 'M', 'F11'])
+    const others = [
+      ...'abcefghijklnopqrstuvwxyz0123456789 ',
+      'Delete',
+      'Backspace',
+      'Tab',
+      'End',
+      'Home',
+      'F1',
+      'F2',
+      'F4',
+      'F10',
+      'F12',
+    ].filter((k) => !mapped.has(k))
+    for (const k of others) {
+      fireEvent.keyDown(window, { key: k })
+      fireEvent.keyDown(window, { key: k, altKey: true })
+      fireEvent.keyDown(window, { key: k, ctrlKey: true })
+    }
+    fireEvent.keyDown(window, { key: 'F4', altKey: true })
+    await flush()
+
+    expect(calledNames().filter((n) => closeLike.test(n))).toEqual([])
+    for (const n of [...forbiddenSession, 'LaunchGame', 'LaunchGameUntracked']) expect(calls(n), n).toHaveLength(0)
+    expect(writeCalls()).toEqual([])
+  })
 })
