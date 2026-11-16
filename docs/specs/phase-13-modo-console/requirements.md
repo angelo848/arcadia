@@ -2,6 +2,7 @@
 
 - **Status:** aprovada pelo usuário em 2026-11-15, com as respostas registradas em "Respostas do usuário" no fim (motivo
   `closed-by-hotkey`, `WM_CLOSE` por até 3 s antes de matar, sem número de discos; as demais recomendações aceitas).
+  Ajustes do teste com controle (BBX-032..BBX-044, 2026-11-16): **aguardam aprovação**.
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.15.0-delta.md](contracts/ipc-v0.15.0-delta.md) (só o
   acréscimo sobre a v0.14.0 de [phase-12-metadados-unificados](../phase-12-metadados-unificados/contracts/ipc.openrpc.json); o
   JSON completo v0.15.0 é uma tarefa, como nas fases 11 e 12),
@@ -437,15 +438,16 @@ ordem por título) e o foco vai para o primeiro jogo dela.
 · verificação: teste do reducer de navegação e de componente.
 
 ### BBX-006 — Faixa de capas
+· alterado em 2026-11-16: a janela de capas no DOM passa a ser a de BBX-039 (a janela centrada deixava a faixa vazia à direita
+no começo da lista).
 Dado a tela Navegar do Faixa, então os jogos da aba aparecem numa faixa horizontal no topo, com a capa em foco maior que as
 outras; ←/→ (direcional, analógico esquerdo, setas) movem o foco um jogo por vez, sem dar a volta nas pontas; a faixa rola para
-manter o jogo em foco à vista. No máximo 15 capas ficam no DOM (janela em torno do foco).
+manter o jogo em foco à vista. No máximo 15 capas ficam no DOM, na janela de BBX-039.
 · verificação: teste do reducer (pontas) e de componente (contagem de nós).
 
-### BBX-007 — Paginação da faixa
-Dado uma aba com mais jogos que a primeira página, quando o foco chega a 10 jogos do fim do que foi carregado, então a página
-seguinte é pedida uma vez (sem pedido repetido em voo); o fim da faixa é o `total` da aba.
-· verificação: teste de componente com leitura falsa paginada.
+### ~~BBX-007 — Paginação da faixa~~
+· status: removido em 2026-11-16 (teste com controle: a lista aparecia aos pedaços conforme o foco andava). Substituído por
+BBX-038 (a aba é lida inteira antes de aparecer); o efeito `fetchNextPage` e `PREFETCH_BEFORE_END` saem do reducer.
 
 ### BBX-008 — Capa ou substituto
 Dado um jogo da faixa, então a capa é a mídia `cover`; sem capa, a mesma substituta da janela normal (`useCardImages`: tela de
@@ -489,17 +491,24 @@ Jogar e Detalhes funcionam como A e X. Um lançamento pendente bloqueia novo lan
 · verificação: teste de componente com espiões.
 
 ### BBX-015 — Rodapé com dicas do gamepad
+· alterado em 2026-11-16: na tela Detalhes as dicas seguem a zona em foco (BBX-032), e "Rolar" deixa de existir (a descrição não
+recebe mais foco, BBX-036).
 Dado a tela Navegar, então o rodapé mostra, em texto, "A Jogar", "X Detalhes", "LB/RB Plataforma", "Select+B Fechar o jogo" e
-"B Sair"; na tela Detalhes, "A" sobre o botão focado, "B Voltar" e "Select+B Fechar o jogo". "Y Som" segue BBX-013.
+"B Sair". Na tela Detalhes com o foco num botão, "A Jogar" ou "A Jogar sem contar tempo" (o botão focado) e, se houver galeria,
+"↓ Imagens"; com o foco na galeria, "←/→ Imagem" e "↑ Botões"; nos dois casos, "B Voltar" e "Select+B Fechar o jogo". "Y Som"
+segue BBX-013.
 · verificação: teste de componente.
 
 ### BBX-016 — Tela de detalhes
 · alterado em 2026-11-15: sem discos (resposta 7).
-Dado X sobre o jogo `G`, então a tela Detalhes mostra: título; descrição completa (rolagem pelo analógico direito ou ↑/↓ quando o
-foco está na descrição); plataforma, ano, gêneros, desenvolvedores, editoras e modos de jogo; tempo jogado, última
-vez e sessões; uma galeria com o vídeo primeiro (se houver, tocando sem som ao aparecer) e depois os screenshots, trocada por ←/→;
-e os botões **Jogar** e **Jogar sem contar tempo** (↑/↓ movem o foco entre eles e a descrição; A aciona). B volta a Navegar com o
-foco em `G`.
+· alterado em 2026-11-16: o foco passa a andar entre os botões e a galeria (BBX-032..BBX-035), a descrição rola sem receber foco
+(BBX-036) e o layout segue [bigbox-faixa §1.1](contracts/bigbox-faixa.md) (BBX-043, BBX-044). Teste com controle: o foco não
+chegava aos botões e a imagem da galeria não trocava.
+Dado X sobre o jogo `G`, então a tela Detalhes mostra: título; descrição completa (rolagem de BBX-036); plataforma, ano,
+gêneros, desenvolvedores, editoras e modos de jogo; tempo jogado, última vez e sessões; os botões **Jogar** e **Jogar sem contar
+tempo**; e, se `G` tiver vídeo ou screenshots, uma galeria com o vídeo primeiro e depois os screenshots, num visor grande com a
+fileira de miniaturas embaixo (BBX-034). O foco começa em **Jogar**. A aciona o botão focado (`LaunchGame` / `LaunchGameUntracked`);
+com o foco na galeria, A não faz nada. B volta a Navegar com o foco em `G`.
 · verificação: teste de componente.
 
 ### BBX-017 — Marcação de sessão
@@ -542,12 +551,15 @@ ao lado do botão "Big Box", um seletor "Tema do Big Box" lista os três; os ind
 · verificação: teste de `uiPrefs` e de componente.
 
 ### BBX-024 — Contrato de tema
+· alterado em 2026-11-16: o tema declara também a capacidade da lista (`listCapacity`, função pura do tamanho da janela, usada
+por BBX-039).
 Dado um tema, então ele recebe só o modelo de exibição e as ações do Big Box ([bigbox-faixa §5](contracts/bigbox-faixa.md)) e
-declara o eixo da lista (`horizontal` ou `vertical`); a navegação (abas, foco, telas, suspensão) é um reducer puro compartilhado,
+declara o eixo da lista (`horizontal` ou `vertical`) e quantos itens cabem inteiros nela para um tamanho de janela; a navegação (abas, foco, telas, suspensão) é um reducer puro compartilhado,
 que não conhece o tema. Um tema de teste com eixo vertical navega com ↑/↓ pelo mesmo reducer.
 · verificação: teste do reducer e de um tema falso.
 
 ### BBX-025 — Cores do Big Box só por tokens
+· alterado em 2026-11-16: a lista de tokens ganha `--arc-bb-panel` (BBX-037).
 Dado o código de `frontend/src/bigbox/`, então vale a regra de UIX-006 (nenhuma classe de cor da paleta, nenhuma cor literal); as
 cores vêm dos tokens `--arc-bb-*`, definidos em `index.css` sob `[data-bigbox-theme="faixa"]`, e o elemento raiz do Big Box tem
 `data-bigbox-theme` com o tema ativo.
@@ -555,9 +567,11 @@ cores vêm dos tokens `--arc-bb-*`, definidos em `index.css` sob `[data-bigbox-t
 [bigbox-faixa §6](contracts/bigbox-faixa.md).
 
 ### BBX-026 — Contraste sobre a arte
-Dado o tema Faixa, então todo texto do bloco de informações, das abas e do rodapé tem contraste ≥ 4,5:1 com a cor do véu
-(`--arc-bb-scrim`) composta sobre branco puro **e** sobre preto puro (pior caso de qualquer arte), e o contorno de foco
-(`--arc-bb-focus`) tem ≥ 3:1 nos dois casos.
+· alterado em 2026-11-16: o fundo do texto passa a ser o painel `--arc-bb-panel` (BBX-037). O véu `--arc-bb-scrim` não era
+desenhado atrás do texto, e o texto ficava ilegível sobre artes claras.
+Dado o tema Faixa, então `--arc-bb-text`, `--arc-bb-text-muted` e `--arc-bb-danger` têm contraste ≥ 4,5:1 com a cor do painel
+(`--arc-bb-panel`) composta sobre branco puro **e** sobre preto puro (pior caso de qualquer arte), e o contorno de foco
+(`--arc-bb-focus`) tem ≥ 3:1 nos dois casos. Os pares `on-accent` sobre `accent` e `text` sobre `surface` continuam ≥ 4,5:1.
 · verificação: teste que lê os tokens de `index.css` e calcula o contraste (WCAG 2.x), como UIX-007.
 
 ### BBX-027 — Foco inicial
@@ -583,6 +597,109 @@ devolve ao Big Box no mesmo jogo; o texto é legível a 3 m.
 
 ### ~~BBX-031 — Número de discos gravado na importação~~
 · status: removido em 2026-11-15 (resposta 7): sem `game.disc_count`, sem `GameDetail.discs` e sem mudança em `import.apply`.
+
+### Ajustes do teste com controle (2026-11-16)
+
+· status: **proposto, aguarda aprovação do usuário** (BBX-032..BBX-044 novos; BBX-006, BBX-015, BBX-016, BBX-024, BBX-025 e
+BBX-026 alterados; BBX-007 removido). Layout dos detalhes em [bigbox-faixa §1.1](contracts/bigbox-faixa.md); estados em §3.
+
+**Lacuna registrada:** o reducer já movia `detailsFocus` com ↑/↓ e `gallery` com ←/→, mas a spec não definia **uma** marca de
+foco nem um visor: a tela desenhava o contorno de foco no botão **e** na miniatura selecionada ao mesmo tempo, a galeria era uma
+fileira de miniaturas cortada embaixo e à direita, e trocar de item só movia um contorno pequeno fora da tela. O usuário via o foco
+"preso" na galeria e a imagem sem trocar. BBX-032..BBX-035 fecham a lacuna; um teste do shell com controle falso cobre a fiação.
+
+### BBX-032 — Foco dos detalhes entre os botões e a galeria
+Dado a tela Detalhes de um jogo com galeria (vídeo ou screenshots) e o foco num botão, quando aperto ↓ (direcional, analógico
+esquerdo, seta), então o foco vai para a galeria; com o foco na galeria, ↑ devolve o foco ao último botão focado (Jogar ou Jogar
+sem contar tempo). ↑ nos botões e ↓ na galeria não fazem nada. Sem galeria, ↓ não faz nada. Dada a galeria que fica vazia com o
+foco nela (`media:changed`), então o foco volta ao último botão focado.
+· verificação: teste do reducer e teste do shell com `navigator.getGamepads` falso (X, ↓, ↑).
+
+### BBX-033 — ←/→ entre os botões
+Dado o foco num botão da tela Detalhes, quando aperto →, então o foco vai de **Jogar** para **Jogar sem contar tempo**; ←
+volta; sem dar a volta nas pontas. A imagem da galeria não muda.
+· verificação: teste do reducer e teste do shell com controle falso.
+
+### BBX-034 — ←/→ na galeria troca a imagem do visor
+Dado o foco na galeria com N itens (N ≥ 1) e o item `i` selecionado, quando aperto →, então o item `i + 1` passa a ser mostrado
+inteiro no visor (`object-fit: contain`, sem corte) e fica marcado como selecionado na fileira de miniaturas, que rola para
+mantê-lo à vista; ← mostra `i − 1`; sem dar a volta nas pontas. O visor mostra o contador "`i + 1` / N". Selecionado o vídeo, ele
+toca no visor (`muted` conforme BBX-013, `loop`, `playsInline`); sair do vídeo para outro item o para e remove o `src`; nunca há mais de um
+`<video>` na tela Detalhes. Dada a galeria encolhida ao vivo, então o selecionado passa a ser `min(i, N − 1)`.
+· verificação: teste do reducer e teste de componente de `BigBoxDetails` (visor, contador, miniatura selecionada, vídeo).
+
+### BBX-035 — Uma única marca de foco
+Dado a tela Detalhes, então só o elemento com o foco tem o contorno `--arc-bb-focus` (`data-focused="true"`): o botão focado, ou
+a fileira de miniaturas quando o foco está na galeria. A miniatura selecionada sem foco na galeria fica marcada de outro jeito
+(`aria-current="true"`, borda `--arc-bb-text-muted`), nunca com o contorno de foco.
+· verificação: teste de componente (exatamente um `data-focused="true"` por estado de foco).
+
+### BBX-036 — Rolagem da descrição sem foco
+Dado a tela Detalhes, quando inclino o analógico direito para cima ou para baixo (ou aperto PageUp/PageDown no teclado), então a
+descrição rola um passo nesse sentido, com o foco onde estiver; a descrição não recebe foco. Na tela Navegar, PageUp/PageDown
+continuam trocando de aba (BBX-005).
+· verificação: teste do hook de entrada e de componente.
+
+### BBX-037 — Painel atrás de todo texto
+Dado o Big Box (Navegar e Detalhes), então todo texto desenhado sobre a arte ou o vídeo de fundo fica dentro de um painel
+semitransparente escuro com a cor `--arc-bb-panel` (`data-bb-panel`): a barra de abas; o bloco de informações (título, linha de
+dados, descrição curta, tempo jogado, última vez, sessões e botões); o aviso de lista vazia e o de carregamento; o rodapé com as
+dicas; na tela Detalhes, a coluna de texto (título, linhas de dado, tempo, botões e descrição) e o contador da galeria. O aviso de
+erro (`role="alert"`) e os selos de sessão continuam sobre `--arc-bb-surface` (opaco). O contraste do painel é o de BBX-026.
+· verificação: teste de componente (cada texto listado tem um ancestral `data-bb-panel` antes de chegar à raiz) e o teste de
+tokens de BBX-026.
+
+### BBX-038 — Lista completa da aba
+Dado a entrada no Big Box ou a troca de aba, então o Big Box lê **todas** as páginas da aba (`ListGames` com o filtro só de
+plataforma, ordem por título, páginas de 500, uma por vez, sem depender do foco) e só então mostra a faixa e o bloco de
+informações; enquanto lê, mostra "Carregando jogos…" e LB/RB continuam trocando de aba. A leitura para quando uma página vem vazia
+ou o carregado chega ao `total`; o fim da faixa é o número de jogos carregados. Trocar de aba no meio da leitura não pede as
+páginas restantes da aba antiga. Falha numa página: o aviso de BBX-020 com a mensagem do erro e o texto de aba vazia de BBX-021;
+voltar à aba tenta de novo. Uma aba já lida volta sem nova leitura enquanto o Big Box está aberto.
+· verificação: teste de componente com leitura falsa paginada (1.234 jogos em 3 páginas; troca de aba no meio; falha na
+segunda página).
+
+### BBX-039 — Faixa sem buracos
+Dado a aba com `T` jogos, o foco `f` e `V` capas que cabem inteiras na largura da faixa (capacidade do tema, BBX-024, de 1 a 14),
+então a faixa desenha os jogos `[s, min(s + V + 1, T))` com `s = clamp(f − 2, 0, max(T − V, 0))`: com `T > V`, a faixa fica cheia
+até a borda direita (a capa `V + 1` aparece cortada na borda, como sinal de que há mais) e nunca há espaço vazio à direita antes
+do último jogo; a capa em foco fica sempre inteira à vista (posição ≤ `V − 1`). Ao trocar de aba, a faixa aparece cheia desde a
+primeira capa.
+· verificação: teste da função pura `stripWindow` (começo, meio, fim, `T ≤ V`, `T = 0`) e de componente (nós e índices
+desenhados ao entrar numa aba de 40 jogos com `V = 12`).
+
+### BBX-040 — Fundo inteiro, sem corte
+Dado a arte ou o vídeo de fundo do jogo em foco (Navegar e Detalhes), então ele é desenhado inteiro, centrado, com
+`object-fit: contain` (sem zoom nem corte), sobre um preenchimento: a mesma arte em `object-fit: cover`, desfocada (blur ≥ 24 px)
+e escurecida por `--arc-bb-scrim`; sem arte, o gradiente de BBX-010. A transição de 300 ms (BBX-010) vale para o par
+preenchimento + arte.
+· verificação: teste de componente de `BackgroundStage` (camadas, `object-fit`, desfoque; vídeo também em `contain`).
+
+### BBX-041 — Capas e miniaturas inteiras
+Dado uma capa da faixa ou uma miniatura da galeria dos detalhes, então a imagem aparece inteira dentro do cartão
+(`object-fit: contain`, centrada), sem corte, com o espaço que sobrar em `--arc-bb-surface`.
+· verificação: teste de componente.
+
+### BBX-042 — Área segura
+Dado o Big Box em qualquer tela, então todo o conteúdo (abas, faixa, bloco de informações, tela Detalhes, aviso e rodapé) fica
+dentro da área segura: 5 % da altura da janela no topo e embaixo e 5 % da largura nas laterais; só o fundo (BBX-040) ocupa a
+janela inteira.
+· verificação: teste de componente (o contêiner `data-bb-safe` tem o recuo declarado e contém tudo menos o fundo) e manual
+(BBX-030).
+
+### BBX-043 — Detalhes cabem na tela
+Dado a tela Detalhes numa janela 16:9 (1280×720, 1920×1080 ou 3840×2160), então título, linhas de dado, botões, visor e a
+fileira de miniaturas inteira cabem na área segura acima do rodapé, sem rolagem da página; só a descrição rola (BBX-036), dentro
+da altura que sobrar na coluna de texto.
+· verificação: teste de componente (contêiner com altura limitada e `overflow: hidden`; visor e miniaturas dentro dele; só a
+descrição com `overflow-y: auto`) e manual nas três resoluções.
+
+### BBX-044 — Linhas de dado compactas
+Dado a coluna de texto dos detalhes, então as linhas de dado (plataforma · ano · gêneros; desenvolvedores; editoras; modos de
+jogo; tempo jogado · última vez · sessões) formam um bloco único (`data-bb-facts`) sem margem entre parágrafos, com espaçamento de
+no máximo 0,25em entre linhas e altura de linha de no máximo 1,4; entre título, bloco de dados, botões e descrição, no máximo
+0,75em.
+· verificação: teste de componente (espaçamentos declarados no bloco) e manual (BBX-030).
 
 ---
 
@@ -884,6 +1001,18 @@ Achados do reviewer registrados na spec antes do código (tarefas T46..T51):
 | `AttachThreadInput` sem a thread fixa (`runtime.LockOSThread`) | nenhum novo: detalhe de implementação de CON-023 ([design §2.5](design.md)) | CON-022, CON-023 |
 
 `prefers-reduced-motion` não é requisito desta fase (ver "Fora desta spec").
+
+## Ajustes do teste com controle (2026-11-16)
+
+Pedidos do usuário depois de usar o Faixa com controle, registrados antes do código (tarefas T52..T61). **Aguardam aprovação.**
+
+| Pedido | Requisitos novos | Alterados / removidos |
+|---|---|---|
+| Foco nos detalhes não chega aos botões; imagem da galeria não troca | BBX-032, BBX-033, BBX-034, BBX-035, BBX-036 | BBX-015, BBX-016 (alterados) |
+| Texto ilegível sobre algumas artes | BBX-037 | BBX-025, BBX-026 (alterados) |
+| Lista da aba aparece aos pedaços | BBX-038, BBX-039 | BBX-006, BBX-024 (alterados), BBX-007 (removido) |
+| Capas e fundos cortados | BBX-040, BBX-041 | — (BBX-010 continua) |
+| Galeria cortada, texto colado na borda, linhas espaçadas | BBX-042, BBX-043, BBX-044 | — |
 
 ## ADRs propostos
 

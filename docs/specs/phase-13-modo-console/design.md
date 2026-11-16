@@ -251,7 +251,7 @@ Nenhuma tabela referencia `media`/`media_job`, então a reconstrução não prec
 `video.cancelPending`, `video.status`; notificação `game.closedByHotkey`; enums ampliados; blocos `x-console` e `x-video`.
 Contrato completo: [contracts/ipc.openrpc.json](contracts/ipc.openrpc.json) (v0.15.0 = v0.14.0 + o delta).
 
-## 4. Big Box novo [BBX-001..BBX-030]
+## 4. Big Box novo [BBX-001..BBX-044]
 
 ### 4.1 Estrutura
 
@@ -287,8 +287,9 @@ frontend/src/bigbox/
 
 ### 4.3 Dados [BBX-004, BBX-007, BBX-009, BBX-017, BBX-027, BBX-028, BBX-029]
 
-- Abas: `Catalog` (plataformas com `gameCount`). Lista: `useInfiniteQuery(['bigbox', tabPlatformId])` sobre `ListGames` com
-  `FilterSpec{platformIds}` e `sort: 'title'`, páginas de 200; próxima página quando `focus ≥ loaded − 10`.
+- Abas: `Catalog` (plataformas com `gameCount`). Lista: ~~`useInfiniteQuery(['bigbox', tabPlatformId])` sobre `ListGames` com
+  `FilterSpec{platformIds}` e `sort: 'title'`, páginas de 200; próxima página quando `focus ≥ loaded − 10`~~ · alterado em
+  2026-11-16: a aba é lida inteira antes de aparecer (§4.7.3, BBX-038).
 - Jogo em foco: `GetGame` (`['game', id]`), `MediaList` (`['media', id]`, a mesma chave de IMG-008), `CurrentSession`.
 - Eventos: `media:changed` (já invalida `['media', id]`), `session:changed` (marca e relê `['game', id]` ao fim),
   `game:closedByHotkey` (§2.5).
@@ -322,6 +323,117 @@ receba `BigBoxThemeProps` e um bloco de tokens.
   aparece **por trás**. **Logos só no Roda.** Eixo `vertical`. Exige mídia `clear_logo` (tipo novo e migração, ADR 0030) e
   provavelmente vídeo por plataforma (conferência da API, decisão k): por isso fica para uma fase própria.
 - **Vitrine:** fora (decisão do usuário).
+
+### 4.7 Ajustes do teste com controle (2026-11-16) [BBX-006, BBX-015, BBX-016, BBX-024..BBX-026, BBX-032..BBX-044]
+
+Prevalece sobre §4.2..§4.5 onde divergir. Contrato: [bigbox-faixa §1, §1.1, §2, §3, §3.1, §4..§7](contracts/bigbox-faixa.md).
+Nenhuma mudança no Go, no IPC nem no banco; só `frontend/src/bigbox/`, `frontend/src/index.css` e os testes.
+
+#### 4.7.1 Foco dos detalhes [BBX-016, BBX-032..BBX-036, BBX-015]
+
+**Causa** (lacuna da spec, não só do código): a tabela antiga tinha `detailsFocus ∈ {play, playUntracked, description}` e
+←/→ sempre na galeria; `BigBoxDetails` desenhava o contorno de foco no botão **e** na miniatura `aria-current`, a galeria era uma
+fileira de miniaturas de 12em sem visor e sem limite de largura/altura. Com isso a marca visível parecia estar sempre na galeria e
+a "troca" de imagem era um contorno movendo-se fora da tela. Nenhum teste passava pelo shell com o controle nos detalhes.
+
+`nav.ts` (assinaturas públicas):
+
+```ts
+export type DetailsFocus = 'play' | 'playUntracked' | 'gallery'
+export type DetailsButton = 'play' | 'playUntracked'
+export type NavState = { /* ... */ detailsFocus: DetailsFocus; detailsButton: DetailsButton; gallery: number /* ... */ }
+export type NavCtx = { tabs: number; total: number; galleryCount: number; focusedGameId: number | null; videoVisible: boolean } // sem loaded
+export type NavAction = /* ... */ | { type: 'galleryChanged'; count: number }
+export type NavEffect = { kind: 'launch' | 'launchUntracked'; gameId: number } | { kind: 'exit' } | { kind: 'bringToFront' } | { kind: 'enterBigBox' }
+// sem 'fetchNextPage'; PREFETCH_BEFORE_END removido
+```
+
+Transições: tabela de [bigbox-faixa §3](contracts/bigbox-faixa.md). `galleryChanged` fica fora de `inputTypes` (vale suspenso).
+O shell despacha `galleryChanged(galleryOf(media).length)` num `useEffect` dependente dessa contagem.
+
+`useBigBoxInput`: na tela Detalhes, `PageUp`/`PageDown` viram `scrollUp`/`scrollDown` (em Navegar continuam `tabPrev`/`tabNext`);
+o analógico direito continua emitindo `scrollUp`/`scrollDown`. As direções nos detalhes continuam `prev`/`next`/`up`/`down`.
+
+`hints.ts`: `hintsFor('details', { detailsFocus, hasGallery, ... })` — botão: `A <rótulo do botão>`, `↓ Imagens` se
+`hasGallery`; galeria: `←/→ Imagem`, `↑ Botões`; sempre `B Voltar`, `Select+B Fechar o jogo` e o `Y Som` de BBX-013.
+
+`BigBoxDetails` (props): troca `detailsFocus: 'play' | 'playUntracked' | 'description'` por `DetailsFocus`; o resto igual.
+Estrutura (§1.1): `section[data-bb-details]` em grid; coluna de texto `Panel`; visor `figure[data-bb-viewer]` com o item
+`gallery` em `contain` (`<img>` ou o único `<video>`), contador `Panel` "`i+1` / N"; fileira `[data-bb-thumbs]`
+(`data-focused` só com `detailsFocus === 'gallery'`) com `[data-gallery-item]` (`aria-current` no selecionado). A miniatura
+selecionada é rolada para a vista com `scrollIntoView({ inline: 'nearest', block: 'nearest' })` quando `gallery` muda (chamada
+protegida: jsdom não implementa). O visor usa `min(gallery, N − 1)` antes do `galleryChanged` chegar.
+
+#### 4.7.2 Painéis e contraste [BBX-025, BBX-026, BBX-037]
+
+- Token `--arc-bb-panel` em `index.css` (bloco Faixa) e `--color-bb-panel` em `@theme inline` → utilitário `bg-bb-panel`.
+- `frontend/src/bigbox/Panel.tsx` (novo): `export function Panel(p: { children: ReactNode; className?: string; as?: 'div' | 'section' | 'figcaption' }): JSX.Element`
+  → elemento com `data-bb-panel`, `bg-bb-panel`, cantos arredondados e recuo. Usado por `FaixaStrip` (tablist), `FaixaInfo`,
+  `Faixa` (vazio/carregando), `Footer`, `BigBoxDetails` (coluna de texto e contador).
+- O shell deixa de pintar a faixa do rodapé com `--arc-bb-scrim`; o rodapé é um `Panel` dentro da área segura.
+- A descrição dos detalhes deixa de usar `--arc-bb-scrim` como fundo (já está no painel da coluna).
+
+#### 4.7.3 Lista completa e faixa sem buracos [BBX-006, BBX-024, BBX-038, BBX-039]
+
+`useBigBoxData.ts`:
+
+```ts
+export const PAGE_SIZE = 500
+export type TabGames = { games: GameView[]; total: number; isPending: boolean; error: Error | null } // sem loaded/fetchNextPage
+export function useTabGames(platformId: number | null): TabGames
+// useQuery(['bigbox', 'games', platformId]); queryFn({ signal }) lê offset 0, 500, 1000...; para quando a página vem vazia
+// ou offset >= page.total; confere signal.aborted entre páginas (troca de aba cancela o resto); total = games.length.
+// staleTime: Infinity e gcTime de pelo menos a visita (aba já lida não relê); retry: false.
+```
+
+`viewModel.ts`:
+
+```ts
+export const STRIP_ANCHOR = 2, STRIP_MAX = 15, STRIP_FALLBACK_CAPACITY = 12
+export function stripWindow(total: number, focus: number, capacity: number): { start: number; end: number } // §3.1
+// ViewModelInput ganha capacity: number e loading: boolean; BigBoxViewModel ganha loading e stripStart (§4)
+// windowAround e STRIP_WINDOW saem
+```
+
+`themes/types.ts` e `themes/registry.ts`: `BigBoxTheme.listCapacity`; `faixaCapacity(vp)` em
+`themes/faixa/capacity.ts` (novo, pura, §3.1). Mosaico e Roda: `() => STRIP_FALLBACK_CAPACITY`.
+
+Shell: `useViewport()` (novo, em `BigBox.tsx` ou `bigbox/useViewport.ts`) devolve `{width, height}` de `window.inner*` e
+assina `resize` num `useEffect` com remoção no retorno (sem goroutine/timer solto). `capacity = theme.listCapacity(vp)`. O
+`useCardImages` recebe os ids de `games.slice(start, end)`. `FaixaStrip` recebe `stripStart` do modelo e usa
+`index = stripStart + i` (não recalcula a janela). Enquanto `tabGames.isPending`, `model.loading = true`, `focused = null`, e o
+`Faixa` mostra o `Panel` "Carregando jogos…" com as abas; `listLoaded` só é despachado quando a leitura termina (BBX-027
+passa a achar o jogo inicial mesmo além da primeira página).
+
+#### 4.7.4 Fundo, capas e miniaturas inteiros [BBX-040, BBX-041]
+
+`BackgroundStage`: cada camada da transição é um par `div[data-testid=bb-art-layer]` com `img[data-testid=bb-art-fill]`
+(`object-cover`, `blur-[24px]` ou mais, `scale-110` para não mostrar borda do desfoque) + um `div` com `--arc-bb-scrim` + o
+`img[data-testid=bb-art]` (`object-contain`). A opacidade da transição vai no par. `<video data-testid=bb-video>` passa a
+`object-contain`, desenhado acima da camada atual. Props públicas iguais.
+
+`FaixaStrip`: `img` da capa em `object-contain` (o cartão já tem `bg-bb-surface`). `BigBoxDetails`: miniaturas e visor em
+`object-contain`.
+
+#### 4.7.5 Área segura e layout dos detalhes [BBX-042, BBX-043, BBX-044]
+
+- `BigBox.tsx`: dentro da raiz, depois do `BackgroundStage`, um `div[data-bb-safe]` com `padding: var(--arc-bb-safe-y)
+  var(--arc-bb-safe-x)`, `flex flex-col h-full min-h-0`, contendo o tema (`flex-1 min-h-0`) e o rodapé. Nada de texto fora dele.
+- `BigBoxDetails`: §1.1 do contrato. Espaçamentos por `style` (não só classe) nos três pontos medidos pelo teste
+  (`data-bb-details` gap, `data-bb-facts` rowGap e lineHeight), para que o teste de componente leia valores e não nomes de
+  classe.
+- Sem galeria: sem coluna do visor; coluna de texto com `max-width: 60%`.
+
+#### 4.7.6 Riscos
+
+- **Corrida na leitura de várias páginas:** o `signal` do react-query é a única condição de saída do laço; o laço não guarda
+  estado fora do `queryFn` e não agenda nada. Biblioteca de 20.000 jogos = 40 leituras de 500 em sequência (aceitável; medir em
+  BBX-030).
+- **`scrollIntoView` e `ResizeObserver` em jsdom:** não usamos `ResizeObserver` (capacidade vem do `resize` da janela);
+  `scrollIntoView` é chamado com `?.`.
+- **Um só `<video>` na tela Detalhes:** o `BackgroundStage` já fica `active = false` nos detalhes; o visor é o único dono do
+  elemento e o desmonta ao trocar de item (sem `src`).
+- **Mudança de contrato de tema:** `listCapacity` é obrigatório; o tema falso vertical dos testes ganha um.
 
 ## 5. Vídeo [VID-001..VID-029, SSC-001..SSC-006]
 

@@ -1103,3 +1103,185 @@ var ( lockThread = runtime.LockOSThread; unlockThread = runtime.UnlockOSThread )
 | CON-023 (sem mudança de texto) | T15, T51 |
 
 Com elas, os requisitos ativos passam a 98 (94 + 4 novos).
+
+---
+
+# Ajustes do teste com controle (2026-11-16)
+
+Acrescentadas pelo spec-writer depois do teste do Faixa com controle, sem renumerar nada. **Só depois da aprovação do usuário
+de BBX-032..BBX-044** (e das alterações de BBX-006, BBX-015, BBX-016, BBX-024, BBX-025, BBX-026 e da remoção de BBX-007).
+Requisitos novos: **BBX-032..BBX-044**; alterados: **BBX-006, BBX-015, BBX-016, BBX-024, BBX-025, BBX-026**; removido:
+**BBX-007**. Design em [§4.7](design.md); contrato em [bigbox-faixa §1, §1.1, §2, §3, §3.1, §4..§7](contracts/bigbox-faixa.md).
+Só frontend (`frontend/src/bigbox/`, `frontend/src/index.css` e testes); nada no Go. Mesmas premissas: test-writer primeiro,
+implementer depois, uma tarefa por commit, `vi.useFakeTimers` em vez de espera real, todo caso começa pelo ID. Ao fim de cada
+tarefa: `npm test`, `npx tsc --noEmit` em `frontend/`.
+
+**Testes antigos que saem ou mudam** (o test-writer apaga/reescreve na tarefa indicada): `nav.test.ts` "BBX-007/next com foco
+≥ carregado − 10 pede fetchNextPage…" e "BBX-016/up e down percorrem play, playUntracked e description…" (T53);
+`useBigBoxData.test.tsx` os três casos BBX-007 (T56); `viewModel.test.ts` "BBX-006/windowAround devolve no máximo 15…" (T55);
+`theme.test.ts` "BBX-026/o scrim tem alfa ≥ 0,72…" e os de par sobre `scrim` (T52); `hints.test.ts` o caso de "Rolar" (T55);
+`BigBoxDetails.test.tsx` "BBX-016/os botões … o foco atual tem contorno" (T59).
+
+## T52 — Tokens: `--arc-bb-panel`, área segura e contraste
+- Requisitos: BBX-025, BBX-026, BBX-037 (parte de tokens), BBX-042 (parte de tokens). **implementer:** `frontend/src/index.css`
+  (bloco `[data-bigbox-theme="faixa"]`: `--arc-bb-panel`, `--arc-bb-safe-y: 5vh`, `--arc-bb-safe-x: 5vw`; `@theme inline`:
+  `--color-bb-panel`). Valor do painel escolhido para passar nos testes (escuro, alfa ≥ 0,8 sugerido).
+- **test-writer:** `frontend/src/theme.test.ts`:
+  - `BBX-025/cada um dos tokens (bg, bg-2, scrim, panel, text, text-muted, accent, on-accent, surface, focus, danger) tem valor sob [data-bigbox-theme="faixa"] e utilitário em @theme inline` (substitui o de 10 tokens);
+  - `BBX-026/text, text-muted e danger ≥ 4,5:1 sobre o panel composto sobre branco e sobre preto`; `BBX-026/focus ≥ 3:1 contra o panel composto nos dois casos`; `BBX-026/on-accent sobre accent e text sobre surface continuam ≥ 4,5:1`;
+  - `BBX-042/--arc-bb-safe-y é 5vh e --arc-bb-safe-x é 5vw no bloco do Faixa`.
+- Dependência: aprovação. Arquivo compartilhado: `index.css`, `theme.test.ts` só aqui nesta seção.
+
+## T53 — Reducer: foco dos detalhes por zona, sem paginação pelo foco
+- Requisitos: BBX-032, BBX-033, BBX-034, BBX-016, BBX-006; BBX-007 removido. **implementer:** `frontend/src/bigbox/nav.ts`.
+```ts
+export type DetailsFocus = 'play' | 'playUntracked' | 'gallery'
+export type DetailsButton = 'play' | 'playUntracked'
+// NavState += detailsButton: DetailsButton; NavCtx -= loaded; NavAction += { type: 'galleryChanged'; count: number }
+// NavEffect -= { kind: 'fetchNextPage' }; PREFETCH_BEFORE_END removido
+export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavState; effects: NavEffect[] } // tabela de bigbox-faixa §3
+```
+- **test-writer:** `frontend/src/bigbox/nav.test.ts`:
+  - `BBX-016/details abre com detailsFocus e detailsButton em play e galeria 0`; `BBX-016/accept na galeria não pede efeito`;
+  - `BBX-032/down de um botão com galleryCount > 0 vai à galeria; com galleryCount 0 não muda`; `BBX-032/up na galeria volta ao último botão (play ou playUntracked)`; `BBX-032/up num botão e down na galeria não mudam nada`; `BBX-032/galleryChanged(0) com foco na galeria volta ao último botão; vale com suspended`;
+  - `BBX-033/next em play vai a playUntracked e prev volta, sem dar a volta; gallery não muda`;
+  - `BBX-034/com foco na galeria prev e next movem gallery em [0, galleryCount − 1] sem dar a volta; detailsFocus não muda`; `BBX-034/galleryChanged(n) limita gallery a n − 1`;
+  - `BBX-006/prev e next em browse não devolvem efeito algum (sem fetchNextPage)`.
+- Dependência: aprovação. Paralelo à T52.
+
+## T54 — Entrada: PageUp/PageDown rolam a descrição nos detalhes
+- Requisitos: BBX-036, BBX-005. **implementer:** `frontend/src/bigbox/useBigBoxInput.ts` (mapa de teclas depende de `screen`).
+- **test-writer:** `frontend/src/bigbox/useBigBoxInput.test.tsx`:
+  - `BBX-036/em details PageUp e PageDown emitem scrollUp e scrollDown`; `BBX-036/em browse PageUp e PageDown continuam tabPrev e tabNext`; `BBX-036/analógico direito emite scrollUp/scrollDown em details com qualquer foco`;
+  - `BBX-032/em details ↑ e ↓ (direcional, analógico esquerdo e setas) emitem up e down; ← e → emitem prev e next`.
+- Dependência: T53 (tipos).
+
+## T55 — Modelo: janela da faixa, capacidade do tema e dicas por zona
+- Requisitos: BBX-039, BBX-024, BBX-006, BBX-015, BBX-038 (campo `loading`). **implementer:** `frontend/src/bigbox/viewModel.ts`,
+  `frontend/src/bigbox/hints.ts`, `frontend/src/bigbox/themes/types.ts`, `frontend/src/bigbox/themes/registry.ts`,
+  `frontend/src/bigbox/themes/faixa/capacity.ts` (novo).
+```ts
+export const STRIP_ANCHOR = 2, STRIP_MAX = 15, STRIP_FALLBACK_CAPACITY = 12
+export function stripWindow(total: number, focus: number, capacity: number): { start: number; end: number }
+export function faixaCapacity(vp: { width: number; height: number }): number // bigbox-faixa §3.1; 0x0 -> 12; 1..14
+// BigBoxTheme += listCapacity(vp): number; ViewModelInput += capacity, loading; BigBoxViewModel += loading, stripStart
+export function hintsFor(screen: 'browse' | 'details', o: { empty: boolean; videoVisible: boolean; detailsFocus?: DetailsFocus; hasGallery?: boolean }): Hint[]
+```
+  `windowAround` e `STRIP_WINDOW` saem.
+- **test-writer:** `viewModel.test.ts`, `hints.test.ts`, `themes/registry.test.ts`, `themes/faixa/capacity.test.ts` (novo):
+  - `BBX-039/stripWindow: uma linha por caso da tabela de bigbox-faixa §3.1 (começo, âncora, rolagem, fim, T ≤ V, T = 0, V acima de 14)`; `BBX-039/a capa em foco fica sempre em posição ≤ V − 1 (varredura de f em 0..T − 1 para T 40 e V 12)`; `BBX-039/buildViewModel devolve stripStart e games da janela`;
+  - `BBX-024/faixaCapacity: 1920×1080 e 1280×720 dão o valor da fórmula; 0×0 dá 12; janela estreita dá 1; nunca passa de 14`; `BBX-024/todo tema do registro tem listCapacity; mosaico e roda devolvem 12`;
+  - `BBX-038/loading verdadeiro: focused null e lista vazia no modelo`;
+  - `BBX-015/details com foco em botão: A com o rótulo do botão, ↓ Imagens só com galeria, B Voltar, Select+B Fechar o jogo`; `BBX-015/details com foco na galeria: ←/→ Imagem, ↑ Botões, B Voltar, Select+B Fechar o jogo, sem A`; `BBX-015/nenhuma dica "Rolar"`.
+- Dependência: T53 (tipos).
+
+## T56 — Dados: a aba lida inteira antes de aparecer
+- Requisitos: BBX-038, BBX-027, BBX-029. **implementer:** `frontend/src/bigbox/useBigBoxData.ts`.
+```ts
+export const PAGE_SIZE = 500
+export type TabGames = { games: GameView[]; total: number; isPending: boolean; error: Error | null }
+export function useTabGames(platformId: number | null): TabGames // design §4.7.3
+```
+- **test-writer:** `frontend/src/bigbox/useBigBoxData.test.tsx` (binding `ListGames` falso paginado, controlado por promessas):
+  - `BBX-038/1.234 jogos: três ListGames em sequência (offset 0, 500, 1000; limit 500; filtro só de plataforma; ordem por título) sem nenhuma ação de foco`; `BBX-038/isPending até a última página; total é 1.234 e games tem 1.234`; `BBX-038/nunca há duas leituras em voo`;
+  - `BBX-038/página vazia antes do total encerra a leitura e total vira o carregado`; `BBX-038/troca de aba no meio: a página seguinte da aba antiga não é pedida`; `BBX-038/falha na segunda página: error preenchido, isPending falso`; `BBX-038/voltar a uma aba já lida não chama ListGames de novo`;
+  - `BBX-029/só leituras (ListGames, GetGame, MediaList, CurrentSession)`.
+- Dependência: aprovação. Paralelo à T53..T55.
+
+## T57 — Painel, área segura, Faixa e rodapé
+- Requisitos: BBX-037, BBX-039, BBX-041, BBX-042, BBX-038 (estado "Carregando jogos…"), BBX-006, BBX-025. **implementer:**
+  `frontend/src/bigbox/Panel.tsx` (novo), `themes/faixa/Faixa.tsx`, `themes/faixa/FaixaStrip.tsx`, `themes/faixa/FaixaInfo.tsx`,
+  `frontend/src/bigbox/Footer.tsx`.
+```ts
+export function Panel(p: { children: ReactNode; className?: string; as?: 'div' | 'section' | 'figcaption' }): JSX.Element // data-bb-panel, bg-bb-panel
+```
+  `FaixaStrip` usa `model.stripStart` (sem calcular janela); capa em `object-contain`.
+- **test-writer:** `themes/faixa/Faixa.test.tsx`, `Footer.test.tsx`, `Panel.test.tsx` (novo):
+  - `BBX-037/abas, título, linha de dados, descrição curta, tempo jogado, última vez, sessões e botões têm um ancestral data-bb-panel`; `BBX-037/"Nenhum jogo nesta plataforma", "Nenhum jogo na biblioteca" e "Carregando jogos…" ficam num painel`; `BBX-037/as dicas do rodapé ficam num painel`; `BBX-037/Panel tem data-bb-panel e a classe do token bg-bb-panel`;
+  - `BBX-038/model.loading mostra "Carregando jogos…" com as abas e sem bloco de informações`;
+  - `BBX-039/aba de 40 jogos, foco 0, stripStart 0 e 13 jogos no modelo: 13 capas, índices 0..12, a primeira em foco`; `BBX-039/clique na capa i chama onPick(stripStart + i)`; `BBX-006/nunca mais de 15 capas no DOM`;
+  - `BBX-041/a imagem da capa usa object-contain`.
+- Dependência: T52, T55.
+
+## T58 — `BackgroundStage`: arte e vídeo inteiros sobre preenchimento desfocado
+- Requisitos: BBX-040, BBX-010, BBX-011. **implementer:** `frontend/src/bigbox/BackgroundStage.tsx` (props iguais; design §4.7.4).
+- **test-writer:** `frontend/src/bigbox/BackgroundStage.test.tsx` (temporizadores falsos):
+  - `BBX-040/com arte: um preenchimento (bb-art-fill) em object-cover com desfoque ≥ 24px e véu de --arc-bb-scrim, e a arte (bb-art) em object-contain acima`; `BBX-040/o vídeo usa object-contain sobre o preenchimento`; `BBX-040/sem arte: só o gradiente, sem preenchimento`;
+  - `BBX-010/a transição de 300 ms vale para o par preenchimento + arte (as duas camadas na troca, uma depois de ART_FADE_MS)`; `BBX-011/continua um único video`.
+- Dependência: T52. Paralelo à T57.
+
+## T59 — `BigBoxDetails`: visor, miniaturas, foco único e layout compacto
+- Requisitos: BBX-016, BBX-032, BBX-033, BBX-034, BBX-035, BBX-036, BBX-037, BBX-041, BBX-043, BBX-044. **implementer:**
+  `frontend/src/bigbox/BigBoxDetails.tsx` (contrato §1.1, design §4.7.1 e §4.7.5).
+```ts
+export type BigBoxDetailsProps = { game: GameDetailView; media: MediaItemView[]; session: 'running' | 'paused' | null
+  detailsFocus: DetailsFocus; gallery: number; sound: boolean; scrollSignal: number; onPlay(): void; onPlayUntracked(): void }
+export function galleryOf(media: MediaItemView[]): MediaItemView[] // sem mudança: vídeo primeiro, depois screenshots
+```
+- **test-writer:** `frontend/src/bigbox/BigBoxDetails.test.tsx`:
+  - `BBX-035/foco em play: só o botão Jogar tem data-focused true; foco em playUntracked: só ele; foco na galeria: só a fileira de miniaturas`; `BBX-035/a miniatura selecionada tem aria-current e não tem o contorno de foco`;
+  - `BBX-034/o visor mostra o item gallery em object-contain e o contador "i+1 / N"`; `BBX-034/gallery 2 mostra o terceiro screenshot no visor`; `BBX-034/gallery maior que N − 1 mostra o último`; `BBX-034/vídeo selecionado toca no visor (muted sem som, loop, playsInline) e a miniatura dele não tem video`; `BBX-034/trocar do vídeo para um screenshot desmonta o video sem src`; `BBX-034/no máximo um video na tela`; `BBX-034/a troca de gallery chama scrollIntoView da miniatura (espião) sem quebrar quando ausente`;
+  - `BBX-041/miniaturas em object-contain`;
+  - `BBX-037/título, linhas de dado, tempo, botões, descrição e contador têm ancestral data-bb-panel`;
+  - `BBX-043/a raiz data-bb-details tem altura 100%, min-height 0 e overflow hidden; visor e miniaturas estão dentro dela; só a descrição tem overflow-y auto`; `BBX-043/sem galeria não há visor nem miniaturas e a coluna de texto vai a 60%`;
+  - `BBX-044/data-bb-facts agrupa plataforma·ano·gêneros, desenvolvedores, editoras, modos e tempo·última vez·sessões; rowGap ≤ 0,25em, lineHeight ≤ 1,4 e parágrafos sem margem`; `BBX-044/o gap entre título, fatos, botões e descrição é ≤ 0,75em`;
+  - `BBX-036/scrollSignal rola a descrição com o foco em qualquer zona`; `BBX-016/jogo sem descrição e sem mídia não quebra`.
+- Dependência: T52, T53, T57 (`Panel`).
+
+## T60 — Shell: fiação dos ajustes e teste com controle falso
+- Requisitos: BBX-032, BBX-033, BBX-034, BBX-036, BBX-038, BBX-039, BBX-042, BBX-027, BBX-024. **implementer:**
+  `frontend/src/bigbox/BigBox.tsx`, `frontend/src/bigbox/useViewport.ts` (novo).
+```ts
+export function useViewport(): { width: number; height: number } // window.inner*, listener de resize removido ao desmontar
+```
+  `div[data-bb-safe]` com o tema e o rodapé; `capacity = theme.listCapacity(useViewport())`; `stripWindow` no modelo;
+  `useCardImages` só dos ids da janela; `galleryChanged` quando a contagem da galeria muda; `listLoaded` só depois da leitura
+  completa; sem `fetchNextPage`; `hasGallery` nas dicas.
+- **test-writer:** `frontend/src/bigbox/BigBox.test.tsx` (runtime do Wails falso, `navigator.getGamepads` falso, `requestAnimationFrame` controlado):
+  - `BBX-032/X abre Detalhes com Jogar em foco; ↓ no direcional leva o foco à galeria; ↑ volta a Jogar (data-focused no DOM)`; `BBX-033/→ no direcional com foco em Jogar foca Jogar sem contar tempo e A chama LaunchGameUntracked`; `BBX-034/com foco na galeria → troca o item do visor e o contador vai a 2 / N; A não lança`; `BBX-032/media:changed que esvazia a galeria com foco nela devolve o foco ao botão`;
+  - `BBX-036/PageDown nos detalhes rola a descrição e não troca a aba`;
+  - `BBX-038/a faixa não aparece até a última página; "Carregando jogos…" aparece antes; LB/RB funcionam durante a leitura`; `BBX-027/jogo inicial na segunda página recebe o foco depois da leitura completa`; `BBX-038/falha na leitura mostra o aviso role alert e o texto de aba vazia`;
+  - `BBX-039/ao trocar para uma aba de 40 jogos com janela 1920×1080, a faixa mostra V + 1 capas a partir da primeira`; `BBX-039/resize da janela muda a capacidade; desmontar remove o listener`;
+  - `BBX-042/tema, aviso e rodapé ficam dentro de data-bb-safe; o fundo fica fora`; `BBX-024/o tema falso vertical declara listCapacity e navega como antes`.
+- Dependência: T53..T59.
+
+## T61 — Varredura, rastreio e conferência manual
+- Requisitos: BBX-025, BBX-030, BBX-042, BBX-043, BBX-044 (partes manuais). **test-writer:** `frontend/src/bigbox/bigbox-scan.test.ts`:
+  - `BBX-025/Panel.tsx, capacity.ts e useViewport.ts entram na varredura e não têm cor literal nem classe de paleta`; `BBX-037/nenhum arquivo de bigbox/ pinta fundo de texto com --arc-bb-scrim (só o preenchimento de BackgroundStage o usa)`.
+- **Responsável:** sessão principal. `npm test`, `npx tsc --noEmit`, `npm run build`;
+  `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/spec-trace.ps1 -Spec docs/specs/phase-13-modo-console` (BBX-007
+  removido não pode ter teste ativo citando-o); `wails build`; roteiro manual com controle XInput, em 1280×720, 1920×1080 e
+  3840×2160 (ou escala do Windows equivalente): detalhes com ↓/↑/←/→/A/B; galeria inteira e acima do rodapé; texto com margem da
+  borda; linhas de dado juntas; texto legível sobre arte clara (tela de título branca) e escura; aba "Todos" com mais de 500 jogos
+  aparece inteira e a faixa cheia à direita; capas largas (SNES) e artes 4:3 sem corte; conferir a legibilidade a 3 m (BBX-030).
+- Dependência: T52..T60.
+
+## Ordem e rastreabilidade desta seção
+
+- T52, T53 e T56 em paralelo; T54 e T55 depois da T53; T57 e T58 depois da T52 (T57 também da T55); T59 depois da T52, T53 e
+  T57; T60 depois de todas; T61 por último. Arquivos compartilhados: `BigBox.tsx` só na T60; `index.css` só na T52.
+
+| Requisito | Tarefas |
+|---|---|
+| BBX-006 (alterado) | T53, T55, T57 |
+| ~~BBX-007~~ (removido) | T53, T56 (saem os testes) |
+| BBX-015 (alterado) | T55 |
+| BBX-016 (alterado) | T53, T59 |
+| BBX-024 (alterado) | T55, T60 |
+| BBX-025 (alterado) | T52, T57, T61 |
+| BBX-026 (alterado) | T52 |
+| BBX-032 | T53, T54, T59, T60 |
+| BBX-033 | T53, T59, T60 |
+| BBX-034 | T53, T59, T60 |
+| BBX-035 | T59 |
+| BBX-036 | T54, T59, T60 |
+| BBX-037 | T52, T57, T59, T61 |
+| BBX-038 | T55, T56, T57, T60 |
+| BBX-039 | T55, T57, T60 |
+| BBX-040 | T58 |
+| BBX-041 | T57, T59 |
+| BBX-042 | T52, T60, T61 |
+| BBX-043 | T59, T61 |
+| BBX-044 | T59, T61 |
+
+Com elas, os requisitos ativos passam a 110 (98 + 13 novos − BBX-007).
