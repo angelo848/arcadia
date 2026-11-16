@@ -3,7 +3,7 @@
 A game launcher and organizer for Windows, inspired by LaunchBox, focused on **robust play time tracking**: time is
 counted from the game's process tree, not from the focused window.
 
-Current version: **1.0.1**.
+Current version: **1.0.2**.
 
 ## What it does
 
@@ -74,7 +74,7 @@ wails dev
 Build the executable into `cmd/arcadia/build/bin/arcadia.exe` (from `cmd/arcadia`):
 
 ```bash
-wails build -ldflags "-X main.version=1.0.1"
+wails build -ldflags "-X main.version=1.0.2"
 ```
 
 Interface tests (from `frontend`):

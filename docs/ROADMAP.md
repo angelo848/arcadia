@@ -230,3 +230,10 @@ Correções e ajustes sobre a 1.0.0, sem spec nova:
 - Esc na grade ou na lista tira o jogo de foco e o painel volta aos jogados recentemente.
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.0.1"`.
+
+## Versão 1.0.2 (2026-11-16)
+
+Correção sobre a 1.0.1: ao levar o jogo ao primeiro plano, o agente não alterna mais o "sempre no topo" da janela. Um
+jogo ocupado carregando podia ficar preso acima das outras janelas, e o Alt+Tab não tirava ele da frente.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.0.2"`.
