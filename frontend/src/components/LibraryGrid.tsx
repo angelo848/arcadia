@@ -24,6 +24,7 @@ export function LibraryGrid({
   onNeedMore,
   onSelect,
   onLaunch,
+  onClearSelection,
   keyboard,
   groupByYear = false,
 }: {
@@ -41,6 +42,8 @@ export function LibraryGrid({
   onNeedMore: () => void
   onSelect: (id: number) => void
   onLaunch: (id: number) => void
+  // onClearSelection takes the game out of focus (Esc); the panel goes back to the recent games.
+  onClearSelection?: () => void
 }): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [metrics, setMetrics] = useState(() => ({ ...columnsFor(0), measured: false }))
@@ -213,6 +216,13 @@ export function LibraryGrid({
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!keyboard) {
+      return
+    }
+    if (e.key === 'Escape') {
+      if (selectedId !== null && onClearSelection !== undefined) {
+        e.preventDefault()
+        onClearSelection()
+      }
       return
     }
     const cardEl = (e.target as HTMLElement).closest<HTMLElement>('[data-game-id]')

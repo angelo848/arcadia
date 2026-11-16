@@ -515,6 +515,7 @@ export default function App() {
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}
+                      onClearSelection={() => dispatch({ type: 'clear' })}
                     />
                   ) : (
                     <LibraryList
@@ -527,6 +528,7 @@ export default function App() {
                       onNeedMore={needMore}
                       onSelect={select}
                       onLaunch={launchFromList}
+                      onClearSelection={() => dispatch({ type: 'clear' })}
                     />
                   )}
                 </div>

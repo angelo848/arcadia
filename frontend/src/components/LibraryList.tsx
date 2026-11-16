@@ -23,6 +23,7 @@ export function LibraryList({
   onNeedMore,
   onSelect,
   onLaunch,
+  onClearSelection,
   keyboard,
 }: Parameters<typeof LibraryGrid>[0]): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -136,6 +137,13 @@ export function LibraryList({
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!keyboard) {
+      return
+    }
+    if (e.key === 'Escape') {
+      if (selectedId !== null && onClearSelection !== undefined) {
+        e.preventDefault()
+        onClearSelection()
+      }
       return
     }
     const rowEl = (e.target as HTMLElement).closest<HTMLElement>('[data-game-id]')

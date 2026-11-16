@@ -127,6 +127,17 @@ function cardOf(title: string): HTMLElement {
 }
 
 describe('LibraryGrid', () => {
+  it('1.0.1/Esc com um jogo em foco tira o foco (o painel volta aos jogados recentemente)', () => {
+    const onClearSelection = vi.fn()
+    const { rerender } = render(<LibraryGrid {...props({ selectedId: 2 })} onClearSelection={onClearSelection} />)
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+    expect(onClearSelection).toHaveBeenCalledTimes(1)
+
+    rerender(<LibraryGrid {...props({ selectedId: null })} onClearSelection={onClearSelection} />)
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+    expect(onClearSelection).toHaveBeenCalledTimes(1)
+  })
+
   it('1.0.1/ordenada por última vez jogado: divisória por ano e data abaixo do título', () => {
     const games = [
       game(1, { title: 'A', lastPlayedAt: '2026-06-10T12:00:00.000Z' }),

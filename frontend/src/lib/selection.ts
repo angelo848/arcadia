@@ -13,6 +13,7 @@ export type SelectionEvent =
   | { type: 'readError'; gameId: number; message: string }
   | { type: 'retry' }
   | { type: 'removed'; gameId: number }
+  | { type: 'clear' }
 
 export const initialSelection: Selection = { kind: 'empty' }
 
@@ -45,6 +46,8 @@ export function selectionReducer(s: Selection, e: SelectionEvent): Selection {
         return s
       }
       return { kind: 'error', gameId: s.gameId, message: e.message }
+    case 'clear':
+      return initialSelection
     case 'removed':
       if (s.kind === 'empty' || s.gameId !== e.gameId) {
         return s
