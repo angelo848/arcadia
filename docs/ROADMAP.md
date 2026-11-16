@@ -200,3 +200,21 @@ confirmação), `frontend` (`ImportDialog`).
 
 **A decidir na spec**
 - Cota diária do ScreenScraper e nomes exatos dos campos da API; se ele fornece vídeo por plataforma (não confirmado).
+
+## Fase 14 — Edição manual de imagens e do tempo jogado
+
+> **Status:** concluída no código. Spec enxuta em [phase-14-edicao-manual](specs/phase-14-edicao-manual/requirements.md)
+> (EDM-001..EDM-005), sem design, tarefas nem ADR, a pedido do usuário.
+
+Na janela "Editar jogo": trocar, adicionar e remover capa, screenshots e fundos a partir de arquivos, e corrigir o tempo
+total jogado. Métodos novos no IPC: `media.add`, `media.remove` e `game.setPlayTime`.
+
+## Versão 1.0.0 (2026-11-16)
+
+Primeira versão definitiva: fases 1 a 14 no código, ícones próprios do aplicativo e das plataformas. O executável é
+gerado com `wails build -ldflags "-X main.version=1.0.0"`.
+
+Ficou para depois da 1.0:
+- Conferir a busca de vídeo com a API real do ScreenScraper (T45 da fase 13), que depende das credenciais da conta.
+- Conferências manuais IMV-083 (fase 11) e MET-083 (fase 12).
+- Incluir os três métodos da fase 14 no arquivo de contrato `ipc.openrpc.json`.

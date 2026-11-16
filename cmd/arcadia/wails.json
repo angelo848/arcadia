@@ -10,5 +10,9 @@
   "wailsjsdir": "../../frontend",
   "author": {
     "name": "Arcadia"
+  },
+  "info": {
+    "productName": "Arcadia",
+    "productVersion": "1.0.0"
   }
 }
