@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import type { PlatformView } from '../lib/library'
-import { coverPlaceholderUrl } from './CoverImage'
+import { platformIconSrc } from '../lib/platforms'
 
 function sameSelection(selectedIds: number[] | undefined, id: number): boolean {
   return selectedIds !== undefined && selectedIds.length === 1 && selectedIds[0] === id
@@ -53,7 +53,7 @@ export function PlatformNav({
             }}
             className={cls(current)}
           >
-            <img src={p.iconUrl || coverPlaceholderUrl} alt="" className="h-5 w-5 shrink-0 object-contain" />
+            <img src={platformIconSrc(p)} alt="" className="h-6 w-6 shrink-0 rounded object-contain" draggable={false} />
             <span className="flex-1 truncate">{p.name}</span>
             <span className="text-xs text-muted">{p.gameCount}</span>
           </button>

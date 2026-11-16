@@ -234,22 +234,27 @@ const icons = {
       `<rect x="21.5" y="45.3" width="8" height="2.3" rx=".6" fill="#7f8796"/>` +
       `<rect x="34.5" y="45.3" width="8" height="2.3" rx=".6" fill="#7f8796"/>`,
   },
-  // Upright tower with the ribbed top and the blue light.
+  // The black console lying flat, seen from the front: tray on top, ports and ribbed grille below.
   ps2: {
-    from: '#3149b8',
-    to: '#0d1544',
+    from: '#5f90ff',
+    to: '#2440bd',
     body:
-      `<rect x="20.5" y="6.5" width="23" height="47.5" rx="2.5" fill="#eceef6"/>` +
-      `<rect x="15.5" y="53" width="33" height="4.5" rx="2.2" fill="#c6cbdc"/>`,
+      `<rect x="5" y="19" width="54" height="14" rx="2.2" fill="#20232c"/>` +
+      `<rect x="8" y="31" width="48" height="14" rx="2.2" fill="#2c303c"/>`,
     details:
-      `<path d="M24 12h16M24 15.500h16M24 19h16M24 22.500h16" stroke="#aab1c8" stroke-width="1.7" stroke-linecap="round"/>` +
-      `<rect x="20.5" y="26.5" width="23" height="1.3" fill="#c6cbdc"/>` +
-      `<rect x="24" y="31" width="16" height="3.2" rx="1" fill="#6f7896"/>` +
-      `<rect x="24" y="37.5" width="8" height="2.2" rx="1.1" fill="#3f73ff"/>` +
-      `<circle cx="36" cy="38.6" r="1.2" fill="#2fae5e"/>` +
-      `<circle cx="39.3" cy="38.6" r="1.2" fill="#e23d42"/>` +
-      `<rect x="24" y="44" width="4.5" height="2.5" rx=".5" fill="#6f7896"/>` +
-      `<rect x="30.5" y="44" width="4.5" height="2.5" rx=".5" fill="#6f7896"/>`,
+      `<path d="M7.2 19h49.6a2.2 2.2 0 0 1 2.2 2.2v.6H5v-.6A2.2 2.2 0 0 1 7.2 19z" fill="#4a5064"/>` +
+      `<rect x="5" y="31.6" width="54" height="1.4" fill="#0e0f14"/>` +
+      `<rect x="9" y="24" width="27" height="4.4" rx="1.2" fill="#0c0d11" stroke="#565d74" stroke-width=".9"/>` +
+      `<rect x="39.5" y="23.7" width="5" height="5" rx="1.1" fill="#3f8bff"/>` +
+      `<circle cx="49.5" cy="26.2" r="1.4" fill="#2fd27a"/>` +
+      `<circle cx="54" cy="26.2" r="1.4" fill="#ff5d5d"/>` +
+      `<rect x="11" y="35" width="8.5" height="1.8" rx=".5" fill="#0c0d11"/>` +
+      `<rect x="21.5" y="35" width="8.5" height="1.8" rx=".5" fill="#0c0d11"/>` +
+      `<rect x="11" y="38.3" width="8.5" height="4.2" rx="2.1" fill="#0c0d11" stroke="#565d74" stroke-width=".8"/>` +
+      `<rect x="21.5" y="38.3" width="8.5" height="4.2" rx="2.1" fill="#0c0d11" stroke="#565d74" stroke-width=".8"/>` +
+      `<rect x="33.5" y="39.2" width="3.4" height="2.2" rx=".4" fill="#0c0d11"/>` +
+      `<rect x="38.4" y="39.2" width="3.4" height="2.2" rx=".4" fill="#0c0d11"/>` +
+      `<path d="M45 35.5v7M47.6 35.5v7M50.2 35.5v7M52.8 35.5v7" stroke="#565d74" stroke-width="1.3" stroke-linecap="round"/>`,
   },
   // Twin-stick gamepad.
   ps3: {

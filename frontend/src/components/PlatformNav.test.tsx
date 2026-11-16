@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { PlatformNav } from './PlatformNav'
 import type { PlatformView } from '../lib/library'
+import { genericIconUrl, seedIconUrls } from '../lib/platforms'
 
 function platform(id: number, name: string, gameCount: number, seedKey: string | null = null): PlatformView {
   return { id, name, category: 'console', emulatorId: null, seedKey, iconUrl: '', gameCount }
@@ -44,6 +45,18 @@ describe('PlatformNav', () => {
     expect(win.querySelector('img')).not.toBeNull()
     expect(within(win).getByText('Windows')).toBeInTheDocument()
     expect(within(win).getByText('5')).toBeInTheDocument()
+  })
+
+  it('PLT-009/o ícone do item é o embutido da chave, o genérico ou o do usuário', () => {
+    const custom = { ...platform(4, 'Sega', 2), iconUrl: '/media/platforms/x.png' }
+    render(
+      <PlatformNav platforms={[...catalog, custom, platform(5, 'Atari', 1)]} selectedIds={undefined} onChange={vi.fn()} />,
+    )
+    const src = (name: RegExp) => screen.getByRole('button', { name }).querySelector('img')?.getAttribute('src')
+    expect(src(/Windows/)).toBe(seedIconUrls.windows)
+    expect(src(/Super Nintendo/)).toBe(seedIconUrls.snes)
+    expect(src(/Atari/)).toBe(genericIconUrl)
+    expect(src(/Sega/)).toBe('/media/platforms/x.png')
   })
 
   it('UIX-009/sem catálogo mostra só "Todos", sem número', () => {
