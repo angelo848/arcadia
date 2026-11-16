@@ -325,6 +325,8 @@ O design da fase 6 (§9) recebeu a nota de que a plataforma `Windows` do LaunchB
 Aprovadas pelo usuário em 2026-11-13, todas pela recomendação.
 
 1. Ícones do seed: desenhos próprios (placa com a sigla, sem logotipo das fabricantes). (PLT-009)
+   Em 2026-11-16, a pedido do usuário, a sigla deu lugar ao desenho do aparelho ou do controle de cada plataforma
+   ([contrato](contracts/seed-platforms.md) §2); continuam sem logotipo das fabricantes.
 2. Ícone do usuário: só PNG e JPEG, até 2 MB, copiado para `data\media\platforms\`; `.ico` não é aceito. (PLT-011,
    PLT-012)
 3. Plataforma do seed já existente em outra grafia: adota a grafia e a categoria do seed. (PLT-004)

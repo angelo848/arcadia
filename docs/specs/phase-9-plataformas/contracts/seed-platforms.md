@@ -32,8 +32,13 @@ um teste da store compara o banco migrado com `domain.SeedPlatforms` para que os
 ## 2. Ícones
 
 - Arquivos SVG originais do projeto em `frontend/src/assets/platforms/<chave>.svg`, mais `generic.svg` (PLT-010).
-  `viewBox="0 0 64 64"`, placa de cantos arredondados com uma cor por plataforma e a sigla da tabela em texto
-  convertido em caminho (sem depender de fonte instalada). Sem logotipos das fabricantes.
+  `viewBox="0 0 64 64"`, placa de cantos arredondados com uma cor por plataforma e o desenho do aparelho ou do
+  controle dela (o genérico é um manche de fliperama), sem `<text>` e sem logotipos das fabricantes. Até 2026-11-16 a
+  placa trazia a sigla da tabela; a coluna "Sigla no ícone" ficou só como referência.
+- Os 14 arquivos são gerados por `node scripts/gen-icons.mjs`, que também grava o desenho do ícone do aplicativo em
+  `scripts/icons/arcadia.svg`. Esse desenho, exportado em PNG de 1024 px com fundo transparente, vira o ícone do
+  executável e o da bandeja (o mesmo) com `go run scripts/gen-icon.go <png> internal/agent/assets/icon.ico
+  cmd/arcadia/build/windows/icon.ico cmd/arcadia/build/appicon.png`.
 - Entram no executável pelo bundle do Vite (os assets do Wails já são embutidos com `//go:embed`); o agente não os lê.
 - Ícone do usuário: `data\media\platforms\<sha256>.<png|jpg>`; a coluna `platform.icon` guarda o caminho relativo a
   `data\media` com barra invertida do Windows, como `media.path` (ex.: `platforms\3f…a1.png`).
