@@ -1,55 +1,57 @@
 # Arcadia
 
-Launcher e organizador de jogos para Windows, inspirado no LaunchBox, com foco em **rastreamento de tempo de jogo
-robusto**: o tempo é contado pela árvore de processos do jogo, não pela janela em foco.
+A game launcher and organizer for Windows, inspired by LaunchBox, focused on **robust play time tracking**: time is
+counted from the game's process tree, not from the focused window.
 
-Versão atual: **1.0.0**.
+Current version: **1.0.0**.
 
-## O que ele faz
+## What it does
 
-- **Biblioteca** em três colunas: plataformas e filtros à esquerda, jogos no meio, detalhes do jogo à direita.
-- **Tempo de jogo** contado pelo agente, com pausa por teclado (`Ctrl+Alt+P`) ou controle (`Select + Y` por 1 s) e a
-  opção de iniciar um jogo sem contar tempo.
-- **Importação** de executáveis, pastas de ROMs (com subpastas e discos agrupados) e da biblioteca do LaunchBox, com
-  uma janela de revisão antes de gravar.
-- **Emuladores** por plataforma ou por jogo.
-- **Metadados e imagens** buscados em IGDB, SteamGridDB e Steam, e vídeo do ScreenScraper. As chaves de cada provedor
-  são informadas dentro do aplicativo.
-- **Modo console** (Big Box): tela cheia navegável pelo controle, aberta com `F11`. `Select + B` por 1 s fecha o jogo
-  em execução.
-- **Edição manual** dos dados do jogo, das imagens (capa, screenshots, fundo) e do tempo total jogado.
-- **Estatísticas** de tempo de jogo por período.
+- **Library** in three columns: platforms and filters on the left, games in the middle, game details on the right.
+- **Play time** counted by the agent, with pause by keyboard (`Ctrl+Alt+P`) or controller (`Select + Y` held for 1 s)
+  and the option to start a game without counting time.
+- **Import** of executables, ROM folders (with subfolders and grouped discs) and the LaunchBox library, with a review
+  window before anything is saved.
+- **Emulators** per platform or per game.
+- **Metadata and images** fetched from IGDB, SteamGridDB and Steam, and video from ScreenScraper. Each provider's keys
+  are entered inside the application.
+- **Console mode** (Big Box): a full-screen view navigable with the controller, opened with `F11`. `Select + B` held
+  for 1 s closes the running game.
+- **Manual editing** of game data, images (cover, screenshots, background) and total play time.
+- **Statistics** of play time by period.
 
-## Como usar
+## How to use
 
-1. Baixe o `arcadia.exe` da [página de releases](https://github.com/angelo848/arcadia/releases).
-2. Execute. O Windows pede permissão de administrador: o Arcadia roda elevado para conseguir iniciar e acompanhar
-   jogos que também exigem elevação.
-3. Um ícone aparece na bandeja. É o agente, que continua contando o tempo mesmo com a janela fechada. "Sair" no menu
-   da bandeja fecha tudo.
+1. Download `arcadia.exe` from the [releases page](https://github.com/angelo848/arcadia/releases).
+2. Run it. Windows asks for administrator permission: Arcadia runs elevated so it can start and track games that also
+   require elevation.
+3. An icon appears in the system tray. That is the agent, which keeps counting time even with the window closed.
+   "Sair" (Quit) in the tray menu closes everything.
 
-Requisitos: Windows 10 ou 11, com o WebView2 (já vem no Windows 11).
+Requirements: Windows 10 or 11, with WebView2 (already included in Windows 11).
 
-A biblioteca é **portátil**: banco, imagens e logs ficam na pasta `data` ao lado do executável. Para usar outra pasta,
-passe `--data-dir <pasta>` ou defina a variável `ARCADIA_DATA_DIR`.
+The interface is in Brazilian Portuguese.
 
-## Como funciona
+The library is **portable**: the database, images and logs live in the `data` folder next to the executable. To use
+another folder, pass `--data-dir <folder>` or set the `ARCADIA_DATA_DIR` environment variable.
 
-Um executável, dois processos:
+## How it works
 
-- `arcadia.exe --agent` fica na bandeja. Lança os jogos, rastreia o tempo, lê os atalhos e é o único que escreve no
-  banco.
-- `arcadia.exe` é a interface. Pede tudo ao agente por um named pipe local (JSON-RPC 2.0) e nunca influencia o tempo de
-  jogo.
+One executable, two processes:
 
-Stack: Go 1.27, Wails v2 com React, TypeScript e Vite, SQLite via `modernc.org/sqlite` (sem CGO).
+- `arcadia.exe --agent` stays in the tray. It launches games, tracks time, reads the shortcuts and is the only writer
+  of the database.
+- `arcadia.exe` is the interface. It asks the agent for everything over a local named pipe (JSON-RPC 2.0) and never
+  influences play time.
 
-Mais detalhes em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), nas decisões registradas em [docs/adr/](docs/adr/README.md)
-e no [roadmap](docs/ROADMAP.md).
+Stack: Go 1.27, Wails v2 with React, TypeScript and Vite, SQLite via `modernc.org/sqlite` (no CGO).
 
-## Desenvolvimento
+More details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), in the recorded decisions in [docs/adr/](docs/adr/README.md)
+and in the [roadmap](docs/ROADMAP.md). These documents are written in Portuguese.
 
-Pré-requisitos: Go 1.27, Node.js e a CLI do [Wails v2](https://wails.io) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
+## Development
+
+Prerequisites: Go 1.27, Node.js and the [Wails v2](https://wails.io) CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
 
 ```bash
 go build ./...
@@ -57,48 +59,48 @@ go test ./...
 go vet ./...
 ```
 
-Só o agente, com os dados numa pasta de desenvolvimento:
+The agent alone, with its data in a development folder:
 
 ```bash
 go run ./cmd/arcadia --agent --data-dir ./.devdata
 ```
 
-Interface em modo de desenvolvimento (a partir de `cmd/arcadia`):
+Interface in development mode (from `cmd/arcadia`):
 
 ```bash
 wails dev
 ```
 
-Gerar o executável em `cmd/arcadia/build/bin/arcadia.exe` (a partir de `cmd/arcadia`):
+Build the executable into `cmd/arcadia/build/bin/arcadia.exe` (from `cmd/arcadia`):
 
 ```bash
 wails build -ldflags "-X main.version=1.0.0"
 ```
 
-Testes da interface (a partir de `frontend`):
+Interface tests (from `frontend`):
 
 ```bash
 npx vitest run
 ```
 
-Depois de alterar as queries em `internal/store/queries/`, rode `sqlc generate`.
+After changing the queries in `internal/store/queries/`, run `sqlc generate`.
 
-### Estrutura
+### Layout
 
 ```
-cmd/arcadia      executável (interface e agente)
-cmd/fake-game    jogo falso usado nos testes de rastreamento
-internal/        agente, domínio, banco, rastreador, entrada, IPC, provedores, importadores
-frontend/        interface em React
-scripts/         geração de ícones e conferência das specs
-docs/            arquitetura, ADRs, roadmap e specs de cada fase
+cmd/arcadia      executable (interface and agent)
+cmd/fake-game    fake game used by the tracking tests
+internal/        agent, domain, database, tracker, input, IPC, providers, importers
+frontend/        React interface
+scripts/         icon generation and spec checking
+docs/            architecture, ADRs, roadmap and the spec of each phase
 ```
 
-### Processo
+### Process
 
-O projeto segue Spec-Driven Development ([ADR 0008](docs/adr/0008-spec-driven-development.md)): cada fase tem uma spec
-em `docs/specs/<fase>/` com requisitos numerados, e cada teste cita o requisito que cobre. As convenções de código e o
-fluxo de trabalho estão em [CLAUDE.md](CLAUDE.md).
+The project follows Spec-Driven Development ([ADR 0008](docs/adr/0008-spec-driven-development.md)): each phase has a
+spec in `docs/specs/<phase>/` with numbered requirements, and each test names the requirement it covers. Code
+conventions and the workflow are in [CLAUDE.md](CLAUDE.md).
 
-Os ícones são desenhos próprios, sem logotipos das fabricantes. Para refazê-los, veja `scripts/gen-icons.mjs` e
+The icons are original drawings, with no manufacturer logos. To regenerate them, see `scripts/gen-icons.mjs` and
 `scripts/gen-icon.go`.
