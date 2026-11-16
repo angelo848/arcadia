@@ -145,6 +145,8 @@ type instance struct {
 	// ended with an error not caused by Close or by ctx (EXE-026).
 	ipcFailed chan struct{}
 
+	focus *launchFocus // brings launched games to the front; stopped in Shutdown
+
 	wg sync.WaitGroup // the server.Serve and the media queue goroutines
 	// stopQueue ends the media queue; Shutdown calls it after the IPC server closes (phase 7).
 	stopQueue context.CancelFunc
@@ -316,6 +318,11 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	}, videoResolver.Quota)
 	// game.delete cleans the media of the game it removes (DEL-007, DEL-008).
 	maps.Copy(handlers, gameHandlersWithMedia(st, tr, clock, os.Stat, log, gameMediaOf{q: queue, files: mediaFiles}))
+	// A game started by the agent opens behind the other windows unless it is brought to the front.
+	focus := newLaunchFocus(ctx, log)
+	for _, m := range []string{ipc.MethodGameLaunch, ipc.MethodGameLaunchUntracked} {
+		handlers[m] = focus.wrap(handlers[m])
+	}
 	images := imageImporter{files: media.New(mediaRoot, httpClient), st: st, clock: clock, log: log}
 	maps.Copy(handlers, importHandlers(st, defaultImportLocations(), clock, importSourceSet(), images, log))
 	// Statistics (phase 8): read only; the local zone gives the weeks (EST-002, EST-006).
@@ -396,6 +403,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		logCloser:     logCloser,
 		drainTimeout:  shutdownDrainTimeout,
 		ipcFailed:     make(chan struct{}),
+		focus:         focus,
 	}
 
 	queueCtx, stopQueue := context.WithCancel(ctx)
@@ -536,6 +544,7 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 		a.stopMetadata()
 		a.metadata.Wait()
 		a.step("metadata.wait")
+		a.focus.Stop()
 		a.step("queue.stop")
 		a.stopQueue()
 		a.wg.Wait()
