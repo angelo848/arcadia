@@ -92,7 +92,7 @@ func FocusChildWindow(ctx context.Context, parent uint32, interval, timeout time
 		if parents, err := processParents(); err == nil {
 			if kids := DescendantsOf(parents, parent); len(kids) > 0 {
 				if h := biggestWindowOf(kids); h != 0 {
-					ForceForeground(h)
+					FocusWindow(h)
 					return true
 				}
 			}

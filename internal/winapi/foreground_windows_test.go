@@ -201,3 +201,26 @@ func TestMainWindow(t *testing.T) {
 		}
 	})
 }
+
+// A game window is never made topmost: a busy game may not answer the call that undoes it.
+func TestFocusWindowWithNeverTopmost(t *testing.T) {
+	cases := []struct {
+		name string
+		f    *fakeFG
+		want string
+	}{
+		{"allowed at once", &fakeFG{fgResults: []bool{true}}, "iconic,sfw"},
+		{"denied: attaches to the foreground thread", &fakeFG{fg: 9, fgThread: 7, self: 1, attachOK: true, fgResults: []bool{false, true}},
+			"iconic,sfw,attach,bring,sfw,detach"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !winapi.FocusWindowWith(tc.f, 5) {
+				t.Fatal("FocusWindowWith = false, want true")
+			}
+			if got := seq(tc.f); got != tc.want {
+				t.Errorf("calls = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}

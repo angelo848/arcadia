@@ -44,6 +44,20 @@ type ForegroundAPI interface {
 // toggle, then SetForegroundWindow; if Windows denies it, it attaches to the foreground thread's input
 // and tries again. The detach always runs. It reports whether hwnd ended up in the foreground.
 func ForceForegroundWith(api ForegroundAPI, hwnd uintptr) bool {
+	return forceForeground(api, hwnd, true)
+}
+
+// FocusWindowWith is ForceForegroundWith without the topmost toggle. It is the one to use on a window of
+// another process: a window whose thread is busy (a game loading) may take the topmost change and never
+// answer the one that undoes it, and then it stays above every other window.
+func FocusWindowWith(api ForegroundAPI, hwnd uintptr) bool {
+	return forceForeground(api, hwnd, false)
+}
+
+// FocusWindow is FocusWindowWith over the system API.
+func FocusWindow(hwnd uintptr) bool { return FocusWindowWith(sysForeground{}, hwnd) }
+
+func forceForeground(api ForegroundAPI, hwnd uintptr, topmost bool) bool {
 	// Pin the OS thread so attach and detach see the same thread id; released last.
 	lockThread()
 	defer unlockThread()
@@ -51,8 +65,10 @@ func ForceForegroundWith(api ForegroundAPI, hwnd uintptr) bool {
 	if api.IsIconic(hwnd) {
 		api.ShowWindow(hwnd, swRestore)
 	}
-	api.SetWindowPos(hwnd, hwndTopmost)
-	api.SetWindowPos(hwnd, hwndNoTopmost)
+	if topmost {
+		api.SetWindowPos(hwnd, hwndTopmost)
+		api.SetWindowPos(hwnd, hwndNoTopmost)
+	}
 	if api.SetForegroundWindow(hwnd) {
 		return true
 	}
