@@ -441,6 +441,23 @@ describe('LibraryGrid: teclado (3 colunas)', () => {
     expect(tabStops(listbox)).toEqual([listbox])
   })
 
+  it('UIX-019/foco pelo mouse na barra de rolagem não rola a grade; pelo teclado rola até o jogo em foco', () => {
+    const scrollTo = installScrollTo()
+    render(<LibraryGrid {...props({ games: makeGames(1000), total: 1000, selectedId: 600 })} />)
+    const listbox = screen.getByRole('listbox', { name: 'Jogos' })
+    scrollTo.mockClear()
+
+    // A press on the scrollbar reaches the container itself and focuses it.
+    fireEvent.mouseDown(listbox)
+    fireEvent.focus(listbox)
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    // After the focus leaves, a keyboard focus (no press before it) brings the game in focus into view.
+    fireEvent.blur(listbox)
+    fireEvent.focus(listbox)
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['ArrowRight', 5],
     ['ArrowLeft', 3],

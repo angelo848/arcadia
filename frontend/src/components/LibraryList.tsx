@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, type FocusEvent, type JSX, type KeyboardEvent, type MouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { LibraryGrid } from './LibraryGrid'
 import { liveOf } from './GameCard'
@@ -174,8 +174,26 @@ export function LibraryList({
 
   // The container is a Tab stop only while the focusable row is not in the DOM; it hands the
   // focus to the row after scrolling to it.
+  // A press on the container itself is a press on its scrollbar (the cards cover the rest). The focus it gives
+  // must not scroll: jumping to the game in focus would fight the drag or the click on the track [UIX-019].
+  const mouseFocus = useRef(false)
+  const onContainerMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      mouseFocus.current = true
+    }
+  }
+  const onContainerBlur = (e: FocusEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      mouseFocus.current = false
+    }
+  }
+
   const onContainerFocus = (e: FocusEvent<HTMLDivElement>) => {
     if (!keyboard || e.target !== e.currentTarget || loaded === 0) {
+      return
+    }
+    if (mouseFocus.current) {
+      mouseFocus.current = false
       return
     }
     const target = games[stopIndex]
@@ -195,6 +213,8 @@ export function LibraryList({
       tabIndex={keyboard && loaded > 0 && !stopRendered ? 0 : -1}
       onKeyDown={onKeyDown}
       onFocus={onContainerFocus}
+      onMouseDown={onContainerMouseDown}
+      onBlur={onContainerBlur}
       className="h-full min-h-0 overflow-y-auto focus:outline-none focus-visible:outline-2 [scrollbar-gutter:stable]"
     >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
