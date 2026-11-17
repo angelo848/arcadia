@@ -24,7 +24,7 @@ export function FaixaInfo({ focused: f, activeTab, onPlay, onDetails }: Props) {
           <span className="rounded bg-bb-surface px-2 py-1 text-sm text-bb-text">{sessionText[f.game.session]}</span>
         )}
       </div>
-      {line !== '' && <p className="text-bb-text">{line}</p>}
+      {line !== '' && <p className="text-[clamp(1.3rem,1.9vw,1.9rem)] text-bb-text">{line}</p>}
       {f.shortDescription !== '' && <p className="line-clamp-3 text-bb-text-muted">{f.shortDescription}</p>}
       <p className="text-bb-text">
         <span>{f.playTimeLabel}</span>

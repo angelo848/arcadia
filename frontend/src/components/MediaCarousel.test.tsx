@@ -67,9 +67,10 @@ describe('MediaCarousel', () => {
     ])
   })
 
-  it('AJU-009/clicar na imagem em destaque não muda nada', () => {
+  it('AJU-009/clicar na imagem em destaque não muda a imagem mostrada (só a amplia, e fechar volta igual)', () => {
     const { container } = render(<MediaCarousel items={three} resetKey={1} />)
     fireEvent.click(container.querySelector('img') as HTMLImageElement)
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(shownSrc(container)).toBe('/media/2.jpg')
     expect(screen.getByText('1 de 3')).toBeTruthy()
   })
@@ -377,5 +378,50 @@ describe('MediaCarousel', () => {
     expect(focusable.length).toBeGreaterThan(0)
     focusable[0].focus()
     expect(document.activeElement).toBe(focusable[0])
+  })
+})
+
+describe('MediaCarousel: imagem ampliada', () => {
+  it('1.0.3/clicar na imagem abre o carrossel grande; a roda do mouse troca de imagem; Esc e clique fora fecham', () => {
+    const { container } = render(<MediaCarousel items={three} resetKey={1} />)
+    // Display order: cover(2), screenshot(1), banner(3).
+    fireEvent.click(container.querySelector('img') as HTMLElement)
+    const box = screen.getByRole('dialog', { name: 'Imagens ampliadas' })
+    expect(within(box).getByText('1 de 3')).toBeInTheDocument()
+    expect(box.querySelector('img')?.getAttribute('src')).toBe('/media/2.jpg')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    fireEvent.wheel(box, { deltaY: 100 })
+    expect(within(box).getByText('2 de 3')).toBeInTheDocument()
+    expect(box.querySelector('img')?.getAttribute('src')).toBe('/media/1.jpg')
+    // The same notch of the wheel does not skip two images.
+    vi.setSystemTime(10_010)
+    fireEvent.wheel(box, { deltaY: 100 })
+    expect(within(box).getByText('2 de 3')).toBeInTheDocument()
+    vi.setSystemTime(11_000)
+    fireEvent.wheel(box, { deltaY: -100 })
+    vi.useRealTimers()
+    expect(within(box).getByText('1 de 3')).toBeInTheDocument()
+    fireEvent.keyDown(box, { key: 'ArrowRight' })
+    fireEvent.keyDown(box, { key: 'ArrowRight' })
+    expect(within(box).getByText('3 de 3')).toBeInTheDocument()
+
+    // Clicking the image keeps it open; the carousel behind follows the image.
+    fireEvent.click(box.querySelector('img') as HTMLElement)
+    expect(screen.getByRole('dialog', { name: 'Imagens ampliadas' })).toBeInTheDocument()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(shownSrc(container)).toBe('/media/3.jpg')
+
+    fireEvent.click(container.querySelector('img') as HTMLElement)
+    fireEvent.click(screen.getByRole('dialog', { name: 'Imagens ampliadas' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('1.0.3/sem imagens, clicar no espaço não abre nada', () => {
+    const { container } = render(<MediaCarousel items={[]} resetKey={1} />)
+    fireEvent.click(container.querySelector('img') as HTMLElement)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

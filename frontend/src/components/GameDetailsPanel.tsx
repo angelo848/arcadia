@@ -6,6 +6,7 @@ import { formatPlayTime } from '../lib/games'
 import { isNotFound, playModeLabels, useCatalog, useGame } from '../lib/library'
 import { formatLocalDateTime, formatUtcDate } from '../lib/formatDate'
 import { useMedia } from '../lib/metadata'
+import { openGameLocation } from '../lib/manualEdit'
 import type { PendingLaunch } from '../lib/pendingLaunch'
 import type { SelectionEvent } from '../lib/selection'
 import { MediaCarousel } from './MediaCarousel'
@@ -43,7 +44,17 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
   const media = useMedia(gameId)
   const creds = useVideoCredentials()
   const [videoBusy, setVideoBusy] = useState(false)
+  const [locationMsg, setLocationMsg] = useState<{ gameId: number; text: string } | null>(null)
   const [videoMsg, setVideoMsg] = useState<{ gameId: number; text: string; error: boolean } | null>(null)
+
+  async function openLocation() {
+    setLocationMsg(null)
+    try {
+      await openGameLocation(gameId)
+    } catch (e) {
+      setLocationMsg({ gameId, text: e instanceof Error ? e.message : 'Não foi possível abrir a pasta.' })
+    }
+  }
 
   async function searchVideo() {
     setVideoBusy(true)
@@ -132,7 +143,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
             {platform && <PlatformIcon platform={platform} size={24} />}
             <h2 className="text-2xl font-semibold text-fg">{g.title}</h2>
           </div>
-          <p className="text-sm text-muted">{g.platform}</p>
+          <p className="text-lg font-medium text-muted">{g.platform}</p>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             {sessionHere === 'running' || sessionHere === 'grace' ? (
               <span className="font-medium text-play">Em execução</span>
@@ -179,10 +190,18 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
               Buscar vídeo
             </button>
           )}
+          <button type="button" onClick={() => void openLocation()} className={secondary}>
+            Abrir local do arquivo
+          </button>
           <button type="button" onClick={() => onRemove()} className={`${secondary} text-danger`}>
             Remover
           </button>
           </div>
+          {locationMsg !== null && locationMsg.gameId === g.id && (
+            <p role="alert" className="text-sm text-danger">
+              {locationMsg.text}
+            </p>
+          )}
           {videoMsg !== null && videoMsg.gameId === g.id && (
             <p role={videoMsg.error ? 'alert' : 'status'} className={`text-sm ${videoMsg.error ? 'text-danger' : 'text-muted'}`}>
               {videoMsg.text}

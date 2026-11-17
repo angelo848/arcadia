@@ -597,6 +597,32 @@ describe('GameDetailsPanel', () => {
     await screen.findByText('Vídeo na fila')
   })
 
+  it('1.0.3/"Abrir local do arquivo" fica entre Buscar metadados e Remover e abre o local do jogo', async () => {
+    const a = install()
+    const OpenGameLocation = vi.fn(() => Promise.resolve())
+    Object.assign(a, { OpenGameLocation })
+    renderPanel()
+    await loaded()
+
+    const names = Array.from(screen.getByRole('button', { name: 'Remover' }).parentElement?.querySelectorAll('button') ?? []).map(
+      (b) => b.textContent,
+    )
+    expect(names.indexOf('Abrir local do arquivo')).toBe(names.indexOf('Remover') - 1)
+    expect(names.indexOf('Buscar metadados')).toBeLessThan(names.indexOf('Abrir local do arquivo'))
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir local do arquivo' }))
+    await waitFor(() => expect(OpenGameLocation).toHaveBeenCalledWith(10))
+  })
+
+  it('1.0.3/sem pasta conhecida o aviso do agente aparece no painel', async () => {
+    const a = install()
+    Object.assign(a, { OpenGameLocation: vi.fn(() => Promise.reject(new Error('Este jogo não tem uma pasta conhecida.'))) })
+    renderPanel()
+    await loaded()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir local do arquivo' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este jogo não tem uma pasta conhecida.')
+  })
+
   it('UIX-025/Editar, Buscar metadados e Remover chamam os callbacks uma vez', async () => {
     install()
     const { props } = renderPanel()

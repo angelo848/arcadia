@@ -17,6 +17,7 @@ type ManualApp = {
   MediaAdd?: (gameId: number, kind: string, path: string) => Promise<void>
   MediaRemove?: (mediaId: number) => Promise<void>
   SetPlayTime?: (gameId: number, seconds: number) => Promise<unknown>
+  OpenGameLocation?: (gameId: number) => Promise<void>
 }
 
 type ManualWindow = { go?: { main?: { App?: ManualApp } } }
@@ -72,4 +73,9 @@ export function playTimeSeconds(hours: string, minutes: string): number | null {
   }
   const seconds = Number(h) * 3600 + Number(m) * 60
   return seconds > maxPlayHours * 3600 ? null : seconds
+}
+
+// openGameLocation opens the Explorer where the game's file is, or in its install folder (URI games).
+export function openGameLocation(gameId: number): Promise<void> {
+  return call<void>('OpenGameLocation', [gameId])
 }

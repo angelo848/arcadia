@@ -363,3 +363,29 @@ func (a *App) AddPlatform(name, category string) (PlatformAddView, error) {
 	}
 	return PlatformAddView{Platform: a.platformView(res.Platform), Created: res.Created}, nil
 }
+
+// locationTimeout bounds OpenGameLocation.
+const locationTimeout = 5 * time.Second
+
+// msgNoLocation is what the user sees when the game has no folder to open.
+const msgNoLocation = "Este jogo não tem uma pasta conhecida."
+
+// OpenGameLocation opens the Explorer where the game's file is (selected) or, for a URI game, in its
+// install folder. It fails with a message when there is no such place.
+func (a *App) OpenGameLocation(id int64) error {
+	var res ipc.GameLocationResult
+	if err := a.callAgent(ipc.MethodGameLocation, locationTimeout, ipc.GameLocationParams{GameID: id}, &res); err != nil {
+		return err
+	}
+	if res.Path == "" {
+		return errors.New(msgNoLocation)
+	}
+	if a.platform.reveal == nil {
+		return errors.New(msgNoLocation)
+	}
+	if err := a.platform.reveal(res.Path, res.Kind == ipc.LocationFile); err != nil {
+		a.logger().Error("falha ao abrir o Explorer", "error", err.Error())
+		return errors.New(msgNoLocation)
+	}
+	return nil
+}

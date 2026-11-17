@@ -139,7 +139,8 @@ func defaultPlatform() platform {
 			}
 			return winapi.ForceForeground(hwnd), nil
 		},
-		quit: wailsruntime.Quit,
+		quit:   wailsruntime.Quit,
+		reveal: winapi.ShellReveal,
 		showWindow: func(ctx context.Context) {
 			wailsruntime.WindowUnminimise(ctx)
 			wailsruntime.WindowShow(ctx)

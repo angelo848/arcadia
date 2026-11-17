@@ -115,7 +115,7 @@ export function BigBoxDetails(p: BigBoxDetailsProps) {
           style={{ display: 'flex', flexDirection: 'column', rowGap: '0.2em', lineHeight: 1.3, color: 'var(--arc-bb-text-muted)' }}
         >
           {lines.map((t) => (
-            <p key={t} style={noMargin}>
+            <p key={t} style={t === platformLine ? { ...noMargin, fontSize: '1.4em', color: 'var(--arc-bb-text)' } : noMargin}>
               {t}
             </p>
           ))}

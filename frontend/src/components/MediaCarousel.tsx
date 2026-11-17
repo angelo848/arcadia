@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { mediaKindLabels, orderMedia } from '../lib/metadata'
 import type { MediaItemView } from '../lib/metadata'
 import { coverPlaceholderUrl } from './CoverImage'
+import { MediaLightbox } from './MediaLightbox'
 import { MediaThumbStrip } from './MediaThumbStrip'
 
 // MediaCarousel shows one featured image (covers first) plus a thumbnail strip
@@ -13,6 +14,7 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
   const [highlightId, setHighlightId] = useState<number | undefined>(undefined)
   const [seenReset, setSeenReset] = useState(resetKey)
   const [failed, setFailed] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
 
   // Pin the highlight by id so new images never move it [IMG-009].
   let hid = seenReset === resetKey ? highlightId : undefined
@@ -42,7 +44,11 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
       aria-roledescription="carrossel"
       className="flex flex-col gap-2 rounded border border-line bg-surface p-2"
     >
-      <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-raised">
+      <div
+        title={current ? 'Ampliar' : undefined}
+        onClick={() => current && setZoomed(true)}
+        className={`flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-raised ${current ? 'cursor-zoom-in' : ''}`}
+      >
         <img src={src} alt="" onError={() => setFailed(true)} className="h-full w-full object-contain" />
       </div>
       {current && (
@@ -52,6 +58,9 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
         </div>
       )}
       {n >= 2 && <MediaThumbStrip key={resetKey} items={ordered} index={safe} onSelect={setIndex} />}
+      {zoomed && n > 0 && (
+        <MediaLightbox items={ordered} index={safe} onIndex={setIndex} onClose={() => setZoomed(false)} />
+      )}
     </section>
   )
 }

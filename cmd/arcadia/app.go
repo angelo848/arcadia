@@ -75,6 +75,8 @@ type platform struct {
 	openDir func(ctx context.Context, title string) (string, error)
 	// bringToFront forces the window to the foreground; false means Windows refused (CON-023).
 	bringToFront func() (foreground bool, err error)
+	// reveal opens the Explorer on a folder, or on a file's folder with the file selected.
+	reveal func(path string, isFile bool) error
 }
 
 // App is the Wails-bound application. Its exported methods are the frontend
