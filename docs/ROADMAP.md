@@ -237,3 +237,14 @@ Correção sobre a 1.0.1: ao levar o jogo ao primeiro plano, o agente não alter
 jogo ocupado carregando podia ficar preso acima das outras janelas, e o Alt+Tab não tirava ele da frente.
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.0.2"`.
+
+## Versão 1.0.3 (2026-11-17)
+
+- Importar: a janela abre em "Arquivo", ganhou a fonte "Link (URI)" e fecha sozinha quando tudo foi gravado; buscar metadados também fecha ao aplicar.
+- Importador da Epic lê o novo launcher (`com.epicgames.eglv2\installations.jsonl`).
+- Jogo por URI não falha mais com "invalid session state" ao iniciar.
+- Detalhes: imagem em destaque abre em carrossel ampliado (roda do mouse, setas, Esc ou clique fora fecham).
+- Detalhes: botão "Abrir local do arquivo" (antes de "Remover").
+- Texto da plataforma maior sob o título nos detalhes do desktop e do Big Box.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.0.3"`.
