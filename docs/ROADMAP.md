@@ -246,5 +246,6 @@ O executável é gerado com `wails build -ldflags "-X main.version=1.0.2"`.
 - Detalhes: imagem em destaque abre em carrossel ampliado (roda do mouse, setas, Esc ou clique fora fecham).
 - Detalhes: botão "Abrir local do arquivo" (antes de "Remover").
 - Texto da plataforma maior sob o título nos detalhes do desktop e do Big Box.
+- Carrossel dos detalhes mostra o vídeo baixado, depois das screenshots e antes do fundo.
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.0.3"`.

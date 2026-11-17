@@ -78,14 +78,26 @@ export function MediaLightbox({
       onClick={onClose}
       className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-overlay p-6 focus:outline-none focus-visible:outline-2"
     >
-      {current && (
-        <img
-          src={current.url}
-          alt=""
-          onClick={stop}
-          className="min-h-0 max-h-[calc(100vh-7rem)] max-w-[calc(100vw-9rem)] rounded object-contain shadow-2xl"
-        />
-      )}
+      {current &&
+        (current.kind === 'video' ? (
+          <video
+            key={current.id}
+            src={current.url}
+            controls
+            autoPlay
+            loop
+            playsInline
+            onClick={stop}
+            className="min-h-0 max-h-[calc(100vh-7rem)] max-w-[calc(100vw-9rem)] rounded object-contain shadow-2xl"
+          />
+        ) : (
+          <img
+            src={current.url}
+            alt=""
+            onClick={stop}
+            className="min-h-0 max-h-[calc(100vh-7rem)] max-w-[calc(100vw-9rem)] rounded object-contain shadow-2xl"
+          />
+        ))}
       {current && (
         <div className="flex items-center gap-3 text-sm text-fg" onClick={stop}>
           <span>{mediaKindLabels[current.kind]}</span>

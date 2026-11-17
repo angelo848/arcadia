@@ -130,8 +130,6 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
   const busy = pending !== null && pending.id === g.id
   const playLabel = busy && pending.mode === 'tracked' ? 'Iniciando…' : 'Jogar'
   const untrackedLabel = busy && pending.mode === 'untracked' ? 'Iniciando…' : 'Jogar sem contar tempo'
-  // A game with only video has no images: the normal window ignores video [VID-023].
-  const onlyVideo = media.data !== undefined && media.data.length > 0 && media.data.every((m) => m.kind === 'video')
   const hasVideo = media.data?.some((m) => m.kind === 'video') ?? false
   const secondary ='rounded bg-raised px-3 py-1 text-sm font-medium text-fg hover:bg-hover'
 
@@ -159,7 +157,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           </div>
         </header>
 
-        {!onlyVideo && <MediaCarousel items={media.data} resetKey={g.id} />}
+        <MediaCarousel items={media.data} resetKey={g.id} />
 
         <div className="flex flex-col gap-2">
           <button

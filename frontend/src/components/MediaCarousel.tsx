@@ -36,6 +36,8 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
   }
   const current = n > 0 ? ordered[safe] : undefined
   const src = current && !failed ? current.url : coverPlaceholderUrl
+  // A video that fails to load falls back to the placeholder image.
+  const isVideo = current?.kind === 'video' && !failed
 
   return (
     <section
@@ -44,16 +46,35 @@ export function MediaCarousel({ items, resetKey }: { items?: MediaItemView[]; re
       aria-roledescription="carrossel"
       className="flex flex-col gap-2 rounded border border-line bg-surface p-2"
     >
-      <div
-        title={current ? 'Ampliar' : undefined}
-        onClick={() => current && setZoomed(true)}
-        className={`flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-raised ${current ? 'cursor-zoom-in' : ''}`}
-      >
-        <img src={src} alt="" onError={() => setFailed(true)} className="h-full w-full object-contain" />
-      </div>
+      {isVideo ? (
+        <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-raised">
+          <video
+            key={current.id}
+            src={current.url}
+            controls
+            loop
+            playsInline
+            onError={() => setFailed(true)}
+            className="h-full w-full object-contain"
+          />
+        </div>
+      ) : (
+        <div
+          title={current ? 'Ampliar' : undefined}
+          onClick={() => current && setZoomed(true)}
+          className={`flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-raised ${current ? 'cursor-zoom-in' : ''}`}
+        >
+          <img src={src} alt="" onError={() => setFailed(true)} className="h-full w-full object-contain" />
+        </div>
+      )}
       {current && (
         <div className="flex items-center justify-between gap-2 text-sm text-muted">
           <span>{mediaKindLabels[current.kind]}</span>
+          {isVideo && (
+            <button type="button" onClick={() => setZoomed(true)} className="rounded bg-raised px-2 py-0.5 text-fg hover:bg-hover">
+              Ampliar
+            </button>
+          )}
           <span aria-live="polite">{`${safe + 1} de ${n}`}</span>
         </div>
       )}

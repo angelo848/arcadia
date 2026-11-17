@@ -884,9 +884,10 @@ Dado `GET /media/<G>/<hash>.mp4` no servidor de mídia do desktop, então a resp
 `Range` (206 com `Content-Range`); as regras de caminho de `serveMedia` (fora da pasta, pasta ou ausente → 404) continuam.
 · verificação: teste de `cmd/arcadia` com `httptest`; manual na WebView (BBX-030).
 
-### VID-023 — A janela normal ignora vídeos
-Dado `media.list` com itens `video`, então o carrossel do painel (UIX-026) e a capa substituta dos cartões (`useCardImages`) não
-os mostram nem contam; o tipo `video` existe no tipo TypeScript de mídia.
+### VID-023 — O vídeo no carrossel da janela normal
+Dado `media.list` com itens `video`, então o carrossel do painel (UIX-026) mostra o vídeo (com controles, em loop) logo depois
+das screenshots e antes de título, seleção, fundo e banner, e o conta; a capa substituta dos cartões (`useCardImages`) continua
+ignorando vídeo; o tipo `video` existe no tipo TypeScript de mídia. *(Alterado na 1.0.3: antes a janela normal ignorava vídeos.)*
 · verificação: teste de componente.
 
 ### VID-024 — "Buscar vídeo" no painel

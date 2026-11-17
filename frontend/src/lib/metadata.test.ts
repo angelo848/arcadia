@@ -186,7 +186,8 @@ describe('carrossel e imagem do cartão', () => {
     expect(orderMedia(input).map((m) => m.id)).toEqual([4, 8, 2, 6, 7, 5, 3, 1])
     expect(input.map((m) => m.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
     expect(orderMedia([])).toEqual([])
-    expect(carouselKindOrder).toEqual(['cover', 'screenshot', 'title', 'select', 'background', 'banner'])
+    // alterado em 2026-11-17 (1.0.3): 'video' entra depois das screenshots
+    expect(carouselKindOrder).toEqual(['cover', 'screenshot', 'video', 'title', 'select', 'background', 'banner'])
   })
 
   it('AJU-015/com capa: cardImageOf devolve a primeira capa com fit contain', () => {
@@ -217,9 +218,10 @@ describe('tipo de mídia video', () => {
   const item = (id: number, kind: string): MediaItemView =>
     ({ id, kind, provider: 'p', path: '', thumbPath: '', url: `/m/${id}`, thumbUrl: `/t/${id}` }) as MediaItemView
 
-  it('VID-023/orderMedia descarta vídeo e mantém a ordem dos outros', () => {
-    const input = [item(1, 'banner'), item(2, 'video'), item(3, 'cover'), item(4, 'video'), item(5, 'screenshot')]
-    expect(orderMedia(input).map((m) => m.id)).toEqual([3, 5, 1])
+  // alterado em 2026-11-17 (1.0.3): o vídeo entra no carrossel, depois das screenshots e antes do fundo
+  it('VID-023/orderMedia põe o vídeo depois das screenshots e antes de título, seleção, fundo e banner', () => {
+    const input = [item(1, 'banner'), item(2, 'video'), item(3, 'cover'), item(4, 'background'), item(5, 'screenshot')]
+    expect(orderMedia(input).map((m) => m.id)).toEqual([3, 5, 2, 4, 1])
     expect(input.map((m) => m.id)).toEqual([1, 2, 3, 4, 5])
   })
 

@@ -247,26 +247,26 @@ describe('GameDetailsPanel', () => {
     expect(within(region).getByText(/1 de 2/)).toBeInTheDocument()
   })
 
-  // alterado em 2026-11-15 (fase 13): a janela normal ignora vídeo (VID-023)
-  it('VID-023/jogo só com vídeo: o carrossel não aparece e o contador não o inclui', async () => {
+  // alterado em 2026-11-17 (1.0.3): o vídeo aparece no carrossel da janela normal (VID-023)
+  it('VID-023/jogo só com vídeo: o carrossel mostra o vídeo e o conta', async () => {
     install({ media: [media(1, 'video')] })
     renderPanel()
     await loaded()
-    await waitFor(() => expect(app.MediaList).toHaveBeenCalledWith(10))
-    await settle()
-    expect(screen.queryByRole('region', { name: 'Imagens' })).toBeNull()
-    expect(screen.queryByText(/1 de 1/)).toBeNull()
+    const region = await screen.findByRole('region', { name: 'Imagens' })
+    await waitFor(() => expect(region.querySelector('video')).toHaveAttribute('src', '/media/1.jpg'))
+    expect(within(region).getByText(/1 de 1/)).toBeInTheDocument()
   })
 
-  it('VID-023/jogo com capa e vídeo: o carrossel mostra só a capa', async () => {
+  it('VID-023/jogo com capa e vídeo: a capa vem primeiro e o vídeo é o segundo item', async () => {
     install({ media: [media(1, 'video'), media(2, 'cover')] })
     renderPanel()
     await loaded()
     const region = await screen.findByRole('region', { name: 'Imagens' })
     await waitFor(() => expect(region.querySelector('img')).toHaveAttribute('src', '/media/2.jpg'))
-    expect(within(region).getByText(/1 de 1/)).toBeInTheDocument()
+    expect(within(region).getByText(/1 de 2/)).toBeInTheDocument()
     expect(region.querySelector('video')).toBeNull()
-    expect(region.querySelector('img[src="/media/1.jpg"]')).toBeNull()
+    fireEvent.click(within(region).getByRole('button', { name: /Vídeo, 2 de 2/ }))
+    await waitFor(() => expect(region.querySelector('video')).toHaveAttribute('src', '/media/1.jpg'))
   })
 
   it('UIX-027/Jogar chama onPlay(G) uma vez e Jogar sem contar tempo chama onPlayUntracked(G) uma vez', async () => {

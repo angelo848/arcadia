@@ -83,12 +83,18 @@ export function MediaThumbStrip({
             }}
             className={`h-[54px] w-24 shrink-0 overflow-hidden rounded bg-raised ${current ? 'ring-2 ring-accent' : ''}`}
           >
-            <img
-              src={src}
-              alt=""
-              onError={() => setFailed((s) => new Set(s).add(it.id))}
-              className="h-full w-full object-cover"
-            />
+            {it.kind === 'video' && !it.thumbUrl ? (
+              <span aria-hidden="true" className="flex h-full w-full items-center justify-center text-xl text-fg">
+                ▶
+              </span>
+            ) : (
+              <img
+                src={src}
+                alt=""
+                onError={() => setFailed((s) => new Set(s).add(it.id))}
+                className="h-full w-full object-cover"
+              />
+            )}
           </button>
         )
       })}

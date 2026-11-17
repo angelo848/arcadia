@@ -96,7 +96,7 @@ export function videoOf(items: MediaItemView[]): MediaItemView | undefined {
 }
 
 // The order the details carousel shows the kinds in [AJU-009].
-export const carouselKindOrder: MediaKind[] = ['cover', 'screenshot', 'title', 'select', 'background', 'banner']
+export const carouselKindOrder: MediaKind[] = ['cover', 'screenshot', 'video', 'title', 'select', 'background', 'banner']
 
 // orderMedia sorts by carouselKindOrder, stable within a kind; it does not mutate.
 export function orderMedia(items: MediaItemView[]): MediaItemView[] {
@@ -104,7 +104,7 @@ export function orderMedia(items: MediaItemView[]): MediaItemView[] {
     const i = carouselKindOrder.indexOf(k)
     return i < 0 ? carouselKindOrder.length : i
   }
-  return items.filter((m) => m.kind !== 'video').map((m, i) => ({ m, i })).sort((a, b) => rank(a.m.kind) - rank(b.m.kind) || a.i - b.i).map((x) => x.m)
+  return items.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m.kind) - rank(b.m.kind) || a.i - b.i).map((x) => x.m)
 }
 
 // The kinds a card falls back to when the game has no cover [AJU-015].

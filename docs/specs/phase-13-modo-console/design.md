@@ -300,8 +300,8 @@ frontend/src/bigbox/
 `BackgroundStage` recebe a mídia do jogo em foco: arte por `pickBackground(media)` (ordem de BBX-010); vídeo = primeiro item
 `video`. Temporizador de 2.000 ms (`setTimeout`, limpo a cada troca de foco) liga `<video muted={!sound} loop playsInline
 autoPlay src>`; a troca de foco desmonta o elemento (sem `src`); `onError` marca o jogo como "vídeo falhou" no estado local da
-visita. Transições por CSS (`opacity`, 300/400 ms). A janela normal filtra `kind !== 'video'` em `MediaCarousel` e
-`useCardImages` [VID-023].
+visita. Transições por CSS (`opacity`, 300/400 ms). `MediaCarousel` mostra o vídeo (`orderMedia` o põe depois das
+screenshots); só `useCardImages` ainda o ignora [VID-023].
 
 ### 4.5 Tema Faixa e tokens [BBX-006, BBX-008, BBX-009, BBX-015, BBX-025, BBX-026]
 
