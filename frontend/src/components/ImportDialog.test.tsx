@@ -92,7 +92,7 @@ function folderCandidate(file: string, over: Partial<ImportCandidate> = {}): Imp
   return { ...fileCandidate(file), source: 'folder', launchTarget: `E:\\Games\\ps1\\${file}`, installDir: 'E:\\Games\\ps1', ...over }
 }
 
-function renderDialog() {
+function renderDialog(startOnSteam = true) {
   const onImported = vi.fn()
   const onClose = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -103,6 +103,10 @@ function renderDialog() {
     </QueryClientProvider>
   )
   const view = render(tree())
+  // The dialog opens on Arquivo; most cases here were written for Steam, the first source of the list.
+  if (startOnSteam) {
+    fireEvent.change(screen.getByLabelText('Fonte'), { target: { value: 'steam' } })
+  }
   return { onImported, onClose, rerender: () => view.rerender(tree()) }
 }
 
@@ -692,6 +696,49 @@ describe('ImportDialog', () => {
     expect(screen.getByText('já existe')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Selecionar Um' })).toBeDisabled()
     expect(screen.getByRole('checkbox', { name: 'Selecionar Dois' })).not.toBeChecked()
+  })
+
+  it('1.0.3/a janela abre em Arquivo', () => {
+    renderDialog(false)
+    expect(screen.getByLabelText('Fonte')).toHaveValue('file')
+  })
+
+  it('1.0.3/importação limpa fecha a janela; com recusados ela fica aberta', async () => {
+    mocks.scan.mockResolvedValue({ candidates: [steamCandidate('Um')], warnings: [] })
+    mocks.apply.mockResolvedValue({ applied: [{ gameId: 1, title: 'Um' }], skipped: [] })
+    const clean = renderDialog()
+    await scanAndWait()
+    fireEvent.click(importar())
+    await waitFor(() => expect(clean.onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('1.0.3/fonte Link (URI): campo de texto, sem botão de escolher, Buscar com a URI e o título editável', async () => {
+    mocks.scan.mockResolvedValue({
+      candidates: [
+        {
+          ...steamCandidate('Sugar'),
+          source: 'uri',
+          platform: '',
+          launchTarget: 'com.epicgames.launcher://apps/a:b:Sugar?action=launch',
+        },
+      ],
+      warnings: [],
+    })
+    renderDialog()
+    chooseSource('uri')
+    expect(screen.queryByRole('button', { name: 'Escolher arquivo' })).toBeNull()
+    expect(buscar()).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'URI do jogo' }), {
+      target: { value: 'com.epicgames.launcher://apps/a:b:Sugar?action=launch' },
+    })
+    await waitFor(() => expect(buscar()).toBeEnabled())
+    await scanAndWait()
+    expect(mocks.scan).toHaveBeenCalledWith(
+      'uri',
+      'com.epicgames.launcher://apps/a:b:Sugar?action=launch',
+      expect.objectContaining({ platform: '' }),
+    )
+    expect(titleBox('Sugar')).toHaveValue('Sugar')
   })
 
   it('IMV-050/linhas não enviadas por falha de lote continuam marcadas; as gravadas viram "já existe"', async () => {

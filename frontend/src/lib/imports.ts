@@ -3,7 +3,7 @@
 
 import type { PlatformView } from './library'
 
-export type ImportSource = 'steam' | 'epic' | 'file' | 'folder' | 'launchbox'
+export type ImportSource = 'steam' | 'epic' | 'file' | 'folder' | 'launchbox' | 'uri'
 
 // ImportCandidate mirrors cmd/arcadia ImportCandidateView (JSON names of contract v0.7.0).
 // file, extension, discs and discFiles come with the phase 11 contract (IMV-024).
@@ -77,7 +77,7 @@ export async function scanImport(
 
 // isTitleEditable tells whether the title of a source can be edited (IMV-044).
 export function isTitleEditable(source: ImportSource): boolean {
-  return source === 'file' || source === 'folder'
+  return source === 'file' || source === 'folder' || source === 'uri'
 }
 
 // titleProblem checks a title trimmed; the limit counts runes (IMV-045).
@@ -255,11 +255,12 @@ export const sourceLabels: Record<ImportSource, string> = {
   file: 'Arquivo',
   folder: 'Pasta de jogos',
   launchbox: 'LaunchBox',
+  uri: 'Link (URI)',
 }
 
 // needsPath tells whether a source reads a folder chosen by the user (IMP-004, IMP-005).
 export function needsPath(source: ImportSource): boolean {
-  return source === 'file' || source === 'folder' || source === 'launchbox'
+  return source === 'file' || source === 'folder' || source === 'launchbox' || source === 'uri'
 }
 
 // skipReasonLabels names the reasons of ImportApplyResult.skipped.

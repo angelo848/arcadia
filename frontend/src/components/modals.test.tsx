@@ -127,6 +127,7 @@ describe('modais existentes sobre o Modal', () => {
   it('UIX-038/Importar: a tabela de revisão fica no corpo; o contêiner rolável é o pai direto, sem max-h fixo', async () => {
     scanMock.mockResolvedValue({ candidates: [candidate()], warnings: [] })
     wrap(<ImportDialog onImported={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Fonte'), { target: { value: 'steam' } })
     fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
     await screen.findByRole('checkbox', { name: /Counter-Strike 2/ })
     const table = screen.getByRole('table')
@@ -165,6 +166,7 @@ describe('modais existentes sobre o Modal', () => {
     applyMock.mockReturnValue(new Promise(() => {}))
     const onClose = vi.fn()
     wrap(<ImportDialog onImported={vi.fn()} onClose={onClose} />)
+    fireEvent.change(screen.getByLabelText('Fonte'), { target: { value: 'steam' } })
     fireEvent.click(screen.getByRole('button', { name: 'Buscar' }))
     // IMV-041: the row comes already checked, so no click on it.
     await screen.findByRole('checkbox', { name: /Counter-Strike 2/ })

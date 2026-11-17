@@ -45,7 +45,7 @@ export type ImportDialogProps = {
 // [IMP-001, IMV-040]. Candidates already in the library are shown and cannot be
 // checked [IMP-006]. It is modal with focus trapped inside, like DeleteDialog [UI-041].
 export function ImportDialog({ onImported, onClose, onBusyChange, onBatchStarted }: ImportDialogProps): JSX.Element {
-  const [source, setSource] = useState<ImportSource>('steam')
+  const [source, setSource] = useState<ImportSource>('file')
   const [path, setPath] = useState('')
   // platformChoice is the user's pick; null means the default (IMV-061).
   const [platformChoice, setPlatformChoice] = useState<string | null>(null)
@@ -282,6 +282,10 @@ export function ImportDialog({ onImported, onClose, onBusyChange, onBatchStarted
     setError(problems.length > 0 ? problems.join(' ') : null)
     setProgress(null)
     setBusy(false)
+    // A clean import closes the window; with skipped games or a failure it stays to show them.
+    if (applied.length > 0 && out.result.skipped.length === 0 && problems.length === 0) {
+      onClose()
+    }
   }
 
   const onToggle = useCallback((i: number, on: boolean) => {
@@ -331,8 +335,8 @@ export function ImportDialog({ onImported, onClose, onBusyChange, onBatchStarted
             disabled={busy}
             onChange={(e) => {
               const next = e.target.value as ImportSource
-              // A path picked for Arquivo is not a folder for Pasta, and the other way round (IMV-049).
-              if ((source === 'file' && next === 'folder') || (source === 'folder' && next === 'file')) {
+              // A path picked for Arquivo is not a folder for Pasta, nor a URI, and the other way round (IMV-049).
+              if (next === 'uri' || source === 'uri' || (source === 'file' && next === 'folder') || (source === 'folder' && next === 'file')) {
                 setPath('')
               }
               setSource(next)
@@ -348,7 +352,25 @@ export function ImportDialog({ onImported, onClose, onBusyChange, onBatchStarted
           </select>
         </label>
 
-        {needsPath(source) && (
+        {source === 'uri' && (
+          <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
+            <label htmlFor={pathId}>URI do jogo</label>
+            <input
+              id={pathId}
+              type="text"
+              value={path}
+              disabled={busy}
+              placeholder="loja://caminho do jogo"
+              onChange={(e) => {
+                setPath(e.target.value)
+                resetList()
+              }}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+          </div>
+        )}
+
+        {needsPath(source) && source !== 'uri' && (
           <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
             <label htmlFor={pathId}>{source === 'file' ? 'Arquivo' : 'Pasta'}</label>
             <div className="flex gap-2">

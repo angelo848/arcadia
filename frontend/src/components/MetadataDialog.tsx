@@ -36,7 +36,7 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
       }
     >
       {game.data ? (
-        <MetadataForm key={gameId} gameId={gameId} game={game.data} />
+        <MetadataForm key={gameId} gameId={gameId} game={game.data} onApplied={onClose} />
       ) : (
         <p className="text-sm text-muted">{game.isError ? messageOf(game.error) : 'Carregando jogo…'}</p>
       )}
@@ -44,10 +44,11 @@ export function MetadataDialog({ gameId, onClose }: { gameId: number; onClose: (
   )
 }
 
-type FormProps = { gameId: number; game: GameDetailView }
+// onApplied runs after the chosen option was applied: the window closes.
+type FormProps = { gameId: number; game: GameDetailView; onApplied: () => void }
 
 // MetadataForm holds the search state; it mounts once the game is known, so the name starts with its title.
-function MetadataForm({ gameId, game }: FormProps): JSX.Element {
+function MetadataForm({ gameId, game, onApplied }: FormProps): JSX.Element {
   const qc = useQueryClient()
   const nameId = useId()
   const replaceId = useId()
@@ -85,6 +86,7 @@ function MetadataForm({ gameId, game }: FormProps): JSX.Element {
       await qc.invalidateQueries({ queryKey: libraryKeys.game(gameId) })
       await qc.invalidateQueries({ queryKey: libraryGamesKey })
       await qc.invalidateQueries({ queryKey: mediaKey(gameId) })
+      onApplied()
     } catch (e) {
       setError(messageOf(e))
     } finally {

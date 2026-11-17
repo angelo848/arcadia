@@ -52,6 +52,7 @@ func importSourceSet() map[string]importers.Source {
 		ipc.ImportSourceFile:      importers.File(),
 		ipc.ImportSourceFolder:    importers.Folder(),
 		ipc.ImportSourceLaunchBox: importers.LaunchBox(),
+		ipc.ImportSourceURI:       importers.URI(),
 	}
 }
 

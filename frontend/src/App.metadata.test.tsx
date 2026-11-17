@@ -275,6 +275,7 @@ describe('MET-067 abertura automática e indicador', () => {
     renderApp()
     await waitConnected()
     openHeader('Importar')
+    fireEvent.change(within(importDialog() as HTMLElement).getByLabelText('Fonte'), { target: { value: 'steam' } })
     fireEvent.click(within(importDialog() as HTMLElement).getByRole('button', { name: 'Buscar' }))
     await waitFor(() => expect(app.ImportScan).toHaveBeenCalled())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Buscar' })).toBeDisabled())

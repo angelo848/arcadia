@@ -1519,12 +1519,14 @@ describe('App: importação recarrega o catálogo (PLT-032)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }))
     const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Fonte'), { target: { value: 'steam' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Buscar' }))
     // IMV-041: the row comes already checked; no click on it.
     await within(dialog).findByRole('checkbox', { name: /Counter-Strike 2/ })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Importar selecionados' }))
     await waitFor(() => expect(extra.ImportApply).toHaveBeenCalledTimes(1))
-    await within(dialog).findByText('Importados: 1')
+    // A clean import closes the window.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await flush()
 
     expect(app.Catalog.mock.calls.length).toBeGreaterThan(catalog0)
@@ -2382,7 +2384,7 @@ describe('App: imagens ao vivo (media:changed)', () => {
   })
 
   // alterado em 2026-11-15 (phase-12-metadados-unificados, T34): fluxo novo, Obter dados + MetadataSearch/MetadataApply [MET-043].
-  it('IMG-011/MET-043/MetadataDialog aberto, MetadataApply responde queued = 3, chegam três media:changed(G) com a lista crescendo: carrossel e cartão de G mostram as imagens a cada evento, G em foco, diálogo aberto', async () => {
+  it('IMG-011/MET-043/MetadataDialog aberto, MetadataApply responde queued = 3, chegam três media:changed(G) com a lista crescendo: carrossel e cartão de G mostram as imagens a cada evento, G em foco; o diálogo fecha ao aplicar', async () => {
     app.ListGames.mockResolvedValue(page([game({ id: 10, title: 'Hollow Knight' })]))
     const media: Record<number, MediaItem[]> = {}
     serveMedia(media)
@@ -2412,7 +2414,6 @@ describe('App: imagens ao vivo (media:changed)', () => {
       emit('media:changed', { gameId: 10 })
       await waitFor(() => expect(within(asideOf()).getByText(`1 de ${n}`)).toBeInTheDocument())
       await waitFor(() => expect(cardImg('Hollow Knight')).toHaveAttribute('src', '/m/1-t.jpg'))
-      expect(screen.getByRole('dialog', { name: 'Buscar metadados e mídia' })).toBeInTheDocument()
       expect(within(asideOf()).getByRole('heading', { level: 2, name: 'Hollow Knight' })).toBeInTheDocument()
       expect(rowOf('Hollow Knight')).toHaveAttribute('aria-selected', 'true')
     }
