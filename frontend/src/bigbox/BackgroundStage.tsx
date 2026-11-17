@@ -48,6 +48,15 @@ export function BackgroundStage(p: BackgroundStageProps) {
 
   const showVideo = canPlay && readyId === gameId
 
+  // React only reads `muted` when the element is created, so the sound toggle is applied by hand.
+  const videoRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.muted = !sound
+    void v.play()?.catch(() => {})
+  }, [sound, showVideo, gameId])
+
   const visibleRef = useRef(onVideoVisible)
   visibleRef.current = onVideoVisible
   useEffect(() => {
@@ -88,6 +97,7 @@ export function BackgroundStage(p: BackgroundStageProps) {
       ))}
       {showVideo && (
         <video
+          ref={videoRef}
           key={`${gameId}`}
           data-testid="bb-video"
           src={videoUrl ?? undefined}

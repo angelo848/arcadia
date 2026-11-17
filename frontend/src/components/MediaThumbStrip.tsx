@@ -84,8 +84,19 @@ export function MediaThumbStrip({
             className={`h-[54px] w-24 shrink-0 overflow-hidden rounded bg-raised ${current ? 'ring-2 ring-accent' : ''}`}
           >
             {it.kind === 'video' && !it.thumbUrl ? (
-              <span aria-hidden="true" className="flex h-full w-full items-center justify-center text-xl text-fg">
-                ▶
+              <span className="relative block h-full w-full">
+                {/* No stored thumbnail: the browser draws a frame of the video itself. */}
+                <video
+                  src={`${it.url}#t=1`}
+                  preload="metadata"
+                  muted
+                  playsInline
+                  tabIndex={-1}
+                  className="pointer-events-none h-full w-full object-cover"
+                />
+                <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-xl text-fg">
+                  ▶
+                </span>
               </span>
             ) : (
               <img
