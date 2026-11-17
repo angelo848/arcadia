@@ -7,6 +7,7 @@ import type { GameDetailView } from '../lib/library'
 import type { MediaItemView } from '../lib/metadata'
 import type { DetailsFocus } from './nav'
 import { Panel } from './Panel'
+import { playWithSound } from './playMedia'
 import { sessionsLabel, shortDate } from './viewModel'
 
 export type BigBoxDetailsProps = {
@@ -35,9 +36,9 @@ function Video({ url, sound }: { url: string; sound: boolean }) {
   useEffect(() => {
     const v = ref.current
     if (!v) return undefined
-    v.muted = !sound
-    void v.play()?.catch(() => {})
+    const stopRetry = playWithSound(v, sound)
     return () => {
+      stopRetry()
       v.pause()
       v.removeAttribute('src')
     }

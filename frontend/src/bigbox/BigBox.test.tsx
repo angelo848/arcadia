@@ -490,14 +490,15 @@ describe('BigBox: som', () => {
     setup()
     await ready()
     const video = await screen.findByTestId('bb-video', undefined, { timeout: 5000 })
-    expect((video as HTMLVideoElement).muted).toBe(true)
+    // alterado em 2026-11-17 (1.0.3): o som começa ligado e Y desliga
+    expect((video as HTMLVideoElement).muted).toBe(false)
     expect(await screen.findByText('Som')).toBeInTheDocument()
 
     key('m')
 
-    await waitFor(() => expect((screen.getByTestId('bb-video') as HTMLVideoElement).muted).toBe(false))
-    key('m')
     await waitFor(() => expect((screen.getByTestId('bb-video') as HTMLVideoElement).muted).toBe(true))
+    key('m')
+    await waitFor(() => expect((screen.getByTestId('bb-video') as HTMLVideoElement).muted).toBe(false))
   }, 15000)
 
   it('BBX-013/sem vídeo visível Y não faz nada e a dica Som não aparece', async () => {

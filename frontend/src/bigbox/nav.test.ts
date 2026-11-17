@@ -16,7 +16,7 @@ const run = (s: NavState, a: NavAction, c: NavCtx = ctx()) => bigBoxNav(s, a, c)
 
 describe('bigBoxNav', () => {
   it('BBX-006/estado inicial', () => {
-    expect(initialNav).toMatchObject({ screen: 'browse', tab: 0, focus: 0, suspended: false, sound: false, videoFailed: null, launchedGameId: null })
+    expect(initialNav).toMatchObject({ screen: 'browse', tab: 0, focus: 0, suspended: false, sound: true, videoFailed: null, launchedGameId: null })
   })
 
   it('BBX-006/prev e next movem o foco de um em um e não dão a volta nas pontas', () => {
@@ -138,10 +138,11 @@ describe('bigBoxNav', () => {
   })
 
   it('BBX-013/toggleSound só com vídeo visível', () => {
-    expect(run(st(), { type: 'toggleSound' }, ctx({ videoVisible: false })).state.sound).toBe(false)
-    const on = run(st(), { type: 'toggleSound' }, ctx({ videoVisible: true })).state
-    expect(on.sound).toBe(true)
-    expect(run(on, { type: 'toggleSound' }, ctx({ videoVisible: true })).state.sound).toBe(false)
+    // alterado em 2026-11-17 (1.0.3): o som começa ligado
+    expect(run(st(), { type: 'toggleSound' }, ctx({ videoVisible: false })).state.sound).toBe(true)
+    const off = run(st(), { type: 'toggleSound' }, ctx({ videoVisible: true })).state
+    expect(off.sound).toBe(false)
+    expect(run(off, { type: 'toggleSound' }, ctx({ videoVisible: true })).state.sound).toBe(true)
   })
 
   it('BBX-018/launched liga suspended e guarda o jogo; qualquer ação de entrada é ignorada', () => {

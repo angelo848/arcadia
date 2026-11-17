@@ -61,7 +61,7 @@ export const initialNav: NavState = {
   gallery: 0,
   suspended: false,
   awaitingFocusAfterBlur: false,
-  sound: false,
+  sound: true,
   videoFailed: null,
   launchedGameId: null,
 }

@@ -492,8 +492,9 @@ de novo enquanto o foco não sair dele.
 · verificação: teste de componente.
 
 ### BBX-013 — Som do vídeo
-Dado o Big Box recém-aberto, então os vídeos tocam sem som. Quando aperto Y (M) com um vídeo visível, então o som liga; de novo,
-desliga. A escolha vale até sair do Big Box (não é gravada). A dica "Y Som" aparece no rodapé só com um vídeo visível.
+Dado o Big Box recém-aberto, então os vídeos tocam com som. Se o navegador recusar o som (sem interação do usuário ainda), o
+vídeo toca mudo e ganha o som na próxima tecla ou clique. Quando aperto Y (M) com um vídeo visível, então o som desliga; de novo,
+liga. A escolha vale até sair do Big Box (não é gravada). *(Alterado na 1.0.3: antes o som começava desligado.)* A dica "Y Som" aparece no rodapé só com um vídeo visível.
 · verificação: teste de componente.
 
 ### BBX-014 — Jogar e Detalhes

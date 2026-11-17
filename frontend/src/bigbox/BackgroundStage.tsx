@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { playWithSound } from './playMedia'
 
 export const VIDEO_DELAY_MS = 2000
 export const VIDEO_FADE_MS = 400
@@ -52,9 +53,8 @@ export function BackgroundStage(p: BackgroundStageProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const v = videoRef.current
-    if (!v) return
-    v.muted = !sound
-    void v.play()?.catch(() => {})
+    if (!v) return undefined
+    return playWithSound(v, sound)
   }, [sound, showVideo, gameId])
 
   const visibleRef = useRef(onVideoVisible)
