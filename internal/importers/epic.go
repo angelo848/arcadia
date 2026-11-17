@@ -12,8 +12,9 @@ import (
 // epicSource is the Epic Games Store importer (IMP-003).
 type epicSource struct{}
 
-// Epic returns the Epic source. ScanInput.Path is the Manifests folder
-// (ProgramData\Epic\EpicGamesLauncher\Data\Manifests); the agent resolves it.
+// Epic returns the Epic source. ScanInput.Path is the data folder of the launcher the agent found: the
+// new launcher's (%LOCALAPPDATA%\com.epicgames.eglv2, with installations.jsonl) or the old one's Manifests
+// folder (ProgramData\Epic\EpicGamesLauncher\Data\Manifests).
 func Epic() Source { return epicSource{} }
 
 func (epicSource) ID() string { return SourceEpic }
@@ -33,6 +34,9 @@ func (epicSource) Scan(ctx context.Context, in ScanInput) (Result, error) {
 	if in.Path == "" {
 		res.Warnings = append(res.Warnings, "Epic: pasta de manifestos não encontrada")
 		return res, nil
+	}
+	if _, err := os.Stat(filepath.Join(in.Path, installationsFile)); err == nil {
+		return scanEpicInstallations(ctx, in.Path)
 	}
 	entries, err := os.ReadDir(in.Path)
 	if err != nil {

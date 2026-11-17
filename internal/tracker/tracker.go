@@ -1001,7 +1001,13 @@ func (t *Tracker) handleLaunchURI(spec LaunchSpec) launchResult {
 	}
 	t.exec(t.work, t.m.InsertedURI(id), id)
 	t.publish()
-	return launchResult{snap: activeSession(t.m, now)}
+	snap := activeSession(t.m, now)
+	if snap.State == "" {
+		// The session waits in Launching for its game process, a state the wire does not have: the
+		// reply says "running" with no active time, and session.changed follows the real outcome.
+		snap.State, snap.StartedAt, snap.AsOf = domain.SessionRunning, startAt, now
+	}
+	return launchResult{snap: snap}
 }
 
 // closeAdopted closes the watcher of a URI launch that failed before its session

@@ -38,6 +38,10 @@ func TestTrackerURILaunch(t *testing.T) {
 		if snap.ID != firstSessionID {
 			t.Errorf("Launch snapshot id = %d, want %d", snap.ID, firstSessionID)
 		}
+		if snap.State != domain.SessionRunning || snap.Active != 0 {
+			t.Errorf("Launch snapshot state = %q active = %v, want running and 0 (the UI rejects an empty state)",
+				snap.State, snap.Active)
+		}
 	})
 
 	t.Run("RUL-003/falha ao abrir o URI não cria sessão", func(t *testing.T) {
