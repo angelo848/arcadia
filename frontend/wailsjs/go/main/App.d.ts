@@ -65,6 +65,8 @@ export function MetadataBatchStatus():Promise<main.MetadataBatchStatusView>;
 
 export function MetadataSearch(arg1:string,arg2:string,arg3:number):Promise<main.MetadataSearchView>;
 
+export function OpenGameLocation(arg1:number):Promise<void>;
+
 export function PauseSession():Promise<main.SessionView>;
 
 export function PickEmulatorExe():Promise<string>;

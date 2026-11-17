@@ -126,6 +126,10 @@ export function MetadataSearch(arg1, arg2, arg3) {
   return window['go']['main']['App']['MetadataSearch'](arg1, arg2, arg3);
 }
 
+export function OpenGameLocation(arg1) {
+  return window['go']['main']['App']['OpenGameLocation'](arg1);
+}
+
 export function PauseSession() {
   return window['go']['main']['App']['PauseSession']();
 }
