@@ -248,5 +248,6 @@ O executável é gerado com `wails build -ldflags "-X main.version=1.0.2"`.
 - Texto da plataforma maior sob o título nos detalhes do desktop e do Big Box.
 - Carrossel dos detalhes mostra o vídeo baixado, depois das screenshots e antes do fundo.
 - Importar: nova fonte "Xbox", que lê os jogos instalados pelo app Xbox (Gaming Services) e abre pelo link `msgamelaunch://`; a pasta de instalação já vem preenchida para contar o tempo.
+- Controle: `Select + D-pad cima/baixo` sobe e desce o volume do Windows (repete enquanto segura).
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.0.3"`.

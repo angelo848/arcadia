@@ -794,6 +794,26 @@ depois "Pausar" no painel, então o aviso e o som também aparecem e o `pause_in
 
 ---
 
+## Volume pelo controle (VOL) — alterado na 1.0.3
+
+Atalhos do controle que mudam o volume do Windows, sem passar pelo roteador de pausa (não são gatilhos e não alteram a sessão).
+
+### VOL-001 — Passo imediato
+Dado um controle XInput conectado, quando `Select` e o D-pad para cima estão pressionados, então o volume sobe um passo na hora; com `Select` e o D-pad para baixo, desce um passo. O passo é o das teclas de volume do Windows (2%), com o indicador do próprio Windows. Não gera gatilho de pausa nem de fechar.
+· verificação: `internal/input/pad_volume_test.go`.
+
+### VOL-002 — Repetição enquanto segura
+Dado o atalho segurado, então após 400 ms ele repete a cada 150 ms; soltar e apertar de novo dá um passo na hora.
+
+### VOL-003 — Sem colisão
+Dado só o D-pad, só o `Select` ou `Select` com outro botão, então o volume não muda.
+
+### VOL-004 — Um controle por vez
+Dado até 4 controles, então cada um tem a sua contagem e o seu primeiro passo.
+
+### VOL-005 — Sem callback
+Dado o poller sem a função de volume, então nada acontece e os atalhos de pausa e fechar seguem iguais.
+
 ## Fora de escopo
 Configuração de atalhos, combo ou duração do combo (tela de configurações; valores ficam em constantes) · botão
 de pausa fora do painel da sessão (linha da lista, bandeja) · outros botões do controle, botão Guide, DirectInput/HID

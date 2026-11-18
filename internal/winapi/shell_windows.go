@@ -50,3 +50,24 @@ func ShellReveal(path string, isFile bool) error {
 	}
 	return nil
 }
+
+const (
+	vkVolumeDown    = 0xAE
+	vkVolumeUp      = 0xAF
+	keyEventKeyUp   = 0x0002
+	volumeKeyScanLo = 0
+)
+
+var procKeybdEvent = modUser32.NewProc("keybd_event")
+
+// VolumeStep presses the Windows volume key once: up raises the volume, otherwise it lowers it. Windows
+// shows its own volume indicator and moves one step (2%).
+func VolumeStep(up bool) error {
+	vk := uintptr(vkVolumeDown)
+	if up {
+		vk = vkVolumeUp
+	}
+	procKeybdEvent.Call(vk, volumeKeyScanLo, 0, 0)
+	procKeybdEvent.Call(vk, volumeKeyScanLo, keyEventKeyUp, 0)
+	return nil
+}

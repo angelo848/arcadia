@@ -7,6 +7,10 @@ const (
 	defaultPoll   = 16 * time.Millisecond
 	defaultRescan = time.Second
 	defaultMask   = ButtonBack | ButtonY
+
+	// A volume chord steps once when pressed and, if still held after defaultRepeatDelay, again every defaultRepeatEvery.
+	defaultRepeatDelay = 400 * time.Millisecond
+	defaultRepeatEvery = 150 * time.Millisecond
 )
 
 // defaultCloseMask is Back+B (a var, not a const, so the test's redundant check vets cleanly).
@@ -47,5 +51,42 @@ func (d *comboDetector) Observe(slot int, buttons uint16, connected bool, now ti
 		return false
 	}
 	d.fired[slot] = true
+	return true
+}
+
+// repeatDetector fires when its button mask is pressed and keeps firing at a steady rate while it is held,
+// per slot: the first step is immediate, the next ones start after Delay and come every Every.
+type repeatDetector struct {
+	Mask  uint16
+	Delay time.Duration
+	Every time.Duration
+	since [padSlots]time.Time
+	last  [padSlots]time.Time
+}
+
+// Observe reports whether the mask asks for one more step on slot now.
+func (d *repeatDetector) Observe(slot int, buttons uint16, connected bool, now time.Time) bool {
+	if slot < 0 || slot >= padSlots || d.Mask == 0 {
+		return false
+	}
+	if !connected || buttons&d.Mask != d.Mask {
+		d.since[slot] = time.Time{}
+		return false
+	}
+	if d.since[slot].IsZero() {
+		d.since[slot], d.last[slot] = now, now
+		return true
+	}
+	delay, every := d.Delay, d.Every
+	if delay <= 0 {
+		delay = defaultRepeatDelay
+	}
+	if every <= 0 {
+		every = defaultRepeatEvery
+	}
+	if now.Sub(d.since[slot]) < delay || now.Sub(d.last[slot]) < every {
+		return false
+	}
+	d.last[slot] = now
 	return true
 }

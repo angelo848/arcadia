@@ -20,12 +20,12 @@ func realPlatform(clock domain.Clock, log *slog.Logger) platformParts {
 	// 1. Keyboard hotkey (Ctrl+Alt+P)
 	parts.Sources = append(parts.Sources, input.NewHotkey(input.DefaultHotkey, clock, log))
 
-	// 2. Controller poller via XInput (Select + Y)
+	// 2. Controller poller via XInput (Select + Y pause, Select + B close, Select + D-pad up/down volume)
 	padAPI, err := input.NewXInput()
 	if err != nil {
 		log.Warn("controle indisponível (XInput)", "error", err.Error())
 	} else {
-		parts.Sources = append(parts.Sources, input.NewPad(padAPI, input.PadConfig{}, clock, log))
+		parts.Sources = append(parts.Sources, input.NewPad(padAPI, input.PadConfig{Volume: windowsVolume(log)}, clock, log))
 	}
 
 	// 3. Power watcher (WM_POWERBROADCAST)
@@ -54,4 +54,13 @@ func realPlatform(clock domain.Clock, log *slog.Logger) platformParts {
 	}
 
 	return parts
+}
+
+// windowsVolume returns the callback of the gamepad volume chords: one Windows volume key per step.
+func windowsVolume(log *slog.Logger) func(up bool) {
+	return func(up bool) {
+		if err := winapi.VolumeStep(up); err != nil {
+			log.Warn("falha ao mudar o volume", "up", up, "error", err.Error())
+		}
+	}
 }

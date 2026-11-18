@@ -8,7 +8,7 @@ Current version: **1.0.3**.
 ## What it does
 
 - **Library** in three columns: platforms and filters on the left, games in the middle, game details on the right.
-- **Play time** counted by the agent, with pause by keyboard (`Ctrl+Alt+P`) or controller (`Select + Y` held for 1 s)
+- **Play time** counted by the agent, with pause by keyboard (`Ctrl+Alt+P`) or controller (`Select + Y` held for 1 s); `Select + D-pad up/down` changes the Windows volume
   and the option to start a game without counting time.
 - **Import** of executables, ROM folders (with subfolders and grouped discs) and the LaunchBox library, with a review
   window before anything is saved.
