@@ -13,6 +13,7 @@ const (
 	SourceFolder    = "folder"
 	SourceLaunchBox = "launchbox"
 	SourceURI       = "uri"
+	SourceXbox      = "xbox"
 
 	// PlatformWindows is the platform of Steam and Epic games (seed key "windows").
 	PlatformWindows = "Windows"

@@ -53,6 +53,7 @@ func importSourceSet() map[string]importers.Source {
 		ipc.ImportSourceFolder:    importers.Folder(),
 		ipc.ImportSourceLaunchBox: importers.LaunchBox(),
 		ipc.ImportSourceURI:       importers.URI(),
+		ipc.ImportSourceXbox:      importers.Xbox(),
 	}
 }
 
@@ -231,7 +232,7 @@ func locationOrEmpty(f func() (string, error)) string {
 func candidateExists(ctx context.Context, st importStore, c importers.Candidate, scanPlatformID int64) (bool, error) {
 	var platformID int64
 	switch {
-	case c.Source == importers.SourceSteam || c.Source == importers.SourceEpic:
+	case c.Source == importers.SourceSteam || c.Source == importers.SourceEpic || c.Source == importers.SourceXbox:
 		id, ok, err := st.WindowsPlatformID(ctx)
 		if err != nil {
 			return false, err
@@ -351,7 +352,7 @@ func toStoreGame(ctx context.Context, st importStore, c ipc.ImportCandidate, pla
 	if c.Platform == "" && isFile {
 		return store.ImportGame{}, errors.New("file candidate without platform")
 	}
-	useWindows := c.Source == ipc.ImportSourceSteam || c.Source == ipc.ImportSourceEpic || c.Platform == ""
+	useWindows := c.Source == ipc.ImportSourceSteam || c.Source == ipc.ImportSourceEpic || c.Source == ipc.ImportSourceXbox || c.Platform == ""
 	platformName := c.Platform
 	if useWindows {
 		platformName = importers.PlatformWindows

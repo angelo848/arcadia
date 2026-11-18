@@ -3,7 +3,7 @@
 
 import type { PlatformView } from './library'
 
-export type ImportSource = 'steam' | 'epic' | 'file' | 'folder' | 'launchbox' | 'uri'
+export type ImportSource = 'steam' | 'epic' | 'xbox' | 'file' | 'folder' | 'launchbox' | 'uri'
 
 // ImportCandidate mirrors cmd/arcadia ImportCandidateView (JSON names of contract v0.7.0).
 // file, extension, discs and discFiles come with the phase 11 contract (IMV-024).
@@ -252,6 +252,7 @@ export async function pickFolder(): Promise<string> {
 export const sourceLabels: Record<ImportSource, string> = {
   steam: 'Steam',
   epic: 'Epic Games',
+  xbox: 'Xbox',
   file: 'Arquivo',
   folder: 'Pasta de jogos',
   launchbox: 'LaunchBox',

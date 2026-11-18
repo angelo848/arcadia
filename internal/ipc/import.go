@@ -11,6 +11,7 @@ const (
 	ImportSourceFolder    = "folder"
 	ImportSourceLaunchBox = "launchbox"
 	ImportSourceURI       = "uri" // Path carries the URI typed by the user
+	ImportSourceXbox      = "xbox"
 )
 
 // Values of ImportScanParams.TitleFrom (contract v0.13.0 [IMV-017, IMV-070]).
