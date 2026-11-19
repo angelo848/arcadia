@@ -237,7 +237,7 @@ func TestCoordinator(t *testing.T) {
 		}
 	})
 
-	t.Run("CON-015/EventRefused não rearma o temporizador: um aviso de pausa visível esconde no prazo original", func(t *testing.T) {
+	t.Run("CON-015/EventRefused não esconde o aviso de pausa, que fica até a retomada", func(t *testing.T) {
 		rec := newRecorder()
 		log, _ := newLogger()
 		clk := domain.NewFakeClock(startAt())
@@ -245,16 +245,29 @@ func TestCoordinator(t *testing.T) {
 
 		c.Send(feedback.EventPaused)
 		rec.expectSet(t, "show:Tempo pausado", "play:paused")
-		waitWaiters(t, clk, 1)
 
-		clk.Advance(time.Second) // t + 1 s
+		clk.Advance(time.Minute)
 		c.Send(feedback.EventRefused)
 		rec.expect(t, "play:refused")
-
-		clk.Advance(feedback.OverlayDuration - time.Second - time.Nanosecond)
+		clk.Advance(time.Hour)
 		rec.expectNone(t)
-		clk.Advance(time.Nanosecond) // t + 2.5 s: original deadline
+	})
+
+	t.Run("FBK-006/o aviso de pausa fica fixo; EventDismiss o esconde, e sem aviso fixo não faz nada", func(t *testing.T) {
+		rec := newRecorder()
+		log, _ := newLogger()
+		clk := domain.NewFakeClock(startAt())
+		c := start(t, &fakeOverlay{rec: rec}, nil, clk, log)
+
+		c.Send(feedback.EventDismiss)
+		rec.expectNone(t)
+		c.Send(feedback.EventPaused)
+		rec.expect(t, "show:Tempo pausado")
+		clk.Advance(time.Hour)
+		rec.expectNone(t)
+		c.Send(feedback.EventDismiss)
 		rec.expect(t, "hide")
+		c.Send(feedback.EventDismiss)
 		rec.expectNone(t)
 	})
 
@@ -338,14 +351,14 @@ func TestCoordinator(t *testing.T) {
 		}
 	})
 
-	t.Run("OVL-003/Hide chega em t + 2,5 s e não em t + 2,5 s − 1 ns", func(t *testing.T) {
+	t.Run("OVL-003/o aviso de retomada esconde em t + 2,5 s e não em t + 2,5 s − 1 ns", func(t *testing.T) {
 		rec := newRecorder()
 		clk := domain.NewFakeClock(startAt())
 		log, _ := newLogger()
 		c := start(t, &fakeOverlay{rec: rec}, nil, clk, log)
 
-		c.Send(feedback.EventPaused)
-		rec.expect(t, "show:Tempo pausado")
+		c.Send(feedback.EventResumed)
+		rec.expect(t, "show:Tempo retomado")
 		waitWaiters(t, clk, 1)
 
 		clk.Advance(feedback.OverlayDuration - time.Nanosecond)
@@ -355,7 +368,7 @@ func TestCoordinator(t *testing.T) {
 		rec.expectNone(t)
 	})
 
-	t.Run("OVL-003/segundo evento em t + 1 s troca o texto, não esconde em t + 2,5 s e esconde em t + 3,5 s uma única vez", func(t *testing.T) {
+	t.Run("OVL-003/pausa fixa, retomada em t + 1 s troca o texto e esconde 2,5 s depois, uma única vez", func(t *testing.T) {
 		rec := newRecorder()
 		clk := domain.NewFakeClock(startAt())
 		log, _ := newLogger()
@@ -363,16 +376,15 @@ func TestCoordinator(t *testing.T) {
 
 		c.Send(feedback.EventPaused)
 		rec.expect(t, "show:Tempo pausado")
-		waitWaiters(t, clk, 1)
 
 		clk.Advance(time.Second) // t + 1 s
 		c.Send(feedback.EventResumed)
 		rec.expect(t, "show:Tempo retomado")
-		waitWaiters(t, clk, 2)
+		waitWaiters(t, clk, 1)
 
-		clk.Advance(1500 * time.Millisecond) // t + 2.5 s: the first timer is stale
+		clk.Advance(feedback.OverlayDuration - time.Nanosecond)
 		rec.expectNone(t)
-		clk.Advance(time.Second) // t + 3.5 s
+		clk.Advance(time.Nanosecond)
 		rec.expect(t, "hide")
 		rec.expectNone(t) // a single Hide
 	})

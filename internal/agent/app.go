@@ -236,7 +236,13 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		Clock:    clock,
 		Store:    st,
 		Launcher: launcher,
-		Notify:   notifier.Notify,
+		Notify: func(s domain.SessionSnapshot) {
+			notifier.Notify(s)
+			// The "paused" notice stays up until the resume; a pause that ends otherwise clears it.
+			if s.State == domain.SessionGrace || s.State == domain.SessionEnded || s.State == domain.SessionDiscarded {
+				coord.Send(feedback.EventDismiss)
+			}
+		},
 		Feedback: func(k tracker.FeedbackKind) {
 			coord.Send(feedback.Event(k))
 		},

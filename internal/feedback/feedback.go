@@ -74,9 +74,13 @@ const (
 	EventPaused Event = iota + 1
 	EventResumed
 	EventRefused
+	// EventDismiss hides the pinned "paused" notice when the pause ends without a resume event
+	// (the session ended or went to grace). It does nothing when no notice is pinned.
+	EventDismiss
 )
 
-// OverlayDuration is how long the notice stays visible after the last event.
+// OverlayDuration is how long the "resumed" notice stays visible. The "paused" notice stays
+// until the session resumes (or EventDismiss).
 const OverlayDuration = 2500 * time.Millisecond
 
 const queueSize = 4
@@ -183,14 +187,26 @@ func (c *Coordinator) run() {
 	// hide fires OverlayDuration after the latest event. Replacing the channel on
 	// each event invalidates the previous timer (its channel is no longer read).
 	var hide <-chan time.Time
+	pinned := false // the "paused" notice is on screen until the session resumes
 	for {
 		select {
 		case <-c.stop:
 			return
 		case e := <-c.events:
-			c.handle(e)
-			if e != EventRefused {
-				hide = c.clock.After(OverlayDuration)
+			switch e {
+			case EventPaused:
+				c.handle(e)
+				pinned, hide = true, nil
+			case EventResumed:
+				c.handle(e)
+				pinned, hide = false, c.clock.After(OverlayDuration)
+			case EventDismiss:
+				if pinned {
+					pinned, hide = false, nil
+					c.overlay.Hide()
+				}
+			default:
+				c.handle(e)
 			}
 		case <-hide:
 			hide = nil

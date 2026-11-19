@@ -508,6 +508,7 @@ trabalho interativa o teste é pulado e o requisito é conferido no OVL-007.)
 Dado `Show` em `t`, então o aviso é escondido quando `t + 2,5 s` chega (em `t + 2,5 s − 1 ns` continua visível). Dado um
 segundo `Show` em `t + 1 s` com outro texto, então o texto passa a ser o novo, o aviso não é escondido em `t + 2,5 s` e
 é escondido em `t + 3,5 s`, uma única vez.
+· alterado na 1.0.3 (FBK-006): vale para o aviso "Tempo retomado"; o aviso "Tempo pausado" não tem prazo.
 
 ### OVL-004 — Posição
 Dada a área de trabalho `[left, top, right, bottom]` do monitor da janela em primeiro plano (ou do monitor principal se
@@ -584,6 +585,9 @@ aviso final mostra "Tempo retomado".
 Dado o coordenador, quando chamo `Close`, então ele esconde o aviso, fecha o `Overlay` e o `Sound`, espera a goroutine
 terminar (sem goroutines do coordenador, `goleak`) e uma segunda chamada não tem efeito; eventos enviados depois do
 `Close` são descartados sem pânico.
+
+### FBK-006 — O aviso de pausa fica na tela até a retomada (alterado na 1.0.3)
+Dado `FeedbackPaused`, então o aviso "Tempo pausado" fica visível sem prazo; dado `FeedbackResumed`, o aviso passa a "Tempo retomado" e some em 2,5 s (OVL-003). Dado que a pausa termina sem retomada (a sessão vai para Grace, termina ou é descartada), então o aviso é escondido (`EventDismiss`); sem aviso de pausa na tela, `EventDismiss` não faz nada. `EventRefused` não mexe no aviso.
 
 ## Roteamento do gatilho de pausa (PAU)
 
