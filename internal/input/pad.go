@@ -17,6 +17,7 @@ const (
 	ButtonDPadUp   uint16 = 0x0001
 	ButtonDPadDown uint16 = 0x0002
 	ButtonBack     uint16 = 0x0020
+	ButtonA        uint16 = 0x1000
 	ButtonB        uint16 = 0x2000
 	ButtonY        uint16 = 0x8000
 )
@@ -34,6 +35,7 @@ type PadConfig struct {
 	Hold, Poll, Rescan time.Duration
 	Mask               uint16
 	CloseMask          uint16 // default Back+B
+	BigBoxMask         uint16 // default Back+A
 	// Volume is called with true for Back+D-pad up and false for Back+D-pad down, on the poller goroutine,
 	// at the first press and then repeated while held. Nil disables the volume chords.
 	Volume                   func(up bool)
@@ -47,6 +49,7 @@ type pad struct {
 	log    *slog.Logger
 	det    comboDetector
 	cdet   comboDetector
+	bdet   comboDetector
 	vup    repeatDetector
 	vdown  repeatDetector
 	mu     sync.Mutex
@@ -75,6 +78,9 @@ func NewPad(api PadAPI, cfg PadConfig, clock domain.Clock, log *slog.Logger) Sou
 	if cfg.CloseMask == 0 {
 		cfg.CloseMask = defaultCloseMask
 	}
+	if cfg.BigBoxMask == 0 {
+		cfg.BigBoxMask = defaultBigBoxMask
+	}
 	if log == nil {
 		log = slog.Default()
 	}
@@ -82,6 +88,7 @@ func NewPad(api PadAPI, cfg PadConfig, clock domain.Clock, log *slog.Logger) Sou
 		api: api, cfg: cfg, clock: clock, log: log,
 		det:   comboDetector{Hold: cfg.Hold, Mask: cfg.Mask},
 		cdet:  comboDetector{Hold: cfg.Hold, Mask: cfg.CloseMask},
+		bdet:  comboDetector{Hold: cfg.Hold, Mask: cfg.BigBoxMask},
 		vup:   repeatDetector{Mask: ButtonBack | ButtonDPadUp, Delay: cfg.RepeatDelay, Every: cfg.RepeatEvery},
 		vdown: repeatDetector{Mask: ButtonBack | ButtonDPadDown, Delay: cfg.RepeatDelay, Every: cfg.RepeatEvery},
 	}
@@ -138,6 +145,7 @@ func (p *pad) read(slot int, now time.Time, connected *[padSlots]bool, lastProbe
 		connected[slot] = false
 		p.det.Observe(slot, 0, false, now)
 		p.cdet.Observe(slot, 0, false, now)
+		p.bdet.Observe(slot, 0, false, now)
 		p.vup.Observe(slot, 0, false, now)
 		p.vdown.Observe(slot, 0, false, now)
 		return
@@ -149,6 +157,9 @@ func (p *pad) read(slot int, now time.Time, connected *[padSlots]bool, lastProbe
 	}
 	if p.cdet.Observe(slot, st.Buttons, true, now) {
 		p.emit(out, Trigger{Source: domain.PauseGamepad, At: now, Action: ActionClose}, slot)
+	}
+	if p.bdet.Observe(slot, st.Buttons, true, now) {
+		p.emit(out, Trigger{Source: domain.PauseGamepad, At: now, Action: ActionBigBox}, slot)
 	}
 	// The detectors always observe, so a release resets them even when the volume is off.
 	up := p.vup.Observe(slot, st.Buttons, true, now)

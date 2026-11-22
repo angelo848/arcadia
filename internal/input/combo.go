@@ -16,6 +16,9 @@ const (
 // defaultCloseMask is Back+B (a var, not a const, so the test's redundant check vets cleanly).
 var defaultCloseMask = ButtonBack | ButtonB
 
+// defaultBigBoxMask is Back+A.
+var defaultBigBoxMask = ButtonBack | ButtonA
+
 const padSlots = 4
 
 // comboDetector detects a button mask held for Hold, per slot. The zero value

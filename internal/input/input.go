@@ -17,6 +17,8 @@ const (
 	ActionPause Action = iota
 	// ActionClose asks to close the running game.
 	ActionClose
+	// ActionBigBox asks to open the console mode (Big Box).
+	ActionBigBox
 )
 
 // Trigger is one request coming from an input source.
