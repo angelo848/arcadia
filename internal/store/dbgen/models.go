@@ -173,6 +173,23 @@ type Playlist struct {
 	FilterJson sql.NullString
 }
 
+type TimeToBeat struct {
+	GameID         int64
+	Source         string
+	State          string
+	ExternalID     string
+	ExternalTitle  string
+	MainS          interface{}
+	MainExtraS     interface{}
+	CompletionistS interface{}
+	TitleAtFetch   string
+	Term           string
+	Candidates     string
+	Confirmed      int64
+	FetchedAt      int64
+	ExpiresAt      int64
+}
+
 type TrackingRule struct {
 	ID      int64
 	GameID  int64

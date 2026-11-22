@@ -45,8 +45,8 @@ func TestMediaSchema(t *testing.T) {
 
 	t.Run("MID-004/migração 7 cria as tabelas media e media_job e SchemaVersion é 9 (alterado em 2026-11-15, fase 13)", func(t *testing.T) {
 		t.Parallel()
-		if SchemaVersion != 9 {
-			t.Fatalf("SchemaVersion = %d, want 9", SchemaVersion)
+		if SchemaVersion != 10 { // alterado em 2026-11-22 (fase 15)
+			t.Fatalf("SchemaVersion = %d, want 10", SchemaVersion)
 		}
 		s := ftsOpen(t)
 		for _, table := range []string{"media", "media_job"} {
@@ -267,13 +267,14 @@ func TestNoNewMigrationPhase12(t *testing.T) {
 			"00006_emulators.sql",
 			"00007_media.sql",
 			"00008_platforms.sql",
-			"00009_video.sql", // alterado em 2026-11-15 (fase 13, VID-001)
+			"00009_video.sql",        // alterado em 2026-11-15 (fase 13, VID-001)
+			"00010_time_to_beat.sql", // alterado em 2026-11-22 (fase 15, TTB-001)
 		}
 		if !slices.Equal(got, want) {
 			t.Errorf("migrations = %v, want %v", got, want)
 		}
-		if SchemaVersion != 9 {
-			t.Errorf("SchemaVersion = %d, want 9", SchemaVersion)
+		if SchemaVersion != 10 { // alterado em 2026-11-22 (fase 15)
+			t.Errorf("SchemaVersion = %d, want 10", SchemaVersion)
 		}
 	})
 }

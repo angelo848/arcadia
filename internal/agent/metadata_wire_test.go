@@ -212,7 +212,8 @@ func TestMetadataPhaseInvariants(t *testing.T) {
 			}
 			var got []string
 			for _, e := range entries {
-				if !e.IsDir() {
+				// alterado em 2026-11-22 (fase 15): 00010 belongs to phase 15, not to this reference list.
+				if !e.IsDir() && e.Name() != "00010_time_to_beat.sql" {
 					got = append(got, e.Name())
 				}
 			}
