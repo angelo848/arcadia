@@ -2,7 +2,7 @@
 
 Requisitos: TTB-007, TTB-008, TTB-020..TTB-023, TTB-029, TTB-030, TTB-033..TTB-040, ATB-014. · alterado em 2026-11-22 (aprovação,
 resposta 1): `source` ganha `igdb`; `x-timetobeat` ganha a reserva. Formal (OpenRPC, só o acréscimo):
-[ipc-v0.16.0-delta.openrpc.json](ipc-v0.16.0-delta.openrpc.json). O JSON completo `contracts/ipc.openrpc.json` v0.16.0 é gerado por
+[ipc-v0.16.0-delta.openrpc.json](ipc-v0.16.0-delta.openrpc.json). O JSON completo [ipc.openrpc.json](ipc.openrpc.json) v0.16.0 foi gerado (T10) por
 uma tarefa a partir da v0.15.0 de [phase-13](../../phase-13-modo-console/contracts/ipc.openrpc.json), dos acréscimos de
 [phase-14](../../phase-14-edicao-manual/requirements.md) (`media.add`, `media.remove`, `game.setPlayTime`) e deste delta. **Só
 acréscimos**: nenhum método, campo ou valor existente muda.

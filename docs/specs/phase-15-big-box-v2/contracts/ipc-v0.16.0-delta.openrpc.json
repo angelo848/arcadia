@@ -56,7 +56,7 @@
       "errors": [
         { "$ref": "#/components/errors/InvalidParams" },
         { "$ref": "#/components/errors/GameNotFound" },
-        { "$ref": "#/components/errors/TimeToBeatUnavailable" },
+        { "$ref": "#/components/errors/ProviderUnavailable" },
         { "$ref": "#/components/errors/InternalError" }
       ]
     },
@@ -72,7 +72,7 @@
       "errors": [
         { "$ref": "#/components/errors/InvalidParams" },
         { "$ref": "#/components/errors/GameNotFound" },
-        { "$ref": "#/components/errors/TimeToBeatUnavailable" },
+        { "$ref": "#/components/errors/ProviderUnavailable" },
         { "$ref": "#/components/errors/InternalError" }
       ]
     },

@@ -2,6 +2,7 @@ package ipc_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
+
+// contractV015Path is the literal phase-13 contract (v0.15.0); contractPath now points to v0.16.0 (phase 15).
+// alterado em 2026-11-22 (fase 15).
+var contractV015Path = filepath.Join("..", "..", "docs", "specs", "phase-13-modo-console", "contracts", "ipc.openrpc.json")
 
 // videoMethods are the four video.* methods added in v0.15.0, in contract order [VID-005..VID-008].
 var videoMethods = []string{"video.queue", "video.queueMissing", "video.cancelPending", "video.status"}
@@ -54,10 +59,14 @@ func TestConsoleVideoContract(t *testing.T) {
 	c := loadContract(t)
 	doc := loadGeneric(t, contractPath)
 
-	t.Run("CON-026/versão 0.15.0", func(t *testing.T) {
+	// alterado em 2026-11-22 (fase 15): a atual é a 0.16.0; o arquivo da fase 13 continua a 0.15.0.
+	t.Run("CON-026/versão 0.15.0 (arquivo da fase 13) e a atual a contém", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.15.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.15.0\"", contractPath, c.Info.Version)
+		if v := genericSection(t, loadGeneric(t, contractV015Path), "info")["version"]; v != "0.15.0" {
+			t.Fatalf("contract %s info.version = %v, want \"0.15.0\"", contractV015Path, v)
+		}
+		if c.Info.Version < "0.15.0" {
+			t.Fatalf("contract %s info.version = %q, want >= \"0.15.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -400,7 +409,7 @@ func TestConsoleVideoContract(t *testing.T) {
 	t.Run("CON-026/v0.15.0 é a v0.14.0 mais acréscimos", func(t *testing.T) {
 		t.Parallel()
 		prev := loadGeneric(t, contractV014Path)
-		next := loadGeneric(t, contractPath)
+		next := loadGeneric(t, contractV015Path) // alterado em 2026-11-22 (fase 15): antes contractPath
 
 		// info: version and description change; x-console and x-video are new; the rest is equal.
 		pinfo := genericSection(t, prev, "info")

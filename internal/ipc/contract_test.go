@@ -15,12 +15,14 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/ipc"
 )
 
-// contractPath is the source of truth: the phase-13-modo-console contract (v0.15.0)
-// supersedes phase-12-metadados-unificados (v0.14.0) [IPC-041, CON-026].
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-13-modo-console", "contracts", "ipc.openrpc.json")
+// contractPath is the source of truth: the phase-15-big-box-v2 contract (v0.16.0)
+// supersedes phase-13-modo-console (v0.15.0) [IPC-041, TTB-029].
+// alterado em 2026-11-22 (fase 15): antes apontava para phase-13-modo-console (v0.15.0).
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-15-big-box-v2", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
-const contractRelPath = "docs/specs/phase-13-modo-console/contracts/ipc.openrpc.json"
+// alterado em 2026-11-22 (fase 15): antes phase-13-modo-console.
+const contractRelPath = "docs/specs/phase-15-big-box-v2/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -325,6 +327,18 @@ var phase6Methods = map[string]bool{
 	ipc.MethodMetadataBatchCancel:  false,
 	ipc.MethodMetadataBatchDiscard: false,
 	ipc.MethodMetadataBatchChanged: true,
+	// alterado em 2026-11-22 (fase 15): v0.16.0 acrescenta os seis timeToBeat.*, timeToBeat.changed [TTB-029]
+	// e os três métodos da fase 14 [EDM-001..EDM-005].
+	ipc.MethodTimeToBeatGet:         false,
+	ipc.MethodTimeToBeatRefresh:     false,
+	ipc.MethodTimeToBeatSearch:      false,
+	ipc.MethodTimeToBeatChoose:      false,
+	ipc.MethodTimeToBeatGetSettings: false,
+	ipc.MethodTimeToBeatSetSettings: false,
+	ipc.MethodTimeToBeatChanged:     true,
+	ipc.MethodMediaAdd:              false,
+	ipc.MethodMediaRemove:           false,
+	ipc.MethodGameSetPlayTime:       false,
 	// Added in v0.15.0 (phase 13) [CON-026, VID-005..VID-008, CON-019].
 	ipc.MethodVideoQueue:         false,
 	ipc.MethodVideoQueueMissing:  false,
@@ -584,10 +598,14 @@ func TestContract(t *testing.T) {
 		}
 	})
 
-	t.Run("IPC-041/versão 0.15.0", func(t *testing.T) {
+	// alterado em 2026-11-22 (fase 15): a versão exata da atual é 0.16.0 (TTB-029); aqui só "contém a 0.15.0".
+	t.Run("IPC-041/versão 0.15.0 (arquivo da fase 13) e a atual a contém", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.15.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.15.0\"", contractPath, c.Info.Version)
+		if v := genericSection(t, loadGeneric(t, contractV015Path), "info")["version"]; v != "0.15.0" {
+			t.Fatalf("contract %s info.version = %v, want \"0.15.0\"", contractV015Path, v)
+		}
+		if c.Info.Version < "0.15.0" {
+			t.Fatalf("contract %s info.version = %q, want >= \"0.15.0\"", contractPath, c.Info.Version)
 		}
 	})
 
