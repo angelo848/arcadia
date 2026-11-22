@@ -430,14 +430,11 @@ export default function App() {
             }}
             className="rounded bg-raised px-2 py-1.5 text-sm text-fg"
           >
-            {BIGBOX_THEMES.map((t) => {
-              const label = t.id === 'faixa' ? 'Faixa' : t.id === 'mosaico' ? 'Mosaico' : 'Roda'
-              return (
-                <option key={t.id} value={t.id} disabled={!t.available}>
-                  {t.available ? label : `${label} (em breve)`}
-                </option>
-              )
-            })}
+            {BIGBOX_THEMES.map((t) => (
+              <option key={t.id} value={t.id} disabled={!t.available}>
+                {t.available ? t.name : `${t.name} (em breve)`}
+              </option>
+            ))}
           </select>
           <button type="button" onClick={() => setShowingStats(true)} className={topButton}>
             Estatísticas

@@ -2633,23 +2633,31 @@ describe('App: Big Box novo (T41)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('BBX-023/o seletor lista Faixa, Mosaico e Roda; os dois últimos desativados com "em breve"', async () => {
+  // alterado em 2026-11-22 (fase 15): estado final de BBX-046 (faixa, mosaico, estante disponíveis; roda "em breve")
+  it('BBX-023/BBX-046/o seletor lista Faixa, Mosaico, Estante e "Roda (em breve)"; só Roda desativada', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
 
     const options = within(themeSelect()).getAllByRole('option') as HTMLOptionElement[]
 
-    expect(options).toHaveLength(3)
-    expect(options[0]).toHaveTextContent('Faixa')
-    expect(options[0]).toBeEnabled()
-    expect(options[1]).toHaveTextContent('Mosaico')
-    expect(options[1]).toHaveTextContent(/em breve/i)
-    expect(options[1]).toBeDisabled()
-    expect(options[2]).toHaveTextContent('Roda')
-    expect(options[2]).toHaveTextContent(/em breve/i)
-    expect(options[2]).toBeDisabled()
+    expect(options).toHaveLength(4)
+    expect(options.map((o) => o.textContent)).toEqual(['Faixa', 'Mosaico', 'Estante', 'Roda (em breve)'])
+    expect(options.map((o) => o.value)).toEqual(['faixa', 'mosaico', 'estante', 'roda'])
+    for (const i of [0, 1, 2]) expect(options[i]).toBeEnabled()
+    expect(options[3]).toBeDisabled()
     expect(themeSelect()).toHaveValue('faixa')
+  })
+
+  it('BBX-046/os nomes das opções vêm do registro (t.name), não de um mapa fixo', async () => {
+    BIGBOX_THEMES.find((t) => t.id === 'estante')!.name = 'Estante X'
+    bigBoxLibrary()
+    renderApp()
+    await findRow('Hollow Knight')
+
+    const options = within(themeSelect()).getAllByRole('option') as HTMLOptionElement[]
+
+    expect(options.map((o) => o.textContent)).toContain('Estante X')
   })
 
   it('BBX-023/a escolha fica em localStorage e vale na próxima entrada', async () => {

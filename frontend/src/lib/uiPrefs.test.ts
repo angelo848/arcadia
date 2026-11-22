@@ -90,17 +90,28 @@ describe('uiPrefs', () => {
   })
 })
 
-// alterado em 2026-11-15 (fase 13)
+// alterado em 2026-11-15 (fase 13); alterado em 2026-11-22 (fase 15): mosaico e estante disponíveis, só roda indisponível
 describe('uiPrefs: tema do Big Box', () => {
-  it('BBX-023/valor ausente, desconhecido ou de tema indisponível vira faixa', () => {
+  it('BBX-023/BBX-046/valor ausente, desconhecido ou de tema indisponível vira faixa', () => {
     const s = memoryStorage()
     expect(readBigBoxTheme(s)).toBe('faixa')
-    for (const v of ['', 'xyz', 'mosaico', 'roda']) {
+    for (const v of ['', 'xyz', 'roda']) {
       s.data.set('arcadia.bigBoxTheme', v)
       expect(readBigBoxTheme(s), v).toBe('faixa')
     }
     s.data.set('arcadia.bigBoxTheme', 'faixa')
     expect(readBigBoxTheme(s)).toBe('faixa')
+  })
+
+  it('BBX-046/mosaico e estante são aceitos (temas disponíveis)', () => {
+    const s = memoryStorage()
+    for (const v of ['mosaico', 'estante'] as const) {
+      s.data.set('arcadia.bigBoxTheme', v)
+      expect(readBigBoxTheme(s), v).toBe(v)
+    }
+    const w = memoryStorage()
+    writeBigBoxTheme('estante', w)
+    expect(w.data.get('arcadia.bigBoxTheme')).toBe('estante')
   })
 
   it('BBX-023/a escolha fica em localStorage na chave arcadia.bigBoxTheme', () => {

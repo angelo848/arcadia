@@ -281,6 +281,116 @@ describe('theme: tokens do Big Box por tema (fase 15)', () => {
   })
 })
 
+// ---- Fase 15 (BBX-058, MOS-015): tokens e contraste do Mosaico (temas-v2 §5 e §7) ----
+const mosaicoBlock = block(css, /\[data-bigbox-theme=["']mosaico["']\]\s*\{/)
+const mos = (name: string): string => {
+  const m = new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(mosaicoBlock)
+  return m ? m[1].trim() : ''
+}
+const mosSolid = (name: string) => toHex(parseColor(mos(name)))
+
+describe('theme: Mosaico (fase 15)', () => {
+  it('BBX-058/o bloco [data-bigbox-theme="mosaico"] define todos os 15 tokens de temas-v2 §7', () => {
+    expect(mosaicoBlock).not.toBe('')
+    for (const name of Object.keys(bbTokensV2)) {
+      expect(mos(name), `valor de ${name}`).not.toBe('')
+    }
+  })
+
+  it('BBX-058/os valores do Mosaico são os de temas-v2 §7 (fundo claro, painel branco, vermelho)', () => {
+    expect(mos('--arc-bb-bg').toLowerCase()).toBe('#edeef0')
+    expect(mos('--arc-bb-panel').toLowerCase()).toBe('#ffffff')
+    expect(mos('--arc-bb-accent').toLowerCase()).toBe('#d8232a')
+    expect(mos('--arc-bb-focus').toLowerCase()).toBe('#d8232a')
+  })
+
+  it('MOS-015/text, text-muted, heading e danger ≥ 4,5:1 com o panel e com o bg', () => {
+    for (const bgName of ['--arc-bb-panel', '--arc-bb-bg']) {
+      for (const t of ['--arc-bb-text', '--arc-bb-text-muted', '--arc-bb-heading', '--arc-bb-danger']) {
+        const r = contrast(mosSolid(t), mosSolid(bgName))
+        expect(r, `${t} sobre ${bgName}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('MOS-015/on-accent sobre accent, on-chip sobre chip e text-muted sobre surface ≥ 4,5:1', () => {
+    expect(contrast(mosSolid('--arc-bb-on-accent'), mosSolid('--arc-bb-accent'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(mosSolid('--arc-bb-on-chip'), mosSolid('--arc-bb-chip'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(mosSolid('--arc-bb-text-muted'), mosSolid('--arc-bb-surface'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('MOS-015/focus ≥ 3:1 contra o bg e contra o panel', () => {
+    for (const bgName of ['--arc-bb-bg', '--arc-bb-panel']) {
+      const r = contrast(mosSolid('--arc-bb-focus'), mosSolid(bgName))
+      expect(r, `focus sobre ${bgName}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('BBX-058/o bloco do Mosaico também define a área segura (5vh / 5vw)', () => {
+    expect(mos('--arc-bb-safe-y')).toBe('5vh')
+    expect(mos('--arc-bb-safe-x')).toBe('5vw')
+  })
+})
+
+// ---- Fase 15 (BBX-058, ETN-014): tokens e contraste da Estante (temas-v2 §6 e §7) ----
+const estanteBlock = block(css, /\[data-bigbox-theme=["']estante["']\]\s*\{/)
+const est = (name: string): string => {
+  const m = new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(estanteBlock)
+  return m ? m[1].trim() : ''
+}
+const estSolid = (name: string) => toHex(parseColor(est(name)))
+
+describe('theme: Estante (fase 15)', () => {
+  it('BBX-058/o bloco [data-bigbox-theme="estante"] define todos os 15 tokens de temas-v2 §7', () => {
+    expect(estanteBlock).not.toBe('')
+    for (const name of Object.keys(bbTokensV2)) {
+      expect(est(name), `valor de ${name}`).not.toBe('')
+    }
+  })
+
+  it('BBX-058/o bloco da Estante também define a área segura (5vh / 5vw)', () => {
+    expect(est('--arc-bb-safe-y')).toBe('5vh')
+    expect(est('--arc-bb-safe-x')).toBe('5vw')
+  })
+
+  it('BBX-058/a Estante é escura: o fundo é o de temas-v2 §7 (#07080b) e o painel é translúcido', () => {
+    expect(est('--arc-bb-bg').toLowerCase()).toBe('#07080b')
+    expect(parseColor(est('--arc-bb-panel'))[3]).toBeLessThan(1)
+  })
+
+  it('ETN-014/text, text-muted e danger ≥ 4,5:1 com o panel composto sobre branco, sobre preto e com o bg', () => {
+    const panel = parseColor(est('--arc-bb-panel'))
+    const bases = [over(panel, '#ffffff'), over(panel, '#000000'), estSolid('--arc-bb-bg')]
+    for (const base of bases) {
+      for (const t of ['--arc-bb-text', '--arc-bb-text-muted', '--arc-bb-danger']) {
+        const r = contrast(estSolid(t), base)
+        expect(r, `${t} sobre ${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('ETN-014/on-accent sobre accent e on-chip sobre chip ≥ 4,5:1', () => {
+    expect(contrast(estSolid('--arc-bb-on-accent'), estSolid('--arc-bb-accent'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(estSolid('--arc-bb-on-chip'), estSolid('--arc-bb-chip'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('ETN-014/focus ≥ 3:1 contra o panel composto (sobre branco e sobre preto) e contra o bg', () => {
+    const panel = parseColor(est('--arc-bb-panel'))
+    for (const base of [over(panel, '#ffffff'), over(panel, '#000000'), estSolid('--arc-bb-bg')]) {
+      const r = contrast(estSolid('--arc-bb-focus'), base)
+      expect(r, `focus sobre ${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('BBX-058/heading e text sobre surface (cartões e botão Detalhes) ≥ 4,5:1', () => {
+    expect(contrast(estSolid('--arc-bb-text'), estSolid('--arc-bb-surface'))).toBeGreaterThanOrEqual(4.5)
+    const panel = parseColor(est('--arc-bb-panel'))
+    for (const base of [over(panel, '#ffffff'), over(panel, '#000000'), estSolid('--arc-bb-bg')]) {
+      expect(contrast(estSolid('--arc-bb-heading'), base)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+})
+
 // ---- Phase 10.1 (AJU-004, AJU-005, AJU-008) ----
 const plainCss = css.replace(/\/\*[\s\S]*?\*\//g, '')
 

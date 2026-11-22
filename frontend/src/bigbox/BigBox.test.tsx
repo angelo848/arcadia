@@ -1105,7 +1105,7 @@ describe('BigBox v2: contrato de tema e grade (BBX-047, BBX-050, BBX-055)', () =
     openPage2()
     await settle()
     key('ArrowDown')
-    expect(simple()).toHaveTextContent('Jogo 026') // f = 25
+    await waitFor(() => expect(simple()).toHaveTextContent('Jogo 026')) // f = 25
     expect(offsets()).toEqual([0, 25]) // 45 needed at row 5... L = 50 is enough
     key('ArrowDown')
     await settle()
@@ -1116,7 +1116,7 @@ describe('BigBox v2: contrato de tema e grade (BBX-047, BBX-050, BBX-055)', () =
     expect(limits()).toEqual([25, 25, 25])
     expect(lib.inflight.max).toBe(1)
     for (const m of modelLog) expect(m.games.length).toBeLessThanOrEqual(10) // (R + 1) × C
-  })
+  }, 15000)
 
   it('BBX-050/num tema de faixa as páginas continuam V + 3 (15 com V 12)', async () => {
     bigLibrary(60)

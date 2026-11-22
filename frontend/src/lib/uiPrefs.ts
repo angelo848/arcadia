@@ -27,7 +27,7 @@ export function writeLibraryView(v: LibraryView, storage?: Pick<Storage, 'setIte
   }
 }
 
-export type BigBoxThemeId = 'faixa' | 'mosaico' | 'roda'
+export type BigBoxThemeId = 'faixa' | 'mosaico' | 'estante' | 'roda'
 
 const BIGBOX_THEME_KEY = 'arcadia.bigBoxTheme'
 

@@ -2,17 +2,32 @@ import { describe, expect, it } from 'vitest'
 import { BIGBOX_THEMES, resolveTheme } from './registry'
 
 describe('registro de temas do Big Box', () => {
-  // alterado em 2026-11-22 (fase 15): mosaico e estante entram nas T34/T36; aqui só faixa (disponível) e roda (indisponível).
-  it('BBX-023/o registro tem faixa e roda; só faixa disponível; roda sem componente', () => {
-    const ids = BIGBOX_THEMES.map((t) => t.id)
-    expect(ids).toContain('faixa')
-    expect(ids).toContain('roda')
+  // alterado em 2026-11-22 (fase 15): estado final de BBX-046 (faixa, mosaico, estante disponíveis; roda indisponível).
+  it('BBX-023/BBX-046/o registro lista faixa, mosaico e estante, nesta ordem, disponíveis, e roda indisponível sem componente', () => {
+    expect(BIGBOX_THEMES.map((t) => t.id)).toEqual(['faixa', 'mosaico', 'estante', 'roda'])
+    expect(BIGBOX_THEMES.map((t) => t.name)).toEqual(['Faixa', 'Mosaico', 'Estante', 'Roda'])
     const by = Object.fromEntries(BIGBOX_THEMES.map((t) => [t.id, t]))
-    expect(by.faixa.available).toBe(true)
-    expect(by.faixa.Component).toBeTypeOf('function')
+    for (const id of ['faixa', 'mosaico', 'estante']) {
+      expect(by[id].available, id).toBe(true)
+      expect(by[id].Component, id).toBeTypeOf('function')
+    }
     expect(by.roda.available).toBe(false)
     expect(by.roda.Component).toBeUndefined()
-    expect(by.roda.name).not.toBe('')
+  })
+
+  it('BBX-046/BBX-052/BBX-054/BBX-055/valores da Estante: grade de 5 colunas, fundo cover, vídeo no fundo, abas de coleção, por último jogado, Detalhes próprios', () => {
+    const e = BIGBOX_THEMES.find((t) => t.id === 'estante')!
+    expect(e).toMatchObject({
+      available: true, axis: 'grid', columns: 5, backdrop: 'cover', videoSlot: 'background', tabs: 'collections', sort: 'lastPlayed',
+    })
+    expect(e.gridRows).toBeTypeOf('function')
+    expect(e.Details).toBeTypeOf('function')
+    expect(e.listCapacity({ width: 1920, height: 1080 })).toBe(5)
+  })
+
+  it('BBX-052/o Mosaico usa fundo plain e o Faixa contain', () => {
+    expect(BIGBOX_THEMES.find((t) => t.id === 'mosaico')!.backdrop).toBe('plain')
+    expect(BIGBOX_THEMES.find((t) => t.id === 'faixa')!.backdrop).toBe('contain')
   })
 
   it('BBX-047/cada tema declara id, name, available, axis, columns, anchor, listCapacity, backdrop, videoSlot, tabs, sort e timeToBeatInBrowse', () => {
@@ -56,6 +71,9 @@ describe('registro de temas do Big Box', () => {
       expect(resolveTheme(v as string | null | undefined).id, String(v)).toBe('faixa')
     }
     expect(resolveTheme('faixa').id).toBe('faixa')
+    // alterado em 2026-11-22 (fase 15): mosaico e estante estão disponíveis (BBX-046)
+    expect(resolveTheme('mosaico').id).toBe('mosaico')
+    expect(resolveTheme('estante').id).toBe('estante')
   })
 
   it('BBX-024/cada tema declara o eixo (faixa horizontal)', () => {

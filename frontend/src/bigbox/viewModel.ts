@@ -17,8 +17,7 @@ export const STRIP_FALLBACK_CAPACITY = 12
 export const GRID_MAX_ROWS = 5
 export const GRID_MAX_NODES = 30
 
-// 'estante' joins here and in lib/uiPrefs.ts in T36.
-export type BigBoxThemeId = 'faixa' | 'mosaico' | 'roda'
+export type BigBoxThemeId = 'faixa' | 'mosaico' | 'estante' | 'roda'
 export type BigBoxTab = {
   key: string // 'all' | 'favorites' | 'completed' | `p:${platformId}`
   label: string
