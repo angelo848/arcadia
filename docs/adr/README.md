@@ -51,3 +51,6 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0035](0035-fechar-o-jogo-pelo-controle.md) | Fechar o jogo pelo controle (Select + B) | aceito |
 | [0036](0036-big-box-com-temas-selecionaveis.md) | Big Box com temas selecionáveis | aceito |
 | [0037](0037-video-do-screenscraper-como-midia-na-fila.md) | Vídeo do ScreenScraper como mídia `video` na fila | aceito |
+| [0038](0038-big-box-por-pedido-externo.md) | Big Box por pedido externo (Select + A e `--bigbox`) | aceito |
+| [0039](0039-tempo-para-zerar-hltb.md) | Tempo para zerar do HowLongToBeat com cache, reserva do IGDB e falha silenciosa | aceito |
+| [0040](0040-contrato-de-tema-v2.md) | Contrato de tema v2 do Big Box | aceito (estende 0036) |

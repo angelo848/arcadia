@@ -210,6 +210,34 @@ export function StatsWeekly(arg1) {
   return window['go']['main']['App']['StatsWeekly'](arg1);
 }
 
+export function TakeBigBoxRequest() {
+  return window['go']['main']['App']['TakeBigBoxRequest']();
+}
+
+export function TimeToBeatChoose(arg1, arg2) {
+  return window['go']['main']['App']['TimeToBeatChoose'](arg1, arg2);
+}
+
+export function TimeToBeatGet(arg1, arg2) {
+  return window['go']['main']['App']['TimeToBeatGet'](arg1, arg2);
+}
+
+export function TimeToBeatRefresh(arg1) {
+  return window['go']['main']['App']['TimeToBeatRefresh'](arg1);
+}
+
+export function TimeToBeatSearch(arg1, arg2) {
+  return window['go']['main']['App']['TimeToBeatSearch'](arg1, arg2);
+}
+
+export function TimeToBeatSetSettings(arg1, arg2) {
+  return window['go']['main']['App']['TimeToBeatSetSettings'](arg1, arg2);
+}
+
+export function TimeToBeatSettings() {
+  return window['go']['main']['App']['TimeToBeatSettings']();
+}
+
 export function UpdateGame(arg1, arg2) {
   return window['go']['main']['App']['UpdateGame'](arg1, arg2);
 }

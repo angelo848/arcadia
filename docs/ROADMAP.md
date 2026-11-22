@@ -251,3 +251,24 @@ O executável é gerado com `wails build -ldflags "-X main.version=1.0.2"`.
 - Controle: `Select + D-pad cima/baixo` sobe e desce o volume do Windows (repete enquanto segura).
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.0.3"`.
+
+## Versão 1.1.0 (2026-11-22)
+
+Fase 15, [phase-15-big-box-v2](specs/phase-15-big-box-v2/requirements.md) (ADR [0038](adr/0038-big-box-por-pedido-externo.md),
+[0039](adr/0039-tempo-para-zerar-hltb.md) e [0040](adr/0040-contrato-de-tema-v2.md); IPC v0.16.0 só com acréscimos; migração 10):
+- **Select + A** (segurar 1 s) abre o Big Box pelo controle, com a janela fechada ou atrás de outro programa. O agente executa
+  `arcadia.exe --bigbox`; com o Arcadia já aberto, a segunda instância só leva o pedido à primeira. Durante um jogo o pedido é
+  recusado com o som de recusa. Só funciona com o agente na bandeja (ver ADR 0024: o agente não sobe com o Windows).
+- **Tempo para zerar** (história principal, história + extras, 100%) do HowLongToBeat, com o IGDB (`game_time_to_beats`) de
+  reserva quando o HowLongToBeat não acha ou falha. Cache por jogo no banco, falha silenciosa ("—"), lote logo depois de aplicar
+  metadados, "Atualizar" e "Escolher outro…" na edição do jogo, e opções na janela dos provedores. Aparece no painel do modo normal e
+  nos Detalhes do Big Box.
+- **Contrato de tema v2** do Big Box: grade 2D, âncora da faixa, fundo e lugar do vídeo por tema, abas de coleção e Detalhes por tema.
+- Dois temas novos: **Mosaico** (estilo Switch, vídeo na capa) e **Estante** (estilo Big Picture, grade de 5 colunas com destaque e abas
+  Todos, Favoritos, Concluídos e plataformas). O **Faixa** continua igual. O seletor de temas lista o que o registro tem.
+- Aviso de pausa fixo na tela, atalho de volume pelo controle (`Select + D-pad cima/baixo`) e importação da Xbox.
+
+Ficou para depois: tempo para zerar nos cartões e na Faixa fora dos Detalhes, busca e filtros dentro do Big Box, tema Roda, combo
+configurável e movimento reduzido. A verificação manual (ATB-016, TTB-032, MOS-016, ETN-015) é a T38.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.1.0"`.

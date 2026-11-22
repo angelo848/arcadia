@@ -404,3 +404,38 @@ Spec em [phase-13-modo-console](specs/phase-13-modo-console/requirements.md); de
   `.mp4` é servido ao WebView pelo mesmo servidor de mídia, com `Range`.
 - A UI nunca influencia o tempo de jogo; `cmd/fake-game`, `play_session`, `pause_interval`, `tracking_rule` e a
   tabela `game` não mudaram.
+
+### Big Box v2 (fase 15)
+
+Spec em [phase-15-big-box-v2](specs/phase-15-big-box-v2/requirements.md); decisões nos
+[ADR 0038](adr/0038-big-box-por-pedido-externo.md), [0039](adr/0039-tempo-para-zerar-hltb.md) e
+[0040](adr/0040-contrato-de-tema-v2.md); IPC v0.16.0 (só acréscimos); migração 10. Versão 1.1.0.
+
+- **Terceiro acorde do controle (Select + A, 1 s):** `internal/input` ganha o detector `BigBoxMask` (padrão Back+A) ao lado
+  dos de pausa e fechar; o `triggerRouter` despacha também `ActionBigBox` (antirrepique `domain.BigBoxDebounce`, 300 ms). Sem
+  sessão aberta (`Tracker.Current()` vazio), o `uiOpener` executa `arcadia.exe --bigbox --data-dir <raiz>` destacado do agente
+  (`winapi.CreateDetached`); com jogo rodando, o roteador só toca o som de recusa. O tracker não vê a ação nova.
+- **`--bigbox` e segunda instância:** o desktop lê `--bigbox` na primeira instância (`desktopConfig.BigBox`) e, na segunda
+  (`OnSecondInstanceLaunch`), por varredura própria dos argumentos (`wantsBigBox`; não usa `flag`). O pedido fica no `App`
+  (`bigBoxRequest`) e o frontend o toma uma vez com `TakeBigBoxRequest` (e pelo evento Wails na instância já aberta). Dentro do Big
+  Box, o pedido não faz nada (BBX-057: o Select + A não lança o jogo em foco). Isto muda a regra do single-exe de ignorar os
+  argumentos da segunda instância.
+- **Tempo para zerar:** serviço `timeToBeat` do agente (`internal/agent/timetobeat*.go`), com uma goroutine trabalhadora (dona:
+  o serviço; encerra no `Close`, antes de fechar o store). Duas filas (interativa e lote de até 1.000), uma requisição externa por
+  vez, `Limiter` de 2 s no HowLongToBeat (`scrapers.HLTB`, token de `/api/search/site/init` só em memória, renovado no 403) e
+  recuo por fonte (1, 5, 30 e 60 min). `domain.RankTimeToBeat` pontua com as regras da fase 12; `domain.TTBResolve` decide o que
+  gravar. Sem achado no HowLongToBeat, ou com falha dele, o serviço tenta a reserva do IGDB (`(*IGDB).TimeToBeat`,
+  `game_time_to_beats`), ignorada em silêncio sem chave. O cache fica na tabela `time_to_beat` (migração 10, uma linha por jogo,
+  `ON DELETE CASCADE`), com validade de 90 dias (HowLongToBeat achado), 30 dias (IGDB, em dúvida e não achado) e linha confirmada
+  pelo usuário preservada. A UI lê pelos métodos `timeToBeat.get/refresh/search/choose/getSettings/setSettings` e recebe
+  `timeToBeat.changed {gameId}` (ADR 0031). `metadata.apply` e o lote enfileiram a busca depois de gravar. Falhas nunca chegam ao
+  usuário: aparece "—".
+- **Contrato de tema v2:** `BigBoxThemeDef` ganha `axis` (`horizontal`, `vertical` ou `grid`), `columns`, `anchor`, `gridRows`,
+  `backdrop` (`contain`, `cover` ou `plain`), `videoSlot` (`background` ou `cover`), `tabs` (`platforms` ou `collections`), `sort`,
+  `timeToBeatInBrowse` e `Details` opcional. O reducer de navegação (`nav.ts`) passou a ter grade 2D, a janela de itens fica
+  limitada a 30 nós, e o modelo (`viewModel.ts`) cobre as abas de coleção (Todos, Favoritos, Concluídos e plataformas).
+- **Temas:** **Faixa** (estilo PS5, igual à fase 13), **Mosaico** (estilo Switch: fileira horizontal, vídeo na capa, painel com tempo
+  para zerar) e **Estante** (estilo Big Picture: grade de 5 colunas, destaque no alto que some ao descer, abas de coleção, Detalhes
+  próprios). O **Roda** continua indisponível. O registro é `themes/registry.ts`; o seletor lê dele.
+- A UI nunca influencia o tempo de jogo; nada mudou em `internal/tracker`, `play_session`, `pause_interval`, `tracking_rule`,
+  `media` ou `media_job`.

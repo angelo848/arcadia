@@ -1158,6 +1158,102 @@ export namespace main {
 	        this.uptimeSeconds = source["uptimeSeconds"];
 	    }
 	}
+	export class TimeToBeatCandidateView {
+	    externalId: string;
+	    title: string;
+	    year?: number;
+	    platforms: string[];
+	    mainSeconds?: number;
+	    mainExtraSeconds?: number;
+	    completionistSeconds?: number;
+	    score: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TimeToBeatCandidateView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.externalId = source["externalId"];
+	        this.title = source["title"];
+	        this.year = source["year"];
+	        this.platforms = source["platforms"];
+	        this.mainSeconds = source["mainSeconds"];
+	        this.mainExtraSeconds = source["mainExtraSeconds"];
+	        this.completionistSeconds = source["completionistSeconds"];
+	        this.score = source["score"];
+	    }
+	}
+	export class TimeToBeatSettingsView {
+	    enabled: boolean;
+	    afterMetadata: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TimeToBeatSettingsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.afterMetadata = source["afterMetadata"];
+	    }
+	}
+	export class TimeToBeatView {
+	    gameId: number;
+	    state: string;
+	    source: string;
+	    externalId: string;
+	    externalTitle: string;
+	    mainSeconds?: number;
+	    mainExtraSeconds?: number;
+	    completionistSeconds?: number;
+	    fetchedAt: string;
+	    confirmed: boolean;
+	    stale: boolean;
+	    pending: boolean;
+	    unavailable: boolean;
+	    candidates: TimeToBeatCandidateView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TimeToBeatView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.gameId = source["gameId"];
+	        this.state = source["state"];
+	        this.source = source["source"];
+	        this.externalId = source["externalId"];
+	        this.externalTitle = source["externalTitle"];
+	        this.mainSeconds = source["mainSeconds"];
+	        this.mainExtraSeconds = source["mainExtraSeconds"];
+	        this.completionistSeconds = source["completionistSeconds"];
+	        this.fetchedAt = source["fetchedAt"];
+	        this.confirmed = source["confirmed"];
+	        this.stale = source["stale"];
+	        this.pending = source["pending"];
+	        this.unavailable = source["unavailable"];
+	        this.candidates = this.convertValues(source["candidates"], TimeToBeatCandidateView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class VideoQueueMissingView {
 	    queued: number;
 	    skipped: number;

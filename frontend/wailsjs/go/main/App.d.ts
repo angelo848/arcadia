@@ -107,6 +107,20 @@ export function StatsSummary(arg1:string):Promise<main.StatsSummaryView>;
 
 export function StatsWeekly(arg1:number):Promise<main.StatsWeeklyView>;
 
+export function TakeBigBoxRequest():Promise<boolean>;
+
+export function TimeToBeatChoose(arg1:number,arg2:string):Promise<main.TimeToBeatView>;
+
+export function TimeToBeatGet(arg1:number,arg2:boolean):Promise<main.TimeToBeatView>;
+
+export function TimeToBeatRefresh(arg1:number):Promise<main.TimeToBeatView>;
+
+export function TimeToBeatSearch(arg1:number,arg2:string):Promise<Array<main.TimeToBeatCandidateView>>;
+
+export function TimeToBeatSetSettings(arg1:boolean,arg2:boolean):Promise<main.TimeToBeatSettingsView>;
+
+export function TimeToBeatSettings():Promise<main.TimeToBeatSettingsView>;
+
 export function UpdateGame(arg1:number,arg2:jsontext.Value):Promise<main.GameDetailView>;
 
 export function VideoCancelPending():Promise<number>;

@@ -3,7 +3,7 @@
 A game launcher and organizer for Windows, inspired by LaunchBox, focused on **robust play time tracking**: time is
 counted from the game's process tree, not from the focused window.
 
-Current version: **1.0.3**.
+Current version: **1.1.0**.
 
 ## What it does
 
@@ -16,7 +16,9 @@ Current version: **1.0.3**.
 - **Metadata and images** fetched from IGDB, SteamGridDB and Steam, and video from ScreenScraper. Each provider's keys
   are entered inside the application.
 - **Console mode** (Big Box): a full-screen view navigable with the controller, opened with `F11`. `Select + B` held
-  for 1 s closes the running game.
+  for 1 s closes the running game, and `Select + A` held for 1 s opens the Big Box (also `arcadia.exe --bigbox`), with
+  the Strip, Mosaic and Shelf themes.
+- **Time to beat** (main story, main + extras, completionist) from HowLongToBeat, with IGDB as fallback.
 - **Manual editing** of game data, images (cover, screenshots, background) and total play time.
 - **Statistics** of play time by period.
 
@@ -74,7 +76,7 @@ wails dev
 Build the executable into `cmd/arcadia/build/bin/arcadia.exe` (from `cmd/arcadia`):
 
 ```bash
-wails build -ldflags "-X main.version=1.0.3"
+wails build -ldflags "-X main.version=1.1.0"
 ```
 
 Interface tests (from `frontend`):

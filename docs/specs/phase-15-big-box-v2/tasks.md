@@ -69,7 +69,7 @@ H: T37 (depende de tudo que muda comportamento; os ADRs podem sair antes) -> T38
 
 ---
 
-## T01 — Testes: migração 10 e store do tempo para zerar
+## T01 — Testes: migração 10 e store do tempo para zerar [concluída]
 - Requisitos: TTB-001, TTB-002. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivos: `internal/store/migrate10_test.go` (novo), `internal/store/time_to_beat_test.go` (novo); atualizar os literais de versão em `internal/store/media_test.go`, `migrate5_test.go` e `migrate9_test.go` (`SchemaVersion` passa a 10; a lista de migrações de `migrate9_test.go` termina na 00010).
 - Testes (`migrate10_test.go`):
@@ -91,7 +91,7 @@ H: T37 (depende de tudo que muda comportamento; os ADRs podem sair antes) -> T38
   - `TTB-002/jogo sem linha devolve ok = false`.
 - Assinaturas que o teste usa (definidas na T02): ver T02.
 
-## T02 — Migração 10, consultas sqlc e store
+## T02 — Migração 10, consultas sqlc e store [concluída]
 - Requisitos: TTB-001, TTB-002. **Responsável:** implementer. Dependência: T01.
 - Arquivos: `internal/store/migrations/00010_time_to_beat.sql` (novo, design §3.1 literal), `internal/store/queries/time_to_beat.sql` (novo), `internal/store/time_to_beat.go` (novo), `internal/store/store.go` (ou onde estiver `SchemaVersion`: 9 → 10), código gerado por `sqlc generate`.
 ```go
@@ -114,7 +114,7 @@ func (s *Store) GameTitleYear(ctx context.Context, gameID int64) (title string, 
 ```
 - As duas chaves de configuração (`timeToBeat.enabled`, `timeToBeat.afterMetadata`) usam `Setting`/`SetSetting` existentes. Sem testes novos (T01 cobre).
 
-## T03 — Testes: funções puras do tempo para zerar
+## T03 — Testes: funções puras do tempo para zerar [concluída]
 - Requisitos: TTB-004, TTB-006, TTB-011, TTB-033, TTB-034, TTB-038. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivo: `internal/domain/timetobeat_test.go` (novo).
 - Testes:
@@ -124,7 +124,7 @@ func (s *Store) GameTitleYear(ctx context.Context, gameID int64) (title string, 
   - `TTBBackoff`: `TTB-011/escada 1, 5, 30 e 60 minutos; a quarta em diante fica em 60`; `TTB-038/a mesma escada serve ao IGDB`;
   - `TTBResolve` (um caso por linha de [rules §10.1](contracts/hltb-rules.md)): `TTB-033/found do hltb: grava found hltb e não consulta o IGDB`; `TTB-033/doubt do hltb: grava doubt hltb`; `TTB-033/not-found e IGDB com valores: grava found igdb`; `TTB-033/not-found e IGDB sem match ou sem valores: not-found hltb`; `TTB-033/not-found e IGDB com falha, em recuo ou sem chave: not-found hltb`; `TTB-034/falha do hltb e IGDB com valores: found igdb`; `TTB-034/falha ou recuo do hltb e IGDB sem match ou sem valores: nada gravado`; `TTB-034/falha do hltb e IGDB com falha, recuo ou sem chave: nada gravado`; `TTB-033/termo vazio: not-found hltb sem consulta`.
 
-## T04 — `internal/domain`: funções puras do tempo para zerar
+## T04 — `internal/domain`: funções puras do tempo para zerar [concluída]
 - Requisitos: TTB-004, TTB-006, TTB-011, TTB-033, TTB-034, TTB-038. **Responsável:** implementer. Dependência: T03.
 - Arquivo: `internal/domain/timetobeat.go` (novo).
 ```go
@@ -143,13 +143,13 @@ type IGDBOutcome int // IGDBNotAsked, IGDBValues, IGDBNoMatch, IGDBUnavailable, 
 func TTBResolve(h HLTBOutcome, i IGDBOutcome) (write bool, source string, state TTBState)
 ```
 
-## T05 — Conferência do endpoint do HowLongToBeat (com rede)
+## T05 — Conferência do endpoint do HowLongToBeat (com rede) [concluída]
 - Requisitos: TTB-012, TTB-027, TTB-036. **Responsável:** sessão principal, com o usuário (a tarefa exige rede; nenhum teste a faz).
 - Conferir os pontos da tabela de [rules §9](contracts/hltb-rules.md) (padrão do caminho no script, passo prévio, corpo e campos obrigatórios, cabeçalhos mínimos, campos `comp_*` em segundos, `game_type`, taxa de 1 requisição a cada 2 s, e `game_time_to_beats` do IGDB) e preencher as colunas "Conferido em" e "Resultado". Divergência de regra visível volta ao spec-writer e pausa a T06 e a T07; divergência só de formato é ajustada em rules §2..§4 e §10.3.
 - Saída adicional: amostras **sanitizadas** (resposta do token, busca com resultados e vazia) entregues ao test-writer na T06 (só o test-writer cria `testdata/`). Nenhuma credencial é gravada em arquivo ou log. Bloqueia T06 e T07.
 - **Status: feita em 2026-11-22** pela sessão principal, com requisições reais. Resultado em [rules §9](contracts/hltb-rules.md): só divergência de formato, que a spec já absorveu (TTB-010, TTB-011, TTB-012 e TTB-027 alterados; rules §1..§4, §7 e §9; design §3.2). A descoberta por script não existe mais: o caminho é fixo (`POST /api/search/site`) e exige um token (`GET /api/search/site/init?t=<epoch ms>` → `{"token"}`, cabeçalho `x-auth-token`, 403 = token expirado). O corpo usa `year` no lugar de `rangeYear` e `gameplay` não tem `difficulty`. Os campos `comp_*` estão em segundos. O IGDB `game_time_to_beats` foi conferido só pela documentação e deve ser confirmado com a chave do usuário no roteiro manual T38. Nenhum comportamento visível mudou. Amostras sanitizadas: `C:\Users\angel\AppData\Local\Temp\claude\ae6d52667fa017b3\bfac26e1-cd0b-4787-b524-e829e66ac7ce\scratchpad\hltb-samples\` (`init.json`, `search-results.json`, `search-empty.json`).
 
-## T06 — Testes: clientes do HowLongToBeat e do IGDB
+## T06 — Testes: clientes do HowLongToBeat e do IGDB [concluída]
 - Requisitos: TTB-003, TTB-005, TTB-010, TTB-012, TTB-027, TTB-031, TTB-036, TTB-037, TTB-038. **Responsável:** test-writer. Dependência: T05 (e T04 para as constantes).
 - Arquivos: `internal/scrapers/hltb_test.go`, `internal/scrapers/igdb_ttb_test.go` (novos); `internal/scrapers/testdata/hltb/*`: copiar as **amostras reais sanitizadas da T05** de `C:\Users\angel\AppData\Local\Temp\claude\ae6d52667fa017b3\bfac26e1-cd0b-4787-b524-e829e66ac7ce\scratchpad\hltb-samples\`, com o mesmo nome: `init.json` (`{"token"}`), `search-results.json` ("hollow knight", 8 resultados; Hollow Knight 26286 com 97159 / 149918 / 236144, alias "Hollow Knight: Voidheart Edition", campos extras como `game_name_date` e `comp_all`) e `search-empty.json` (`count: 0`, `data: []`). Acrescentar casos sintéticos: `init` sem `token`, com token vazio e com JSON inválido; HTML no lugar de JSON; item com `game_type: dlc`. Também `testdata/igdb_time_to_beats*.json` (com os três campos, ausentes, zeros, lista vazia). · alterado em 2026-11-22 (T05): saíram a página inicial e os scripts da descoberta.
 - Testes (HowLongToBeat, `httptest`) · alterado em 2026-11-22 (T05): os três casos de descoberta por script saíram e entraram os do token:
@@ -178,7 +178,7 @@ func TTBResolve(h HLTBOutcome, i IGDBOutcome) (write bool, source string, state 
   - `TTB-037/sem chave devolve scrapers.ErrNoKey e nenhuma requisição`;
   - `TTB-038/429, 5xx e rede são ErrUnavailable e a chamada passa pelo Limiter do IGDB (o mesmo da busca de metadados)`.
 
-## T07 — `internal/scrapers`: cliente HowLongToBeat e leitura do IGDB
+## T07 — `internal/scrapers`: cliente HowLongToBeat e leitura do IGDB [concluída]
 - Requisitos: TTB-003, TTB-005, TTB-010, TTB-011, TTB-012, TTB-027, TTB-036, TTB-037, TTB-038. **Responsável:** implementer. Dependência: T06.
 - Arquivos: `internal/scrapers/hltb.go`, `internal/scrapers/hltb_parse.go`, `internal/scrapers/igdb_ttb.go` (novos).
 ```go
@@ -207,7 +207,7 @@ func (c *IGDB) TimeToBeat(ctx context.Context, igdbID string) (IGDBTimeToBeat, b
 - Constantes de [rules §1](contracts/hltb-rules.md) em `internal/scrapers` (`HLTBInterval = 2 * time.Second`, `HLTBRequestTimeout`, `HLTBPageSize = 20`, `HLTBMaxBody = 2 << 20`, `HLTBInitPath = "/api/search/site/init"`, `HLTBSearchPath = "/api/search/site"`). Erros de rede sem URL (`netCause`, como os outros provedores). Sem goroutine nova.
 - · alterado em 2026-11-22 (T05): não há descoberta de caminho, nem constantes ou funções para ela, nem leitura da página inicial ou de scripts. O fluxo é o de [rules §2, §3](contracts/hltb-rules.md): `init` só quando não há token guardado; busca com `x-auth-token`; com 403, descarta o token, faz um `init` novo e repete uma vez; 404 é falha temporária. O token fica num campo sob `h.mu` e nunca vai para log, erro, disco ou banco. Corpo da busca com `year` e `gameplay` sem `difficulty`.
 
-## T08 — Testes: contrato IPC v0.16.0
+## T08 — Testes: contrato IPC v0.16.0 [concluída]
 - Requisitos: TTB-029, TTB-023, TTB-020, TTB-021, TTB-022, TTB-008. **Responsável:** test-writer. Dependência: nenhuma (fica vermelho até T09 e T10).
 - Arquivos: `internal/ipc/contract_phase15_test.go` (novo); `internal/ipc/contract_test.go` (`contractPath` e `contractRelPath` passam para `phase-15-big-box-v2`), `contract_phase13_test.go` e `contract_phase12_test.go` (a v0.15.0 vira `contractV015Path`, e a verificação de versão usa a v0.16.0 onde for "≥").
 - Testes:
@@ -224,7 +224,7 @@ func (c *IGDB) TimeToBeat(ctx context.Context, igdbID string) (IGDBTimeToBeat, b
   - `TTB-008/timeToBeat.get: fetch tem padrão false e nunca devolve -32011`;
   - `TTB-029/a v0.16.0 é a v0.15.0 mais acréscimos`: normaliza na v0.16.0 `info.version`, `info.description`, `info.x-timetobeat`, os métodos e esquemas novos e a notificação nova, **mais** `media.add`, `media.remove`, `game.setPlayTime` e os esquemas da fase 14 (Dúvidas 1); depois `reflect.DeepEqual` com a v0.15.0; confere que nenhum método, parâmetro, resultado, erro ou esquema da v0.15.0 mudou ou sumiu e que a ordem relativa dos antigos se mantém.
 
-## T09 — `internal/ipc`: tipos e constantes v0.16.0
+## T09 — `internal/ipc`: tipos e constantes v0.16.0 [concluída]
 - Requisitos: TTB-029, TTB-020, TTB-021, TTB-022, TTB-023. **Responsável:** implementer. Dependência: T08.
 - Arquivos: `internal/ipc/timetobeat.go` (novo), `internal/ipc/protocol.go` (comentário do pacote aponta para o contrato da fase 15).
 ```go
@@ -247,12 +247,12 @@ type TimeToBeatSearchResult struct{ Candidates []TimeToBeatCandidate `json:"cand
 ```
 - Reutilizar o código `-32011` (`ProviderUnavailable`) existente com `data = {provider, reason}`; criar o `reason` se ainda não houver. Sem testes próprios (T08 cobre).
 
-## T10 — Contrato completo `ipc.openrpc.json` v0.16.0
+## T10 — Contrato completo `ipc.openrpc.json` v0.16.0 [concluída]
 - Requisitos: TTB-029. **Responsável:** sessão principal (cópia mecânica de JSON grande, por script, como nas fases 11 a 13). Dependência: nenhuma. Bloqueia T08 verde.
 - Criar `docs/specs/phase-15-big-box-v2/contracts/ipc.openrpc.json` como cópia de `docs/specs/phase-13-modo-console/contracts/ipc.openrpc.json` (v0.15.0) mais: `info.version = "0.16.0"`, `info.x-timetobeat`, os esquemas e métodos do [delta](contracts/ipc-v0.16.0-delta.openrpc.json), `timeToBeat.changed`, **e** `media.add`, `media.remove`, `game.setPlayTime` (tipos de `internal/ipc/manual_edit.go`).
 - Em `ipc-v0.16.0-delta.md` e `design.md` §3.5, trocar "(tarefa)" pelo arquivo criado.
 
-## T11 — Testes: serviço `timeToBeat` do agente (núcleo)
+## T11 — Testes: serviço `timeToBeat` do agente (núcleo) [concluída]
 - Requisitos: TTB-002, TTB-003, TTB-004, TTB-006, TTB-009, TTB-010, TTB-011, TTB-026, TTB-028, TTB-031, TTB-033, TTB-034, TTB-035, TTB-036, TTB-037, TTB-038. **Responsável:** test-writer. Dependência: T02, T04, T07, T09.
 - Arquivos: `internal/agent/timetobeat_test.go` (novo), `internal/agent/timetobeat_fakes_test.go` (novo: cliente HLTB falso controlado por canais, `ttbFallback` falso, `KeyStore` falso, notificador espião, relógio `domain.FakeClock`, store real em `t.TempDir()`).
 - Testes (chamando `newTimeToBeatService` e `lookup` pela fila e por `Refresh`):
@@ -275,7 +275,7 @@ type TimeToBeatSearchResult struct{ Candidates []TimeToBeatCandidate `json:"cand
   - `TTB-028/Close cancela o ctx, abandona a requisição em curso sem gravar e espera o worker (sem goroutine viva); idempotente`; `TTB-028/depois de BeginShutdown nenhuma notificação sai e as filas são descartadas`;
   - `TTB-031/os fakes são os únicos clientes; nenhum teste do serviço abre soquete`.
 
-## T12 — `internal/agent`: serviço `timeToBeat` (fila, trabalhador, recuo, cache)
+## T12 — `internal/agent`: serviço `timeToBeat` (fila, trabalhador, recuo, cache) [concluída]
 - Requisitos: TTB-002, TTB-003, TTB-004, TTB-006, TTB-009, TTB-010, TTB-011, TTB-026, TTB-028, TTB-033, TTB-034, TTB-035, TTB-036, TTB-037, TTB-038. **Responsável:** implementer. Dependência: T11.
 - Arquivos: `internal/agent/timetobeat.go`, `internal/agent/timetobeat_lookup.go` (novos).
 ```go
@@ -301,7 +301,7 @@ func (s *timeToBeatService) GameRemoved(gameID int64)   // TTB-026
 ```
 - Regras e ordem de operações: design §3.4 e [rules §5..§7 e §10](contracts/hltb-rules.md). `reqMu` cobre o `lookup` inteiro (as duas fontes). Espera de recuo só por `domain.Clock.After`; sem `time.Sleep`. Prazo de 25 s de `Refresh`/`Search` configurável por campo interno (testes encurtam).
 
-## T13 — Testes: handlers IPC, configuração e ganchos do serviço
+## T13 — Testes: handlers IPC, configuração e ganchos do serviço [concluída]
 - Requisitos: TTB-007, TTB-008, TTB-020, TTB-021, TTB-022, TTB-023, TTB-025, TTB-026, TTB-028, TTB-040. **Responsável:** test-writer. Dependência: T12 (pode começar na T11).
 - Arquivos: `internal/agent/timetobeat_ipc_test.go` (novo); atualizar `internal/agent/shutdown_test.go` (ordem do shutdown) e os helpers de `components_test.go` se criarem o agente completo.
 - Testes:
@@ -319,12 +319,12 @@ func (s *timeToBeatService) GameRemoved(gameID int64)   // TTB-026
   - `TTB-026/game.delete (store real) apaga a linha por cascata, tira o jogo das filas e uma busca em curso termina sem gravar`;
   - `TTB-028/o shutdown chama BeginShutdown do serviço junto do tracker e Close antes de fechar o store; nenhuma notificação depois`.
 
-## T14 — `internal/agent`: handlers IPC, ligação e ganchos
+## T14 — `internal/agent`: handlers IPC, ligação e ganchos [concluída]
 - Requisitos: TTB-007, TTB-008, TTB-020, TTB-021, TTB-022, TTB-023, TTB-025, TTB-026, TTB-028, TTB-040, TTB-010. **Responsável:** implementer. Dependência: T13.
 - Arquivos: `internal/agent/timetobeat_ipc.go` (novo: registra os seis métodos e valida parâmetros), `internal/agent/app.go` (cria o serviço depois do store e do servidor IPC; `Start` junto da fila de mídia; `BeginShutdown` junto do tracker; `Close` antes de fechar o store), `internal/agent/scrape_providers.go` (instância `scrapers.HLTB` com `Limiter` próprio de 2.000 ms; adaptador `ttbFallback` sobre o `*scrapers.IGDB` e o `Limiter` do IGDB já compartilhados com os metadados), `internal/agent/notifier.go` (ou `media_changes.go`: `TimeToBeatChanged` pelo mesmo broadcast de `media.changed`), `internal/agent/metadata.go` e `metadata_batch.go` (chamam `AfterMetadata(gameID)` depois de gravar com sucesso, no ponto em que o vídeo é enfileirado), `internal/agent/games.go` (`game.delete` chama `GameRemoved` antes de apagar).
 - Sem assinatura pública nova além da T12. Erros: `-32001`, `-32602`, `-32011` com `data`.
 
-## T15 — Testes: bindings e evento do desktop
+## T15 — Testes: bindings e evento do desktop [concluída]
 - Requisitos: TTB-030. **Responsável:** test-writer. Dependência: T09.
 - Arquivo: `cmd/arcadia/timetobeat_test.go` (novo), com o fake do agente existente de `cmd/arcadia`.
 - Testes:
@@ -335,7 +335,7 @@ func (s *timeToBeatService) GameRemoved(gameID int64)   // TTB-026
   - `TTB-030/parâmetros ausentes, JSON inválido ou gameId não inteiro positivo registram Warn "timeToBeat.changed com parâmetros inválidos" e nada é emitido`;
   - `TTB-030/nenhum binding chama método de sessão (game.launch, session.*, pause) nem fecha jogo`.
 
-## T16 — `cmd/arcadia`: bindings `TimeToBeat*` e repasse do evento
+## T16 — `cmd/arcadia`: bindings `TimeToBeat*` e repasse do evento [concluída]
 - Requisitos: TTB-030. **Responsável:** implementer. Dependência: T15.
 - Arquivos: `cmd/arcadia/timetobeat.go` (novo), `cmd/arcadia/supervisor.go` (`case ipc.MethodTimeToBeatChanged`, decodificação como a de `media.changed`).
 ```go
@@ -348,7 +348,7 @@ func (a *App) TimeToBeatSetSettings(enabled, afterMetadata bool) (TimeToBeatSett
 // views: delta §6 (TimeToBeatView, TimeToBeatCandidateView, TimeToBeatSettingsView)
 ```
 
-## T17 — Testes: `lib/timeToBeat.ts` e `lib/timeToBeatEdit.ts`
+## T17 — Testes: `lib/timeToBeat.ts` e `lib/timeToBeatEdit.ts` [concluída]
 - Requisitos: TTB-013, TTB-014, TTB-015, TTB-016, TTB-017, TTB-039. **Responsável:** test-writer. Dependência: nenhuma (usa mocks dos bindings).
 - Arquivos: `frontend/src/lib/timeToBeat.test.tsx`, `frontend/src/lib/timeToBeatEdit.test.ts` (novos).
 - Testes:
@@ -361,7 +361,7 @@ func (a *App) TimeToBeatSetSettings(enabled, afterMetadata bool) (TimeToBeatSett
   - `TTB-039/timeToBeatSource: hltb → "HowLongToBeat", igdb → "IGDB", sem valor → null`;
   - `TTB-018/refreshTimeToBeat, searchTimeToBeat, chooseTimeToBeat e setTimeToBeatSettings chamam o binding certo e devolvem o resultado`.
 
-## T18 — Frontend: `lib/timeToBeat.ts` e `lib/timeToBeatEdit.ts`
+## T18 — Frontend: `lib/timeToBeat.ts` e `lib/timeToBeatEdit.ts` [concluída]
 - Requisitos: TTB-013, TTB-014, TTB-015, TTB-016, TTB-017, TTB-039. **Responsável:** implementer. Dependência: T17 (e T16 para os `.d.ts` dos bindings).
 - Arquivos: `frontend/src/lib/timeToBeat.ts`, `frontend/src/lib/timeToBeatEdit.ts` (novos); ajuste manual dos tipos de `frontend/wailsjs/go/main/App.d.ts` e `models.ts` só se o `tsc` precisar antes do `wails build`.
 ```ts
@@ -382,7 +382,7 @@ export function useTimeToBeatSettings(): UseQueryResult<TimeToBeatSettingsView>
 export function setTimeToBeatSettings(enabled: boolean, afterMetadata: boolean): Promise<TimeToBeatSettingsView>
 ```
 
-## T19 — Testes: tempo para zerar no painel, em "Editar jogo" e nos provedores
+## T19 — Testes: tempo para zerar no painel, em "Editar jogo" e nos provedores [concluída]
 - Requisitos: TTB-013, TTB-015, TTB-017, TTB-018, TTB-019, TTB-024, TTB-030, TTB-039, TTB-040. **Responsável:** test-writer. Dependência: T18 (pode escrever com mocks antes).
 - Arquivos: `frontend/src/components/TimeToBeatBlock.test.tsx`, `frontend/src/components/TimeToBeatEditor.test.tsx`, `frontend/src/components/GameDetailsPanel.test.tsx` (o bloco entra depois de "Tempo total"), `frontend/src/components/ProviderKeysDialog.test.tsx`, `frontend/src/App.invariants.test.tsx` (interações desta área).
 - Testes:
@@ -401,19 +401,19 @@ export function setTimeToBeatSettings(enabled: boolean, afterMetadata: boolean):
   - `TTB-024/a janela dos provedores tem a seção "HowLongToBeat (tempo para zerar)" com as duas caixas, a segunda desativada com a primeira desligada, que chamam TimeToBeatSetSettings na hora; os textos "Serviço não oficial: pode parar de funcionar sem aviso" e o da reserva do IGDB; nenhum campo de chave`;
   - `TTB-030/App.invariants: abrir o painel, os provedores e a edição com o tempo para zerar não chama LaunchGame, pausa, retomada nem fechar jogo`.
 
-## T20 — Frontend: painel, "Editar jogo" e provedores
+## T20 — Frontend: painel, "Editar jogo" e provedores [concluída]
 - Requisitos: TTB-013, TTB-015, TTB-017, TTB-018, TTB-019, TTB-024, TTB-039, TTB-040. **Responsável:** implementer. Dependência: T19, T18.
 - Arquivos: `frontend/src/components/TimeToBeatBlock.tsx` (novo), `frontend/src/components/TimeToBeatEditor.tsx` (novo, fora do formulário, como `GameImagesEditor`), `frontend/src/components/GameDetailsPanel.tsx` (bloco no `<dl>` depois de "Tempo total"; `onEdit({ section: 'timeToBeat' })`), `frontend/src/components/GameEditForm.tsx` (monta a seção e rola até ela), `frontend/src/components/ProviderKeysDialog.tsx` (seção do HowLongToBeat), `frontend/src/App.tsx` (monta `useTimeToBeatEvents()` uma vez; repassa a seção pedida ao abrir "Editar jogo").
 - Funções públicas: `TimeToBeatBlock({ gameId }: { gameId: number })`, `TimeToBeatEditor({ gameId, title }: { gameId: number; title: string })`.
 
-## T21 — Testes: entrada, terceiro combo `Back + A`
+## T21 — Testes: entrada, terceiro combo `Back + A` [concluída]
 - Requisitos: ATB-001, ATB-002. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivos: `internal/input/pad_bigbox_test.go`, `internal/input/combo_bigbox_test.go` (novos); revisar `pad_test.go` e `pad_close_test.go` só se o `PadConfig` literal quebrar.
 - Testes:
   - `ATB-001/Back+A segurado dispara Trigger{ActionBigBox, gamepad} na primeira leitura com agora−T ≥ 1 s (T+992ms não, T+1008ms sim, leituras de 16 ms)`; `ATB-001/soltar antes cancela`; `ATB-001/um gatilho por pressão`; `ATB-001/controles independentes`; `ATB-001/desconexão zera a contagem`; `ATB-001/o atalho de teclado Ctrl+Alt+P continua só ActionPause`; `ATB-001/PadConfig.BigBoxMask personalizada e o padrão Back|A (0x0020|0x1000)`;
   - `ATB-002/Back+Y só entrega pause, Back+B só close e Back+A só bigbox`; `ATB-002/Back+A+B entrega um close e um bigbox, cada um uma vez por pressão`; `ATB-002/soltar A não zera a contagem de Back+B nem de Back+Y, e vice-versa`; `ATB-002/os acordes de volume Back+cima/baixo continuam como estão`; `ATB-002/fila cheia descarta com Warn`.
 
-## T22 — `internal/input`: `ButtonA`, `ActionBigBox` e terceiro detector
+## T22 — `internal/input`: `ButtonA`, `ActionBigBox` e terceiro detector [concluída]
 - Requisitos: ATB-001, ATB-002. **Responsável:** implementer. Dependência: T21.
 - Arquivos: `internal/input/input.go`, `internal/input/combo.go`, `internal/input/pad.go`.
 ```go
@@ -425,7 +425,7 @@ var defaultBigBoxMask = ButtonBack | ButtonA
 // emits Trigger{Source: domain.PauseGamepad, Action: ActionBigBox, At: now} on the same queue.
 ```
 
-## T23 — Testes: roteador (ação `bigbox`) e abridor
+## T23 — Testes: roteador (ação `bigbox`) e abridor [concluída]
 - Requisitos: ATB-003, ATB-004, ATB-005, ATB-006, ATB-007, ATB-015, ATB-008. **Responsável:** test-writer. Dependência: T22 (pode escrever antes com a constante).
 - Arquivos: `internal/agent/bigbox_router_test.go`, `internal/agent/openui_bigbox_test.go` (novos); atualizar `pause_test.go` e `close_router_test.go` (nova assinatura de `newTriggerRouter`, fake de tracker com `Current()`, abridor falso, `shuttingDown`); teste do parse de flags do agente em `internal/agent/run_windows_test.go` (ou arquivo de opções existente).
 - Testes:
@@ -438,7 +438,7 @@ var defaultBigBoxMask = ButtonBack | ButtonA
   - `ATB-015/nenhuma sessão é criada, pausada, retomada ou encerrada pelo caminho do Big Box (tracker falso só com Current)`;
   - `ATB-008/--agent --bigbox: o parse do agente tolera o flag desconhecido e segue no modo do agente`.
 
-## T24 — `internal/agent`: roteador do Big Box e abridor
+## T24 — `internal/agent`: roteador do Big Box e abridor [concluída]
 - Requisitos: ATB-003, ATB-004, ATB-005, ATB-006, ATB-007, ATB-015. **Responsável:** implementer. Dependência: T23, T22.
 - Arquivos: `internal/agent/close_router.go`, `internal/agent/openui.go`, `internal/agent/app.go` (liga `uiOpener{exe, root, spawn}` e o `atomic.Bool` `shuttingDown` em `BeginShutdown`).
 ```go
@@ -457,7 +457,7 @@ func (o uiOpener) OpenBigBox() error
 ```
 - Nenhuma goroutine nova: o roteador segue com a sua. O `CreateDetached` já fecha `hProcess` e `hThread`. Se a constante for criada em `domain`, a T23 a cita (`ATB-003/BigBoxDebounce é 300 ms`).
 
-## T25 — Testes: desktop `--bigbox`, segunda instância e `TakeBigBoxRequest`
+## T25 — Testes: desktop `--bigbox`, segunda instância e `TakeBigBoxRequest` [concluída]
 - Requisitos: ATB-008, ATB-009, ATB-012, ATB-014, ATB-015. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivos: `cmd/arcadia/bigbox_request_test.go` (novo); `cmd/arcadia/app_test.go` e `mode_test.go` (revisar o que depende de `secondInstance()` sem argumento).
 - Testes:
@@ -472,7 +472,7 @@ func (o uiOpener) OpenBigBox() error
   - `ATB-014/TakeBigBoxRequest(): bool existe como binding (reflect) e nunca chama o agente (cliente falso sem chamadas)`; `ATB-014/o evento ui:bigBoxRequested não leva dados e não chama o agente`;
   - `ATB-015/os caminhos desta área não chamam nenhum método de sessão no agente falso`.
 
-## T26 — `cmd/arcadia`: `--bigbox`, pedido guardado e segunda instância
+## T26 — `cmd/arcadia`: `--bigbox`, pedido guardado e segunda instância [concluída]
 - Requisitos: ATB-008, ATB-009, ATB-012, ATB-014. **Responsável:** implementer. Dependência: T25.
 - Arquivos: `cmd/arcadia/bigbox_request.go` (novo), `cmd/arcadia/main_windows.go` (`fset.BoolVar(&cfg.BigBox, "bigbox", false, ...)`; `OnSecondInstanceLaunch` passa os `Args`), `cmd/arcadia/main_other.go` (stub), `cmd/arcadia/app.go` (`desktopConfig.BigBox`, `App.bigBoxReq`, `secondInstance(bigBox bool)` com `bringToFront` + `emit`).
 ```go
@@ -484,7 +484,7 @@ func (a *App) secondInstance(bigBox bool)
 ```
 - Conferir no código do Wails em uso o conteúdo de `SecondInstanceData.Args` (se o nome do exe vem em `Args[0]`) e registrar o resultado num comentário. `isAgentMode` não muda.
 
-## T27 — Testes: frontend do pedido de Big Box, dica e BBX-057
+## T27 — Testes: frontend do pedido de Big Box, dica e BBX-057 [concluída]
 - Requisitos: ATB-008, ATB-009, ATB-010, ATB-011, ATB-012, ATB-013, ATB-015, BBX-057. **Responsável:** test-writer. Dependência: nenhuma (usa bindings falsos).
 - Arquivos: `frontend/src/lib/bigbox.test.ts` (novo), `frontend/src/App.bigbox-request.test.tsx` (novo), `frontend/src/App.invariants.test.tsx`, `frontend/src/bigbox/useBigBoxInput.test.tsx`, `frontend/src/bigbox/hints.test.ts`.
 - Testes:
@@ -499,7 +499,7 @@ func (a *App) secondInstance(bigBox bool)
   - `BBX-057/Select apertado: A não emite accept; B e Y continuam ignorados; ↑/↓ do direcional (botões 12 e 13) contam como soltos, inclusive a borda de subida com Select apertado, que não emite depois que ele é solto; X, LB/RB, ←/→ e o analógico valem`;
   - `BBX-057/sem Select, A, B, Y e o direcional funcionam como antes`.
 
-## T28 — Frontend: pedido de Big Box, dica e Select segurado
+## T28 — Frontend: pedido de Big Box, dica e Select segurado [concluída]
 - Requisitos: ATB-008, ATB-009, ATB-010, ATB-011, ATB-012, ATB-013, ATB-015, BBX-057. **Responsável:** implementer. Dependência: T27 (e T26 para o binding real).
 - Arquivos: `frontend/src/lib/bigbox.ts` (novo), `frontend/src/App.tsx` (`requestBigBox`, efeito de montagem, `EventsOn('ui:bigBoxRequested')`, `title` do botão), `frontend/src/bigbox/useBigBoxInput.ts` (Select bloqueia A e ↑/↓ do direcional).
 ```ts
@@ -508,7 +508,7 @@ export async function takeBigBoxRequest(): Promise<boolean> // binding lido na h
 ```
 - `requestBigBox` lê `bigBox` e `anyModalOpen` por ref (o evento chega fora do ciclo de render). `bringToFront` chamado depois de entrar. Em `App.tsx`, as mudanças desta tarefa e as da T20 e T36 não podem andar em paralelo.
 
-## T29 — Testes: contrato de tema v2, grade 2D e dados (lógica pura)
+## T29 — Testes: contrato de tema v2, grade 2D e dados (lógica pura) [concluída]
 - Requisitos: BBX-047, BBX-048, BBX-049, BBX-050, BBX-051, BBX-054, BBX-055, BBX-057 (continuação), BBX-056. **Responsável:** test-writer. Dependência: T27 (mesmo arquivo `useBigBoxInput.test.tsx`).
 - Arquivos: `frontend/src/bigbox/nav.test.ts`, `viewModel.test.ts`, `useBigBoxData.test.tsx`, `useBigBoxInput.test.tsx`, `hints.test.ts`, `themes/registry.test.ts`, `themes/faixa/Faixa.test.tsx` (regressão do Faixa).
 - Testes:
@@ -521,7 +521,7 @@ export async function takeBigBoxRequest(): Promise<boolean> // binding lido na h
   - `BBX-047/cada tema do registro declara id, name, available, axis, columns, anchor, listCapacity, backdrop, videoSlot, tabs, sort e timeToBeatInBrowse`;
   - `BBX-056/viewModel: modelo com tabTotal, sortLabel, videoFailed, favorite, lastPlayedRelative, screenshots, timeToBeat e timeToBeatSource; relativeDays: hoje, ontem, há N dias (2..29), há N meses (30..364; 12 meses → há 1 ano), há N anos, sem data "Nunca jogado"`.
 
-## T30 — Frontend: contrato v2, grade e dados (lógica pura)
+## T30 — Frontend: contrato v2, grade e dados (lógica pura) [concluída]
 - Requisitos: BBX-047, BBX-048, BBX-049, BBX-050, BBX-051, BBX-054, BBX-055, BBX-057, BBX-056. **Responsável:** implementer. Dependência: T29, T28 (mesmo `useBigBoxInput.ts`).
 - Arquivos: `frontend/src/bigbox/themes/types.ts`, `themes/registry.ts` (Faixa com `anchor 2`, `backdrop contain`, `videoSlot background`, `tabs platforms`, `sort title`, `timeToBeatInBrowse false`; `roda` indisponível), `nav.ts`, `viewModel.ts`, `useBigBoxData.ts`, `useBigBoxInput.ts`, `hints.ts`.
 ```ts
@@ -540,7 +540,7 @@ export function hintsFor(/* ... */, tabsLabel: 'Plataforma' | 'Aba'): Hint[]
 ```
 - O `registry.ts` ganha `mosaico` e `estante` nas T34 e T36; aqui só `faixa` e `roda`. Os testes do Faixa existentes (BBX-006, BBX-007, BBX-038, BBX-039) devem passar sem mudança.
 
-## T31 — Testes: shell, fundo, vídeo na capa, Detalhes comum e varreduras
+## T31 — Testes: shell, fundo, vídeo na capa, Detalhes comum e varreduras [concluída]
 - Requisitos: BBX-047, BBX-050, BBX-052, BBX-053, BBX-055, BBX-056, BBX-058, BBX-059, BBX-003, TTB-013, TTB-016, TTB-017, TTB-039. **Responsável:** test-writer. Dependência: T30 (assinaturas) e T18.
 - Arquivos: `frontend/src/bigbox/BigBox.test.tsx`, `BackgroundStage.test.tsx`, `FocusVideo.test.tsx` (novo), `useVideoDelay.test.tsx` (novo), `TimeToBeatList.test.tsx` (novo), `BigBoxDetails.test.tsx`, `bigbox-scan.test.ts`, `frontend/src/theme.test.ts` (blocos do Faixa), `Panel.test.tsx` se `Panel` mudar.
 - Testes:
@@ -557,7 +557,7 @@ export function hintsFor(/* ... */, tabsLabel: 'Plataforma' | 'Aba'): Hint[]
   - `BBX-003/varredura: bigbox/ não importa lib/timeToBeatEdit nem usa TimeToBeatRefresh, TimeToBeatSearch, TimeToBeatChoose ou TimeToBeatSetSettings (nem refreshTimeToBeat, searchTimeToBeat, chooseTimeToBeat, setTimeToBeatSettings)`; `BBX-059/varredura: o único acesso ao tempo para zerar em bigbox/ é TimeToBeatGet pelo módulo de lib/`;
   - `BBX-058/o bloco [data-bigbox-theme="faixa"] define todos os tokens de temas-v2 §7, expostos ao Tailwind por @theme inline, e passa nos pares de contraste do Faixa`.
 
-## T32 — Frontend: shell v2, fundo e vídeo por tema, `TimeToBeatList`, Detalhes
+## T32 — Frontend: shell v2, fundo e vídeo por tema, `TimeToBeatList`, Detalhes [concluída]
 - Requisitos: BBX-047, BBX-050, BBX-052, BBX-053, BBX-055, BBX-056, BBX-058, BBX-059, TTB-016, TTB-013, TTB-017, TTB-039. **Responsável:** implementer. Dependência: T31, T30, T18, T28.
 - Arquivos novos: `frontend/src/bigbox/useVideoDelay.ts`, `FocusVideo.tsx`, `CoverArt.tsx` (tirado de `FaixaStrip`), `TimeToBeatList.tsx`. Alterados: `BackgroundStage.tsx` (`backdrop: 'contain' | 'cover' | 'plain'`; vídeo só com `videoSlot 'background'`; usa `useVideoDelay`), `BigBoxDetails.tsx` (tempo para zerar, fonte, `timeToBeat` e `timeToBeatSource` nas props; exporta o `Video` do visor e a rolagem da descrição para a Estante), `BigBox.tsx` (janela, pré-busca e `useTabGames` pelo eixo; `Details = theme.Details ?? BigBoxDetails`; `useTimeToBeat` com `fetchAfterMs` conforme design §4.2; `onVideoError`), `themes/faixa/*` (usa `CoverArt`, `anchor 2`), `frontend/src/index.css` (os quatro tokens novos e o bloco completo do Faixa; `@theme inline`).
 ```ts
@@ -569,7 +569,7 @@ export type BigBoxDetailsProps = { /* fase 13 */ timeToBeat: TimeToBeatRow[]; ti
 ```
 - O Faixa não muda de comportamento: os testes de BBX-006 a BBX-013, BBX-038 e BBX-039 passam sem alteração.
 
-## T33 — Testes: tema Mosaico
+## T33 — Testes: tema Mosaico [concluída]
 - Requisitos: MOS-001, MOS-002, MOS-003, MOS-004, MOS-005, MOS-006, MOS-007, MOS-008, MOS-009, MOS-010, MOS-011, MOS-012, MOS-013, MOS-014, MOS-015, BBX-058, BBX-051, BBX-053. **Responsável:** test-writer. Dependência: T32 (assinaturas).
 - Arquivos: `frontend/src/bigbox/themes/mosaico/Mosaico.test.tsx`, `capacity.test.ts` (novos); `frontend/src/theme.test.ts` (bloco do Mosaico e contraste).
 - Testes:
@@ -590,7 +590,7 @@ export type BigBoxDetailsProps = { /* fase 13 */ timeToBeat: TimeToBeatRow[]; ti
   - `MOS-015/contraste do Mosaico: text, text-muted, heading e danger ≥ 4,5:1 com panel e com bg; on-accent/accent e on-chip/chip ≥ 4,5:1; focus ≥ 3:1 contra bg e panel`;
   - `BBX-058/o bloco [data-bigbox-theme="mosaico"] define todos os tokens de temas-v2 §7 e passa nos pares do Mosaico`.
 
-## T34 — Frontend: tema Mosaico
+## T34 — Frontend: tema Mosaico [concluída]
 - Requisitos: MOS-001, MOS-002, MOS-003, MOS-004, MOS-005, MOS-006, MOS-007, MOS-008, MOS-009, MOS-010, MOS-011, MOS-012, MOS-013, MOS-014, MOS-015, BBX-058, BBX-051. **Responsável:** implementer. Dependência: T33.
 - Arquivos: `frontend/src/bigbox/themes/mosaico/Mosaico.tsx`, `MosaicoRow.tsx`, `MosaicoPanel.tsx`, `capacity.ts` (novos), `frontend/src/bigbox/themes/registry.ts` (entrada `mosaico`, disponível, `anchor 1`, `backdrop plain`, `videoSlot cover`, `timeToBeatInBrowse true`), `frontend/src/index.css` (bloco `[data-bigbox-theme="mosaico"]`).
 ```ts
@@ -599,7 +599,7 @@ export function Mosaico(p: BigBoxThemeProps): JSX.Element
 ```
 - O tema só desenha o modelo e repassa cliques (BBX-003). Os componentes compartilhados (`Panel`, `FocusVideo`, `CoverArt`, `TimeToBeatList`) vêm de `bigbox/`.
 
-## T35 — Testes: tema Estante, registro e seletor
+## T35 — Testes: tema Estante, registro e seletor [concluída]
 - Requisitos: ETN-001, ETN-002, ETN-003, ETN-004, ETN-005, ETN-006, ETN-007, ETN-008, ETN-009, ETN-010, ETN-011, ETN-012, ETN-013, ETN-014, BBX-046, BBX-058, BBX-052, BBX-054, TTB-016. **Responsável:** test-writer. Dependência: T32 (assinaturas), T34 (registro).
 - Arquivos: `frontend/src/bigbox/themes/estante/Estante.test.tsx`, `EstanteDetails.test.tsx`, `capacity.test.ts` (novos); `frontend/src/bigbox/themes/registry.test.ts`, `frontend/src/lib/uiPrefs.test.ts`, `frontend/src/App.test.tsx` (cabeçalho), `frontend/src/theme.test.ts` (bloco da Estante).
 - Testes:
@@ -622,7 +622,7 @@ export function Mosaico(p: BigBoxThemeProps): JSX.Element
   - `BBX-052/a Estante usa fundo cover (arte em tela cheia com degradê) e o Mosaico fundo plain`; `BBX-054/Estante: abas Todos, Favoritos e Concluídos e depois as plataformas, com "Nenhum jogo nesta aba" e total entre parênteses`;
   - `BBX-046/o registro lista faixa, mosaico e estante, nesta ordem, disponíveis, e roda indisponível; o seletor do cabeçalho lista os quatro pelo nome do registro com "Roda (em breve)" desativado; a escolha vai para localStorage (arcadia.bigBoxTheme); valor ausente, desconhecido ou indisponível vira faixa (uiPrefs)`.
 
-## T36 — Frontend: tema Estante, registro final e seletor
+## T36 — Frontend: tema Estante, registro final e seletor [concluída]
 - Requisitos: ETN-001, ETN-002, ETN-003, ETN-004, ETN-005, ETN-006, ETN-007, ETN-008, ETN-009, ETN-010, ETN-011, ETN-012, ETN-013, ETN-014, BBX-046, BBX-058, BBX-052, BBX-054, TTB-016. **Responsável:** implementer. Dependência: T35.
 - Arquivos novos: `frontend/src/bigbox/themes/estante/Estante.tsx`, `EstanteHero.tsx`, `EstanteHeader.tsx`, `EstanteGrid.tsx`, `EstanteDetails.tsx`, `capacity.ts`. Alterados: `themes/registry.ts` (`estante`: disponível, grid de 5 colunas, `backdrop cover`, `videoSlot background`, `tabs collections`, `sort lastPlayed`, `Details: EstanteDetails`; exporta `BIGBOX_THEMES`), `frontend/src/index.css` (bloco da Estante), `frontend/src/lib/uiPrefs.ts` (`BigBoxThemeId` ganha `estante`), `frontend/src/App.tsx` (opções do seletor vêm de `BIGBOX_THEMES`, com `t.name` e "(em breve)" quando indisponível; some o mapeamento fixo de nomes).
 ```ts
@@ -633,7 +633,7 @@ export function EstanteDetails(p: BigBoxDetailsProps): JSX.Element
 ```
 - A Estante decide `heroVisible = Math.floor(model.focus / model.columns) === 0`.
 
-## T37 — Documentação, ADRs e versão
+## T37 — Documentação, ADRs e versão [concluída]
 - Requisitos: ATB-013, TTB-024, BBX-046, BBX-058. **Responsável:** sessão principal (docs; `wails.json` e `version` são mecânicos). Dependência: T36, T28, T26, T20, T16, T14.
 - Arquivos: `README.md`, `CLAUDE.md` ("Spec atual" aponta para `phase-15-big-box-v2`; comando de build e versão; corrigir "inicia com o Windows", ADR 0024, Dúvidas 10), `docs/ROADMAP.md`, `docs/GUIA-DO-PROJETO.md`, `docs/ARCHITECTURE.md` (terceiro combo, `--bigbox`, serviço `timeToBeat`, tema v2), `docs/adr/0038-big-box-por-pedido-externo.md`, `docs/adr/0039-tempo-para-zerar-hltb.md`, `docs/adr/0040-contrato-de-tema-v2.md`, `docs/adr/README.md`, `cmd/arcadia/wails.json` (versão 1.1.0, Dúvidas 9), `docs/specs/phase-15-big-box-v2/{ipc-v0.16.0-delta.md,design.md}` (trocar "(tarefa)" pelo arquivo da T10), a anotação "alterado em 2026-11-22" nos requisitos de fases anteriores listados na tabela de afetados que ainda não a tenham, e `docs/specs/phase-15-big-box-v2/contracts/hltb-rules.md` §9 já preenchido pela T05.
 
