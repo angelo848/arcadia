@@ -115,6 +115,13 @@ func userError(err error, log *slog.Logger) error {
 		case ipc.CodeProviderNoKey:
 			return errors.New(msgProviderNoKey)
 		case ipc.CodeProviderUnavailable:
+			var d ipc.ProviderUnavailableData
+			if decodeData(rpcErr.Data, &d) && d.Provider == ipc.ProviderHLTB {
+				if d.Reason == ipc.ProviderReasonDisabled {
+					return errors.New(textHLTBDisabled)
+				}
+				return errors.New(textHLTBUnavailable)
+			}
 			return errors.New(msgProviderUnavailable)
 		case ipc.CodeMediaJobNotFound:
 			return errors.New(msgMediaJobNotFound)
