@@ -110,6 +110,10 @@ func handleGameDelete(ctx context.Context, st gameStore, tr sessionTracker, log 
 	dctx, cancel := context.WithTimeout(ctx, deleteHandlerTimeout)
 	defer cancel()
 	err = tr.WithoutActiveGame(dctx, p.GameID, func() error {
+		// The time-to-beat service drops the game from its queues before the row goes [TTB-026].
+		if r, ok := med.(interface{ GameRemoved(gameID int64) }); ok {
+			r.GameRemoved(p.GameID)
+		}
 		return st.DeleteGame(dctx, p.GameID)
 	})
 	if err == nil {

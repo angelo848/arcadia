@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -47,19 +48,78 @@ func (c credentialStore) Get(name string) (string, error) {
 
 func (c credentialStore) Delete(name string) error { return c.st.Delete(name) }
 
-// providerLimiters are the three limiters of the agent, one per provider [MET-010].
-type providerLimiters struct{ igdb, sgdb, steam *scrapers.Limiter }
+// providerLimiters are the limiters of the agent, one per provider [MET-010, TTB-010].
+type providerLimiters struct{ igdb, sgdb, steam, hltb *scrapers.Limiter }
+
+// newProviderLimiters builds the four limiters.
+func newProviderLimiters(clock domain.Clock) providerLimiters {
+	return providerLimiters{
+		igdb:  scrapers.NewLimiter(clock, scrapers.IntervalIGDB),
+		sgdb:  scrapers.NewLimiter(clock, scrapers.IntervalSteamGridDB),
+		steam: scrapers.NewLimiter(clock, scrapers.IntervalSteamStore),
+		hltb:  scrapers.NewLimiter(clock, scrapers.HLTBInterval),
+	}
+}
+
+// ttbIGDB is the IGDB side of the time-to-beat reserve over the shared IGDB Limiter [TTB-037, TTB-038].
+// Without a key it answers scrapers.ErrNoKey before any request. The client (and its Twitch token) is
+// kept while the key does not change.
+type ttbIGDB struct {
+	keys    *scrapers.Keys
+	client  *http.Client
+	clock   domain.Clock
+	limiter *scrapers.Limiter
+
+	mu   sync.Mutex
+	igdb *scrapers.IGDB
+	ck   [2]string
+}
+
+// newTTBFallback returns the ttbFallback over *scrapers.IGDB.
+func newTTBFallback(keys *scrapers.Keys, client *http.Client, clock domain.Clock, igdbLimiter *scrapers.Limiter) ttbFallback {
+	return &ttbIGDB{keys: keys, client: client, clock: clock, limiter: igdbLimiter}
+}
+
+func (f *ttbIGDB) provider() (*scrapers.IGDB, error) {
+	id, secret, err := f.keys.IGDB()
+	if err != nil {
+		return nil, keyError(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.igdb == nil || f.ck != [2]string{id, secret} {
+		f.igdb = scrapers.NewIGDB(scrapers.IGDBConfig{ClientID: id, Secret: secret, HTTP: f.client, Clock: f.clock, Limiter: f.limiter})
+		f.ck = [2]string{id, secret}
+	}
+	return f.igdb, nil
+}
+
+func (f *ttbIGDB) Search(ctx context.Context, q scrapers.Query) ([]scrapers.Candidate, error) {
+	p, err := f.provider()
+	if err != nil {
+		return nil, err
+	}
+	return p.Search(ctx, q)
+}
+
+func (f *ttbIGDB) TimeToBeat(ctx context.Context, igdbID string) (scrapers.IGDBTimeToBeat, bool, error) {
+	p, err := f.provider()
+	if err != nil {
+		return scrapers.IGDBTimeToBeat{}, false, err
+	}
+	return p.TimeToBeat(ctx, igdbID)
+}
 
 // newProviderFactory returns the function that builds a provider with the keys registered at the
 // moment of the call, so a key saved in the UI is used at once (MID-001). The limiters are made
 // once here and shared by every provider the function returns [MET-010]. The IGDB provider, and
 // with it its Twitch token, is kept while the key does not change; a new key makes a new one [MET-012].
 func newProviderFactory(keys *scrapers.Keys, client *http.Client, clock domain.Clock) func(name string) (scrapers.MetadataProvider, error) {
-	lim := providerLimiters{
-		igdb:  scrapers.NewLimiter(clock, scrapers.IntervalIGDB),
-		sgdb:  scrapers.NewLimiter(clock, scrapers.IntervalSteamGridDB),
-		steam: scrapers.NewLimiter(clock, scrapers.IntervalSteamStore),
-	}
+	return newProviderFactoryWith(keys, client, clock, newProviderLimiters(clock))
+}
+
+// newProviderFactoryWith is newProviderFactory over the given limiters.
+func newProviderFactoryWith(keys *scrapers.Keys, client *http.Client, clock domain.Clock, lim providerLimiters) func(name string) (scrapers.MetadataProvider, error) {
 	var (
 		mu       sync.Mutex
 		igdb     *scrapers.IGDB

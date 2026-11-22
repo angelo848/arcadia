@@ -84,8 +84,18 @@ func testConfig(t *testing.T, level string) config {
 		Exe:      filepath.Join(base, "bin", "arcadia.exe"),
 		Version:  "test",
 		Launcher: &fakeLauncher{},
+		// alterado em 2026-11-22 (fase 15): metadata.apply enqueues a time to beat lookup; the default
+		// clients are silent fakes (empty list, no key) so no test reaches howlongtobeat.com.
+		// Tests that watch the lookup override both after testConfig.
+		TimeToBeatClient:   quietHLTB{},
+		TimeToBeatFallback: newFakeIGDB(),
 	}
 }
+
+// quietHLTB answers every search with an empty list, without network.
+type quietHLTB struct{}
+
+func (quietHLTB) Search(context.Context, string) ([]scrapers.HLTBGame, error) { return nil, nil }
 
 // startTestAgent starts an agent and registers a cleanup that shuts it down and
 // closes its log (both idempotent per T10), before t.TempDir is removed.

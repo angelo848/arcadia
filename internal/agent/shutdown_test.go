@@ -998,6 +998,92 @@ func TestShutdownWithPausedSession(t *testing.T) {
 	})
 }
 
+// alterado em 2026-11-22 (fase 15, T13): TestShutdownTimeToBeat é novo (TTB-028). Os passos "ttb.begin" (logo
+// depois do BeginShutdown do serviço, junto do do tracker) e "ttb.close" (logo depois do Close do serviço, antes
+// de "store.close") são reportados por a.step.
+func TestShutdownTimeToBeat(t *testing.T) {
+	newWire := func(t *testing.T) (*ttbWire, *rawClient) {
+		t.Helper()
+		w := newTTBWire(t)
+		w.a.drainTimeout = 50 * time.Millisecond
+		return w, w.client(t)
+	}
+	t.Run("TTB-028/BeginShutdown junto do tracker, Close antes do store, a busca em curso é abandonada sem gravar", func(t *testing.T) {
+		w, c := newWire(t)
+		var (
+			mu    sync.Mutex
+			steps []string
+		)
+		w.a.onShutdownStep = func(s string) {
+			mu.Lock()
+			defer mu.Unlock()
+			steps = append(steps, s)
+		}
+		id, _ := w.addGame(t, c, "Hades")
+		w.hltb.gate()
+		w.get(t, c, id, true)
+		if term := waitCall(t, w.hltb.entered); term != "Hades" {
+			t.Fatalf("term = %q, want Hades", term)
+		}
+
+		if err := w.a.Shutdown(contextWithTestTimeout(t), ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		mu.Lock()
+		got := append([]string(nil), steps...)
+		mu.Unlock()
+		begin, closed := indexOf(got, "ttb.begin"), indexOf(got, "ttb.close")
+		router, server, store := indexOf(got, "router.close"), indexOf(got, "server.close"), indexOf(got, "store.close")
+		if begin == -1 || closed == -1 || router == -1 || server == -1 || store == -1 {
+			t.Fatalf("missing shutdown step: %v", got)
+		}
+		if !(begin < router && begin < server) {
+			t.Errorf("ttb.begin (%d) must come with the tracker's BeginShutdown, before router.close (%d) and server.close (%d): %v", begin, router, server, got)
+		}
+		if !(closed < store) {
+			t.Errorf("ttb.close (%d) must come before store.close (%d): %v", closed, store, got)
+		}
+		msgs := c.waitEOF(t)
+		if ids := changedIDs(t, msgs); len(ids) != 0 {
+			t.Errorf("timeToBeat.changed after the shutdown began: %v", ids)
+		}
+		st := openDB(t, w.cfg)
+		defer func() { _ = st.Close() }()
+		if _, ok, err := st.GetTimeToBeat(t.Context(), id); err != nil || ok {
+			t.Errorf("row after an abandoned request: ok=%v err=%v, want none", ok, err)
+		}
+	})
+
+	t.Run("TTB-028/nenhuma notificação depois do BeginShutdown, mesmo que a busca termine", func(t *testing.T) {
+		w, c := newWire(t)
+		id, _ := w.addGame(t, c, "Hades")
+		w.hltb.gate()
+		w.get(t, c, id, true)
+		waitCall(t, w.hltb.entered)
+		// The request is let go only after the service knows the agent is shutting down.
+		w.a.onShutdownStep = func(s string) {
+			if s == "ttb.begin" {
+				w.hltb.openGate()
+			}
+		}
+		if err := w.a.Shutdown(contextWithTestTimeout(t), ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		if ids := changedIDs(t, c.waitEOF(t)); len(ids) != 0 {
+			t.Errorf("timeToBeat.changed after BeginShutdown: %v", ids)
+		}
+	})
+
+	t.Run("TTB-028/sem trabalho em curso o encerramento é limpo e sem goroutine restante", func(t *testing.T) {
+		w, c := newWire(t)
+		w.addGame(t, c, "Hades")
+		if err := w.a.Shutdown(contextWithTestTimeout(t), ReasonQuit); err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		// newWiring's goleak check (registered before the agent) finds the worker of the service gone.
+	})
+}
+
 type sourceCloseRecorder struct {
 	input.Source
 	onClose func()

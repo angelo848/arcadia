@@ -71,6 +71,11 @@ type config struct {
 
 	// KeyStore holds the provider credentials; nil => credentialStore{} (Windows Credential Manager).
 	KeyStore scrapers.KeyStore
+
+	// TimeToBeatClient and TimeToBeatFallback replace the HowLongToBeat and IGDB clients of the time to
+	// beat (tests); nil = the real ones.
+	TimeToBeatClient   ttbSearcher
+	TimeToBeatFallback ttbFallback
 }
 
 // parseFlags parses the agent command line (EXE-003). It accepts --agent (the
@@ -124,6 +129,8 @@ type instance struct {
 	// metadata runs metadata.search/apply and the batch [MET-059]; stopMetadata cancels its root
 	// context at shutdown, before Wait. batchNotifier forwards the batch progress to the IPC server.
 	metadata      *metadataService
+	ttb           *timeToBeatService
+	ttbHTTP       *http.Client
 	stopMetadata  context.CancelFunc
 	batchNotifier *batchNotifier
 
@@ -322,8 +329,29 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		_, _, errUser := keys.Pair("screenscraper")
 		return errDev == nil && errUser == nil
 	}, videoResolver.Quota)
+	// Time to beat (phase 15): one lookup at a time, started with the media queue, closed before the store.
+	lim := newProviderLimiters(clock)
+	ttbClient := cfg.TimeToBeatClient
+	// The HowLongToBeat client has its own transport, so its idle connections are closed at shutdown
+	// without touching the other clients.
+	ttbHTTP := &http.Client{Timeout: mediaHTTPTimeout}
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		tt := dt.Clone()
+		tt.DisableKeepAlives = true // one request every 2 s or more: nothing worth keeping, no connection outlives Close
+		ttbHTTP.Transport = tt
+	}
+	if ttbClient == nil {
+		ttbClient = scrapers.NewHLTB(scrapers.HLTBConfig{HTTP: ttbHTTP, Limiter: lim.hltb, Clock: clock})
+	}
+	ttbIGDBFallback := cfg.TimeToBeatFallback
+	if ttbIGDBFallback == nil {
+		ttbIGDBFallback = newTTBFallback(keys, httpClient, clock, lim.igdb)
+	}
+	ttbSvc := newTimeToBeatService(st, ttbClient, ttbIGDBFallback, clock, log, mediaNotes)
+	ttbSvc.igdbHasKey = func() bool { _, _, err := keys.IGDB(); return err == nil }
+	maps.Copy(handlers, ttbHandlers(ttbSvc))
 	// game.delete cleans the media of the game it removes (DEL-007, DEL-008).
-	maps.Copy(handlers, gameHandlersWithMedia(st, tr, clock, os.Stat, log, gameMediaOf{q: queue, files: mediaFiles}))
+	maps.Copy(handlers, gameHandlersWithMedia(st, tr, clock, os.Stat, log, gameMediaOf{q: queue, files: mediaFiles, ttb: ttbSvc}))
 	// A game started by the agent opens behind the other windows unless it is brought to the front.
 	focus := newLaunchFocus(ctx, log)
 	for _, m := range []string{ipc.MethodGameLaunch, ipc.MethodGameLaunchUntracked} {
@@ -335,7 +363,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, statsHandlers(st, clock, time.Local, log))
 	providers := cfg.Providers
 	if providers == nil {
-		providers = newProviderFactory(keys, httpClient, clock)
+		providers = newProviderFactoryWith(keys, httpClient, clock, lim)
 	}
 	scrapeSvc := &scrapeService{
 		st:        st,
@@ -357,6 +385,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	metadata.notify = batchNotes
 	videoSvc := &videoService{st: st, keys: keys, q: queue, quota: videoResolver.Quota, clock: clock, log: log}
 	metadata.video = videoSvc
+	metadata.ttb = ttbSvc
 	maps.Copy(handlers, videoHandlers(videoSvc))
 	maps.Copy(handlers, metadataHandlers(metadata))
 	server := ipc.NewServer(clock, handlers, log, ipc.WithStartedAt(startedAt))
@@ -400,6 +429,8 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		notifier:      notifier,
 		mediaNotifier: mediaNotes,
 		metadata:      metadata,
+		ttb:           ttbSvc,
+		ttbHTTP:       ttbHTTP,
 		stopMetadata:  stopMetadata,
 		batchNotifier: batchNotes,
 		coord:         coord,
@@ -415,6 +446,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 
 	queueCtx, stopQueue := context.WithCancel(ctx)
 	a.stopQueue = stopQueue
+	ttbSvc.Start()
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -469,6 +501,14 @@ func exitCode(shutdownErr error, ipcFailed bool) int {
 type gameMediaOf struct {
 	q     *mediaQueue
 	files *media.Store
+	ttb   *timeToBeatService
+}
+
+// GameRemoved tells the time-to-beat service the game is going away [TTB-026].
+func (m gameMediaOf) GameRemoved(gameID int64) {
+	if m.ttb != nil {
+		m.ttb.GameRemoved(gameID)
+	}
 }
 
 // CancelGame stops and waits for the downloads of gameID (see mediaQueue.CancelGame).
@@ -513,6 +553,10 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 
 		// No game.launch starts a session from here on [AGT-011].
 		a.tracker.BeginShutdown()
+		if a.ttb != nil {
+			a.ttb.BeginShutdown()
+		}
+		a.step("ttb.begin")
 
 		// Close power and sources before drain [AGT-013].
 		if a.power != nil {
@@ -570,6 +614,14 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 				errs = append(errs, fmt.Errorf("shutdown: close feedback: %w", err))
 			}
 		}
+		// The in-flight lookup is cancelled and waited for; it writes nothing after this [TTB-028].
+		if a.ttb != nil {
+			a.ttb.Close()
+		}
+		if a.ttbHTTP != nil {
+			a.ttbHTTP.CloseIdleConnections()
+		}
+		a.step("ttb.close")
 		a.step("store.close")
 		if err := a.store.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown: close store: %w", err))

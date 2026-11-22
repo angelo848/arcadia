@@ -518,11 +518,8 @@ func countOf(list []string, s string) int {
 	return n
 }
 
-func TestTTBLimiters(t *testing.T) {
-	t.Run("TTB-010/o hltb tem Limiter próprio de 2.000 ms e o IGDB usa o do IGDB", func(t *testing.T) {
-		t.Skip("os limitadores são montados no run do agente, fora do serviço (newTimeToBeatService não os recebe): cobrir no teste de fiação da T13/T14")
-	})
-}
+// alterado em 2026-11-22 (fase 15, T13): TestTTBLimiters saiu daqui (estava em t.Skip desde a T11) e vive em
+// timetobeat_ipc_test.go, onde cobre a fiação dos limitadores (TTB-010).
 
 // hltbLadder drives requests through the worker while the fake HowLongToBeat fails.
 func TestTTBBackoff(t *testing.T) {

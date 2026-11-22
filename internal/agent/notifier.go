@@ -28,6 +28,15 @@ func (n *mediaNotifier) MediaChanged(gameID int64) {
 	srv.Notify(ipc.MethodMediaChanged, ipc.MediaChangedParams{GameID: gameID})
 }
 
+// TimeToBeatChanged broadcasts timeToBeat.changed for gameID to every connected client [TTB-008].
+func (n *mediaNotifier) TimeToBeatChanged(gameID int64) {
+	srv := n.srv.Load()
+	if srv == nil {
+		return
+	}
+	srv.Notify(ipc.MethodTimeToBeatChanged, ipc.TimeToBeatChangedParams{GameID: gameID})
+}
+
 // batchNotifier bridges the metadata batch to the IPC server [MET-054]. Before set, and after
 // set(nil), BatchChanged is a no-op; it never blocks (ipc.Server.Notify drops on a full queue).
 type batchNotifier struct{ srv atomic.Pointer[ipc.Server] }

@@ -122,7 +122,8 @@ func (s *timeToBeatService) lookup(ctx context.Context, g store.Game, prev store
 
 	i := domain.IGDBNotAsked
 	var match *ttbIGDBMatch
-	if h == domain.HLTBNotFound || h == domain.HLTBFailed {
+	// A row the user confirmed never falls on the reserve by itself [TTB-040].
+	if (h == domain.HLTBNotFound || h == domain.HLTBFailed) && !(hasPrev && prev.Confirmed) {
 		var aborted bool
 		i, match, aborted = s.igdbReserve(ctx, g, year, explicit)
 		if aborted {
