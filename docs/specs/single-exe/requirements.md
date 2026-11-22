@@ -98,6 +98,8 @@ Dado que criar o processo de EXE-009 falha, quando aciono "Abrir Arcadia", entã
 "falha ao abrir o Arcadia" com `path` e `error` e continua rodando.
 
 ### EXE-011 — Instância única da UI
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, ATB-009): uma segunda instância com `--bigbox` também força o primeiro
+plano e faz a janela existente entrar no Big Box; sem `--bigbox`, vale este critério sem mudança.
 Dada uma UI aberta (visível, minimizada ou atrás de outras janelas), quando inicio outro `arcadia.exe` sem `--agent`
 (pelo Explorer, por atalho ou por "Abrir Arcadia" na bandeja), então o segundo processo sai com código 0 sem abrir
 janela, sem iniciar agente e sem escrever em `desktop.log`, e a janela existente é restaurada e trazida à frente (se o

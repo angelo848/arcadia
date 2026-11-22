@@ -80,6 +80,8 @@ func isAgentMode(args []string) bool
 - `OnSecondInstanceLaunch(data)` → `App.onSecondInstance()`: `wailsruntime.WindowUnminimise`, `WindowShow`, log `Info`
   "segunda instância da UI; trazendo a janela à frente" e `supervisor.Kick()` [EXE-012]. Os `Args` da segunda
   instância são ignorados (um `--data-dir` diferente não troca a biblioteca da janela aberta).
+  · alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, ATB-009): `--bigbox` é lido (pedido de Big Box); os demais
+  argumentos continuam ignorados.
 
 ### Supervisor do agente [EXE-017, EXE-019..EXE-025, DSK-003]
 Substitui o laço `connectAndForward` + `lateConnect`: uma goroutine dona (`App.wg`), com `ctx` cancelado no

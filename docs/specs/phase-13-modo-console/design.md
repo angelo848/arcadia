@@ -314,6 +314,8 @@ sempre sobre o véu `--arc-bb-scrim` (gradiente da esquerda para a direita e de 
 O registro já lista os três; `mosaico` e `roda` têm `available: false` e nenhum componente. Para fazê-los basta um componente que
 receba `BigBoxThemeProps` e um bloco de tokens.
 
+- · substituído em 2026-11-22 (docs/specs/phase-15-big-box-v2, MOS-001..MOS-016): o Mosaico foi implementado com o vídeo na capa em
+  foco (não só nos Detalhes) e o painel de informações; o texto abaixo fica como histórico.
 - **Mosaico (estilo Switch):** fundo claro (tokens próprios, contraste conferido como BBX-026 sobre fundo claro), uma fileira
   horizontal de capas **quadradas** grandes no meio da tela, título do jogo em foco acima da fileira, ícones de ação embaixo;
   eixo `horizontal`; sem vídeo de fundo (o vídeo aparece só em Detalhes).

@@ -269,6 +269,8 @@ Dado a fase, então nenhum tipo de mídia novo é criado: sem migração, `media
 ### MET-030 — `metadata.apply` grava texto por prioridade e enfileira as imagens
 · alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-004): depois de aplicar, o agente enfileira a busca de vídeo do
 jogo quando há credenciais do ScreenScraper, sistema mapeado e vaga; o resultado não muda.
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, TTB-025): depois de aplicar, o agente também enfileira a busca do tempo
+para zerar quando o serviço e "Buscar depois de aplicar metadados" estão ligados; o resultado não muda.
 Dado `metadata.apply` com `gameId`, `refs` (uma por provedor, MET-031) e `replace`, quando o agente atende, então obtém de cada
 provedor o texto e as imagens (uma requisição ao IGDB, uma à Steam Store e duas ao SteamGridDB, MET-012..MET-014), faz o merge por campo
 com a prioridade de MID-003 (descrição, gêneros, modos, empresas e ano: IGDB, depois Steam Store) preenchendo só campos vazios,
@@ -470,6 +472,8 @@ escolhas, `-32602`. "Descartar tudo" chama `metadata.batchDiscard`.
 ### MET-065 — Execução da aplicação
 · alterado em 2026-11-15 (docs/specs/phase-13-modo-console, VID-004): cada jogo aplicado também ganha a busca de vídeo nas
 condições de VID-004.
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, TTB-025): cada jogo aplicado também ganha a busca do tempo para zerar
+nas condições de TTB-025.
 Dado a busca em `applying`, então um único trabalhador aplica as escolhas em ordem: para cada jogo, obtém de cada provedor da
 escolha o que falta (MET-012, MET-013, MET-014; sempre `replace = false`), grava o texto (MET-030) e enfileira as imagens
 (MET-020..MET-023). Falha de um jogo (provedor fora, jogo apagado) incrementa `failed`, guarda o título (até 10) e segue para o

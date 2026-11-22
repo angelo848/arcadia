@@ -148,6 +148,8 @@ soltar antes cancela, um gatilho por pressão, controles independentes, desconex
 · verificação: teste do poller com `PadAPI` falsa e relógio fake.
 
 ### CON-002 — Os dois combos são independentes
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, ATB-002): são três combos independentes (pausa, fechar e Big Box com
+`Back + A`).
 Dado o poller, então `Back + Y` só entrega `Action: pause` e `Back + B` só entrega `Action: close`. Dado `Back + Y + B`
 segurados juntos por 1 s, então os dois gatilhos são entregues (um de cada), cada um uma vez por pressão. Soltar `B` não zera a
 contagem de `Back + Y`, e vice-versa.
@@ -323,6 +325,8 @@ ao usuário por recusa do Windows.
 · verificação: teste de `cmd/arcadia` com `winapi` falsa (ordem das chamadas); manual (CON-025).
 
 ### CON-024 — A UI nunca influencia o tempo de jogo
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, ATB-015, TTB-030): o teste de invariantes ganha a entrada no Big Box por
+pedido externo (`TakeBigBoxRequest`) e os bindings `TimeToBeat*`.
 Dado qualquer interação desta fase (Big Box, temas, vídeo, detalhes, "Buscar vídeo", janela dos provedores, evento
 `game:closedByHotkey`), então a UI não tem ação de fechar jogo nem de encerrar sessão; só chama leituras, `LaunchGame` e
 `LaunchGameUntracked` por ação explícita (um por ação, sem repetição por tecla mantida), `BringToFront`, `Video*` e
@@ -410,6 +414,8 @@ Layout, mapa de entrada, estados e tokens em [contracts/bigbox-faixa.md](contrac
 capas; "Detalhes" é a tela do jogo. Teclas entre parênteses são o equivalente no teclado.
 
 ### BBX-001 — Entrar no Big Box
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, ATB-008..ATB-012): também se entra por `arcadia.exe --bigbox` e por
+Select + A (pedido externo).
 Dado a janela normal, quando o usuário toca "Big Box" ou aperta F11, então a janela vai para tela cheia e mostra o tema escolhido
 (BBX-023; padrão Faixa) na tela Navegar, no lugar da biblioteca de três colunas. Filtros, busca, jogo em foco e visualização da
 janela normal não mudam (voltam iguais ao sair).
@@ -421,6 +427,9 @@ três colunas reaparece como estava. Na tela Detalhes, B (Esc) volta a Navegar (
 · verificação: teste de componente.
 
 ### BBX-003 — O Big Box só navega
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-059): além de `LaunchGame`, `LaunchGameUntracked` e `BringToFront`,
+o Big Box chama `TimeToBeatGet` (leitura que pode buscar no HowLongToBeat); `TimeToBeatRefresh/Search/Choose/SetSettings` ficam
+proibidos.
 Dado o Big Box, então ele não mostra nem alcança estatísticas, emuladores, plataformas, provedores, importação, edição, remoção,
 busca de metadados nem "Buscar vídeo"; não abre modal; e não chama nenhum binding de escrita além de `LaunchGame`,
 `LaunchGameUntracked` e `BringToFront`. Tudo isso continua na janela normal.
@@ -428,6 +437,8 @@ busca de metadados nem "Buscar vídeo"; não abre modal; e não chama nenhum bin
 espiões.
 
 ### BBX-004 — Abas de plataforma
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-054): um tema pode declarar abas de coleção (Todos, Favoritos,
+Concluídos) antes das plataformas; com abas de plataforma, vale este critério.
 Dado o catálogo, então a barra de plataformas mostra "Todos" e cada plataforma com pelo menos um jogo (`gameCount > 0`, como
 PLT-032), na ordem do catálogo, **só em texto** (sem ícone). A aba inicial é a plataforma escolhida na coluna esquerda da janela
 normal, ou "Todos" se nenhuma.
@@ -440,6 +451,7 @@ ordem por título) e o foco vai para o primeiro jogo dela.
 · verificação: teste do reducer de navegação e de componente.
 
 ### BBX-006 — Faixa de capas
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-051): a âncora da janela passa a ser do tema (Faixa: 2, sem mudança).
 · alterado em 2026-11-16: a janela de capas no DOM passa a ser a de BBX-039 (a janela centrada deixava a faixa vazia à direita
 no começo da lista); as pontas são as da aba inteira (`total`), e o foco não entra em jogo ainda não lido (BBX-007).
 Dado a tela Navegar do Faixa, então os jogos da aba aparecem numa faixa horizontal no topo, com a capa em foco maior que as
@@ -448,6 +460,8 @@ manter o jogo em foco à vista. No máximo 15 capas ficam no DOM, na janela de B
 · verificação: teste do reducer (pontas) e de componente (contagem de nós).
 
 ### BBX-007 — Pré-busca à frente do foco
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-050): vale para os temas de faixa; a grade tem regra própria de
+pré-busca.
 · alterado em 2026-11-16: volta como pré-busca à frente do foco, com páginas do tamanho de BBX-038 (aprovação do usuário: a aba
 não é lida inteira; a remoção proposta no mesmo dia não foi aprovada). Antes: próxima página de 200 com o foco a 10 do fim do
 carregado.
@@ -475,11 +489,15 @@ cortada no último espaço antes do limite, com "…"; sem descrição, nada); "
 · verificação: teste de componente (cada parte ausente; corte da descrição em 280).
 
 ### BBX-010 — Arte de fundo
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-052): a ordem de escolha vale para os fundos `contain` e `cover`; o
+fundo `plain` (Mosaico) não desenha arte.
 Dado o jogo em foco, então o fundo em tela cheia é a primeira imagem existente na ordem `background`, `screenshot`, `title`,
 `select`, `banner`, `cover`; sem nenhuma, um gradiente de tokens. A troca de jogo faz a transição de 300 ms entre as artes.
 · verificação: teste de componente (ordem de escolha).
 
 ### BBX-011 — Vídeo depois de 2 s parado
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-053): o vídeo toca no fundo ou dentro da capa em foco, conforme o
+tema; as regras de tempo, de um único `<video>` e de `src` removido continuam.
 Dado o jogo em foco com uma mídia `video`, quando o foco fica 2.000 ms sem mudar, então um único elemento `<video>` com
 `muted`, `loop` e `playsInline` passa a tocar sobre a arte (transição de 400 ms). Dada uma troca de foco antes dos 2.000 ms, então
 nada toca e a contagem recomeça no jogo novo. Dada uma troca de foco com vídeo tocando, então o vídeo para e seu `src` é removido
@@ -504,6 +522,8 @@ Jogar e Detalhes funcionam como A e X. Um lançamento pendente bloqueia novo lan
 · verificação: teste de componente com espiões.
 
 ### BBX-015 — Rodapé com dicas do gamepad
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-054): com abas de coleção a dica é "LB/RB Aba"; nenhuma dica de
+Select + A (ATB-013).
 · alterado em 2026-11-16: na tela Detalhes as dicas seguem a zona em foco (BBX-032), e "Rolar" deixa de existir (a descrição não
 recebe mais foco, BBX-036).
 Dado a tela Navegar, então o rodapé mostra, em texto, "A Jogar", "X Detalhes", "LB/RB Plataforma", "Select+B Fechar o jogo" e
@@ -514,6 +534,8 @@ segue BBX-013 na tela Navegar; na tela Detalhes ela não aparece (Y nos detalhes
 · verificação: teste de componente.
 
 ### BBX-016 — Tela de detalhes
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, TTB-016, BBX-056): a tela mostra o tempo para zerar (três valores e a
+fonte); um tema pode ter tela de Detalhes própria com os mesmos estados de foco.
 · alterado em 2026-11-15: sem discos (resposta 7).
 · alterado em 2026-11-16: o foco passa a andar entre os botões e a galeria (BBX-032..BBX-035), a descrição rola sem receber foco
 (BBX-036) e o layout segue [bigbox-faixa §1.1](contracts/bigbox-faixa.md) (BBX-043, BBX-044). Teste com controle: o foco não
@@ -538,6 +560,8 @@ Box.
 · verificação: teste do reducer e de componente (eventos de janela e de sessão simulados).
 
 ### BBX-019 — Select segurado bloqueia B e Y na UI
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-057): bloqueia também A (Select + A é o Big Box do agente) e ↑/↓ do
+direcional (volume do agente).
 Dado o botão Select/Back (botão 8 do mapeamento padrão) pressionado, então a UI ignora B e Y (inclusive a borda de subida que
 acontecer enquanto Select está apertado): Select + B e Select + Y são do agente. A, direções, LB/RB e X continuam valendo.
 · verificação: teste do hook de entrada com `navigator.getGamepads` falso.
@@ -559,12 +583,16 @@ indicador do cabeçalho pisca como com outro modal aberto, e a janela abre pelo 
 · verificação: teste de componente (`App`).
 
 ### BBX-023 — Temas selecionáveis
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-046): `faixa`, `mosaico` e `estante` disponíveis; `roda`
+indisponível; o seletor usa os nomes do registro.
 Dado o registro de temas, então existem `faixa` (disponível), `mosaico` e `roda` (indisponíveis, "em breve"). Na janela normal,
 ao lado do botão "Big Box", um seletor "Tema do Big Box" lista os três; os indisponíveis aparecem desativados. A escolha fica em
 `localStorage` (`arcadia.bigBoxTheme`, `lib/uiPrefs.ts`); valor ausente, desconhecido ou indisponível vira `faixa`.
 · verificação: teste de `uiPrefs` e de componente.
 
 ### BBX-024 — Contrato de tema
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-047, BBX-048): contrato v2 (eixo `grid` com colunas, âncora, fundo,
+lugar do vídeo, abas, ordem, tempo para zerar em Navegar, Detalhes próprios); o reducer ganha a grade 2D.
 · alterado em 2026-11-16: o tema declara também a capacidade da lista (`listCapacity`, função pura do tamanho da janela, usada
 por BBX-039).
 Dado um tema, então ele recebe só o modelo de exibição e as ações do Big Box ([bigbox-faixa §5](contracts/bigbox-faixa.md)) e
@@ -573,6 +601,8 @@ que não conhece o tema. Um tema de teste com eixo vertical navega com ↑/↓ p
 · verificação: teste do reducer e de um tema falso.
 
 ### BBX-025 — Cores do Big Box só por tokens
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-058): cada tema disponível tem o bloco completo de tokens, com os
+novos `--arc-bb-heading`, `--arc-bb-chip`, `--arc-bb-on-chip` e `--arc-bb-placeholder`.
 · alterado em 2026-11-16: a lista de tokens ganha `--arc-bb-panel` (BBX-037).
 Dado o código de `frontend/src/bigbox/`, então vale a regra de UIX-006 (nenhuma classe de cor da paleta, nenhuma cor literal); as
 cores vêm dos tokens `--arc-bb-*`, definidos em `index.css` sob `[data-bigbox-theme="faixa"]`, e o elemento raiz do Big Box tem
@@ -581,6 +611,8 @@ cores vêm dos tokens `--arc-bb-*`, definidos em `index.css` sob `[data-bigbox-t
 [bigbox-faixa §6](contracts/bigbox-faixa.md).
 
 ### BBX-026 — Contraste sobre a arte
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-058, MOS-015, ETN-014): vale para o Faixa; o Mosaico e a Estante
+têm os seus pares de contraste.
 · alterado em 2026-11-16: o fundo do texto passa a ser o painel `--arc-bb-panel` (BBX-037). O véu `--arc-bb-scrim` não era
 desenhado atrás do texto, e o texto ficava ilegível sobre artes claras.
 Dado o tema Faixa, então `--arc-bb-text`, `--arc-bb-text-muted` e `--arc-bb-danger` têm contraste ≥ 4,5:1 com a cor do painel
@@ -601,6 +633,8 @@ chegada); quando a sessão de um jogo termina, então o bloco de informações r
 · verificação: teste de componente com eventos simulados.
 
 ### BBX-029 — Só leituras ao navegar
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-059): única exceção, a leitura do tempo para zerar pode fazer o agente
+consultar o HowLongToBeat (e o IGDB como reserva) e gravar o cache; download de imagem e vídeo continua proibido.
 Dado qualquer navegação no Big Box (abas, foco, detalhes, galeria, som), então só há leituras (`ListGames`, `GetGame`,
 `MediaList`, `Catalog`, `CurrentSession`); nenhum download de vídeo ou imagem é pedido (decisão h).
 · verificação: teste de componente com espiões.
@@ -669,6 +703,8 @@ erro (`role="alert"`) e os selos de sessão continuam sobre `--arc-bb-surface` (
 tokens de BBX-026.
 
 ### BBX-038 — Leitura da aba por páginas
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-050, BBX-055): o tamanho de página `V + 3` vale para os temas de
+faixa (a grade usa o seu); a ordem é a do tema (`title` ou `lastPlayed`).
 · alterado em 2026-11-16 (aprovação do usuário): a aba não é mais lida inteira antes de aparecer; é lida por páginas pequenas,
 com pré-busca à frente do foco (BBX-007).
 Dado a entrada no Big Box ou a troca de aba, com a capacidade `V` (BBX-024), então o Big Box lê a aba por páginas de `ListGames`
@@ -700,6 +736,8 @@ a regra de BBX-007 (janela sempre dentro de `[0, L)`) e de componente (nós e í
 com `V = 12`, com só a primeira página de 15 lida).
 
 ### BBX-040 — Fundo inteiro, sem corte
+· alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-052): vale para o fundo `contain` (Faixa); a Estante usa `cover` com
+degradê e o Mosaico, fundo liso.
 Dado a arte ou o vídeo de fundo do jogo em foco (Navegar e Detalhes), então ele é desenhado inteiro, centrado, com
 `object-fit: contain` (sem zoom nem corte), sobre um preenchimento: a mesma arte em `object-fit: cover`, desfocada (blur ≥ 24 px)
 e escurecida por `--arc-bb-scrim`; sem arte, o gradiente de BBX-010. A transição de 300 ms (BBX-010) vale para o par
