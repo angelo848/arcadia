@@ -1,0 +1,46 @@
+{
+ "color": "blue",
+ "title": "",
+ "category": "games",
+ "count": 3,
+ "pageCurrent": 1,
+ "pageTotal": 1,
+ "pageSize": 20,
+ "data": [
+  {
+   "game_id": 26286,
+   "game_name": "Hollow Knight",
+   "game_alias": "Hollow Knight: Voidheart Edition",
+   "game_type": "game",
+   "comp_main": 97159,
+   "comp_plus": 149918,
+   "comp_100": 236144,
+   "profile_platform": "Linux, Mac, Nintendo Switch, Nintendo Switch 2, PC, PlayStation 4, Xbox One",
+   "release_world": 2017
+  },
+  {
+   "game_id": 65945,
+   "game_name": "Hollow Knight: Silksong",
+   "game_alias": "",
+   "game_type": "game",
+   "comp_main": 101611,
+   "comp_plus": 170541,
+   "comp_100": 236426,
+   "profile_platform": "Linux, Mac, Nintendo Switch, Nintendo Switch 2, PC, PlayStation 4, PlayStation 5, Xbox One, Xbox Series X/S",
+   "release_world": 2025
+  },
+  {
+   "game_id": 66081,
+   "game_name": "Hollow Knight - The Grimm Troupe",
+   "game_alias": "",
+   "game_type": "dlc",
+   "comp_main": 8710,
+   "comp_plus": 16087,
+   "comp_100": 17004,
+   "profile_platform": "Linux, Mac, Nintendo Switch, PC, PlayStation 4, Xbox One",
+   "release_world": 2017
+  }
+ ],
+ "userData": [],
+ "displayModifier": null
+}
