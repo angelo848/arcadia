@@ -8,7 +8,14 @@ import type { CatalogView, GameDetailView, GameView } from '../lib/library'
 import type { SessionView } from '../lib/games'
 import { useMediaEvents } from '../lib/metadata'
 import { buildTabs, sessionMark } from './viewModel'
-import { PAGE_EXTRA, PAGE_MAX, pageSize, shouldPrefetch, useFocusedData, useTabGames } from './useBigBoxData'
+import type { BigBoxTab } from './viewModel'
+import { PAGE_EXTRA, PAGE_MAX, gridPageSize, pageSize, shouldPrefetch, shouldPrefetchGrid, useFocusedData, useTabGames } from './useBigBoxData'
+
+// alterado em 2026-11-22 (fase 15): useTabGames(tab, sort, paging) com BigBoxTab { key, label, filter }.
+const TAB_ALL: BigBoxTab = { key: 'all', label: 'Todos', filter: { platformId: null } }
+const tabOf = (p: number | null): BigBoxTab => (p === null ? TAB_ALL : { key: `p:${p}`, label: `P${p}`, filter: { platformId: p } })
+const strip = (capacity: number) => ({ kind: 'strip', capacity }) as const
+const gridPaging = (columns: number, rows: number) => ({ kind: 'grid', columns, rows }) as const
 
 type Handler = (...d: unknown[]) => void
 let handlers: Record<string, Handler[]>
@@ -72,12 +79,103 @@ afterEach(() => {
 describe('useBigBoxData', () => {
   it('BBX-004/o catálogo vira abas; a aba inicial segue a plataforma da janela normal', async () => {
     const catalog = await app.Catalog()
-    const { tabs, initialTab } = buildTabs(catalog, 2)
+    const { tabs, initial } = buildTabs(catalog, 2, 'platforms')
     expect(tabs.map((t) => t.label)).toEqual(['Todos', 'NES', 'SNES'])
-    expect(tabs[initialTab].platformId).toBe(2)
-    const { result } = renderHook(() => useTabGames(tabs[initialTab].platformId, 12), { wrapper })
+    expect(tabs[initial].filter.platformId).toBe(2)
+    const { result } = renderHook(() => useTabGames(tabs[initial], 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(app.ListGames.mock.calls[0][0].filter.platformIds ?? app.ListGames.mock.calls[0][0].filter.platformId).toBeTruthy()
+  })
+
+  it('BBX-050/gridPageSize(5, 1) = 25, R limitado a 1..5 e nunca acima de 500', () => {
+    expect(gridPageSize(5, 1)).toBe(25)
+    expect(gridPageSize(5, 2)).toBe(30)
+    expect(gridPageSize(5, 5)).toBe(45)
+    expect(gridPageSize(5, 99)).toBe(45)
+    expect(gridPageSize(5, 0)).toBe(25)
+    expect(gridPageSize(200, 5)).toBe(500)
+  })
+
+  it('BBX-050/shouldPrefetchGrid pede quando L < min(T, (r + R + 1 + 3)·C) e não com exhausted ou L = T', () => {
+    // (L, T, f, C, R, exhausted) com C 5, R 1, T 60
+    expect(shouldPrefetchGrid(0, 60, 0, 5, 1, false)).toBe(true) // entrada
+    expect(shouldPrefetchGrid(25, 60, 0, 5, 1, false)).toBe(false) // fileira 0 precisa de 25
+    expect(shouldPrefetchGrid(25, 60, 5, 5, 1, false)).toBe(true) // fileira 1 precisa de 30
+    expect(shouldPrefetchGrid(25, 60, 9, 5, 1, false)).toBe(true)
+    expect(shouldPrefetchGrid(50, 60, 30, 5, 1, false)).toBe(true) // fileira 6 precisa de 55
+    expect(shouldPrefetchGrid(55, 60, 30, 5, 1, false)).toBe(false)
+    expect(shouldPrefetchGrid(23, 23, 22, 5, 1, false)).toBe(false) // L = T
+    expect(shouldPrefetchGrid(25, 60, 5, 5, 1, true)).toBe(false) // exhausted
+    expect(shouldPrefetchGrid(25, 40, 20, 5, 1, false)).toBe(true) // min(T, 45) = 40 > 25
+    expect(shouldPrefetchGrid(40, 40, 20, 5, 1, false)).toBe(false)
+  })
+
+  it('BBX-050/faixa: pageSize e shouldPrefetch inalterados', () => {
+    expect(pageSize(12)).toBe(15)
+    expect(shouldPrefetch(15, 40, 1, 12, false)).toBe(true)
+    expect(shouldPrefetch(15, 40, 0, 12, false)).toBe(false)
+  })
+
+  it('BBX-050/useTabGames em grade: primeira página com limit 25 (C 5, R 1) e fetchNextPage com offset = loaded e o mesmo limit', async () => {
+    setup(120)
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'lastPlayed', gridPaging(5, 1)), { wrapper })
+    await waitFor(() => expect(result.current.loaded).toBe(25))
+    expect(app.ListGames.mock.calls[0][0]).toMatchObject({ offset: 0, limit: 25 })
+    act(() => { result.current.fetchNextPage(); result.current.fetchNextPage() })
+    await waitFor(() => expect(result.current.loaded).toBe(50))
+    expect(app.ListGames).toHaveBeenCalledTimes(2)
+    expect(app.ListGames.mock.calls[1][0]).toMatchObject({ offset: 25, limit: 25 })
+  })
+
+  it('BBX-050/grade: troca de aba cancela e a aba nova começa no offset 0', async () => {
+    setup(120)
+    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(tabOf(p), 'lastPlayed', gridPaging(5, 1)), { wrapper, initialProps: { p: null as number | null } })
+    await waitFor(() => expect(result.current.loaded).toBe(25))
+    rerender({ p: 2 })
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledTimes(2))
+    expect(app.ListGames.mock.calls[1][0]).toMatchObject({ offset: 0, limit: 25 })
+  })
+
+  it('BBX-054/Favoritos lê só favorite true e Concluídos só status completed, com a ordem do tema', async () => {
+    const { tabs } = buildTabs(await app.Catalog(), null, 'collections')
+    const fav = renderHook(() => useTabGames(tabs[1], 'lastPlayed', gridPaging(5, 1)), { wrapper })
+    await waitFor(() => expect(fav.result.current.isPending).toBe(false))
+    const a = app.ListGames.mock.calls[0][0]
+    expect(a.filter.favorite).toBe(true)
+    expect(a.sort).toBe('lastPlayed')
+    const done = renderHook(() => useTabGames(tabs[2], 'lastPlayed', gridPaging(5, 1)), { wrapper })
+    await waitFor(() => expect(done.result.current.isPending).toBe(false))
+    const b = app.ListGames.mock.calls[1][0]
+    expect(b.filter.statuses).toEqual(['completed'])
+    expect(b.filter.favorite).toBeFalsy()
+  })
+
+  it('BBX-054/aba de coleção sem jogos: total 0 e games vazio', async () => {
+    setup(0)
+    const { tabs } = buildTabs(await app.Catalog(), null, 'collections')
+    const { result } = renderHook(() => useTabGames(tabs[1], 'lastPlayed', gridPaging(5, 1)), { wrapper })
+    await waitFor(() => expect(result.current.isPending).toBe(false))
+    expect(result.current.total).toBe(0)
+    expect(result.current.games).toEqual([])
+  })
+
+  it('BBX-055/useTabGames envia o sort do tema (title ou lastPlayed)', async () => {
+    const a = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
+    await waitFor(() => expect(a.result.current.isPending).toBe(false))
+    expect(app.ListGames.mock.calls[0][0].sort).toBe('title')
+    const qc2 = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const w2 = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc2}>{children}</QueryClientProvider>
+    const b = renderHook(() => useTabGames(TAB_ALL, 'lastPlayed', strip(12)), { wrapper: w2 })
+    await waitFor(() => expect(b.result.current.isPending).toBe(false))
+    expect(app.ListGames.mock.calls[1][0].sort).toBe('lastPlayed')
+  })
+
+  it('BBX-055/a chave de consulta inclui o sort: mesma aba com outro sort relê a primeira página', async () => {
+    const { result, rerender } = renderHook(({ s }: { s: 'title' | 'lastPlayed' }) => useTabGames(TAB_ALL, s, strip(12)), { wrapper, initialProps: { s: 'title' as 'title' | 'lastPlayed' } })
+    await waitFor(() => expect(result.current.isPending).toBe(false))
+    rerender({ s: 'lastPlayed' })
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledTimes(2))
+    expect(app.ListGames.mock.calls[1][0]).toMatchObject({ sort: 'lastPlayed', offset: 0 })
   })
 
   it('BBX-007/shouldPrefetch: uma linha por linha da tabela de bigbox-faixa §3.2', () => {
@@ -107,7 +205,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-038/entrar na aba pede uma só página: offset 0, limit V + 3 (15 com V 12), filtro só de plataforma, ordem por título', async () => {
     setup(120)
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(app.ListGames).toHaveBeenCalledTimes(1)
     const a = app.ListGames.mock.calls[0][0]
@@ -120,7 +218,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-038/entrar numa plataforma filtra por ela', async () => {
     setup(120)
-    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(p, 12), { wrapper, initialProps: { p: null as number | null } })
+    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(tabOf(p), 'title', strip(12)), { wrapper, initialProps: { p: null as number | null } })
     await waitFor(() => expect(result.current.isPending).toBe(false))
     rerender({ p: 2 })
     await waitFor(() => expect(app.ListGames.mock.calls.length).toBe(2))
@@ -133,7 +231,7 @@ describe('useBigBoxData', () => {
     const gate = new Promise<void>((r) => (release = r))
     const base = app.ListGames.getMockImplementation()!
     app.ListGames.mockImplementation(async (a) => { await gate; return base(a) })
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     expect(result.current.isPending).toBe(true)
     release()
     await waitFor(() => expect(result.current.isPending).toBe(false))
@@ -145,7 +243,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-007/fetchNextPage pede offset = loaded e limit do V atual; chamado de novo com a página em voo não pede outra nem cancela a primeira', async () => {
     setup(120)
-    const { result, rerender } = renderHook(({ v }: { v: number }) => useTabGames(null, v), { wrapper, initialProps: { v: 12 } })
+    const { result, rerender } = renderHook(({ v }: { v: number }) => useTabGames(TAB_ALL, 'title', strip(v)), { wrapper, initialProps: { v: 12 } })
     await waitFor(() => expect(result.current.loaded).toBe(15))
     rerender({ v: 10 })
     let release: () => void = () => {}
@@ -165,7 +263,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-007/página vazia marca exhausted e fetchNextPage vira no-op', async () => {
     setup(120)
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.loaded).toBe(15))
     app.ListGames.mockImplementation(async (a: { offset: number }) => ({ games: [], total: 120, offset: a.offset }))
     await act(async () => { result.current.fetchNextPage() })
@@ -178,7 +276,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-007/loaded ≥ total: fetchNextPage não pede', async () => {
     setup(10)
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(result.current.loaded).toBe(10)
     act(() => result.current.fetchNextPage())
@@ -194,7 +292,7 @@ describe('useBigBoxData', () => {
       const pid = a.filter.platformIds?.[0] ?? 0
       return { ...r, games: r.games.map((g: GameView) => ({ ...g, platformId: pid })) }
     })
-    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(p, 12), { wrapper, initialProps: { p: null as number | null } })
+    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(tabOf(p), 'title', strip(12)), { wrapper, initialProps: { p: null as number | null } })
     await waitFor(() => expect(result.current.loaded).toBe(15))
     let release: () => void = () => {}
     const gate = new Promise<void>((r) => (release = r))
@@ -216,7 +314,7 @@ describe('useBigBoxData', () => {
   it('BBX-038/falha na primeira página: error preenchido, isPending falso, games vazio', async () => {
     setup(120)
     app.ListGames.mockRejectedValue(new Error('boom'))
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.error).not.toBeNull())
     expect(result.current.isPending).toBe(false)
     expect(result.current.games).toEqual([])
@@ -224,7 +322,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-038/falha na segunda: error preenchido, games mantém a primeira', async () => {
     setup(120)
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.loaded).toBe(15))
     app.ListGames.mockRejectedValue(new Error('boom'))
     await act(async () => { result.current.fetchNextPage() })
@@ -234,7 +332,7 @@ describe('useBigBoxData', () => {
 
   it('BBX-038/voltar a uma aba já lida não chama ListGames de novo e mantém as páginas', async () => {
     setup(120)
-    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(p, 12), { wrapper, initialProps: { p: null as number | null } })
+    const { result, rerender } = renderHook(({ p }: { p: number | null }) => useTabGames(tabOf(p), 'title', strip(12)), { wrapper, initialProps: { p: null as number | null } })
     await waitFor(() => expect(result.current.loaded).toBe(15))
     await act(async () => { result.current.fetchNextPage() })
     await waitFor(() => expect(result.current.loaded).toBe(30))
@@ -247,7 +345,7 @@ describe('useBigBoxData', () => {
   })
 
   it('BBX-027/o jogo em foco da janela normal vira o foco inicial quando está carregado; senão o primeiro', async () => {
-    const { result } = renderHook(() => useTabGames(null, 12), { wrapper })
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     await waitFor(() => expect(result.current.isPending).toBe(false))
     const initialIndex = (gameId: number | null) => Math.max(0, result.current.games.findIndex((g) => g.id === gameId))
     expect(initialIndex(5)).toBe(4)
@@ -305,7 +403,7 @@ describe('useBigBoxData', () => {
       },
     })
     ;(window as unknown as { go: unknown }).go = { main: { App: guarded } }
-    const tab = renderHook(() => useTabGames(null, 12), { wrapper })
+    const tab = renderHook(() => useTabGames(TAB_ALL, 'title', strip(12)), { wrapper })
     const focus = renderHook(() => useFocusedData(1), { wrapper })
     await waitFor(() => expect(tab.result.current.isPending).toBe(false))
     await waitFor(() => expect(focus.result.current.detail).toBeDefined())

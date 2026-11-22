@@ -6,7 +6,9 @@ import { playModeLabels } from '../lib/library'
 import type { GameDetailView } from '../lib/library'
 import type { MediaItemView } from '../lib/metadata'
 import type { DetailsFocus } from './nav'
+import type { TimeToBeatRow } from '../lib/timeToBeat'
 import { Panel } from './Panel'
+import { TimeToBeatList } from './widgets'
 import { playWithSound } from './playMedia'
 import { sessionsLabel, shortDate } from './viewModel'
 
@@ -20,6 +22,8 @@ export type BigBoxDetailsProps = {
   scrollSignal: number
   onPlay: () => void
   onPlayUntracked: () => void
+  timeToBeat: TimeToBeatRow[]
+  timeToBeatSource: string | null
 }
 
 const SCROLL_STEP = 120
@@ -31,7 +35,7 @@ export function galleryOf(media: MediaItemView[]): MediaItemView[] {
 const focusRing: CSSProperties = { outline: '3px solid var(--arc-bb-focus)', outlineOffset: 2 }
 const noMargin: CSSProperties = { margin: 0 }
 
-function Video({ url, sound }: { url: string; sound: boolean }) {
+export function Video({ url, sound }: { url: string; sound: boolean }) {
   const ref = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     const v = ref.current
@@ -120,6 +124,10 @@ export function BigBoxDetails(p: BigBoxDetailsProps) {
               {t}
             </p>
           ))}
+        </div>
+        <div data-bb-ttb-block="">
+          <p style={{ ...noMargin, fontWeight: 600, color: 'var(--arc-bb-heading)' }}>Tempo para zerar</p>
+          <TimeToBeatList rows={p.timeToBeat} source={p.timeToBeatSource} />
         </div>
         <div style={{ display: 'flex', gap: '0.75em' }}>
           <button type="button" data-focused={p.detailsFocus === 'play' ? 'true' : 'false'} style={btn(p.detailsFocus === 'play')} onClick={p.onPlay}>

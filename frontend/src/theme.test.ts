@@ -229,6 +229,58 @@ describe('theme: tokens do Big Box (fase 13)', () => {
   })
 })
 
+// ---- Fase 15 (BBX-058): todos os tokens do Faixa (temas-v2 §7) ----
+const bbTokensV2: Record<string, string> = {
+  ...bbTokens,
+  '--arc-bb-heading': 'bb-heading',
+  '--arc-bb-placeholder': 'bb-placeholder',
+  '--arc-bb-chip': 'bb-chip',
+  '--arc-bb-on-chip': 'bb-on-chip',
+}
+
+describe('theme: tokens do Big Box por tema (fase 15)', () => {
+  it('BBX-058/o bloco [data-bigbox-theme="faixa"] define todos os tokens de temas-v2 §7 (os 11 de BBX-025 e heading, placeholder, chip e on-chip)', () => {
+    expect(faixaBlock).not.toBe('')
+    expect(Object.keys(bbTokensV2)).toHaveLength(15)
+    for (const name of Object.keys(bbTokensV2)) {
+      expect(bb(name), `valor de ${name}`).not.toBe('')
+    }
+  })
+
+  it('BBX-058/os quatro tokens novos são expostos ao Tailwind por @theme inline (--color-bb-heading, -placeholder, -chip, -on-chip)', () => {
+    for (const [name, util] of Object.entries(bbTokensV2)) {
+      const re = new RegExp(`--color-${util}\\s*:\\s*var\\(${name}\\)\\s*;`)
+      expect(re.test(themeInline), `--color-${util}: var(${name})`).toBe(true)
+    }
+  })
+
+  it('BBX-058/Faixa: on-chip sobre chip ≥ 4,5:1 e o heading é legível sobre o panel composto sobre branco e preto', () => {
+    expect(contrast(solid('--arc-bb-on-chip'), solid('--arc-bb-chip'))).toBeGreaterThanOrEqual(4.5)
+    const panel = parseColor(bb('--arc-bb-panel'))
+    for (const base of ['#ffffff', '#000000']) {
+      const r = contrast(solid('--arc-bb-heading'), over(panel, base))
+      expect(r, `heading sobre panel/${base}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('BBX-058/Faixa: text, text-muted e danger também passam sobre o placeholder (rodapé e cartão sem imagem usam esse fundo)', () => {
+    for (const t of ['--arc-bb-text', '--arc-bb-text-muted']) {
+      const r = contrast(solid(t), solid('--arc-bb-placeholder'))
+      expect(r, `${t} sobre placeholder: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('BBX-058/os valores do Faixa não mudaram (sem mudança visual): bg, bg-2, scrim, panel, accent, surface e focus', () => {
+    expect(bb('--arc-bb-bg').toLowerCase()).toBe('#0b0d12')
+    expect(bb('--arc-bb-bg-2').toLowerCase()).toBe('#161a22')
+    expect(bb('--arc-bb-scrim').toLowerCase()).toBe('#000000d9')
+    expect(bb('--arc-bb-panel').toLowerCase()).toBe('#0b0d12e6')
+    expect(bb('--arc-bb-accent').toLowerCase()).toBe('#1f6feb')
+    expect(bb('--arc-bb-surface').toLowerCase()).toBe('#1e2128')
+    expect(bb('--arc-bb-focus').toLowerCase()).toBe('#79b8ff')
+  })
+})
+
 // ---- Phase 10.1 (AJU-004, AJU-005, AJU-008) ----
 const plainCss = css.replace(/\/\*[\s\S]*?\*\//g, '')
 

@@ -10,7 +10,9 @@ import {
 
 // Assumed markup: art layers are <img data-testid="bb-art">; the single video is <video data-testid="bb-video">;
 // the no-art fallback is data-testid="bb-gradient" (inline style/class using var(--arc-bb-bg) and var(--arc-bb-bg-2)).
+// alterado em 2026-11-22 (fase 15): `backdrop` é obrigatório (BBX-052); os casos antigos valem para 'contain' (Faixa).
 const base: BackgroundStageProps = {
+  backdrop: 'contain',
   gameId: 1,
   artUrl: 'http://media/1/bg.jpg',
   videoUrl: 'http://media/1/v.mp4',
@@ -249,5 +251,97 @@ describe('BackgroundStage', () => {
     const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
     expect(art.getAttribute('alt') ?? '').toBe('')
     expect(art.closest('[aria-hidden="true"]')).not.toBeNull()
+  })
+})
+
+// ---- Fase 15 (BBX-052): fundo por tema. Marcação assumida para o degradê do `cover`:
+// data-testid="bb-cover-gradient" com style.backgroundImage = linear-gradient(to bottom, transparent, var(--arc-bb-scrim), var(--arc-bb-bg)).
+describe('BackgroundStage: fundo por tema (BBX-052)', () => {
+  it('BBX-052/contain desenha a arte inteira sobre o preenchimento desfocado, sem o degradê do cover', () => {
+    const { container } = render(<BackgroundStage {...base} backdrop="contain" videoUrl={null} />)
+    const fill = container.querySelector('[data-testid="bb-art-fill"]') as HTMLElement
+    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    expect(fill.className).toContain('object-cover')
+    expect(fill.className).toMatch(/blur-\[(\d+)px\]/)
+    expect(art.className).toContain('object-contain')
+    expect(container.querySelector('[data-testid="bb-cover-gradient"]')).toBeNull()
+  })
+
+  it('BBX-052/cover usa object-fit cover, sem desfoque e sem preenchimento, com degradê vertical transparente → scrim → bg', () => {
+    const { container } = render(<BackgroundStage {...base} backdrop="cover" videoUrl={null} />)
+    const art = container.querySelector('[data-testid="bb-art"]') as HTMLElement
+    expect(art.getAttribute('src')).toBe('http://media/1/bg.jpg')
+    expect(art.className).toContain('object-cover')
+    expect(art.className).not.toContain('object-contain')
+    expect(art.className).not.toMatch(/blur/)
+    expect(art.style.filter).not.toMatch(/blur/)
+    expect(container.querySelector('[data-testid="bb-art-fill"]')).toBeNull()
+    const g = container.querySelector('[data-testid="bb-cover-gradient"]') as HTMLElement
+    expect(g).not.toBeNull()
+    const css = `${g.style.backgroundImage} ${g.getAttribute('style') ?? ''}`
+    expect(css).toContain('linear-gradient')
+    expect(css).toMatch(/to bottom|180deg/)
+    const iT = css.search(/transparent|#0000\b|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/)
+    const iS = css.indexOf('--arc-bb-scrim')
+    const iB = css.indexOf('--arc-bb-bg')
+    expect(iT, 'transparente no topo').toBeGreaterThanOrEqual(0)
+    expect(iS, 'scrim no meio').toBeGreaterThan(iT)
+    expect(iB, 'bg opaco embaixo').toBeGreaterThan(iS)
+    // the gradient is drawn above the art
+    const all = Array.from(container.querySelectorAll('*'))
+    expect(all.indexOf(g)).toBeGreaterThan(all.indexOf(art))
+  })
+
+  it('BBX-052/plain desenha só --arc-bb-bg: sem arte, sem preenchimento, sem gradiente e sem vídeo mesmo com videoUrl', () => {
+    const onVideoVisible = vi.fn()
+    const { container } = render(<BackgroundStage {...base} backdrop="plain" onVideoVisible={onVideoVisible} />)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 3) })
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-art-layer"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-art-fill"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-gradient"]')).toBeNull()
+    expect(container.querySelector('[data-testid="bb-cover-gradient"]')).toBeNull()
+    expect(videos(container)).toHaveLength(0)
+    expect(onVideoVisible).not.toHaveBeenCalledWith(true)
+    expect((container.firstElementChild as HTMLElement).className).toContain('bg-bb-bg')
+  })
+
+  it('BBX-052/a transição de 300 ms vale para contain e para cover (duas camadas na troca, uma depois de ART_FADE_MS)', () => {
+    for (const backdrop of ['contain', 'cover'] as const) {
+      const { container, rerender, unmount } = render(<BackgroundStage {...base} backdrop={backdrop} videoUrl={null} />)
+      rerender(<BackgroundStage {...base} backdrop={backdrop} gameId={2} artUrl="http://media/2/bg.jpg" videoUrl={null} />)
+      const layers = Array.from(container.querySelectorAll('[data-testid="bb-art-layer"]')) as HTMLElement[]
+      expect(layers, backdrop).toHaveLength(2)
+      for (const l of layers) {
+        expect(l.style.transition, backdrop).toContain('opacity')
+        expect(l.style.transition, backdrop).toContain('300ms')
+      }
+      act(() => { vi.advanceTimersByTime(ART_FADE_MS) })
+      expect(container.querySelectorAll('[data-testid="bb-art-layer"]'), backdrop).toHaveLength(1)
+      unmount()
+    }
+  })
+
+  it('BBX-052/trocar o backdrop troca o desenho sem deixar o do anterior (contain → plain remove a arte)', () => {
+    const { container, rerender } = render(<BackgroundStage {...base} backdrop="contain" videoUrl={null} />)
+    expect(container.querySelector('[data-testid="bb-art"]')).not.toBeNull()
+    rerender(<BackgroundStage {...base} backdrop="plain" videoUrl={null} />)
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('BBX-053/com backdrop cover e videoUrl (vídeo no fundo) o vídeo toca depois de 2.000 ms como em BBX-011', () => {
+    const { container } = render(<BackgroundStage {...base} backdrop="cover" />)
+    expect(videos(container)).toHaveLength(0)
+    act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS) })
+    expect(videos(container)).toHaveLength(1)
+  })
+
+  it('BBX-053/com videoUrl null (tema com videoSlot cover) o fundo nunca toca vídeo', () => {
+    for (const backdrop of ['contain', 'cover', 'plain'] as const) {
+      const { container, unmount } = render(<BackgroundStage {...base} backdrop={backdrop} videoUrl={null} />)
+      act(() => { vi.advanceTimersByTime(VIDEO_DELAY_MS * 3) })
+      expect(videos(container), backdrop).toHaveLength(0)
+      unmount()
+    }
   })
 })

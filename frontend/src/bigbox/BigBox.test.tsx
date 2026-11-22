@@ -8,6 +8,10 @@ import { BIGBOX_THEMES } from './themes/registry'
 import type { BigBoxThemeProps } from './themes/registry'
 import { BigBox } from './BigBox'
 import { useMediaEvents } from '../lib/metadata'
+import { useTimeToBeatEvents } from '../lib/timeToBeat'
+import { FocusVideo } from './FocusVideo'
+import type { BigBoxDetailsProps } from './BigBoxDetails'
+import type { BigBoxThemeDef } from './themes/registry'
 
 // Phase 13 adjustments (T60: BBX-007, BBX-024, BBX-027, BBX-032..BBX-034, BBX-036, BBX-038, BBX-039, BBX-042, BBX-045):
 // the shell also runs against a fake gamepad (navigator.getGamepads + a controlled requestAnimationFrame), a fake
@@ -84,6 +88,8 @@ function install() {
     LaunchGame: vi.fn((id: number) => Promise.resolve(session({ gameId: id }))),
     LaunchGameUntracked: vi.fn(() => Promise.resolve()),
     BringToFront: vi.fn(() => Promise.resolve()),
+    // alterado em 2026-11-22 (fase 15): o shell lê o tempo para zerar (TimeToBeatGet, só leitura, BBX-059).
+    TimeToBeatGet: vi.fn(() => Promise.resolve(null)),
   }
   // Every binding the shell touches is recorded by name; unknown names answer with an empty promise.
   const proxy = new Proxy(app, {
@@ -204,6 +210,7 @@ function setup(p: Props = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const MediaEvents = ({ children }: { children: ReactNode }) => {
     useMediaEvents()
+    useTimeToBeatEvents() // alterado em 2026-11-22 (fase 15): o App monta o aviso timeToBeat:changed (TTB-017)
     return <>{children}</>
   }
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -334,7 +341,8 @@ describe('BigBox: tema, entrada e saída', () => {
     await flush()
     expect(called.length).toBeGreaterThan(0)
     for (const n of called) {
-      expect(['ListGames', 'GetGame', 'Catalog', 'MediaList', 'CurrentSession', 'GameSessions']).toContain(n)
+      // alterado em 2026-11-22 (fase 15): + TimeToBeatGet (leitura, BBX-059)
+      expect(['ListGames', 'GetGame', 'Catalog', 'MediaList', 'CurrentSession', 'GameSessions', 'TimeToBeatGet']).toContain(n)
     }
   })
 })
@@ -610,6 +618,7 @@ describe('BigBox: retorno do jogo (CON-022..CON-024)', () => {
     const allowed = [
       'ListGames', 'GetGame', 'Catalog', 'MediaList', 'CurrentSession', 'GameSessions',
       'LaunchGame', 'LaunchGameUntracked', 'BringToFront',
+      'TimeToBeatGet', // alterado em 2026-11-22 (fase 15): leitura, BBX-059
     ]
     for (const n of called) expect(allowed).toContain(n)
     expect(screen.queryByRole('button', { name: /fechar|encerrar|parar/i })).toBeNull()
@@ -963,5 +972,498 @@ describe('BigBox: leitura por páginas e faixa (BBX-007, BBX-027, BBX-038, BBX-0
     const background = container.querySelector('[data-testid="bb-gradient"], [data-testid="bb-art-layer"]')
     expect(background).not.toBeNull()
     expect(safe.contains(background)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// Fase 15 (T31): shell v2 com temas falsos, fundo, vídeo na capa, Detalhes próprios e tempo para zerar.
+// Os temas falsos reaproveitam as entradas 'mosaico' e 'roda' do registro (restauradas em uninstall()).
+// Marcação assumida de FocusVideo: <video data-testid="bb-video"> (como BackgroundStage).
+// ---------------------------------------------------------------------------------------------------------
+
+let modelLog: BigBoxViewModel[]
+let propKeys: string[][]
+function SimpleTheme(p: BigBoxThemeProps) {
+  const { model, details } = p
+  modelLog.push(model)
+  propKeys.push(Object.keys(p).sort())
+  if (model.screen === 'details') return <div data-testid="simple-details">{details}</div>
+  return (
+    <div data-testid="simple" data-focus={model.focus} data-start={model.stripStart} data-count={model.games.length}>
+      {model.focused?.game.title ?? ''}
+    </div>
+  )
+}
+// A cover-video theme: the focused game gets its own card with FocusVideo inside (BBX-053).
+function VideoTheme(p: BigBoxThemeProps) {
+  const { model, details, onVideoError } = p
+  if (model.screen === 'details') return <div data-testid="simple-details">{details}</div>
+  const f = model.focused
+  return (
+    <div data-testid="simple">
+      {f?.game.title}
+      <div data-testid="card">
+        {f && f.videoUrl && (
+          <FocusVideo gameId={f.game.id} url={f.videoUrl} active={model.screen === 'browse'} sound={model.sound} failed={model.videoFailed} onError={onVideoError} />
+        )}
+      </div>
+    </div>
+  )
+}
+function useFake(id: 'mosaico' | 'roda', patch: Partial<BigBoxThemeDef> = {}) {
+  const t = BIGBOX_THEMES.find((x) => x.id === id)!
+  Object.assign(t, { available: true, Component: SimpleTheme, listCapacity: () => 12 }, patch)
+}
+const simple = () => screen.getByTestId('simple')
+const readySimple = () => waitFor(() => expect(screen.getByTestId('simple')).toHaveTextContent(/./))
+const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)) })
+const ttbCalls = () => app.TimeToBeatGet.mock.calls as unknown as Array<[number, boolean]>
+const fetchTrue = () => ttbCalls().filter((c) => c[1] === true)
+const fetchFalse = (id: number) => ttbCalls().filter((c) => c[0] === id && c[1] === false)
+const VIDEO = { id: 2, kind: 'video', provider: 'x', path: 'v', thumbPath: '', url: '/m/v.mp4', thumbUrl: '' }
+const SHOT = { id: 1, kind: 'screenshot', provider: 'x', path: 'p', thumbPath: 't', url: '/m/s.jpg', thumbUrl: '/m/s-t.jpg' }
+
+beforeEach(() => {
+  modelLog = []
+  propKeys = []
+})
+
+describe('BigBox v2: contrato de tema e grade (BBX-047, BBX-050, BBX-055)', () => {
+  it.each([
+    { name: 'horizontal', axis: 'horizontal', columns: 1, move: 'ArrowRight', back: 'ArrowLeft', ignored: 'ArrowDown', next: 'Jogo 002' },
+    { name: 'vertical', axis: 'vertical', columns: 1, move: 'ArrowDown', back: 'ArrowUp', ignored: 'ArrowRight', next: 'Jogo 002' },
+  ] as const)('BBX-047/tema falso $name navega pelo mesmo reducer e recebe só o modelo e as ações', async (c) => {
+    bigLibrary(30)
+    useFake('roda', { axis: c.axis, columns: c.columns, gridRows: undefined })
+    setup({ themeId: 'roda' })
+    await readySimple()
+    expect(simple()).toHaveTextContent('Jogo 001')
+    key(c.ignored)
+    expect(simple()).toHaveTextContent('Jogo 001')
+    key(c.move)
+    expect(simple()).toHaveTextContent(c.next)
+    key(c.back)
+    expect(simple()).toHaveTextContent('Jogo 001')
+    for (const keys of propKeys) expect(keys).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
+    expect(modelLog.at(-1)).toMatchObject({ axis: c.axis, columns: c.columns })
+  })
+
+  it('BBX-047/tema falso grid (3 colunas): ←/→ andam de um em um, ↑/↓ de uma fileira, nas pontas não passa', async () => {
+    bigLibrary(30)
+    useFake('roda', { axis: 'grid', columns: 3, listCapacity: () => 3, gridRows: () => 1 })
+    setup({ themeId: 'roda' })
+    await readySimple()
+    key('ArrowUp')
+    expect(simple()).toHaveTextContent('Jogo 001')
+    key('ArrowLeft')
+    expect(simple()).toHaveTextContent('Jogo 001')
+    key('ArrowDown')
+    expect(simple()).toHaveTextContent('Jogo 004')
+    key('ArrowRight')
+    expect(simple()).toHaveTextContent('Jogo 005')
+    key('ArrowUp')
+    expect(simple()).toHaveTextContent('Jogo 002')
+    key('ArrowLeft')
+    expect(simple()).toHaveTextContent('Jogo 001')
+    expect(modelLog.at(-1)).toMatchObject({ axis: 'grid', columns: 3 })
+    for (const keys of propKeys) expect(keys).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
+  })
+
+  it('BBX-047/o shell pergunta a capacidade ao tema e, na grade, as fileiras (gridRows) com o viewport', async () => {
+    bigLibrary(30)
+    const cap = vi.fn(() => 5)
+    const rows = vi.fn(() => 2)
+    useFake('roda', { axis: 'grid', columns: 5, listCapacity: cap, gridRows: rows })
+    setup({ themeId: 'roda' })
+    await readySimple()
+    expect(cap).toHaveBeenCalledWith({ width: 1920, height: 1080 })
+    expect(rows).toHaveBeenCalledWith({ width: 1920, height: 1080 })
+    // pages of (R + 1 + 3) × C = (2 + 1 + 3) × 5 = 30
+    expect(limits()[0]).toBe(30)
+  })
+
+  it('BBX-050/grade 5 colunas, R 1: páginas de 25, a próxima pedida em f 5 e f 30, cada uma uma vez, nunca duas em voo, e a janela nunca passa de L', async () => {
+    const lib = bigLibrary(60)
+    const openPage2 = gate(lib, 25)
+    useFake('roda', { axis: 'grid', columns: 5, listCapacity: () => 5, gridRows: () => 1 })
+    setup({ themeId: 'roda' })
+    await readySimple()
+    expect(offsets()).toEqual([0])
+    expect(limits()).toEqual([25])
+    for (let i = 0; i < 4; i++) {
+      key('ArrowDown')
+      await settle()
+    }
+    expect(simple()).toHaveTextContent('Jogo 021') // f = 20
+    await waitFor(() => expect(offsets()).toEqual([0, 25]))
+    // page 2 is held: M = 24, the next row is not read yet, so ↓ does not move the focus
+    key('ArrowDown')
+    await settle()
+    expect(simple()).toHaveTextContent('Jogo 021')
+    expect(offsets()).toEqual([0, 25])
+    for (const m of modelLog) expect(m.stripStart + m.games.length, `janela ${m.stripStart}+${m.games.length}`).toBeLessThanOrEqual(25)
+    openPage2()
+    await settle()
+    key('ArrowDown')
+    expect(simple()).toHaveTextContent('Jogo 026') // f = 25
+    expect(offsets()).toEqual([0, 25]) // 45 needed at row 5... L = 50 is enough
+    key('ArrowDown')
+    await settle()
+    expect(simple()).toHaveTextContent('Jogo 031') // f = 30 needs 55 > 50
+    await waitFor(() => expect(offsets()).toEqual([0, 25, 50]))
+    await settle()
+    expect(offsets()).toEqual([0, 25, 50])
+    expect(limits()).toEqual([25, 25, 25])
+    expect(lib.inflight.max).toBe(1)
+    for (const m of modelLog) expect(m.games.length).toBeLessThanOrEqual(10) // (R + 1) × C
+  })
+
+  it('BBX-050/num tema de faixa as páginas continuam V + 3 (15 com V 12)', async () => {
+    bigLibrary(60)
+    setup()
+    await ready(13)
+    expect(limits()).toEqual([15])
+  })
+
+  it('BBX-055/o shell envia o sort do tema no ListGames: title no Faixa e lastPlayed num tema que o declara', async () => {
+    bigLibrary(30)
+    const a = setup()
+    await ready()
+    expect(app.ListGames.mock.calls.length).toBeGreaterThan(0)
+    for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('title')
+    a.unmount()
+
+    app.ListGames.mockClear()
+    useFake('roda', { sort: 'lastPlayed' })
+    setup({ themeId: 'roda' })
+    await readySimple()
+    expect(app.ListGames.mock.calls.length).toBeGreaterThan(0)
+    for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('lastPlayed')
+    expect(modelLog.at(-1)?.sortLabel).toBe('Jogado recentemente')
+  })
+})
+
+describe('BigBox v2: fundo e vídeo por tema (BBX-052, BBX-053)', () => {
+  it('BBX-052/o shell passa o fundo do tema: plain não desenha a arte; cover desenha em object-cover', async () => {
+    app.MediaList.mockResolvedValue({ media: [SHOT] })
+    useFake('roda', { backdrop: 'plain' })
+    const a = setup({ themeId: 'roda' })
+    await readySimple()
+    await wait(50)
+    expect(a.container.querySelector('[data-testid="bb-art"]')).toBeNull()
+    expect(a.container.querySelector('img')).toBeNull()
+    a.unmount()
+
+    useFake('roda', { backdrop: 'cover' })
+    const b = setup({ themeId: 'roda' })
+    await readySimple()
+    const art = await screen.findByTestId('bb-art')
+    expect(art.className).toContain('object-cover')
+    expect(b.container.querySelector('[data-testid="bb-art-fill"]')).toBeNull()
+  })
+
+  it('BBX-052/contain (Faixa) segue desenhando a arte inteira sobre o preenchimento', async () => {
+    app.MediaList.mockResolvedValue({ media: [SHOT] })
+    const { container } = setup()
+    await ready()
+    const art = await screen.findByTestId('bb-art')
+    expect(art.className).toContain('object-contain')
+    expect(container.querySelector('[data-testid="bb-art-fill"]')).not.toBeNull()
+  })
+
+  it('BBX-053/com videoSlot cover o fundo nunca toca vídeo, mesmo depois de 2.000 ms', async () => {
+    app.MediaList.mockResolvedValue({ media: [VIDEO] })
+    useFake('mosaico', { videoSlot: 'cover', backdrop: 'plain' })
+    const { container } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    await wait(2400)
+    expect(container.querySelector('video')).toBeNull()
+  }, 10000)
+
+  it('BBX-053/FocusVideo toca dentro da capa em foco depois de 2.000 ms, um único video, e Y liga e desliga o som', async () => {
+    app.MediaList.mockResolvedValue({ media: [VIDEO] })
+    useFake('mosaico', { videoSlot: 'cover', backdrop: 'plain', Component: VideoTheme })
+    const { container } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    expect(container.querySelectorAll('video')).toHaveLength(0) // not before the 2.000 ms
+    const video = (await screen.findByTestId('bb-video', undefined, { timeout: 5000 })) as HTMLVideoElement
+    expect(container.querySelectorAll('video')).toHaveLength(1)
+    expect(screen.getByTestId('card').contains(video)).toBe(true)
+    expect(video.getAttribute('src')).toBe('/m/v.mp4')
+    expect(video.muted).toBe(false) // sound starts on (1.0.3)
+    key('m')
+    await waitFor(() => expect((screen.getByTestId('bb-video') as HTMLVideoElement).muted).toBe(true))
+    key('m')
+    await waitFor(() => expect((screen.getByTestId('bb-video') as HTMLVideoElement).muted).toBe(false))
+  }, 15000)
+
+  it('BBX-053/trocar de foco remove o video e o src, e o novo só toca depois de 2.000 ms parado', async () => {
+    app.MediaList.mockResolvedValue({ media: [VIDEO] })
+    useFake('mosaico', { videoSlot: 'cover', backdrop: 'plain', Component: VideoTheme })
+    const { container } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    await screen.findByTestId('bb-video', undefined, { timeout: 5000 })
+    key('ArrowRight')
+    await waitFor(() => expect(simple()).toHaveTextContent('Hades'))
+    expect(container.querySelectorAll('video')).toHaveLength(0)
+    expect(container.innerHTML).not.toContain('<video')
+    await screen.findByTestId('bb-video', undefined, { timeout: 5000 })
+    expect(container.querySelectorAll('video')).toHaveLength(1)
+  }, 15000)
+
+  it('BBX-053/evento error: o vídeo some e não volta enquanto o foco não sair do jogo', async () => {
+    app.MediaList.mockResolvedValue({ media: [VIDEO] })
+    useFake('mosaico', { videoSlot: 'cover', backdrop: 'plain', Component: VideoTheme })
+    const { container } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    const video = await screen.findByTestId('bb-video', undefined, { timeout: 5000 })
+    fireEvent.error(video)
+    await waitFor(() => expect(container.querySelectorAll('video')).toHaveLength(0))
+    await wait(2400)
+    expect(container.querySelectorAll('video')).toHaveLength(0)
+    expect(screen.queryByText('Som')).toBeNull() // videoVisible is false after the failure
+  }, 15000)
+
+  it('BBX-053/com videoSlot background o vídeo do fundo vale como em BBX-011 (um video, depois de 2.000 ms)', async () => {
+    app.MediaList.mockResolvedValue({ media: [VIDEO] })
+    useFake('roda', { videoSlot: 'background', backdrop: 'contain' })
+    const { container } = setup({ themeId: 'roda' })
+    await readySimple()
+    expect(container.querySelectorAll('video')).toHaveLength(0)
+    await screen.findByTestId('bb-video', undefined, { timeout: 5000 })
+    expect(container.querySelectorAll('video')).toHaveLength(1)
+  }, 15000)
+})
+
+describe('BigBox v2: Detalhes próprios do tema (BBX-056)', () => {
+  function FakeDetails(p: BigBoxDetailsProps) {
+    const mark = (f: string) => (p.detailsFocus === f ? 'true' : 'false')
+    return (
+      <div
+        data-testid="fake-details"
+        data-detailsfocus={p.detailsFocus}
+        data-gallery={p.gallery}
+        data-scroll={p.scrollSignal}
+        data-ttb={p.timeToBeat.map((r) => r.label).join('|')}
+        data-ttbsource={p.timeToBeatSource ?? ''}
+        data-title={p.game.title}
+      >
+        <button data-focused={mark('play')} onClick={p.onPlay}>Iniciar</button>
+        <button data-focused={mark('playUntracked')} onClick={p.onPlayUntracked}>Sem tempo</button>
+        <div data-testid="fake-gallery" data-focused={mark('gallery')} />
+      </div>
+    )
+  }
+  const marks = () => document.querySelectorAll('[data-testid="fake-details"] [data-focused="true"]')
+
+  it('BBX-056/o tema com Details usa o componente com as mesmas props, as mesmas transições de foco, uma única marca e as mesmas dicas', async () => {
+    app.MediaList.mockResolvedValue(SHOTS)
+    useFake('mosaico', { Details: FakeDetails })
+    setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('d')
+    const d = await screen.findByTestId('fake-details')
+    expect(d).toHaveAttribute('data-title', 'Celeste')
+    expect(d).toHaveAttribute('data-ttb', 'História principal|História + extras|100%')
+    expect(screen.getByRole('button', { name: 'Iniciar' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Imagens')).toBeInTheDocument()) // hint ↓ appears with a gallery (BBX-015)
+    expect(screen.getByText('Voltar')).toBeInTheDocument()
+    expect(screen.getByText('Fechar o jogo')).toBeInTheDocument()
+    expect(d).toHaveAttribute('data-detailsfocus', 'play')
+    expect(marks()).toHaveLength(1)
+
+    key('ArrowRight') // BBX-033
+    expect(d).toHaveAttribute('data-detailsfocus', 'playUntracked')
+    expect(marks()).toHaveLength(1)
+    key('ArrowLeft')
+    expect(d).toHaveAttribute('data-detailsfocus', 'play')
+    key('ArrowDown') // BBX-032
+    expect(d).toHaveAttribute('data-detailsfocus', 'gallery')
+    expect(marks()).toHaveLength(1)
+    expect(screen.getByText('Imagem')).toBeInTheDocument() // gallery hints (←/→ Imagem)
+    key('ArrowRight') // BBX-034
+    expect(d).toHaveAttribute('data-gallery', '1')
+    key('ArrowUp')
+    expect(d).toHaveAttribute('data-detailsfocus', 'play')
+    expect(marks()).toHaveLength(1)
+    key('PageDown') // BBX-036: scroll signal, the tab does not change
+    expect(Number(d.getAttribute('data-scroll'))).not.toBe(0)
+    expect(app.ListGames.mock.calls.every((c) => (c[0] as { filter: { platformIds?: number[] } }).filter.platformIds === undefined)).toBe(true)
+  })
+
+  it('BBX-056/A no botão sem contar tempo do Details próprio lança sem contar e B volta a Navegar', async () => {
+    app.MediaList.mockResolvedValue(SHOTS)
+    useFake('mosaico', { Details: FakeDetails })
+    const { onExit } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('d')
+    await screen.findByTestId('fake-details')
+    key('ArrowRight')
+    key('Enter')
+    await waitFor(() => expect(app.LaunchGameUntracked).toHaveBeenCalledWith(30))
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(onExit).not.toHaveBeenCalled()
+  })
+
+  it('BBX-056/sem Details no tema vale BigBoxDetails (data-bb-details)', async () => {
+    useFake('mosaico', { Details: undefined })
+    const { container } = setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('d')
+    await screen.findByTestId('simple-details')
+    await waitFor(() => expect(container.querySelector('[data-bb-details]')).not.toBeNull())
+    expect(screen.queryByTestId('fake-details')).toBeNull()
+  })
+})
+
+describe('BigBox v2: tempo para zerar (BBX-059, TTB-013, TTB-016, TTB-017, TTB-039)', () => {
+  const view = (o: Record<string, unknown> = {}) => ({
+    gameId: 30, state: 'found', source: 'hltb', externalId: '1', externalTitle: 'Celeste', mainSeconds: 72000, mainExtraSeconds: 113400,
+    completionistSeconds: 147600, fetchedAt: '2026-11-20T10:00:00Z', confirmed: false, stale: false, pending: false, unavailable: false,
+    candidates: [], ...o,
+  })
+
+  it('TTB-016/os Detalhes do Big Box mostram "Tempo para zerar" com os três rótulos, valores e a fonte; pedem fetch true uma vez ao abrir; sem botão de atualizar ou confirmar', async () => {
+    app.TimeToBeatGet.mockImplementation((id: number) => Promise.resolve(view({ gameId: id })))
+    setup()
+    await ready()
+    expect(fetchTrue()).toHaveLength(0) // Faixa: Navegar só lê o cache
+    key('d')
+    expect(await screen.findByText('Tempo para zerar')).toBeInTheDocument()
+    for (const s of ['História principal', '20 h', 'História + extras', '31½ h', '100%', '41 h']) {
+      expect(await screen.findByText(s)).toBeInTheDocument()
+    }
+    expect(screen.getByText('20 h').closest('[data-bb-panel]')).not.toBeNull()
+    expect(await screen.findByText('Fonte: HowLongToBeat')).toBeInTheDocument()
+    await waitFor(() => expect(fetchTrue()).toHaveLength(1))
+    expect(fetchTrue()[0]).toEqual([30, true])
+    await flush()
+    expect(fetchTrue()).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /atualizar|confirmar|escolher|buscar/i })).toBeNull()
+  })
+
+  it('TTB-039/fonte IGDB: "Fonte: IGDB" nos Detalhes do Big Box', async () => {
+    app.TimeToBeatGet.mockImplementation((id: number) => Promise.resolve(view({ gameId: id, source: 'igdb' })))
+    setup()
+    await ready()
+    key('d')
+    expect(await screen.findByText('Fonte: IGDB')).toBeInTheDocument()
+    expect(screen.queryByText(/HowLongToBeat/)).toBeNull()
+  })
+
+  it('TTB-013/com o binding que falha os três rótulos ficam com "—", sem role alert, sem fonte e sem mudar o resto da tela', async () => {
+    app.TimeToBeatGet.mockRejectedValue('agente desconectado')
+    setup()
+    await ready()
+    key('d')
+    expect(await screen.findByText('Tempo para zerar')).toBeInTheDocument()
+    await flush()
+    expect(screen.getAllByText('—')).toHaveLength(3)
+    expect(screen.getByText('História principal')).toBeInTheDocument()
+    expect(screen.queryByText(/Fonte:/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Jogar sem contar tempo' })).toBeInTheDocument()
+  })
+
+  it('TTB-013/sem dado (not-found) os três rótulos ficam com "—"', async () => {
+    app.TimeToBeatGet.mockImplementation((id: number) =>
+      Promise.resolve(view({ gameId: id, state: 'not-found', source: '', mainSeconds: null, mainExtraSeconds: null, completionistSeconds: null })),
+    )
+    setup()
+    await ready()
+    key('d')
+    await screen.findByText('Tempo para zerar')
+    await flush()
+    expect(screen.getAllByText('—')).toHaveLength(3)
+    expect(screen.queryByText(/Fonte:/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('TTB-017/timeToBeat:changed do jogo mostrado relê uma vez (fetch false) nos Detalhes; o aviso de outro jogo não relê', async () => {
+    app.TimeToBeatGet.mockImplementation((id: number) => Promise.resolve(view({ gameId: id })))
+    setup()
+    await ready()
+    key('d')
+    await screen.findByText('20 h')
+    await flush()
+    const before = fetchFalse(30).length
+    expect(before).toBeGreaterThan(0)
+
+    app.TimeToBeatGet.mockImplementation((id: number) => Promise.resolve(view({ gameId: id, mainSeconds: 3600 })))
+    emit('timeToBeat:changed', { gameId: 20 })
+    await flush()
+    expect(fetchFalse(30)).toHaveLength(before)
+
+    emit('timeToBeat:changed', { gameId: 30 })
+    await waitFor(() => expect(fetchFalse(30)).toHaveLength(before + 1))
+    expect(await screen.findByText('1 h')).toBeInTheDocument()
+    await flush()
+    expect(fetchFalse(30)).toHaveLength(before + 1)
+  })
+
+  it('BBX-059/num tema sem timeToBeatInBrowse (Faixa) Navegar nunca pede fetch true, mesmo parado por mais de 1.000 ms', async () => {
+    setup()
+    await ready()
+    await wait(1300)
+    expect(ttbCalls().length).toBeGreaterThan(0) // the cache is read
+    expect(fetchTrue()).toHaveLength(0)
+  }, 10000)
+
+  it('BBX-059/com timeToBeatInBrowse o fetch true sai depois de 1.000 ms com o mesmo jogo em foco, uma vez', async () => {
+    useFake('mosaico', { timeToBeatInBrowse: true })
+    setup({ themeId: 'mosaico' })
+    await readySimple()
+    const t0 = Date.now()
+    expect(fetchTrue()).toHaveLength(0)
+    await waitFor(() => expect(fetchFalse(30).length).toBeGreaterThan(0)) // cache read on focus
+    await waitFor(() => expect(fetchTrue()).toHaveLength(1), { timeout: 4000 })
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(800)
+    expect(fetchTrue()[0]).toEqual([30, true])
+    await wait(300)
+    expect(fetchTrue()).toHaveLength(1)
+  }, 10000)
+
+  it('BBX-059/trocar de jogo antes de 1.000 ms cancela o pedido do anterior e conta de novo para o novo', async () => {
+    useFake('mosaico', { timeToBeatInBrowse: true })
+    setup({ themeId: 'mosaico' })
+    await readySimple()
+    await wait(500)
+    key('ArrowRight')
+    await waitFor(() => expect(simple()).toHaveTextContent('Hades'))
+    const t1 = Date.now()
+    await waitFor(() => expect(fetchTrue().length).toBeGreaterThan(0), { timeout: 4000 })
+    expect(Date.now() - t1).toBeGreaterThanOrEqual(800)
+    await wait(300)
+    expect(fetchTrue().map((c) => c[0])).toEqual([20])
+  }, 10000)
+
+  it('BBX-059/durante a suspensão (depois de lançar) nada é pedido, nem com o jogo parado por mais de 1.000 ms', async () => {
+    useFake('mosaico', { timeToBeatInBrowse: true })
+    setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('Enter')
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+    await wait(1400)
+    expect(fetchTrue()).toHaveLength(0)
+  }, 10000)
+
+  it('BBX-059/abrir os Detalhes num tema com timeToBeatInBrowse pede na hora (sem esperar 1.000 ms)', async () => {
+    useFake('mosaico', { timeToBeatInBrowse: true })
+    setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('d')
+    await screen.findByTestId('simple-details')
+    await waitFor(() => expect(fetchTrue()).toHaveLength(1), { timeout: 700 })
+    expect(fetchTrue()[0]).toEqual([30, true])
+  })
+
+  it('BBX-059/o Big Box só lê o tempo para zerar: nenhum binding de escrita é chamado', async () => {
+    app.TimeToBeatGet.mockImplementation((id: number) => Promise.resolve(view({ gameId: id })))
+    setup()
+    await ready()
+    key('d')
+    await screen.findByText('Tempo para zerar')
+    await flush()
+    for (const n of called) expect(n).not.toMatch(/^TimeToBeat(Refresh|Search|Choose|SetSettings)$/)
   })
 })

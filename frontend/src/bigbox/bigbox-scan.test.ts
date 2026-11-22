@@ -78,6 +78,48 @@ describe('varredura do Big Box', () => {
     expect(hits, `chamadas proibidas:\n${hits.join('\n')}`).toEqual([])
   })
 
+  it('BBX-003/varredura: bigbox/ não importa lib/timeToBeatEdit nem usa TimeToBeatRefresh, TimeToBeatSearch, TimeToBeatChoose ou TimeToBeatSetSettings (nem as funções de escrita)', () => {
+    const bad: string[] = []
+    for (const i of imports) {
+      if (/timeToBeatEdit/i.test(i.from)) bad.push(`${i.path}:${i.line}: import de ${i.from}`)
+    }
+    const writes =
+      /\b(TimeToBeatRefresh|TimeToBeatSearch|TimeToBeatChoose|TimeToBeatSetSettings|refreshTimeToBeat|searchTimeToBeat|chooseTimeToBeat|setTimeToBeatSettings|useTimeToBeatSettings)\b/g
+    for (const [p, src] of files) {
+      for (const m of src.matchAll(writes)) bad.push(`${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(bad, `escrita do tempo para zerar em bigbox/:\n${bad.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-059/varredura: o único acesso ao tempo para zerar em bigbox/ é a leitura de lib/timeToBeat (nenhum binding TimeToBeat* direto)', () => {
+    const bad: string[] = []
+    for (const i of imports) {
+      if (/timeToBeat/i.test(i.from) && !/^(\.\.\/)+lib\/timeToBeat$/.test(i.from)) bad.push(`${i.path}:${i.line}: import de ${i.from}`)
+    }
+    // Bindings are named TimeToBeat<Verb>; bigbox/ reaches TimeToBeatGet only through useTimeToBeat of lib/.
+    const binding = /\b(TimeToBeat(Get|GetSettings|Refresh|Search|Choose|SetSettings)|go\.main\.App\.TimeToBeat\w*)\b/g
+    for (const [p, src] of files) {
+      for (const m of src.matchAll(binding)) bad.push(`${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+    }
+    expect(bad, `acesso ao tempo para zerar fora do módulo de leitura:\n${bad.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-059/varredura: a leitura com fetch fica no shell e nos temas só vem pelo modelo (nenhum tema chama useTimeToBeat)', () => {
+    const hits = files
+      .filter(([p]) => p.startsWith('./themes/'))
+      .flatMap(([p, src]) => [...src.matchAll(/\buseTimeToBeat\w*\b|fetchAfterMs/g)].map((m) => `${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`))
+    expect(hits, `temas lendo o tempo para zerar por conta própria:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-047/varredura: os temas não importam bindings, eventos nem lib/ de escrita (só o modelo e as ações)', () => {
+    const bad: string[] = []
+    for (const i of imports.filter((x) => x.path.startsWith('./themes/'))) {
+      if (/\/lib\/(?!timeToBeat$)/.test(i.from)) bad.push(`${i.path}:${i.line}: ${i.from}`)
+      if (/wailsjs|\/useBigBoxEvents|\/useBigBoxData|\/useFocusedData/.test(i.from)) bad.push(`${i.path}:${i.line}: ${i.from}`)
+    }
+    expect(bad, `imports proibidos nos temas:\n${bad.join('\n')}`).toEqual([])
+  })
+
   it('BBX-025/a varredura de UIX-006 cobre frontend/src/bigbox/ e não acha cor literal nem classe de paleta', () => {
     const tsx = files.filter(([p]) => p.endsWith('.tsx'))
     expect(tsx.length, 'há .tsx em bigbox/').toBeGreaterThan(0)

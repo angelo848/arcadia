@@ -94,7 +94,9 @@ export function useTimeToBeat(gameId: number | null, opts: { fetchAfterMs: numbe
   const { fetchAfterMs } = opts
   const q = useQuery({
     queryKey: timeToBeatKey(gameId ?? 0),
-    queryFn: () => getView(gameId as number, false),
+    // react-query rejects undefined data, so the cache holds null and select turns it back into undefined.
+    queryFn: async () => (await getView(gameId as number, false)) ?? null,
+    select: (v: TimeToBeatView | null): TimeToBeatView | undefined => v ?? undefined,
     enabled: gameId !== null,
     retry: false,
     gcTime: Infinity,

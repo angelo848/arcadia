@@ -9,6 +9,7 @@ const ctx = (o: Partial<NavCtx> = {}): NavCtx => ({
   galleryCount: 3,
   focusedGameId: 7,
   videoVisible: false,
+  columns: 1, // alterado em 2026-11-22 (fase 15): NavCtx.columns (BBX-048)
   ...o,
 })
 const st = (o: Partial<NavState> = {}): NavState => ({ ...initialNav, ...o })
@@ -214,5 +215,62 @@ describe('bigBoxNav', () => {
     const c = ctx({ total: 0, loaded: 0, focusedGameId: null })
     expect(run(st(), { type: 'next' }, c).state.focus).toBe(0)
     expect(run(st(), { type: 'prev' }, c).state.focus).toBe(0)
+  })
+})
+
+// Grade 2D (fase 15, temas-v2 §3.1).
+describe('bigBoxNav grade', () => {
+  const grid = (total: number, loaded: number) => ctx({ columns: 5, total, loaded })
+
+  it.each([
+    [23, 23, 2, 'down', 7],
+    [23, 23, 17, 'down', 22],
+    [23, 23, 20, 'down', 20],
+    [23, 23, 3, 'up', 3],
+    [23, 23, 9, 'next', 10],
+    [23, 23, 22, 'next', 22],
+    [40, 25, 18, 'down', 23],
+    [40, 25, 22, 'down', 22],
+  ] as const)('BBX-048/reducer T %i L %i f %i %s -> %i', (t, l, f, action, want) => {
+    expect(run(st({ focus: f }), { type: action }, grid(t, l)).state.focus).toBe(want)
+  })
+
+  it('BBX-048/up anda uma fileira e prev/next ficam em [0, M]', () => {
+    expect(run(st({ focus: 12 }), { type: 'up' }, grid(23, 23)).state.focus).toBe(7)
+    expect(run(st({ focus: 0 }), { type: 'prev' }, grid(23, 23)).state.focus).toBe(0)
+    expect(run(st({ focus: 6 }), { type: 'prev' }, grid(23, 23)).state.focus).toBe(5)
+  })
+
+  it('BBX-048/M é limitado por L: next não passa de L − 1 e down não passa de L − 1', () => {
+    const c = grid(60, 25)
+    expect(run(st({ focus: 24 }), { type: 'next' }, c).state.focus).toBe(24)
+    // alterado em 2026-11-22 (fase 15): contrato §3.1, M = 24; 21 e 24 estão na mesma fileira, então down não anda.
+    expect(run(st({ focus: 21 }), { type: 'down' }, c).state.focus).toBe(21)
+    expect(run(st({ focus: 18 }), { type: 'down' }, c).state.focus).toBe(23)
+    expect(run(st({ focus: 24 }), { type: 'down' }, c).state.focus).toBe(24)
+  })
+
+  it('BBX-048/nos eixos horizontal e vertical nada muda (up/down sem efeito em Navegar, C = 1)', () => {
+    const c = ctx({ columns: 1 })
+    expect(run(st({ focus: 5 }), { type: 'up' }, c).state).toEqual(st({ focus: 5 }))
+    expect(run(st({ focus: 5 }), { type: 'down' }, c).state).toEqual(st({ focus: 5 }))
+    expect(run(st({ focus: 5 }), { type: 'next' }, c).state.focus).toBe(6)
+  })
+
+  it('BBX-048/na tela Detalhes as direções seguem BBX-032..BBX-034 em qualquer eixo', () => {
+    const c = ctx({ columns: 5, galleryCount: 3 })
+    const d = st({ screen: 'details', focus: 12 })
+    expect(run(d, { type: 'down' }, c).state).toMatchObject({ detailsFocus: 'gallery', focus: 12 })
+    expect(run(st({ screen: 'details', focus: 12, detailsFocus: 'gallery', detailsButton: 'play' }), { type: 'up' }, c).state)
+      .toMatchObject({ detailsFocus: 'play', focus: 12 })
+    expect(run(d, { type: 'next' }, c).state).toMatchObject({ detailsFocus: 'playUntracked', focus: 12 })
+    expect(run(st({ screen: 'details', focus: 12, detailsFocus: 'gallery' }), { type: 'next' }, c).state)
+      .toMatchObject({ gallery: 1, focus: 12 })
+  })
+
+  it('BBX-048/mover o foco na grade zera videoFailed e não gera efeitos', () => {
+    const r = run(st({ focus: 2, videoFailed: 9 }), { type: 'down' }, grid(23, 23))
+    expect(r.state.videoFailed).toBeNull()
+    expect(r.effects).toEqual([])
   })
 })

@@ -41,6 +41,10 @@
     --arc-bb-surface: #1e2128;
     --arc-bb-focus: #79b8ff;
     --arc-bb-danger: #ff8a84;
+    --arc-bb-heading: #f2f4f8;
+    --arc-bb-placeholder: #1e2128;
+    --arc-bb-chip: #1f6feb;
+    --arc-bb-on-chip: #ffffff;
   }
 }
 
@@ -124,6 +128,10 @@
   --color-bb-surface: var(--arc-bb-surface);
   --color-bb-focus: var(--arc-bb-focus);
   --color-bb-danger: var(--arc-bb-danger);
+  --color-bb-heading: var(--arc-bb-heading);
+  --color-bb-placeholder: var(--arc-bb-placeholder);
+  --color-bb-chip: var(--arc-bb-chip);
+  --color-bb-on-chip: var(--arc-bb-on-chip);
 }
 
 /* Library side columns (UIX-005). */

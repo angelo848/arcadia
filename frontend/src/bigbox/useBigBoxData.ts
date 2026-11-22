@@ -1,7 +1,8 @@
 // Read-only data of the Big Box [BBX-004, BBX-007, BBX-017, BBX-027..BBX-029]. Never writes anything.
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { STRIP_MAX } from './viewModel'
+import { GRID_MAX_ROWS, STRIP_MAX } from './viewModel'
+import type { BigBoxTab } from './viewModel'
 import type { FilterSpec, SortKey } from '../lib/filters'
 import { currentSession, currentSessionKey } from '../lib/games'
 import type { SessionView } from '../lib/games'
@@ -32,6 +33,26 @@ export function pageSize(capacity: number): number {
   return Math.min(clampCapacity(capacity) + PAGE_EXTRA, PAGE_MAX)
 }
 
+const clampRows = (rows: number) => Math.min(Math.max(rows, 1), GRID_MAX_ROWS)
+
+// gridPageSize is the `limit` of each ListGames call on a grid theme [BBX-050].
+export function gridPageSize(columns: number, rows: number): number {
+  return Math.min((clampRows(rows) + 1 + PAGE_EXTRA) * columns, PAGE_MAX)
+}
+
+// shouldPrefetchGrid: fewer games read than the focus row, the window and PAGE_EXTRA more rows need [BBX-050].
+export function shouldPrefetchGrid(
+  loaded: number,
+  total: number,
+  focus: number,
+  columns: number,
+  rows: number,
+  exhausted: boolean,
+): boolean {
+  const need = Math.min(total, (Math.floor(focus / columns) + clampRows(rows) + 1 + PAGE_EXTRA) * columns)
+  return !exhausted && loaded < total && loaded < need
+}
+
 // shouldPrefetch tells whether the next page must be requested: fewer than V + 3 games read from the focus on.
 export function shouldPrefetch(loaded: number, total: number, focus: number, capacity: number, exhausted: boolean): boolean {
   return !exhausted && loaded < total && loaded - focus < clampCapacity(capacity) + PAGE_EXTRA
@@ -48,18 +69,32 @@ export type TabGames = {
   fetchNextPage: () => void
 }
 
-// useTabGames reads the games of a tab (platform filter only, by title) page by page [BBX-007, BBX-038].
-export function useTabGames(platformId: number | null, capacity: number): TabGames {
+export type TabPaging = { kind: 'strip'; capacity: number } | { kind: 'grid'; columns: number; rows: number }
+
+function tabFilter(tab: BigBoxTab): FilterSpec {
+  const f = tab.filter
+  const filter: FilterSpec = { version: 1 }
+  if (f.platformId !== null) filter.platformIds = [f.platformId]
+  if (f.favorite) filter.favorite = true
+  if (f.status === 'completed') filter.statuses = ['completed']
+  return filter
+}
+
+// useTabGames reads the games of a tab (its filter, in the order of the theme) page by page [BBX-007, BBX-038, BBX-050, BBX-055].
+export function useTabGames(tab: BigBoxTab, sort: SortKey, paging: TabPaging): TabGames {
   const qc = useQueryClient()
-  const limitRef = useRef(pageSize(capacity))
-  limitRef.current = pageSize(capacity)
+  const limit = paging.kind === 'grid' ? gridPageSize(paging.columns, paging.rows) : pageSize(paging.capacity)
+  const limitRef = useRef(limit)
+  limitRef.current = limit
+  const tabKey = tab.key
+  const filterRef = useRef(tab)
+  filterRef.current = tab
   const q = useInfiniteQuery({
-    queryKey: ['bigbox', 'games', platformId],
+    queryKey: ['bigbox', 'games', tabKey, sort],
     queryFn: async ({ pageParam }) => {
       const fn = binding().ListGames
       if (!fn) throw new Error('ListGames indisponível')
-      const filter: FilterSpec = platformId === null ? { version: 1 } : { version: 1, platformIds: [platformId] }
-      return fn({ filter, sort: 'title', offset: pageParam, limit: limitRef.current })
+      return fn({ filter: tabFilter(filterRef.current), sort, offset: pageParam, limit: limitRef.current })
     },
     initialPageParam: 0,
     getNextPageParam: (last, all) => {
@@ -74,9 +109,9 @@ export function useTabGames(platformId: number | null, capacity: number): TabGam
   // Leaving a tab discards what is still in flight for it; pages already read stay cached.
   useEffect(() => {
     return () => {
-      void qc.cancelQueries({ queryKey: ['bigbox', 'games', platformId], exact: true })
+      void qc.cancelQueries({ queryKey: ['bigbox', 'games', tabKey, sort], exact: true })
     }
-  }, [qc, platformId])
+  }, [qc, tabKey, sort])
 
   const pages = q.data?.pages
   const games = useMemo(() => pages?.flatMap((p) => p.games) ?? [], [pages])

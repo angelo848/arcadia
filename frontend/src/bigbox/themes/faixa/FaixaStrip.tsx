@@ -1,3 +1,4 @@
+import { CoverArt } from '../../CoverArt'
 import { Panel } from '../../Panel'
 import type { BigBoxTab, BigBoxGame } from '../../viewModel'
 
@@ -22,7 +23,7 @@ export function FaixaStrip({ tabs, tab, games, focus, stripStart, counter, onPic
         <div role="tablist" className="flex gap-6 overflow-hidden text-bb-text-muted">
           {tabs.map((t, i) => (
             <button
-              key={`${t.platformId ?? 'all'}`}
+              key={t.key}
               role="tab"
               aria-selected={i === tab}
               tabIndex={-1}
@@ -50,11 +51,7 @@ export function FaixaStrip({ tabs, tab, games, focus, stripStart, counter, onPic
                 focused ? 'z-10 scale-125 ring-2 ring-bb-focus' : ''
               }`}
             >
-              {g.coverUrl ? (
-                <img src={g.coverUrl} alt="" className="h-full w-full object-contain" />
-              ) : (
-                <span className="px-2 text-sm">{g.title}</span>
-              )}
+              <CoverArt game={g} />
               {g.session && (
                 <span className="absolute bottom-0 left-0 right-0 bg-bb-surface px-1 text-xs text-bb-text">{sessionText[g.session]}</span>
               )}

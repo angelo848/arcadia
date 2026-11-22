@@ -24,6 +24,7 @@ export type NavCtx = {
   galleryCount: number
   focusedGameId: number | null
   videoVisible: boolean
+  columns: number // 1 on the strip themes [BBX-048]
 }
 
 export type NavAction =
@@ -95,7 +96,21 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     }
     case 'up':
     case 'down': {
-      if (s.screen !== 'details') return none()
+      if (s.screen !== 'details') {
+        const cols = c.columns
+        if (cols <= 1) return none()
+        // Grid [BBX-048]: one row down/up; a partial last row is reached with the last item.
+        const max = Math.max(Math.min(c.total, c.loaded) - 1, 0)
+        const f = s.focus
+        let focus = f
+        if (a.type === 'down') {
+          if (f + cols <= max) focus = f + cols
+          else if (Math.floor(f / cols) < Math.floor(max / cols)) focus = max
+        } else if (f - cols >= 0) {
+          focus = f - cols
+        }
+        return none({ ...s, focus, videoFailed: null })
+      }
       if (a.type === 'down' && s.detailsFocus !== 'gallery' && c.galleryCount > 0) {
         return none({ ...s, detailsFocus: 'gallery' })
       }

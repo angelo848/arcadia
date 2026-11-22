@@ -42,6 +42,13 @@ const item = (id: number, kind: MediaItemView['kind']): MediaItemView => ({
   thumbUrl: `/media/t${id}.png`,
 })
 
+const TTB_ROWS: BigBoxDetailsProps['timeToBeat'] = [
+  { label: 'História principal', value: '20 h' },
+  { label: 'História + extras', value: '31½ h' },
+  { label: '100%', value: '41 h' },
+]
+const TTB_EMPTY: BigBoxDetailsProps['timeToBeat'] = TTB_ROWS.map((r) => ({ ...r, value: '—' }))
+
 function props(over: Partial<BigBoxDetailsProps> = {}): BigBoxDetailsProps {
   return {
     game,
@@ -53,6 +60,9 @@ function props(over: Partial<BigBoxDetailsProps> = {}): BigBoxDetailsProps {
     scrollSignal: 0,
     onPlay: vi.fn(),
     onPlayUntracked: vi.fn(),
+    // alterado em 2026-11-22 (fase 15): timeToBeat e timeToBeatSource são props obrigatórias (contrato temas-v2 §2).
+    timeToBeat: TTB_ROWS,
+    timeToBeatSource: 'HowLongToBeat',
     ...over,
   }
 }
@@ -324,6 +334,50 @@ describe('BigBoxDetails', () => {
       expect(scrollBy.mock.instances.at(-1)).toBe(screen.getByRole('region', { name: /descrição/i }))
       unmount()
     }
+  })
+
+  it('TTB-016/mostra "Tempo para zerar" com os três rótulos e valores, num painel, e a linha da fonte', () => {
+    render(<BigBoxDetails {...props()} />)
+    const heading = screen.getByText('Tempo para zerar')
+    expect(heading.closest('[data-bb-panel]')).not.toBeNull()
+    for (const [label, value] of [['História principal', '20 h'], ['História + extras', '31½ h'], ['100%', '41 h']]) {
+      const l = screen.getByText(label)
+      expect(l.closest('[data-bb-panel]'), label).not.toBeNull()
+      expect(screen.getByText(value).closest('[data-bb-panel]'), value).not.toBeNull()
+    }
+    expect(screen.getByText('Fonte: HowLongToBeat').closest('[data-bb-panel]')).not.toBeNull()
+  })
+
+  it('TTB-016/não há botão de atualizar nem de confirmar nos Detalhes', () => {
+    render(<BigBoxDetails {...props()} />)
+    expect(screen.queryByRole('button', { name: /atualizar|confirmar|escolher|buscar/i })).toBeNull()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Jogar', 'Jogar sem contar tempo'])
+  })
+
+  it('TTB-039/fonte IGDB: "Fonte: IGDB"; fonte HowLongToBeat: "Fonte: HowLongToBeat"', () => {
+    const { rerender } = render(<BigBoxDetails {...props({ timeToBeatSource: 'IGDB' })} />)
+    expect(screen.getByText('Fonte: IGDB')).toBeInTheDocument()
+    expect(screen.queryByText('Fonte: HowLongToBeat')).toBeNull()
+    rerender(<BigBoxDetails {...props({ timeToBeatSource: 'HowLongToBeat' })} />)
+    expect(screen.getByText('Fonte: HowLongToBeat')).toBeInTheDocument()
+  })
+
+  it('TTB-013/sem dado os três rótulos ficam com "—", sem linha da fonte, sem role alert', () => {
+    render(<BigBoxDetails {...props({ timeToBeat: TTB_EMPTY, timeToBeatSource: null })} />)
+    expect(screen.getByText('Tempo para zerar')).toBeInTheDocument()
+    for (const l of ['História principal', 'História + extras', '100%']) expect(screen.getByText(l)).toBeInTheDocument()
+    expect(screen.getAllByText('—')).toHaveLength(3)
+    expect(screen.queryByText(/Fonte:/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('TTB-016/o bloco do tempo para zerar fica fora de data-bb-facts e não cria rolagem nova (BBX-043)', () => {
+    const { container } = render(<BigBoxDetails {...props()} />)
+    const facts = container.querySelector('[data-bb-facts]') as HTMLElement
+    expect(facts.textContent).not.toContain('Tempo para zerar')
+    const root = container.querySelector('[data-bb-details]') as HTMLElement
+    const scrollers = Array.from(root.querySelectorAll<HTMLElement>('*')).filter((e) => e.style.overflowY === 'auto')
+    expect(scrollers).toEqual([screen.getByRole('region', { name: /descrição/i })])
   })
 
   it('BBX-016/jogo sem descrição e sem mídia não quebra', () => {

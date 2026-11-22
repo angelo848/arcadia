@@ -7,10 +7,11 @@ export const REPEAT_DELAY_MS = 400
 export const REPEAT_EVERY_MS = 120
 
 export type InputAction = NavAction['type'] | 'scrollUp' | 'scrollDown'
-type Axis = 'horizontal' | 'vertical'
+type Axis = 'horizontal' | 'vertical' | 'grid'
 type Dir = 'left' | 'right' | 'up' | 'down'
 
-export function mapDirection(axis: Axis, dir: Dir): 'prev' | 'next' | null {
+export function mapDirection(axis: Axis, dir: Dir): 'prev' | 'next' | 'up' | 'down' | null {
+  if (axis === 'grid') return dir === 'left' ? 'prev' : dir === 'right' ? 'next' : dir
   if (axis === 'horizontal') return dir === 'left' ? 'prev' : dir === 'right' ? 'next' : null
   return dir === 'up' ? 'prev' : dir === 'down' ? 'next' : null
 }

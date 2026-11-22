@@ -10,7 +10,10 @@ describe('hintsFor', () => {
         for (const videoVisible of [false, true]) {
           for (const detailsFocus of [undefined, 'play', 'playUntracked', 'gallery'] as const) {
             for (const hasGallery of [false, true]) {
-              const all = hintsFor(screen, { empty, videoVisible, detailsFocus, hasGallery })
+              const all = [
+                ...hintsFor(screen, { empty, videoVisible, detailsFocus, hasGallery }, 'Plataforma'),
+                ...hintsFor(screen, { empty, videoVisible, detailsFocus, hasGallery }, 'Aba'),
+              ]
               for (const h of all) {
                 expect(`${h.button} ${h.label}`).not.toMatch(/Select\s*\+\s*A\b/)
               }
@@ -60,6 +63,22 @@ describe('hintsFor', () => {
   it('BBX-013/"Y Som" só com vídeo visível', () => {
     expect(pairs(hintsFor('browse', { empty: false, videoVisible: true }))).toContain('Y Som')
     expect(pairs(hintsFor('browse', { empty: false, videoVisible: false }))).not.toContain('Y Som')
+  })
+
+  // BBX-054 (fase 15): terceiro argumento tabsLabel; sem ele vale "Plataforma" (as chamadas de duas argumentos acima).
+  it('BBX-054/hintsFor: LB/RB "Aba" com collections e "Plataforma" com platforms', () => {
+    const o = { empty: false, videoVisible: false }
+    expect(pairs(hintsFor('browse', o, 'Aba'))).toEqual(['A Jogar', 'X Detalhes', 'LB/RB Aba', 'Select+B Fechar o jogo', 'B Sair'])
+    expect(pairs(hintsFor('browse', o, 'Plataforma'))).toEqual([
+      'A Jogar', 'X Detalhes', 'LB/RB Plataforma', 'Select+B Fechar o jogo', 'B Sair',
+    ])
+    expect(pairs(hintsFor('browse', o))).toContain('LB/RB Plataforma')
+  })
+
+  it('BBX-054/lista vazia com "Aba": só "LB/RB Aba" e "B Sair"; Detalhes não muda', () => {
+    expect(pairs(hintsFor('browse', { empty: true, videoVisible: false }, 'Aba'))).toEqual(['LB/RB Aba', 'B Sair'])
+    const d = { empty: false, videoVisible: false, detailsFocus: 'play' as const, hasGallery: true }
+    expect(pairs(hintsFor('details', d, 'Aba'))).toEqual(pairs(hintsFor('details', d, 'Plataforma')))
   })
 
   it('BBX-021/lista vazia: só "LB/RB Plataforma" e "B Sair"', () => {

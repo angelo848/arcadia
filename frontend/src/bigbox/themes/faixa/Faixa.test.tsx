@@ -20,21 +20,32 @@ const game = (id: number, o: Partial<BigBoxGame> = {}): BigBoxGame => ({
 const focused = (g: BigBoxGame, o: Partial<BigBoxFocused> = {}): BigBoxFocused => ({
   game: g, platform: 'Nintendo 64', year: 1996, genre: 'Ação', shortDescription: 'Uma aventura curta.',
   playTimeLabel: '12 h 5 min', lastPlayedLabel: '10/11/2026', sessionsLabel: 'Sessões: 14',
-  totalPlaySeconds: 43500, lastPlayedAt: '2026-11-10T10:00:00Z', playCount: 14, backgroundUrl: null, videoUrl: null, ...o,
+  totalPlaySeconds: 43500, lastPlayedAt: '2026-11-10T10:00:00Z', playCount: 14, backgroundUrl: null, videoUrl: null,
+  // alterado em 2026-11-22 (fase 15): campos novos do modelo (BBX-056); as asserções do Faixa não mudaram.
+  favorite: false, lastPlayedRelative: 'há 12 dias', screenshots: [],
+  timeToBeat: [
+    { label: 'História principal', value: '—' }, { label: 'História + extras', value: '—' }, { label: '100%', value: '—' },
+  ],
+  timeToBeatSource: null, ...o,
 })
 function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
   const games = Array.from({ length: 15 }, (_, i) => game(i + 1))
   return {
     screen: 'browse',
-    tabs: [{ platformId: null, label: 'Todos' }, { platformId: 7, label: 'Nintendo 64' }, { platformId: 8, label: 'Super Nintendo' }],
+    tabs: [
+      { key: 'all', label: 'Todos', filter: { platformId: null } },
+      { key: 'p:7', label: 'Nintendo 64', filter: { platformId: 7 } },
+      { key: 'p:8', label: 'Super Nintendo', filter: { platformId: 8 } },
+    ],
     tab: 1, loading: false, games, total: 40, focus: 7, stripStart: 0, counter: '8 / 40', focused: focused(games[7]),
+    axis: 'horizontal', columns: 1, tabTotal: 40, sortLabel: 'Título', videoFailed: false,
     videoVisible: false, sound: false,
     hints: hintsFor('browse', { empty: false, videoVisible: false }), alert: null, ...o,
   }
 }
 const inPanel = (el: HTMLElement) => el.closest('[data-bb-panel]') !== null
 function setup(m = model()) {
-  const cb = { onPick: vi.fn(), onPlay: vi.fn(), onDetails: vi.fn() }
+  const cb = { onPick: vi.fn(), onPlay: vi.fn(), onDetails: vi.fn(), onVideoError: vi.fn() }
   const r = render(<Faixa model={m} details={<div>DETALHES</div>} {...cb} />)
   return { ...cb, ...r }
 }
@@ -114,14 +125,16 @@ describe('Faixa', () => {
     const { rerender } = setup(model({ games, focus: 0, total: 3, focused: focused(games[0]) }))
     expect(screen.getAllByText('Em execução').length).toBeGreaterThanOrEqual(2) // cover seal + beside title
     expect(screen.getAllByText('Pausado').length).toBeGreaterThanOrEqual(1) // cover seal of game 2
-    rerender(<Faixa model={model({ games, focus: 1, total: 3, focused: focused(games[1]) })} details={null} onPick={vi.fn()} onPlay={vi.fn()} onDetails={vi.fn()} />)
+    // alterado em 2026-11-22 (fase 15): onVideoError é obrigatório no contrato v2.
+    rerender(<Faixa model={model({ games, focus: 1, total: 3, focused: focused(games[1]) })} details={null} onPick={vi.fn()} onPlay={vi.fn()} onDetails={vi.fn()} onVideoError={vi.fn()} />)
     expect(screen.getAllByText('Pausado').length).toBeGreaterThanOrEqual(2)
   })
 
   it('BBX-020/o aviso aparece com role alert e some quando model.alert é null', () => {
     const { rerender } = setup(model({ alert: 'Já há um jogo em execução.' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Já há um jogo em execução.')
-    rerender(<Faixa model={model({ alert: null })} details={null} onPick={vi.fn()} onPlay={vi.fn()} onDetails={vi.fn()} />)
+    // alterado em 2026-11-22 (fase 15): onVideoError é obrigatório no contrato v2.
+    rerender(<Faixa model={model({ alert: null })} details={null} onPick={vi.fn()} onPlay={vi.fn()} onDetails={vi.fn()} onVideoError={vi.fn()} />)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -132,7 +145,8 @@ describe('Faixa', () => {
   })
 
   it('BBX-021/biblioteca vazia: "Nenhum jogo na biblioteca"', () => {
-    setup(model({ tabs: [{ platformId: null, label: 'Todos' }], tab: 0, games: [], total: 0, focus: 0, focused: null }))
+    // alterado em 2026-11-22 (fase 15): abas no formato {key, label, filter}.
+    setup(model({ tabs: [{ key: 'all', label: 'Todos', filter: { platformId: null } }], tab: 0, games: [], total: 0, focus: 0, focused: null }))
     expect(screen.getByText('Nenhum jogo na biblioteca')).toBeInTheDocument()
   })
 
@@ -158,7 +172,8 @@ describe('Faixa', () => {
     const a = setup(model(empty))
     expect(inPanel(screen.getByText('Nenhum jogo nesta plataforma'))).toBe(true)
     a.unmount()
-    const b = setup(model({ ...empty, tabs: [{ platformId: null, label: 'Todos' }], tab: 0 }))
+    // alterado em 2026-11-22 (fase 15): abas no formato {key, label, filter}.
+    const b = setup(model({ ...empty, tabs: [{ key: 'all', label: 'Todos', filter: { platformId: null } }], tab: 0 }))
     expect(inPanel(screen.getByText('Nenhum jogo na biblioteca'))).toBe(true)
     b.unmount()
     setup(model({ ...empty, loading: true }))
@@ -224,6 +239,14 @@ describe('Faixa', () => {
   it('BBX-006/em Detalhes o tema mostra o elemento details', () => {
     setup(model({ screen: 'details' }))
     expect(screen.getByText('DETALHES')).toBeInTheDocument()
+  })
+
+  it('BBX-047/o Faixa segue o contrato v2: âncora 2, contain, vídeo no fundo, abas de plataforma (regressão)', () => {
+    const def = BIGBOX_THEMES.find((t) => t.id === 'faixa')!
+    expect(def).toMatchObject({ anchor: 2, backdrop: 'contain', videoSlot: 'background', tabs: 'platforms', sort: 'title' })
+    const tabs = setup()
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Todos', 'Nintendo 64', 'Super Nintendo'])
+    tabs.unmount()
   })
 
   it('BBX-014/o componente segue o contrato de tema do registry', () => {

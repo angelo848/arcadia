@@ -46,7 +46,7 @@ function advance(ms: number) {
   }
 }
 
-function setup(o: Partial<{ enabled: boolean; axis: 'horizontal' | 'vertical'; screen: 'browse' | 'details' }> = {}) {
+function setup(o: Partial<{ enabled: boolean; axis: 'horizontal' | 'vertical' | 'grid'; screen: 'browse' | 'details' }> = {}) {
   const calls: InputAction[] = []
   const props = { enabled: true, axis: 'horizontal' as const, screen: 'browse' as const, ...o }
   const r = renderHook((p: typeof props) => useBigBoxInput({ ...p, onAction: (t) => calls.push(t) }), { initialProps: props })
@@ -329,6 +329,70 @@ describe('useBigBoxInput gamepad', () => {
     advance(100)
     key('Enter')
     expect(calls).toEqual(['accept'])
+  })
+})
+
+// alterado em 2026-11-22 (fase 15): eixo 'grid' (BBX-048).
+describe('useBigBoxInput eixo grid', () => {
+  it('BBX-048/grid: direcional emite prev/next para ←/→ e up/down para ↑/↓ em Navegar', () => {
+    const { calls } = setup({ axis: 'grid' })
+    for (const b of [LEFT, RIGHT, UP, DOWN]) {
+      pressed.add(b); advance(16); pressed.clear(); advance(16)
+    }
+    expect(calls).toEqual(['prev', 'next', 'up', 'down'])
+  })
+
+  it('BBX-048/grid: analógico esquerdo emite prev/next no eixo X e up/down no eixo Y', () => {
+    const { calls } = setup({ axis: 'grid' })
+    axes[0] = -0.9; advance(16); axes[0] = 0; advance(32)
+    axes[0] = 0.9; advance(16); axes[0] = 0; advance(32)
+    axes[1] = -0.9; advance(16); axes[1] = 0; advance(32)
+    axes[1] = 0.9; advance(16)
+    expect(calls).toEqual(['prev', 'next', 'up', 'down'])
+  })
+
+  it('BBX-048/grid: o teclado emite prev/next e up/down', () => {
+    const { calls } = setup({ axis: 'grid' })
+    key('ArrowLeft'); key('ArrowRight'); key('ArrowUp'); key('ArrowDown')
+    expect(calls).toEqual(['prev', 'next', 'up', 'down'])
+  })
+
+  it('BBX-048/grid: segurar ↓ repete depois de 400 ms a cada 120 ms', () => {
+    const { calls } = setup({ axis: 'grid' })
+    pressed.add(DOWN)
+    advance(16)
+    expect(calls).toEqual(['down'])
+    advance(REPEAT_DELAY_MS + REPEAT_EVERY_MS)
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    expect(calls.every((c) => c === 'down')).toBe(true)
+  })
+
+  it('BBX-048/grid: em Detalhes as direções seguem BBX-032 (up, down, prev, next)', () => {
+    const { calls } = setup({ axis: 'grid', screen: 'details' })
+    key('ArrowUp'); key('ArrowDown'); key('ArrowLeft'); key('ArrowRight')
+    expect(calls).toEqual(['up', 'down', 'prev', 'next'])
+  })
+
+  it('BBX-057/grid: Select apertado ignora ↑/↓ do direcional mas ←/→ e o analógico valem', () => {
+    const { calls } = setup({ axis: 'grid' })
+    pressed.add(SELECT); advance(32)
+    for (const b of [UP, DOWN]) {
+      pressed.add(b); advance(32); pressed.delete(b); advance(32)
+    }
+    expect(calls).toEqual([])
+    pressed.add(RIGHT); advance(16); pressed.delete(RIGHT); advance(32)
+    axes[1] = 0.9; advance(16)
+    expect(calls).toEqual(['next', 'down'])
+  })
+
+  it('BBX-048/horizontal e vertical continuam como antes (↑/↓ sem ação no horizontal; ←/→ sem ação no vertical)', () => {
+    const h = setup({ axis: 'horizontal' })
+    key('ArrowUp'); key('ArrowDown')
+    expect(h.calls).toEqual([])
+    h.unmount()
+    const v = setup({ axis: 'vertical' })
+    key('ArrowLeft'); key('ArrowRight')
+    expect(v.calls).toEqual([])
   })
 })
 
