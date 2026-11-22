@@ -65,6 +65,7 @@ func Run(opts Options) int {
 		return 1
 	}
 	cfg.Exe = exe
+	cfg.Spawn = winapi.CreateDetached
 	cfg.ExeDir = filepath.Dir(exe)
 
 	sid, err := ipc.CurrentUserSID()

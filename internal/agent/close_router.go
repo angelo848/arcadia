@@ -21,6 +21,7 @@ const closeTimeout = 6 * time.Second
 type routerTracker interface {
 	TogglePause(ctx context.Context, reason domain.PauseReason, at time.Time) (tracker.PauseResult, error)
 	CloseByHotkey(ctx context.Context, at time.Time) (tracker.CloseResult, error)
+	Current() (domain.SessionSnapshot, bool)
 }
 
 // feedbackSender is the part of the feedback coordinator used by the router.
@@ -38,6 +39,9 @@ type triggerRouter struct {
 	fb   feedbackSender
 	sink closeSink
 
+	opener       bigBoxOpener
+	shuttingDown func() bool
+
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -46,11 +50,16 @@ type triggerRouter struct {
 	// Owned by the router goroutine; one window per action.
 	havePause, haveClose bool
 	lastPause, lastClose time.Time
+	haveBigBox           bool
+	lastBigBox           time.Time
 }
 
-func newTriggerRouter(tr routerTracker, in <-chan input.Trigger, log *slog.Logger, fb feedbackSender, sink closeSink) *triggerRouter {
+func newTriggerRouter(tr routerTracker, in <-chan input.Trigger, log *slog.Logger, fb feedbackSender, sink closeSink, opener bigBoxOpener, shuttingDown func() bool) *triggerRouter {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &triggerRouter{tr: tr, in: in, log: log, fb: fb, sink: sink, ctx: ctx, cancel: cancel}
+	if shuttingDown == nil {
+		shuttingDown = func() bool { return false }
+	}
+	return &triggerRouter{tr: tr, in: in, log: log, fb: fb, sink: sink, opener: opener, shuttingDown: shuttingDown, ctx: ctx, cancel: cancel}
 }
 
 // Start launches the router goroutine. It is called once.
@@ -91,7 +100,39 @@ func gapOK(have bool, last, at time.Time, window time.Duration) bool {
 	return gap >= window
 }
 
+// forwardBigBox opens the Big Box unless a game session is open (ATB-004..ATB-007).
+func (r *triggerRouter) forwardBigBox() {
+	if r.shuttingDown() || r.ctx.Err() != nil {
+		r.log.Debug("agente encerrando; gatilho do Big Box descartado")
+		return
+	}
+	// Current reports only a live session; any snapshot it returns blocks the Big Box.
+	if _, ok := r.tr.Current(); ok {
+		r.log.Debug("Big Box ignorado: jogo em execução")
+		r.fb.Send(feedback.EventRefused)
+		return
+	}
+	if err := r.opener.OpenBigBox(); err != nil {
+		path := ""
+		if p, ok := r.opener.(interface{ Path() string }); ok {
+			path = p.Path()
+		}
+		r.log.Warn("falha ao abrir o Big Box", "path", path, "error", err.Error())
+		r.fb.Send(feedback.EventRefused)
+		return
+	}
+	r.log.Info("Big Box pedido pelo controle")
+}
+
 func (r *triggerRouter) handle(trig input.Trigger) {
+	if trig.Action == input.ActionBigBox {
+		if !gapOK(r.haveBigBox, r.lastBigBox, trig.At, domain.BigBoxDebounce) {
+			return
+		}
+		r.haveBigBox, r.lastBigBox = true, trig.At
+		r.forwardBigBox()
+		return
+	}
 	if trig.Action == input.ActionClose {
 		if !gapOK(r.haveClose, r.lastClose, trig.At, domain.CloseDebounce) {
 			return

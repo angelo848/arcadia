@@ -48,3 +48,6 @@ const PauseToggleDebounce = 300 * time.Millisecond
 
 // CloseDebounce is the minimum interval between two close-game requests (CON-004).
 const CloseDebounce = 300 * time.Millisecond
+
+// BigBoxDebounce is the minimum interval between two open-Big-Box requests (ATB-003).
+const BigBoxDebounce = 300 * time.Millisecond

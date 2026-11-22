@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -183,6 +184,10 @@ type pauseRig struct {
 	fb   *fbFake
 	sink *sinkFake
 
+	// alterado em 2026-11-22 (fase 15): opener and shuttingDown of the Big Box action [ATB-004, ATB-007].
+	opener *openerFake
+	down   *atomic.Bool
+
 	sentinels int // used by flush (close_router_test.go)
 }
 
@@ -201,8 +206,10 @@ func startRigWith(t *testing.T, tr *pauseFake, fb *fbFake, fbS feedbackSender, s
 	t.Helper()
 	verifyNoLeaks(t)
 	buf := &pauseLogBuf{}
-	rig := &pauseRig{tr: tr, in: make(chan input.Trigger, triggerQueueSize), log: buf, fb: fb, sink: sink}
-	rig.r = newTriggerRouter(tr, rig.in, pauseLogger(buf), fbS, sinkS)
+	// alterado em 2026-11-22 (fase 15): newTriggerRouter takes the opener and shuttingDown.
+	op, down := &openerFake{}, &atomic.Bool{}
+	rig := &pauseRig{tr: tr, in: make(chan input.Trigger, triggerQueueSize), log: buf, fb: fb, sink: sink, opener: op, down: down}
+	rig.r = newTriggerRouter(tr, rig.in, pauseLogger(buf), fbS, sinkS, op, down.Load)
 	rig.r.Start()
 	t.Cleanup(rig.r.Close)
 	return rig

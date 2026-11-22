@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -98,11 +101,45 @@ type App struct {
 	sup       *supervisor     // nil until startup
 
 	wg sync.WaitGroup // supervisor goroutine
+
+	bigBoxRequest atomic.Bool // a pending request to open the Big Box (ATB-008, ATB-012)
 }
 
 // NewApp returns the App for cfg, wired to this OS.
 func NewApp(cfg desktopConfig) *App {
-	return &App{cfg: cfg, platform: defaultPlatform(), clock: domain.SystemClock{}}
+	a := &App{cfg: cfg, platform: defaultPlatform(), clock: domain.SystemClock{}}
+	if cfg.BigBox {
+		a.bigBoxRequest.Store(true)
+	}
+	return a
+}
+
+// TakeBigBoxRequest returns true once per pending Big Box request and clears it (ATB-012).
+func (a *App) TakeBigBoxRequest() bool {
+	return a.bigBoxRequest.Swap(false)
+}
+
+// wantsBigBox reports whether args ask for --bigbox (ATB-009). It scans every argument itself:
+// accepts --bigbox, -bigbox and --bigbox=<bool>; anything else is ignored.
+func wantsBigBox(args []string) bool {
+	for _, arg := range args {
+		name, ok := strings.CutPrefix(arg, "--")
+		if !ok {
+			name, ok = strings.CutPrefix(arg, "-")
+			if !ok {
+				continue
+			}
+		}
+		if name == "bigbox" {
+			return true
+		}
+		if v, ok := strings.CutPrefix(name, "bigbox="); ok {
+			if b, err := strconv.ParseBool(v); err == nil && b {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AgentStatus calls agent.status with a 500 ms timeout. Any failure (or no
@@ -214,7 +251,7 @@ func (a *App) publishClient(c ipcClient) bool {
 // It is safe before startup (no window context, logger or supervisor yet; the
 // Info then goes to slog.Default). Once shutdown began it does nothing, since
 // nothing may log after the log is closed (ADR 0013).
-func (a *App) secondInstance() {
+func (a *App) secondInstance(bigBox bool) {
 	a.mu.Lock()
 	stopped, wailsCtx, log, sup := a.stopped, a.wailsCtx, a.log, a.sup
 	a.mu.Unlock()
@@ -223,6 +260,17 @@ func (a *App) secondInstance() {
 	}
 	if wailsCtx != nil && a.platform.showWindow != nil {
 		a.platform.showWindow(wailsCtx)
+	}
+	if bigBox {
+		if wailsCtx != nil && a.platform.bringToFront != nil {
+			// A refusal or error only means the window may stay behind; it is not a failure.
+			_, _ = a.platform.bringToFront()
+		}
+		// Stored before the event so the frontend can always read it (ATB-009, ATB-012).
+		a.bigBoxRequest.Store(true)
+		if wailsCtx != nil && a.platform.emit != nil {
+			a.platform.emit(wailsCtx, "ui:bigBoxRequested", nil)
+		}
 	}
 	if log == nil {
 		log = slog.Default()

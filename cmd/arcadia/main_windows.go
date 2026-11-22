@@ -58,6 +58,7 @@ func runUI(args []string) int {
 	fset := flag.NewFlagSet("arcadia", flag.ContinueOnError)
 	fset.SetOutput(io.Discard)
 	fset.StringVar(&cfg.DataDir, "data-dir", "", "data directory (default: $ARCADIA_DATA_DIR or <exe dir>\\data)")
+	fset.BoolVar(&cfg.BigBox, "bigbox", false, "open straight into the Big Box")
 	if err := fset.Parse(args); err != nil {
 		boot.Warn("argumentos ignorados", "error", err.Error())
 	}
@@ -171,6 +172,7 @@ const singleInstanceID = "arcadia-ui-5b0f7c1e"
 
 // onSecondInstance is the Wails OnSecondInstanceLaunch hook. The second
 // instance's arguments are ignored (design.md, "Instância única da UI").
-func (a *App) onSecondInstance(options.SecondInstanceData) {
-	a.secondInstance()
+func (a *App) onSecondInstance(d options.SecondInstanceData) {
+	// Wails fills Args with os.Args[1:] (no executable name).
+	a.secondInstance(wantsBigBox(d.Args))
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arcadia-launcher/arcadia/internal/domain"
@@ -50,6 +51,8 @@ type config struct {
 	LogLevel string // --log-level
 	ExeDir   string // directory of the running executable
 	Exe      string // path of the running executable (launched by "Abrir Arcadia")
+	// Spawn starts detached processes (Big Box opener); set by the Windows Run.
+	Spawn    spawnFunc
 	PipeName string // ipc.PipeName(sid); reported in the IPC-019 log record
 	Version  string // reported by agent.status (AGT-004)
 
@@ -86,6 +89,7 @@ func parseFlags(args []string) (config, error) {
 	fs.SetOutput(io.Discard)
 	var cfg config
 	_ = fs.Bool("agent", false, "run as the tray agent")
+	_ = fs.Bool("bigbox", false, "tolerated: ignored by the agent")
 	fs.StringVar(&cfg.DataDir, "data-dir", "", "data directory (default: $ARCADIA_DATA_DIR or <exe dir>\\data)")
 	fs.StringVar(&cfg.LogLevel, "log-level", "info", "log level: debug|info|warn|error")
 	if err := fs.Parse(args); err != nil {
@@ -139,6 +143,9 @@ type instance struct {
 
 	coord  *feedback.Coordinator
 	router *triggerRouter
+
+	// shuttingDown is set at the start of Shutdown; the router drops Big Box triggers [ATB-007].
+	shuttingDown *atomic.Bool
 
 	closeNotifier *gameClosedNotifier
 	sources       []input.Source
@@ -396,7 +403,8 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	closeNotes.set(server)
 
 	triggers := make(chan input.Trigger, triggerQueueSize)
-	router := newTriggerRouter(tr, triggers, log, coord, closeNotes)
+	shuttingDown := &atomic.Bool{}
+	router := newTriggerRouter(tr, triggers, log, coord, closeNotes, uiOpener{exe: cfg.Exe, root: p.Root, spawn: cfg.Spawn}, shuttingDown.Load)
 	router.Start()
 
 	var startedSources []input.Source
@@ -435,6 +443,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 		batchNotifier: batchNotes,
 		coord:         coord,
 		router:        router,
+		shuttingDown:  shuttingDown,
 		closeNotifier: closeNotes,
 		sources:       startedSources,
 		power:         powerCloser,
@@ -553,6 +562,9 @@ func (a *instance) Shutdown(ctx context.Context, reason ShutdownReason) error {
 
 		// No game.launch starts a session from here on [AGT-011].
 		a.tracker.BeginShutdown()
+		if a.shuttingDown != nil {
+			a.shuttingDown.Store(true)
+		}
 		if a.ttb != nil {
 			a.ttb.BeginShutdown()
 		}

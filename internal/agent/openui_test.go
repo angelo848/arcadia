@@ -201,6 +201,17 @@ func TestParseFlags(t *testing.T) {
 			name: "EXE-003/-agent é aceito",
 			args: []string{"-agent"},
 		},
+		// alterado em 2026-11-22 (fase 15): the agent tolerates --bigbox.
+		{
+			name:    "ATB-008/--agent --bigbox: o flag é tolerado e segue no modo do agente",
+			args:    []string{"--agent", "--bigbox"},
+			dataDir: "",
+		},
+		{
+			name:    "ATB-008/--agent --bigbox --data-dir X é aceito",
+			args:    []string{"--agent", "--bigbox", "--data-dir", "X"},
+			dataDir: "X",
+		},
 		{
 			name:     "AGT-005/--log-level debug é lido",
 			args:     []string{"--agent", "--log-level", "debug"},

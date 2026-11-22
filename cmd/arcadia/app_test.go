@@ -798,6 +798,8 @@ func (p *gatedPinger) Call(ctx context.Context, method string, _, _ any) error {
 	}
 }
 
+// alterado em 2026-11-22 (fase 15): secondInstance passou a receber bigBox (ATB-009); estes casos
+// usam false, ou seja, EXE-011 sem mudança.
 func TestSecondInstance(t *testing.T) {
 	t.Parallel()
 
@@ -815,7 +817,7 @@ func TestSecondInstance(t *testing.T) {
 		}
 		stopDriver() // the clock no longer moves: only Kick can cause a new start
 
-		h.app.secondInstance()
+		h.app.secondInstance(false)
 		select {
 		case ctx := <-h.shows:
 			if ctx != h.wailsCtx {
@@ -851,7 +853,7 @@ func TestSecondInstance(t *testing.T) {
 					t.Errorf("secondInstance before startup panicked: %v", r)
 				}
 			}()
-			h.app.secondInstance()
+			h.app.secondInstance(false)
 		}()
 		select {
 		case ctx := <-h.shows:
@@ -876,7 +878,7 @@ func TestSecondInstance(t *testing.T) {
 		}
 		h.shutdownWithin(t)
 
-		h.app.secondInstance()
+		h.app.secondInstance(false)
 		select {
 		case <-h.shows:
 			t.Errorf("showWindow called after OnShutdown")

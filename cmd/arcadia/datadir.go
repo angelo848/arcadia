@@ -21,6 +21,7 @@ type desktopConfig struct {
 	DataDir string // --data-dir
 	Exe     string // this executable (os.Executable); the agent is started from it (EXE-007)
 	ExeDir  string // directory of Exe
+	BigBox  bool   // --bigbox: open straight into the Big Box (ATB-008)
 }
 
 // setupLogging opens the UI log at p.Logs/desktop.log with the shared rotation

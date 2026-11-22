@@ -4,7 +4,8 @@ package agent
 // (ActionPause and ActionClose) and the game.closedByHotkey notification [CON-004, CON-012, CON-014,
 // CON-015, CON-019, CON-021]. The tracker is the pauseFake of pause_test.go (now also with
 // CloseByHotkey); the feedback sender and the close sink are fakes; the IPC case uses a real server and
-// two raw clients. No test sleeps: waits are channels with pauseWait, and the "nothing happened"
+// two raw clients. (alterado em 2026-11-22 (fase 15): the rig of pause_test.go now builds the router with
+// the opener and shuttingDown of the Big Box action; no case of this file changed.) No test sleeps: waits are channels with pauseWait, and the "nothing happened"
 // checks run after a flush (a later trigger that the single router goroutine only handles once every
 // earlier one is done).
 
