@@ -17,7 +17,7 @@ vi.mock('../../wailsjs/runtime/runtime', () => ({
   WindowUnmaximise: rt.WindowUnmaximise,
 }))
 
-import { bringToFront, enterBigBox, exitBigBox } from './bigbox'
+import { bringToFront, enterBigBox, exitBigBox, takeBigBoxRequest } from './bigbox'
 
 const w = window as unknown as { go?: unknown }
 
@@ -28,6 +28,29 @@ beforeEach(() => {
 })
 afterEach(() => {
   delete w.go
+})
+
+// alterado em 2026-11-22 (fase 15): takeBigBoxRequest (ATB-012).
+describe('lib/bigbox takeBigBoxRequest', () => {
+  it('ATB-012/devolve o booleano do binding, lido na hora da chamada', async () => {
+    const Take = vi.fn(() => Promise.resolve(true))
+    w.go = { main: { App: { TakeBigBoxRequest: Take } } }
+    await expect(takeBigBoxRequest()).resolves.toBe(true)
+    Take.mockResolvedValueOnce(false)
+    await expect(takeBigBoxRequest()).resolves.toBe(false)
+    expect(Take).toHaveBeenCalledTimes(2)
+  })
+
+  it('ATB-012/com falha, binding ausente ou resposta que não é true devolve false', async () => {
+    w.go = { main: { App: { TakeBigBoxRequest: vi.fn(() => Promise.reject(new Error('x'))) } } }
+    await expect(takeBigBoxRequest()).resolves.toBe(false)
+    w.go = { main: { App: { TakeBigBoxRequest: vi.fn(() => Promise.resolve(undefined)) } } }
+    await expect(takeBigBoxRequest()).resolves.toBe(false)
+    w.go = { main: { App: {} } }
+    await expect(takeBigBoxRequest()).resolves.toBe(false)
+    delete w.go
+    await expect(takeBigBoxRequest()).resolves.toBe(false)
+  })
 })
 
 describe('lib/bigbox (alterado em 2026-11-15, fase 13)', () => {

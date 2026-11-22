@@ -39,6 +39,11 @@ const writes = [
   'ScrapeApply',
   'MediaQueue',
   'MediaCancel',
+  // alterado em 2026-11-22 (fase 15): escritas do tempo para zerar (TTB-030).
+  'TimeToBeatRefresh',
+  'TimeToBeatSearch',
+  'TimeToBeatChoose',
+  'TimeToBeatSetSettings',
 ]
 
 type Spy = ReturnType<typeof vi.fn>
@@ -635,7 +640,9 @@ describe('invariantes da UI', () => {
       .map(([name]) => name)
     expect(called.length).toBeGreaterThan(3)
     // alterado em 2026-11-15 (phase-12-metadados-unificados, T35): leituras da fase 12 permitidas (MET-080); proibições não mudam.
-    const phase12Reads = new Set(['MetadataBatchStatus'])
+    // alterado em 2026-11-22 (fase 15): leituras do tempo para zerar permitidas (TTB-030).
+    // alterado em 2026-11-22 (fase 15): TakeBigBoxRequest é leitura feita em toda montagem (ATB-008).
+    const phase12Reads = new Set(['MetadataBatchStatus', 'TimeToBeatGet', 'TimeToBeatSettings', 'TakeBigBoxRequest'])
     const unknown = called.filter((n) => !phase9.has(n) && !phase12Reads.has(n))
     expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
   })
@@ -660,7 +667,9 @@ describe('invariantes da UI', () => {
       .map(([name]) => name)
     expect(called.length).toBeGreaterThan(3)
     // alterado em 2026-11-15 (phase-12-metadados-unificados, T35): leituras da fase 12 permitidas (MET-080); proibições não mudam.
-    const phase12Reads = new Set(['MetadataBatchStatus'])
+    // alterado em 2026-11-22 (fase 15): leituras do tempo para zerar permitidas (TTB-030).
+    // alterado em 2026-11-22 (fase 15): TakeBigBoxRequest é leitura feita em toda montagem (ATB-008).
+    const phase12Reads = new Set(['MetadataBatchStatus', 'TimeToBeatGet', 'TimeToBeatSettings', 'TakeBigBoxRequest'])
     const unknown = called.filter((n) => !phase9.has(n) && !phase12Reads.has(n))
     expect(unknown, `bindings fora da fase 9: ${unknown.join(', ')}`).toEqual([])
   })
@@ -847,7 +856,8 @@ describe('invariantes da UI', () => {
     const called = Array.from(spies.entries())
       .filter(([, spy]) => spy.mock.calls.length > 0)
       .map(([name]) => name)
-    const outside = called.filter((n) => !allowed.has(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats)/.test(n))
+    // alterado em 2026-11-22 (fase 15): leituras do tempo para zerar (TimeToBeatGet, TimeToBeatSettings).
+    const outside = called.filter((n) => !allowed.has(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats|TakeBigBoxRequest$|TimeToBeat(Get|Settings)$)/.test(n))
     expect(outside, `bindings fora da lista da fase 12`).toEqual([])
     const writesOutside = writeCalls().filter((n) => !allowed.has(n))
     expect(writesOutside, 'escritas fora das ações da fase 12').toEqual([])
@@ -934,7 +944,8 @@ describe('invariantes da UI', () => {
     const writesOutside = writeCalls().filter((n) => !allowedWrites.has(n))
     expect(writesOutside, 'escritas fora da lista').toEqual([])
     const outside = called.filter(
-      (n) => !allowedWrites.has(n) && !/^(Video|EnterBigBox|ExitBigBox)/.test(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats|ProviderKeyStatus|Metadata)/.test(n),
+      // alterado em 2026-11-22 (fase 15): leituras do tempo para zerar (TimeToBeatGet, TimeToBeatSettings).
+      (n) => !allowedWrites.has(n) && !/^(Video|EnterBigBox|ExitBigBox)/.test(n) && !/^(List|Get|Catalog|Agent|Current|Game|Media|Emulator|Stats|ProviderKeyStatus|Metadata|TakeBigBoxRequest$|TimeToBeat(Get|Settings)$)/.test(n),
     )
     expect(outside, 'bindings fora da lista da fase 13').toEqual([])
     expect(calls('LaunchGame')).toHaveLength(0)
@@ -972,6 +983,85 @@ describe('invariantes da UI', () => {
     await flush()
     expect(calls('LaunchGameUntracked')).toHaveLength(1)
     expect(calls('LaunchGame')).toHaveLength(0)
+  })
+
+  // alterado em 2026-11-22 (fase 15): interações do tempo para zerar (TTB-030).
+  it('TTB-030/abrir o painel, os provedores e a edição com o tempo para zerar (inclusive "Confirmar…", "Atualizar" e as caixas) não chama LaunchGame, LaunchGameUntracked, pausa, retomada nem fechar jogo', async () => {
+    const emit = captureEvents()
+    overrides.ProviderKeyStatus = (provider) => ({ provider, configured: true })
+    overrides.TimeToBeatSettings = () => ({ enabled: true, afterMetadata: true })
+    overrides.TimeToBeatSetSettings = (enabled, afterMetadata) => ({ enabled, afterMetadata })
+    overrides.TimeToBeatGet = (id) => ({
+      gameId: id,
+      state: 'doubt',
+      source: 'hltb',
+      externalId: '',
+      externalTitle: '',
+      mainSeconds: null,
+      mainExtraSeconds: null,
+      completionistSeconds: null,
+      fetchedAt: '',
+      confirmed: false,
+      stale: false,
+      pending: false,
+      unavailable: false,
+      candidates: [],
+    })
+    overrides.TimeToBeatRefresh = (id) => overrides.TimeToBeatGet(id)
+    renderApp()
+    await focusGame('Hades')
+
+    // Panel: the block reads the cache and "Confirmar…" opens "Editar jogo" at the section.
+    fireEvent.click(await within(aside()).findByRole('button', { name: 'Confirmar…' }))
+    const edit = await screen.findByRole('dialog')
+    expect(await within(edit).findByText('Tempo para zerar (HowLongToBeat)')).toBeInTheDocument()
+    fireEvent.click(await within(edit).findByRole('button', { name: 'Atualizar' }))
+    await flush()
+    emit('timeToBeat:changed', { gameId: 20 })
+    await flush()
+    fireEvent.keyDown(edit, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // Providers window with the two checkboxes.
+    fireEvent.click(within(topBar()).getByRole('button', { name: 'Provedores' }))
+    const providers = await screen.findByRole('dialog')
+    fireEvent.click(await within(providers).findByRole('checkbox', { name: 'Consultar o HowLongToBeat' }))
+    await flush()
+    fireEvent.keyDown(providers, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', ...forbiddenSession]) expect(calls(n), n).toHaveLength(0)
+    expect(calledNames().filter((n) => closeLike.test(n)), 'ação de fechar jogo ou encerrar sessão').toEqual([])
+    const allowedWrites = new Set(['TimeToBeatRefresh', 'TimeToBeatSearch', 'TimeToBeatChoose', 'TimeToBeatSetSettings'])
+    expect(writeCalls().filter((n) => !allowedWrites.has(n)), 'escritas fora do tempo para zerar').toEqual([])
+    expect(calls('TimeToBeatRefresh')).toEqual([[20]])
+    expect(calls('TimeToBeatSetSettings')).toEqual([[false, true]])
+  })
+
+  // alterado em 2026-11-22 (fase 15): o pedido externo de Big Box (ATB-015).
+  it('ATB-015/o pedido externo entra no Big Box sem chamar LaunchGame, LaunchGameUntracked, pausa, retomada nem fechar jogo', async () => {
+    const emit = captureEvents()
+    overrides.CurrentSession = () => session('running')
+    let pendingRequest = false
+    overrides.TakeBigBoxRequest = () => {
+      const r = pendingRequest
+      pendingRequest = false
+      return r
+    }
+    renderApp()
+    await findCard('Hades')
+    pendingRequest = true
+    await emit('ui:bigBoxRequested')
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).not.toBeNull())
+    // A second request while already in the Big Box changes nothing.
+    pendingRequest = true
+    await emit('ui:bigBoxRequested')
+    await flush()
+
+    for (const n of ['LaunchGame', 'LaunchGameUntracked', ...forbiddenSession]) expect(calls(n), n).toHaveLength(0)
+    expect(calledNames().filter((n) => closeLike.test(n)), 'ação de fechar jogo ou encerrar sessão').toEqual([])
+    expect(writeCalls().filter((n) => n !== 'BringToFront')).toEqual([])
+    expect(screen.queryByRole('button', { name: /fechar jogo|encerrar/i })).toBeNull()
   })
 
   it('CON-003/o Big Box não tem botão nem atalho de teclado para fechar o jogo (nenhuma tecla além das do mapa de entrada o aciona)', async () => {

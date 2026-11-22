@@ -250,3 +250,99 @@ describe('ProviderKeysDialog: ScreenScraper', () => {
     expect(await screen.findByText('O agente não está respondendo. Tente de novo.')).toBeInTheDocument()
   })
 })
+
+// alterado em 2026-11-22 (fase 15): seção "HowLongToBeat (tempo para zerar)" (TTB-024). Premissas: as duas caixas são
+// checkboxes com esses nomes exatos; a seção não tem campo de chave nem botão "Salvar" (grava na hora); os bindings
+// vêm de window.go.main.App (TimeToBeatSettings, TimeToBeatSetSettings).
+describe('ProviderKeysDialog: HowLongToBeat', () => {
+  const FIRST = 'Consultar o HowLongToBeat'
+  const SECOND = 'Buscar depois de aplicar metadados (também no lote após importar)'
+  let ttb: { TimeToBeatSettings: ReturnType<typeof vi.fn>; TimeToBeatSetSettings: ReturnType<typeof vi.fn> }
+
+  function installTtb(enabled = true, afterMetadata = true) {
+    ttb = {
+      TimeToBeatSettings: vi.fn(() => Promise.resolve({ enabled, afterMetadata })),
+      TimeToBeatSetSettings: vi.fn((e: boolean, a: boolean) => Promise.resolve({ enabled: e, afterMetadata: a })),
+    }
+    ;(window as unknown as { go?: unknown }).go = { main: { App: { ...ttb, VideoStatus: vi.fn(() => Promise.resolve({ pending: 0, running: 0, failed: 0, lane: 'active', pausedUntil: '', requestsToday: 0, maxRequestsPerDay: 0 })) } } }
+    ;(window as unknown as { runtime?: unknown }).runtime = { EventsOn: () => () => {} }
+  }
+
+  beforeEach(() => {
+    statusMock.mockReset()
+    setMock.mockReset()
+    deleteMock.mockReset()
+    statusMock.mockImplementation((p: string) => Promise.resolve({ provider: p, configured: false }))
+  })
+  afterEach(() => {
+    delete (window as unknown as { go?: unknown }).go
+    delete (window as unknown as { runtime?: unknown }).runtime
+  })
+
+  it('TTB-024/a seção "HowLongToBeat (tempo para zerar)" tem as duas caixas com os valores lidos', async () => {
+    installTtb(true, false)
+    renderDialog()
+    expect(await screen.findByText('HowLongToBeat (tempo para zerar)')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: FIRST })).toBeChecked())
+    expect(screen.getByRole('checkbox', { name: SECOND })).not.toBeChecked()
+  })
+
+  it('TTB-024/os textos do serviço não oficial e da reserva do IGDB aparecem', async () => {
+    installTtb()
+    renderDialog()
+    expect(await screen.findByText('Serviço não oficial: pode parar de funcionar sem aviso')).toBeInTheDocument()
+    expect(
+      screen.getByText('Se o HowLongToBeat falhar ou não achar o jogo, o IGDB é usado como reserva (precisa da chave do IGDB acima)'),
+    ).toBeInTheDocument()
+  })
+
+  it('TTB-024/nenhum campo de chave na seção do HowLongToBeat', async () => {
+    installTtb()
+    renderDialog()
+    await screen.findByText('HowLongToBeat (tempo para zerar)')
+    expect(screen.queryByLabelText(/HowLongToBeat/i, { selector: 'input[type="password"], input[type="text"]' })).toBeNull()
+    // A seção não tem "Salvar": os ScreenScraper continuam sendo os dois últimos (SSC-002).
+    expect(screen.getAllByRole('button', { name: 'Salvar' })).toHaveLength(4)
+  })
+
+  it('TTB-024/desligar a primeira chama TimeToBeatSetSettings(false, afterMetadata) na hora e desativa a segunda', async () => {
+    installTtb(true, true)
+    renderDialog()
+    const first = await screen.findByRole('checkbox', { name: FIRST })
+    await waitFor(() => expect(first).toBeChecked())
+    expect(screen.getByRole('checkbox', { name: SECOND })).toBeEnabled()
+    fireEvent.click(first)
+    await waitFor(() => expect(ttb.TimeToBeatSetSettings).toHaveBeenCalledTimes(1))
+    expect(ttb.TimeToBeatSetSettings).toHaveBeenCalledWith(false, true)
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: SECOND })).toBeDisabled())
+    expect(screen.getByRole('checkbox', { name: FIRST })).not.toBeChecked()
+  })
+
+  it('TTB-024/com a primeira desligada a segunda já abre desativada e não grava ao ser clicada', async () => {
+    installTtb(false, true)
+    renderDialog()
+    const second = await screen.findByRole('checkbox', { name: SECOND })
+    await waitFor(() => expect(second).toBeDisabled())
+    fireEvent.click(second)
+    expect(ttb.TimeToBeatSetSettings).not.toHaveBeenCalled()
+  })
+
+  it('TTB-024/desmarcar a segunda chama TimeToBeatSetSettings(true, false) na hora', async () => {
+    installTtb(true, true)
+    renderDialog()
+    const second = await screen.findByRole('checkbox', { name: SECOND })
+    await waitFor(() => expect(second).toBeChecked())
+    fireEvent.click(second)
+    await waitFor(() => expect(ttb.TimeToBeatSetSettings).toHaveBeenCalledWith(true, false))
+    expect(ttb.TimeToBeatSetSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('TTB-024/religar a primeira chama TimeToBeatSetSettings(true, afterMetadata)', async () => {
+    installTtb(false, true)
+    renderDialog()
+    const first = await screen.findByRole('checkbox', { name: FIRST })
+    await waitFor(() => expect(first).not.toBeChecked())
+    fireEvent.click(first)
+    await waitFor(() => expect(ttb.TimeToBeatSetSettings).toHaveBeenCalledWith(true, true))
+  })
+})

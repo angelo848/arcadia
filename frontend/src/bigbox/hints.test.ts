@@ -4,6 +4,23 @@ import { hintsFor } from './hints'
 const pairs = (h: Array<{ button: string; label: string }>) => h.map((x) => `${x.button} ${x.label}`)
 
 describe('hintsFor', () => {
+  it('ATB-013/hintsFor em nenhuma tela nem combinação contém "Select+A"', () => {
+    for (const screen of ['browse', 'details'] as const) {
+      for (const empty of [false, true]) {
+        for (const videoVisible of [false, true]) {
+          for (const detailsFocus of [undefined, 'play', 'playUntracked', 'gallery'] as const) {
+            for (const hasGallery of [false, true]) {
+              const all = hintsFor(screen, { empty, videoVisible, detailsFocus, hasGallery })
+              for (const h of all) {
+                expect(`${h.button} ${h.label}`).not.toMatch(/Select\s*\+\s*A\b/)
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+
   it('BBX-015/dicas de Navegar: A Jogar, X Detalhes, LB/RB Plataforma, Select+B Fechar o jogo, B Sair', () => {
     expect(pairs(hintsFor('browse', { empty: false, videoVisible: false }))).toEqual([
       'A Jogar',

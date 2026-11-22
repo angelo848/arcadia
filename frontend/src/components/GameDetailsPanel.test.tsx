@@ -638,3 +638,96 @@ describe('GameDetailsPanel', () => {
     expect(props.onPlay).not.toHaveBeenCalled()
   })
 })
+
+// alterado em 2026-11-22 (fase 15): acréscimos do bloco "Tempo para zerar" (TTB-013, TTB-015, TTB-039).
+// Premissa: o painel passa o seu onEdit ao bloco, que o chama com { section: 'timeToBeat' } em "Confirmar…"
+// (o botão "Editar" continua chamando onEdit() sem argumentos).
+describe('GameDetailsPanel: tempo para zerar', () => {
+  const nulls = { mainSeconds: null, mainExtraSeconds: null, completionistSeconds: null }
+  function ttbView(over: Record<string, unknown> = {}) {
+    return {
+      gameId: 10,
+      state: 'found',
+      source: 'hltb',
+      externalId: '1',
+      externalTitle: 'Hollow Knight',
+      mainSeconds: 97200,
+      mainExtraSeconds: 5400,
+      completionistSeconds: 99000,
+      fetchedAt: '2026-11-20T12:00:00.000Z',
+      confirmed: false,
+      stale: false,
+      pending: false,
+      unavailable: false,
+      candidates: [],
+      ...over,
+    }
+  }
+  function installTtb(get: (id: number, fetch: boolean) => Promise<unknown>, enabled = true) {
+    const a = install()
+    Object.assign(a, {
+      TimeToBeatGet: vi.fn(get),
+      TimeToBeatSettings: vi.fn(() => Promise.resolve({ enabled, afterMetadata: true })),
+    })
+    return a as Fakes & { TimeToBeatGet: ReturnType<typeof vi.fn> }
+  }
+
+  it('TTB-015/o bloco "Tempo para zerar" vem depois de "Tempo total", com os três rótulos, valores e a fonte', async () => {
+    installTtb(() => Promise.resolve(ttbView()))
+    renderPanel()
+    await loaded()
+    const block = await screen.findByText('Tempo para zerar')
+    expect(precedes(screen.getByText('Tempo total'), block)).toBe(true)
+    for (const l of ['História principal', 'História + extras', '100%']) expect(screen.getByText(l)).toBeInTheDocument()
+    expect(await screen.findByText('27 h')).toBeInTheDocument()
+    expect(screen.getByText('Fonte: HowLongToBeat')).toBeInTheDocument()
+  })
+
+  it('TTB-015/ao mostrar o jogo lê o cache (fetch false) com o id do jogo', async () => {
+    const a = installTtb(() => Promise.resolve(ttbView()))
+    renderPanel()
+    await loaded()
+    await waitFor(() => expect(a.TimeToBeatGet).toHaveBeenCalledWith(10, false))
+  })
+
+  it('TTB-015/em doubt "Confirmar…" chama onEdit({ section: "timeToBeat" }) e "Editar" segue chamando onEdit()', async () => {
+    installTtb(() => Promise.resolve(ttbView({ state: 'doubt', ...nulls })))
+    const { props } = renderPanel()
+    await loaded()
+    expect(await screen.findByText('Correspondência incerta')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar…' }))
+    expect(props.onEdit).toHaveBeenCalledTimes(1)
+    expect(props.onEdit).toHaveBeenCalledWith({ section: 'timeToBeat' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(props.onEdit).toHaveBeenCalledTimes(2)
+    expect(props.onEdit).toHaveBeenLastCalledWith()
+  })
+
+  it('TTB-015/serviço desligado e sem cache: o painel não mostra o bloco', async () => {
+    installTtb(() => Promise.resolve(ttbView({ state: 'none', source: '', ...nulls })), false)
+    renderPanel()
+    await loaded()
+    await waitFor(() => expect(app.MediaList).toHaveBeenCalled())
+    await settle()
+    expect(screen.queryByText('Tempo para zerar')).toBeNull()
+  })
+
+  it('TTB-013/binding que rejeita: o painel segue inteiro, com os rótulos em "—", sem alert nem modal', async () => {
+    installTtb(() => Promise.reject(new Error('boom')))
+    renderPanel()
+    await loaded()
+    await settle()
+    for (const l of ['História principal', 'História + extras', '100%']) expect(screen.getByText(l)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Jogar' })).toBeEnabled()
+  })
+
+  it('TTB-039/"Fonte: IGDB" para igdb', async () => {
+    installTtb(() => Promise.resolve(ttbView({ source: 'igdb' })))
+    renderPanel()
+    await loaded()
+    expect(await screen.findByText('Fonte: IGDB')).toBeInTheDocument()
+    expect(screen.queryByText('Fonte: HowLongToBeat')).toBeNull()
+  })
+})

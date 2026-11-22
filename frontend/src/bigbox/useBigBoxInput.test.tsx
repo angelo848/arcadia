@@ -209,13 +209,79 @@ describe('useBigBoxInput gamepad', () => {
     expect(calls).toEqual([])
   })
 
-  it('BBX-019/A, direcional, LB, RB e X continuam valendo com Select apertado', () => {
+  // alterado em 2026-11-22 (fase 15): com Select apertado o A também é ignorado (BBX-057); X, LB, RB e → seguem valendo.
+  it('BBX-057/X, LB, RB e direcional ←/→ continuam valendo com Select apertado', () => {
     const { calls } = setup()
     pressed.add(SELECT); advance(32)
-    for (const b of [A, X, LB, RB, RIGHT]) {
+    for (const b of [X, LB, RB, RIGHT]) {
       pressed.add(b); advance(32); pressed.delete(b); advance(32)
     }
-    expect(calls).toEqual(['accept', 'details', 'tabPrev', 'tabNext', 'next'])
+    expect(calls).toEqual(['details', 'tabPrev', 'tabNext', 'next'])
+  })
+
+  it('BBX-057/Select apertado: A não emite accept, nem ao soltar o Select com A ainda apertado', () => {
+    const { calls } = setup()
+    pressed.add(SELECT); advance(32)
+    pressed.add(A); advance(32); pressed.delete(A); advance(32)
+    expect(calls).toEqual([])
+    pressed.add(A); advance(32)
+    pressed.delete(SELECT); advance(64)
+    expect(calls).toEqual([])
+    pressed.delete(A); advance(32)
+    expect(calls).toEqual([])
+  })
+
+  it('BBX-057/Select apertado: B e Y continuam ignorados e ↑/↓ do direcional (12 e 13) contam como soltos', () => {
+    const { calls } = setup({ axis: 'vertical' })
+    pressed.add(SELECT); advance(32)
+    for (const b of [B, Y, UP, DOWN]) {
+      pressed.add(b); advance(32); pressed.delete(b); advance(32)
+    }
+    expect(calls).toEqual([])
+    pressed.add(UP); advance(REPEAT_DELAY_MS + REPEAT_EVERY_MS * 3)
+    expect(calls).toEqual([])
+  })
+
+  it('BBX-057/↑ apertado com Select e Select solto depois: a borda de subida perdida não emite (eixo vertical e details)', () => {
+    for (const o of [{ axis: 'vertical' as const }, { screen: 'details' as const }]) {
+      const { calls, unmount } = setup(o)
+      pressed.add(SELECT); advance(32)
+      pressed.add(UP); pressed.add(DOWN); advance(32)
+      pressed.delete(SELECT); advance(REPEAT_DELAY_MS + 200)
+      expect(calls).toEqual([])
+      pressed.clear(); advance(32)
+      // Pressed again without Select it works as before.
+      pressed.add(UP); advance(16)
+      expect(calls.length).toBe(1)
+      pressed.clear(); advance(32)
+      unmount()
+    }
+  })
+
+  it('BBX-057/Select apertado: o analógico esquerdo e o direito continuam valendo', () => {
+    const { calls } = setup({ axis: 'vertical' })
+    pressed.add(SELECT); advance(32)
+    axes[1] = -0.9; advance(16); axes[1] = 0; advance(32)
+    axes[1] = 0.9; advance(16); axes[1] = 0; advance(32)
+    expect(calls).toEqual(['prev', 'next'])
+    const d = setup({ screen: 'details' })
+    axes[3] = -0.9; advance(16); axes[3] = 0; advance(32)
+    expect(d.calls).toEqual(['scrollUp'])
+  })
+
+  it('BBX-057/sem Select, A, B, Y e o direcional ↑/↓ funcionam como antes', () => {
+    const { calls } = setup({ axis: 'vertical' })
+    for (const b of [A, B, Y, UP, DOWN]) {
+      pressed.add(b); advance(32); pressed.delete(b); advance(32)
+    }
+    expect(calls).toEqual(['accept', 'back', 'toggleSound', 'prev', 'next'])
+  })
+
+  it('BBX-057/o teclado não é afetado por Select', () => {
+    const { calls } = setup({ axis: 'vertical' })
+    pressed.add(SELECT); advance(32)
+    key('Enter'); key('ArrowUp'); key('Escape')
+    expect(calls).toEqual(['accept', 'prev', 'back'])
   })
 
   it('BBX-019/Y sem Select liga o som', () => {

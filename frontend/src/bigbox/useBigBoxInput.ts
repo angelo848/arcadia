@@ -62,6 +62,7 @@ export function useBigBoxInput(o: Opts): void {
     window.addEventListener('keydown', onKey)
 
     const prevBtn: Record<number, boolean> = {}
+    const blocked: Record<number, boolean> = {}
     let primed = false
     const held = new Map<string, number>() // repeat key -> next emission time
     let raf = 0
@@ -97,7 +98,7 @@ export function useBigBoxInput(o: Opts): void {
       }
       const aR = rise(BTN.A), xR = rise(BTN.X), lbR = rise(BTN.LB), rbR = rise(BTN.RB), yR = rise(BTN.Y), bR = rise(BTN.B)
       if (primed) {
-        if (aR) emit('accept')
+        if (!select && aR) emit('accept')
         if (xR) emit('details')
         if (lbR) emit('tabPrev')
         if (rbR) emit('tabNext')
@@ -106,11 +107,22 @@ export function useBigBoxInput(o: Opts): void {
       }
       primed = true
       const ax = (i: number) => pad.axes[i] ?? 0
+      // Select + up/down is the volume chord of the agent: the d-pad up/down count as released while Select is
+      // held and until they are released, so letting Select go first does not emit [BBX-057].
+      const vert = (i: number) => {
+        const down = pressedBtn(pad, i)
+        if (!down) {
+          blocked[i] = false
+        } else if (select) {
+          blocked[i] = true
+        }
+        return down && !blocked[i]
+      }
       const dirs: Array<[Dir, boolean]> = [
         ['left', pressedBtn(pad, BTN.LEFT) || ax(0) < -STICK_DEAD_ZONE],
         ['right', pressedBtn(pad, BTN.RIGHT) || ax(0) > STICK_DEAD_ZONE],
-        ['up', pressedBtn(pad, BTN.UP) || ax(1) < -STICK_DEAD_ZONE],
-        ['down', pressedBtn(pad, BTN.DOWN) || ax(1) > STICK_DEAD_ZONE],
+        ['up', vert(BTN.UP) || ax(1) < -STICK_DEAD_ZONE],
+        ['down', vert(BTN.DOWN) || ax(1) > STICK_DEAD_ZONE],
       ]
       for (const [d, down] of dirs) repeat(d, down, t, dirAction(d))
       const details = ref.current.screen === 'details'

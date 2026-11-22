@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type JSX } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Modal } from './Modal'
+import { getTimeToBeatSettings, setTimeToBeatSettings, type TimeToBeatSettings } from '../lib/timeToBeatEdit'
 import {
   deleteProviderKey,
   providerKeyStatus,
@@ -92,6 +93,8 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
   const [ssDevId, setSsDevId] = useState('')
   const [ssDevPass, setSsDevPass] = useState('')
   const [videoMsg, setVideoMsg] = useState<string | null>(null)
+  const [ttb, setTtb] = useState<TimeToBeatSettings>({ enabled: false, afterMetadata: false })
+  const [ttbLoaded, setTtbLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const videoReady = configured.screenscraper === true && configured.screenscraperdev === true
@@ -124,6 +127,31 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
       setError(messageOf(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    let alive = true
+    getTimeToBeatSettings()
+      .then((s) => {
+        if (alive && s) {
+          setTtb(s)
+          setTtbLoaded(true)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  async function changeTtb(enabled: boolean, afterMetadata: boolean) {
+    setError(null)
+    try {
+      const saved = await setTimeToBeatSettings(enabled, afterMetadata)
+      setTtb(saved ?? { enabled, afterMetadata })
+    } catch (e) {
+      setError(messageOf(e))
     }
   }
 
@@ -330,6 +358,36 @@ export function ProviderKeysDialog({ onClose }: { onClose: () => void }): JSX.El
               </div>
             </div>
           )}
+        </section>
+
+        <section className="flex flex-col gap-2 rounded border border-line p-3">
+          <h3 className="text-sm font-medium text-fg">HowLongToBeat (tempo para zerar)</h3>
+          <p className="text-xs text-muted">Serviço não oficial: pode parar de funcionar sem aviso</p>
+          <p className="text-xs text-muted">
+            Se o HowLongToBeat falhar ou não achar o jogo, o IGDB é usado como reserva (precisa da chave do IGDB acima)
+          </p>
+          <label className="flex items-center gap-2 text-sm text-fg">
+            <input
+              type="checkbox"
+              checked={ttb.enabled}
+              disabled={!ttbLoaded}
+              onChange={() => void changeTtb(!ttb.enabled, ttb.afterMetadata)}
+            />
+            Consultar o HowLongToBeat
+          </label>
+          <label className="flex items-center gap-2 text-sm text-fg">
+            <input
+              type="checkbox"
+              checked={ttb.afterMetadata}
+              disabled={!ttbLoaded || !ttb.enabled}
+              onChange={() => {
+                if (ttbLoaded && ttb.enabled) {
+                  void changeTtb(true, !ttb.afterMetadata)
+                }
+              }}
+            />
+            Buscar depois de aplicar metadados (também no lote após importar)
+          </label>
         </section>
     </Modal>
   )

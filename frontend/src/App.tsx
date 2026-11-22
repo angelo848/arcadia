@@ -9,10 +9,12 @@ import { PlatformsDialog } from './components/PlatformsDialog'
 import { StatsPage } from './components/StatsPage'
 import { BigBox } from './bigbox/BigBox'
 import { BIGBOX_THEMES, resolveTheme } from './bigbox/themes/registry'
-import { enterBigBox, exitBigBox } from './lib/bigbox'
+import { bringToFront, enterBigBox, exitBigBox, takeBigBoxRequest } from './lib/bigbox'
+import { useTimeToBeatEvents } from './lib/timeToBeat'
 import { useEmulators } from './lib/emulators'
 import { useCardImages, useMediaEvents } from './lib/metadata'
 import { ProviderKeysDialog } from './components/ProviderKeysDialog'
+import { TimeToBeatEditor } from './components/TimeToBeatEditor'
 import { ErrorBanner } from './components/ErrorBanner'
 import { GameDetailsPanel } from './components/GameDetailsPanel'
 import { GameEditDialog } from './components/GameEditDialog'
@@ -67,6 +69,7 @@ type GameDialog = 'edit' | 'metadata' | 'remove'
 function GameDialogs({
   gameId,
   dialog,
+  section,
   genreSuggestions,
   onClose,
   onRemoved,
@@ -74,6 +77,7 @@ function GameDialogs({
 }: {
   gameId: number
   dialog: GameDialog | null
+  section: 'timeToBeat' | null
   genreSuggestions: string[]
   onClose: () => void
   onRemoved: (id: number) => void
@@ -94,6 +98,8 @@ function GameDialogs({
         loadError={detail.isError ? errorMessage(detail.error) : null}
         genreSuggestions={genreSuggestions}
         emulators={emulators.data ?? []}
+        extraSection={detail.data ? <TimeToBeatEditor gameId={gameId} title={detail.data.title} /> : undefined}
+        scrollToExtra={section === 'timeToBeat'}
         pending={update.isPending}
         error={editError}
         onSave={(patch) => {
@@ -172,6 +178,8 @@ export default function App() {
   const [selection, dispatch] = useReducer(selectionReducer, initialSelection)
   const focusedId = focusedGameId(selection)
   const [dialog, setDialog] = useState<GameDialog | null>(null)
+  // The section "Editar jogo" scrolls to when it opens from the time to beat block [TTB-015].
+  const [editSection, setEditSection] = useState<'timeToBeat' | null>(null)
 
   // The list waits for the first agent status, so the connect does not reload a page still on its way [UI-009].
   const games = useInfiniteGames(query, { enabled: status.data !== undefined && !conflict })
@@ -237,8 +245,42 @@ export default function App() {
     void enterBigBox()
     setBigBox(true)
   }, [])
+  // The Big Box request of the agent or of a second instance [ATB-008..ATB-012]. State is read by ref: the event
+  // arrives outside the render cycle. An import window, even idle, counts as a modal here.
+  const blockedRef = useRef(false)
+  blockedRef.current = anyModalOpen || importing || reviewing
+  const bigBoxRef = useRef(false)
+  bigBoxRef.current = bigBox
+  const requestBigBox = useCallback(() => {
+    if (!bigBoxRef.current && !blockedRef.current) {
+      enterBigBoxShell()
+    }
+    void bringToFront()
+  }, [enterBigBoxShell])
   useEffect(() => {
-    const onF11 = (e: KeyboardEvent) => {
+    let alive = true
+    const serve = () => {
+      void takeBigBoxRequest().then((ok) => {
+        if (ok && alive) {
+          requestBigBox()
+        }
+      })
+    }
+    serve()
+    const off = (window as unknown as { runtime?: { EventsOn?: (n: string, cb: () => void) => (() => void) | void } }).runtime?.EventsOn?.(
+      'ui:bigBoxRequested',
+      serve,
+    )
+    return () => {
+      alive = false
+      if (typeof off === 'function') {
+        off()
+      }
+    }
+  }, [requestBigBox])
+  useTimeToBeatEvents()
+  useEffect(() => {
+    const onF11 =(e: KeyboardEvent) => {
       if (e.key === 'F11') {
         e.preventDefault()
         enterBigBoxShell()
@@ -367,7 +409,12 @@ export default function App() {
       <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
         <h1 className="text-2xl font-semibold">Arcadia</h1>
         <div className="flex items-center gap-4">
-          <button type="button" onClick={enterBigBoxShell} className={topButton}>
+          <button
+            type="button"
+            title="Big Box (F11 ou Select + A no controle)"
+            onClick={enterBigBoxShell}
+            className={topButton}
+          >
             Big Box
           </button>
           <select
@@ -449,6 +496,7 @@ export default function App() {
           key={focusedId}
           gameId={focusedId}
           dialog={dialog}
+          section={editSection}
           genreSuggestions={genreNames}
           onClose={() => setDialog(null)}
           onRemoved={(id) => dispatch({ type: 'removed', gameId: id })}
@@ -544,7 +592,10 @@ export default function App() {
                   pending={pending}
                   onPlay={play}
                   onPlayUntracked={playUntracked}
-                  onEdit={() => setDialog('edit')}
+                  onEdit={(o) => {
+                    setEditSection(o?.section ?? null)
+                    setDialog('edit')
+                  }}
                   onSearchMetadata={() => setDialog('metadata')}
                   onRemove={() => setDialog('remove')}
                   onSelectionEvent={onSelectionEvent}

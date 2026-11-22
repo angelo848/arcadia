@@ -1,4 +1,4 @@
-import { useState, type JSX } from 'react'
+import { useState, type JSX, type ReactNode } from 'react'
 import type { EmulatorView } from '../lib/emulators'
 import type { GameDetailView } from '../lib/library'
 import { GameEditForm } from './GameEditForm'
@@ -10,6 +10,8 @@ export type GameEditDialogProps = {
   loadError: string | null
   genreSuggestions?: string[]
   emulators?: EmulatorView[]
+  extraSection?: ReactNode
+  scrollToExtra?: boolean
   onSave: (patch: Record<string, unknown>) => void
   onCancel: () => void
   pending: boolean

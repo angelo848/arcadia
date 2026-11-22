@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { useId, useState, type FormEvent, type JSX, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type JSX, type ReactNode } from 'react'
 import type { GameStatus } from '../lib/filters'
 import { completedDay, diffPatch, type EditDraft } from '../lib/gamePatch'
 import { pickGameExecutable } from '../lib/games'
@@ -58,6 +58,9 @@ export type GameEditFormProps = {
   // actionsTarget, when given, receives Salvar/Cancelar by portal (the footer of a Modal); null waits for
   // the target to mount. Without it the buttons stay at the end of the form.
   actionsTarget?: HTMLElement | null
+  // extraSection is a block mounted after the images (the time to beat); scrollToExtra scrolls to it on mount.
+  extraSection?: ReactNode
+  scrollToExtra?: boolean
 }
 
 const noSuggestions: string[] = []
@@ -125,7 +128,15 @@ export function GameEditForm({
   pending,
   error,
   actionsTarget,
+  extraSection,
+  scrollToExtra,
 }: GameEditFormProps): JSX.Element {
+  const extraRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (scrollToExtra) {
+      extraRef.current?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [scrollToExtra])
   const [values, setValues] = useState<FormValues>(() => initialValues(game))
   const idPrefix = useId()
   const [pickError, setPickError] = useState<string | null>(null)
@@ -416,6 +427,8 @@ export function GameEditForm({
       </Row>
 
       <GameImagesEditor gameId={game.id} />
+
+      {extraSection !== undefined && <div ref={extraRef}>{extraSection}</div>}
 
       {error !== null && (
         <p role="alert" className="text-sm text-danger">

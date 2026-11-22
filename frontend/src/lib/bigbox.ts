@@ -40,6 +40,17 @@ export async function exitBigBox(): Promise<void> {
   }
 }
 
+// takeBigBoxRequest consumes the pending Big Box request of the agent [ATB-012]. The binding is read at call
+// time; only a literal true counts, and a failure or a missing binding means no request.
+export async function takeBigBoxRequest(): Promise<boolean> {
+  try {
+    const app = (window as unknown as { go?: { main?: { App?: { TakeBigBoxRequest?: () => Promise<unknown> } } } }).go?.main?.App
+    return (await app?.TakeBigBoxRequest?.()) === true
+  } catch {
+    return false
+  }
+}
+
 // bringToFront asks the shell to put the Arcadia window in the foreground [CON-022]. The binding is read
 // at call time; a missing binding or a failure is ignored (the Windows refusal is not an error).
 export async function bringToFront(): Promise<void> {

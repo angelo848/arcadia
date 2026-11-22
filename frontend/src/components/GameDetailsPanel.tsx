@@ -12,6 +12,7 @@ import type { SelectionEvent } from '../lib/selection'
 import { MediaCarousel } from './MediaCarousel'
 import { PlatformIcon } from './PlatformIcon'
 import { SessionsList } from './SessionsList'
+import { TimeToBeatBlock } from './TimeToBeatBlock'
 
 const statusLabels: Record<GameStatus, string> = {
   not_played: 'Não jogado',
@@ -27,7 +28,7 @@ export type GameDetailsPanelProps = {
   pending: PendingLaunch
   onPlay: (id: number) => void
   onPlayUntracked: (id: number) => void
-  onEdit: () => void
+  onEdit: (opts?: { section?: 'timeToBeat' }) => void
   onSearchMetadata: () => void
   onRemove: () => void
   onSelectionEvent: (e: SelectionEvent) => void
@@ -211,6 +212,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           <Field label="Tempo total">
             <span>{formatPlayTime(g.totalPlaySeconds)}</span>
           </Field>
+          <TimeToBeatBlock gameId={g.id} onEdit={onEdit} />
           <Field label="Primeira vez jogado">
             <span>{formatLocalDateTime(g.firstPlayedAt)}</span>
           </Field>
