@@ -146,23 +146,30 @@ func TTBResolve(h HLTBOutcome, i IGDBOutcome) (write bool, source string, state 
 ## T05 — Conferência do endpoint do HowLongToBeat (com rede)
 - Requisitos: TTB-012, TTB-027, TTB-036. **Responsável:** sessão principal, com o usuário (a tarefa exige rede; nenhum teste a faz).
 - Conferir os pontos da tabela de [rules §9](contracts/hltb-rules.md) (padrão do caminho no script, passo prévio, corpo e campos obrigatórios, cabeçalhos mínimos, campos `comp_*` em segundos, `game_type`, taxa de 1 requisição a cada 2 s, e `game_time_to_beats` do IGDB) e preencher as colunas "Conferido em" e "Resultado". Divergência de regra visível volta ao spec-writer e pausa a T06 e a T07; divergência só de formato é ajustada em rules §2..§4 e §10.3.
-- Saída adicional: amostras **sanitizadas** (página inicial, script, resposta de busca com resultados e vazia, resposta do IGDB) entregues ao test-writer na T06 (só o test-writer cria `testdata/`). Nenhuma credencial é gravada em arquivo ou log. Bloqueia T06 e T07.
+- Saída adicional: amostras **sanitizadas** (resposta do token, busca com resultados e vazia) entregues ao test-writer na T06 (só o test-writer cria `testdata/`). Nenhuma credencial é gravada em arquivo ou log. Bloqueia T06 e T07.
+- **Status: feita em 2026-11-22** pela sessão principal, com requisições reais. Resultado em [rules §9](contracts/hltb-rules.md): só divergência de formato, que a spec já absorveu (TTB-010, TTB-011, TTB-012 e TTB-027 alterados; rules §1..§4, §7 e §9; design §3.2). A descoberta por script não existe mais: o caminho é fixo (`POST /api/search/site`) e exige um token (`GET /api/search/site/init?t=<epoch ms>` → `{"token"}`, cabeçalho `x-auth-token`, 403 = token expirado). O corpo usa `year` no lugar de `rangeYear` e `gameplay` não tem `difficulty`. Os campos `comp_*` estão em segundos. O IGDB `game_time_to_beats` foi conferido só pela documentação e deve ser confirmado com a chave do usuário no roteiro manual T38. Nenhum comportamento visível mudou. Amostras sanitizadas: `C:\Users\angel\AppData\Local\Temp\claude\ae6d52667fa017b3\bfac26e1-cd0b-4787-b524-e829e66ac7ce\scratchpad\hltb-samples\` (`init.json`, `search-results.json`, `search-empty.json`).
 
 ## T06 — Testes: clientes do HowLongToBeat e do IGDB
 - Requisitos: TTB-003, TTB-005, TTB-010, TTB-012, TTB-027, TTB-031, TTB-036, TTB-037, TTB-038. **Responsável:** test-writer. Dependência: T05 (e T04 para as constantes).
-- Arquivos: `internal/scrapers/hltb_test.go`, `internal/scrapers/igdb_ttb_test.go` (novos); `internal/scrapers/testdata/hltb/*` (página inicial, script com o padrão da busca, script sem o padrão, busca com resultados, busca vazia, HTML no lugar de JSON, `game_type: dlc`) e `testdata/igdb_time_to_beats*.json` (com os três campos, ausentes, zeros, lista vazia).
-- Testes (HowLongToBeat, `httptest`):
-  - `TTB-012/descobre o caminho pela página inicial e pelo script (_app-) e o reusa na segunda busca sem nova descoberta`;
-  - `TTB-012/com 404 na busca descobre de novo uma única vez; se falhar de novo é falha temporária`;
-  - `TTB-012/script sem o padrão em nenhum dos 5 primeiros: falha temporária (ErrUnavailable)`;
+- Arquivos: `internal/scrapers/hltb_test.go`, `internal/scrapers/igdb_ttb_test.go` (novos); `internal/scrapers/testdata/hltb/*`: copiar as **amostras reais sanitizadas da T05** de `C:\Users\angel\AppData\Local\Temp\claude\ae6d52667fa017b3\bfac26e1-cd0b-4787-b524-e829e66ac7ce\scratchpad\hltb-samples\`, com o mesmo nome: `init.json` (`{"token"}`), `search-results.json` ("hollow knight", 8 resultados; Hollow Knight 26286 com 97159 / 149918 / 236144, alias "Hollow Knight: Voidheart Edition", campos extras como `game_name_date` e `comp_all`) e `search-empty.json` (`count: 0`, `data: []`). Acrescentar casos sintéticos: `init` sem `token`, com token vazio e com JSON inválido; HTML no lugar de JSON; item com `game_type: dlc`. Também `testdata/igdb_time_to_beats*.json` (com os três campos, ausentes, zeros, lista vazia). · alterado em 2026-11-22 (T05): saíram a página inicial e os scripts da descoberta.
+- Testes (HowLongToBeat, `httptest`) · alterado em 2026-11-22 (T05): os três casos de descoberta por script saíram e entraram os do token:
+  - `TTB-012/sem token guardado faz GET /api/search/site/init?t=<epoch ms do relógio> e depois POST /api/search/site com x-auth-token igual ao token recebido`;
+  - `TTB-012/a segunda busca reusa o token guardado sem novo init`;
+  - `TTB-012/403 na busca descarta o token, faz um init novo e repete a busca uma única vez com o token novo`;
+  - `TTB-012/403 de novo depois da renovação é ErrUnavailable (sem terceira tentativa)`;
+  - `TTB-012/init com rede falhando, status diferente de 200, JSON inválido, sem token ou com token vazio é ErrUnavailable e a busca não é feita`;
+  - `TTB-012/404 na busca é ErrUnavailable sem novo init nem nova tentativa`;
+  - `TTB-012/o token não aparece no erro devolvido nem no log capturado`;
+  - `TTB-005/a resposta real (search-results.json) é lida só por data; campos extras do objeto e dos itens são ignorados`;
   - `TTB-005/comp_main, comp_plus e comp_100 viram segundos; zero, ausente, negativo ou não inteiro viram 0 (nulo) sem afetar os outros`;
   - `TTB-005/game_id ausente ou ≤ 0, game_name vazio e game_type diferente de game são ignorados; release_world fora de 1950..2100 vira 0; game_alias e profile_platform separados por vírgula`;
   - `TTB-005/data vazia é resposta válida (sem resultados), não falha`;
   - `TTB-003/searchTerms é o termo dividido por espaços, sem vazios, size 20`;
-  - `TTB-010/cada requisição, inclusive a da descoberta, passa pelo Limiter de 2.000 ms (relógio fake) e é abandonada pelo Timeout configurado (servidor lento)`;
+  - `TTB-010/cada requisição, init e busca (inclusive a repetida depois do 403), passa pelo Limiter de 2.000 ms (relógio fake) e é abandonada pelo Timeout configurado (servidor lento)`;
   - `TTB-010/ctx cancelado pelo chamador devolve ctx.Err() sem virar ErrUnavailable`;
-  - `TTB-011/rede, 403, 429, 5xx, JSON inválido, data ausente e corpo maior que 2 MiB são ErrUnavailable sem URL nem corpo no erro`;
-  - `TTB-027/o pedido leva só o termo e os campos fixos, os cabeçalhos genéricos e nenhum Cookie, Authorization ou id de jogo; o cliente não tem Jar`;
+  - `TTB-011/rede, 404, 429, 5xx, JSON inválido, data ausente e corpo maior que 2 MiB são ErrUnavailable sem URL, token nem corpo no erro`;
+  - `TTB-003/o corpo da busca é o de rules §3 (year em vez de rangeYear; gameplay sem difficulty; size 20; useCache true)`;
+  - `TTB-027/a busca leva só o termo, os campos fixos, os cabeçalhos genéricos, Content-Type application/json e x-auth-token; o init leva só t; nenhuma requisição leva Cookie, Authorization ou id de jogo; o cliente não tem Jar`;
   - `TTB-031/os clientes usam BaseURL injetada e um transporte que recusa host não loopback`.
 - Testes (`(*IGDB).TimeToBeat`, `httptest`):
   - `TTB-036/o corpo é fields game_id,hastily,normally,completely; where game_id = <id>; limit 1; com Client-ID e Bearer`;
@@ -188,15 +195,17 @@ type HLTBConfig struct {
     HTTP    *http.Client  // copied; Jar nil, Timeout unset
     Limiter *Limiter      // own instance, 2 s
     Timeout time.Duration // per request, default 10 s (tests shorten it)
+    Clock   domain.Clock  // t=<epoch ms> of the token request
 }
-type HLTB struct{ /* cfg, mu sync.Mutex, searchPath string */ }
+type HLTB struct{ /* cfg, mu sync.Mutex, token string (memory only; never logged nor in errors) */ }
 func NewHLTB(cfg HLTBConfig) *HLTB
 func (h *HLTB) Search(ctx context.Context, term string) ([]HLTBGame, error)
 
 type IGDBTimeToBeat struct{ Hastily, Normally, Completely int64 } // seconds; 0 = no data
 func (c *IGDB) TimeToBeat(ctx context.Context, igdbID string) (IGDBTimeToBeat, bool, error) // false = no record
 ```
-- Constantes de [rules §1](contracts/hltb-rules.md) em `internal/scrapers` (`HLTBInterval = 2 * time.Second`, `HLTBRequestTimeout`, `HLTBPageSize = 20`, `HLTBMaxBody = 2 << 20`). Erros de rede sem URL (`netCause`, como os outros provedores). Sem goroutine nova.
+- Constantes de [rules §1](contracts/hltb-rules.md) em `internal/scrapers` (`HLTBInterval = 2 * time.Second`, `HLTBRequestTimeout`, `HLTBPageSize = 20`, `HLTBMaxBody = 2 << 20`, `HLTBInitPath = "/api/search/site/init"`, `HLTBSearchPath = "/api/search/site"`). Erros de rede sem URL (`netCause`, como os outros provedores). Sem goroutine nova.
+- · alterado em 2026-11-22 (T05): não há descoberta de caminho, nem constantes ou funções para ela, nem leitura da página inicial ou de scripts. O fluxo é o de [rules §2, §3](contracts/hltb-rules.md): `init` só quando não há token guardado; busca com `x-auth-token`; com 403, descarta o token, faz um `init` novo e repete uma vez; 404 é falha temporária. O token fica num campo sob `h.mu` e nunca vai para log, erro, disco ou banco. Corpo da busca com `year` e `gameplay` sem `difficulty`.
 
 ## T08 — Testes: contrato IPC v0.16.0
 - Requisitos: TTB-029, TTB-023, TTB-020, TTB-021, TTB-022, TTB-008. **Responsável:** test-writer. Dependência: nenhuma (fica vermelho até T09 e T10).
@@ -645,7 +654,7 @@ export function EstanteDetails(p: BigBoxDetailsProps): JSX.Element
 - **Goroutines novas:** só o trabalhador do `timeToBeatService` (T12). Dono: o serviço. Saída: `s.ctx` (cancelado em `Close`). Espera: `wg` em `Close`, chamado no shutdown do agente **antes** de fechar o store (T14). O roteador e o poller não ganham goroutine (T22, T24). No frontend, só temporizadores e assinaturas `EventsOn`, limpos ao desmontar (T18, T28).
 - **Ordem de shutdown:** `BeginShutdown` do serviço no mesmo instante do tracker (para de notificar e descarta as filas); depois, o servidor IPC encerra; `Close` do serviço (cancela a requisição em curso sem gravar); por fim, o store. `shuttingDown` do roteador é um `atomic.Bool` ligado no mesmo ponto.
 - **Locks:** `reqMu` serializa toda requisição externa (HowLongToBeat e IGDB da reserva, inclusive `Refresh` e `Search`); `mu` guarda só filas, mapas e recuos e **nunca** é segurado durante I/O nem ao chamar o notificador. Ordem: `reqMu` antes de `mu`, nunca o contrário. O `Limiter` do IGDB é compartilhado com a busca de metadados (MET-010).
-- **Prazos:** `Refresh`/`Search` esperam `reqMu`; o prazo de 25 s vence antes do pior caso (descoberta + busca + nova descoberta) e devolve `-32011` sem prender a goroutine do IPC.
+- **Prazos:** `Refresh`/`Search` esperam `reqMu`; o prazo de 25 s vence antes do pior caso (token + busca 403 + token novo + busca repetida) e devolve `-32011` sem prender a goroutine do IPC.
 - **Handles do Windows:** nenhum novo. O processo do `--bigbox` é criado por `winapi.CreateDetached`, que fecha `hProcess` e `hThread` dentro dele.
 - **Pedido de Big Box:** `bigBoxReq` guardado sob `a.mu`; `TakeBigBoxRequest` lê e zera sob o mesmo lock (teste com `-race`, T25). O evento Wails só é emitido com `wailsCtx` definido.
 - **Notificações:** `timeToBeat.changed` usa a fila por conexão com descarte; uma conexão lenta não bloqueia o worker.

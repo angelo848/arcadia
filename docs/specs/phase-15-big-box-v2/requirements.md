@@ -5,7 +5,7 @@
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.16.0-delta.md](contracts/ipc-v0.16.0-delta.md) e
   [contracts/ipc-v0.16.0-delta.openrpc.json](contracts/ipc-v0.16.0-delta.openrpc.json) (só o acréscimo sobre a v0.15.0 de
   [phase-13-modo-console](../phase-13-modo-console/contracts/ipc.openrpc.json) e da fase 14; o JSON completo v0.16.0 é uma tarefa,
-  como nas fases 11 a 13), [contracts/hltb-rules.md](contracts/hltb-rules.md) (descoberta do endpoint, pedido, leitura,
+  como nas fases 11 a 13), [contracts/hltb-rules.md](contracts/hltb-rules.md) (token, pedido, leitura,
   correspondência, validade do cache, recuo após falha, formato das horas) e
   [contracts/bigbox-temas-v2.md](contracts/bigbox-temas-v2.md) (contrato de tema v2, grade 2D no reducer, janelas e páginas, layouts
   e tokens do Mosaico e da Estante) · **Tarefas:** `tasks.md` (o planner gera depois da aprovação).
@@ -317,14 +317,17 @@ excedente é descartado com `Debug`. Uma busca de um jogo removido no meio do ca
 · verificação: teste do serviço com cliente falso controlado por canais (ordem, deduplicação, promoção, limite, jogo removido).
 
 ### TTB-010 — Intervalo e prazo das requisições
-Dado qualquer requisição ao HowLongToBeat (descoberta, busca), então ela passa por um `scrapers.Limiter` próprio com **2.000 ms**
+· alterado em 2026-11-22 (conferência T05): as requisições são a do token e a da busca (a descoberta por script saiu); prazos iguais.
+Dado qualquer requisição ao HowLongToBeat (token, busca e busca repetida de TTB-012), então ela passa por um `scrapers.Limiter` próprio com **2.000 ms**
 entre requisições e tem prazo de **10 s**; com o `ctx` do agente cancelado, ela é abandonada sem gravar.
 · verificação: teste do limitador e do cliente com relógio fake e `httptest` lento.
 
 ### TTB-011 — Falha temporária e recuo
 · alterado em 2026-11-22 (aprovação, resposta 1): o recuo é por fonte; com o HowLongToBeat em recuo, a fila segue pelo IGDB.
-Dada uma falha do HowLongToBeat que não é resposta válida (rede, prazo, 429, 5xx, 403, corpo que não é o JSON esperado, endpoint não
-descoberto, [rules §7](contracts/hltb-rules.md)), então o HowLongToBeat entra em **recuo** de 1 min na primeira falha seguida, 5 min
+· alterado em 2026-11-22 (conferência T05): "endpoint não descoberto" vira "token não obtido"; 404 é falha temporária; 403 só conta
+depois da renovação de TTB-012. A escada e o efeito não mudam.
+Dada uma falha do HowLongToBeat que não é resposta válida (rede, prazo, 404, 429, 5xx, 403 depois da renovação do token, corpo que
+não é o JSON esperado, token não obtido, [rules §7](contracts/hltb-rules.md)), então o HowLongToBeat entra em **recuo** de 1 min na primeira falha seguida, 5 min
 na segunda, 30 min na terceira e 60 min da quarta em diante, e durante o recuo nenhuma requisição é feita a ele; a busca do jogo
 segue para a reserva (TTB-034) e, sem resultado gravado, sai da fila sem gravar nada. Com as duas fontes indisponíveis (HowLongToBeat
 em recuo e IGDB em recuo ou sem chave), a fila espera o fim do primeiro recuo e `get` responde `unavailable: true`. É registrado
@@ -332,12 +335,19 @@ em recuo e IGDB em recuo ou sem chave), a fila espera o fim do primeiro recuo e 
 a sequência.
 · verificação: teste do serviço com cliente falso e relógio fake (escada de recuo; um `Warn`; sucesso zera).
 
-### TTB-012 — Descoberta do endpoint de busca
-Dado que o caminho da busca do HowLongToBeat muda com frequência, então o cliente descobre o caminho atual pela página inicial e pelo
-script do site, guarda-o em memória e o reusa; dado um 404 na busca, então descobre de novo uma única vez antes de contar a falha. As
-regras e os pontos a conferir estão em [rules §2, §3, §9](contracts/hltb-rules.md); divergência que mude regra visível volta à spec.
-· verificação: teste do cliente com `httptest` servindo página e script de exemplo (descoberta, reuso, 404 → nova descoberta,
-script sem o padrão → falha temporária).
+### TTB-012 — Token da busca do HowLongToBeat
+· alterado em 2026-11-22 (conferência T05 com requisições reais): o título era "Descoberta do endpoint de busca". O site não monta
+mais o caminho por script (Turbopack, sem `_app-`); o caminho é fixo (`POST /api/search/site`) e a busca exige um token. Nada
+visível ao usuário muda.
+Dado o cliente sem token guardado, quando vai buscar, então antes obtém o token por `GET /api/search/site/init?t=<epoch ms>`
+(`200 {"token": ...}`), guarda-o **só em memória** (sob mutex; nunca em disco, banco, erro ou log) e o envia no cabeçalho
+`x-auth-token` da busca; as buscas seguintes reusam o mesmo token sem novo `init`. Dado um **403** na busca (token expirado), então o
+cliente descarta o token, obtém um novo e repete a busca **uma única vez**; um segundo 403, ou falha ao obter o token, é falha
+temporária (TTB-011). Um 404 na busca é falha temporária, sem nova tentativa. As regras e os pontos conferidos estão em
+[rules §2, §3, §9](contracts/hltb-rules.md); divergência que mude regra visível volta à spec.
+· verificação: teste do cliente com `httptest` e as amostras reais da conferência (token obtido e reusado na segunda busca sem novo
+`init`; `x-auth-token` presente na busca; 403 → token novo e uma repetição; 403 de novo → `ErrUnavailable`; `init` com erro, sem
+`token` ou com token vazio → `ErrUnavailable`; 404 → `ErrUnavailable` sem nova tentativa; token ausente dos erros e do log).
 
 ### TTB-013 — A UI nunca quebra
 Dado qualquer falha ou ausência de dado (serviço desligado, recuo, erro do IPC, agente desconectado, `not-found`, `doubt`, valor
@@ -444,9 +454,11 @@ termina sem gravar nem notificar.
 · verificação: teste do agente com store real e cliente falso bloqueado.
 
 ### TTB-027 — Só o termo sai da máquina
-Dado qualquer requisição ao HowLongToBeat, então ela leva só o termo de busca e os campos fixos de [rules §3](contracts/hltb-rules.md)
-(cabeçalhos genéricos de navegador, sem nome de usuário, caminho de arquivo, id do jogo no Arcadia nem cookie guardado); o log nunca
-grava o corpo das respostas. Ao IGDB da reserva vão só o que a busca de metadados da fase 12 já envia (termo, plataforma, ano) e o id
+· alterado em 2026-11-22 (conferência T05): além do termo, vão só o token recebido do próprio site e o `t` do `init`.
+Dado qualquer requisição ao HowLongToBeat, então ela leva só o termo de busca, os campos fixos de [rules §3](contracts/hltb-rules.md)
+e, conforme a requisição, o token que o próprio site devolveu (`x-auth-token`) ou o instante `t` do `init` (cabeçalhos genéricos de
+navegador, nenhum `Cookie`, sem nome de usuário, caminho de arquivo nem id do jogo no Arcadia); o log nunca grava o corpo das
+respostas nem o token. Ao IGDB da reserva vão só o que a busca de metadados da fase 12 já envia (termo, plataforma, ano) e o id
 do jogo no IGDB, com as credenciais do Credential Manager (MID-001).
 · verificação: teste do cliente com `httptest` (cabeçalhos e corpo recebidos) e revisão.
 
@@ -871,7 +883,7 @@ A sessão principal escreve (a spec só os referencia). Próximo número livre: 
    executa o próprio exe com `--bigbox`; a UI lê `--bigbox` na primeira e na segunda instância (muda a regra de single-exe de ignorar
    os argumentos da segunda instância), guarda o pedido e o entrega uma vez ao frontend. Recusa com som durante um jogo.
 2. **0039 — Tempo para zerar do HowLongToBeat com cache e falha silenciosa:** serviço não oficial consultado pelo agente, com
-   endpoint descoberto em tempo de execução, uma requisição por vez a cada 2 s, recuo exponencial até 1 h, cache por jogo no banco
+   caminho fixo com token obtido em tempo de execução (só em memória, renovado no 403), uma requisição por vez a cada 2 s, recuo exponencial até 1 h, cache por jogo no banco
    (migração 10) com validade longa e "não encontrado" também guardado, correspondência automática só com `match` da fase 12,
    confirmação manual na edição e aviso `timeToBeat.changed` (ADR 0031). O IGDB (`game_time_to_beats`) é a reserva quando o
    HowLongToBeat não acha ou falha (resposta 1), com recuo próprio, achado válido por 30 dias e fonte mostrada; sem chave do IGDB, a

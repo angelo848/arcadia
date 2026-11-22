@@ -2,12 +2,13 @@
 
 Requisitos: TTB-002..TTB-014, TTB-020..TTB-022, TTB-027, TTB-033..TTB-040. Fonte da verdade para `internal/scrapers/hltb*.go`,
 `internal/scrapers/igdb_ttb.go` e `internal/agent/timetobeat*.go`. · alterado em 2026-11-22 (aprovação, resposta 1): reserva do IGDB
-(§10), validade do achado do IGDB (§1, §6) e recuo por fonte (§7).
+(§10), validade do achado do IGDB (§1, §6) e recuo por fonte (§7). · alterado em 2026-11-22 (conferência T05 com requisições
+reais): a descoberta do caminho por script não existe mais; o caminho é fixo e a busca exige um token obtido antes (§2, §3), com o
+corpo e a resposta de §3 e §4. Nada visível ao usuário muda (estados, valores, prazos, cache e recuo iguais).
 
-> **O HowLongToBeat não tem API oficial.** O que está em §2..§4 é o formato observado publicamente (bibliotecas de terceiros,
-> 2024–2025) e **precisa ser conferido** pela tarefa de conferência antes do cliente, registrando o resultado em §9. Divergência
-> que mude regra visível (estados, valores, prazos) volta à spec; divergência só de formato (caminho, nome de campo, cabeçalho)
-> é ajustada aqui e no cliente, com teste novo em `testdata`.
+> **O HowLongToBeat não tem API oficial.** §2..§4 descrevem o formato **conferido em 2026-11-22** com requisições reais (§9). O site
+> muda sem aviso: divergência que mude regra visível (estados, valores, prazos) volta à spec; divergência só de formato (caminho,
+> nome de campo, cabeçalho) é ajustada aqui e no cliente, com teste novo em `testdata`.
 
 ## 1. Constantes
 
@@ -16,7 +17,9 @@ Requisitos: TTB-002..TTB-014, TTB-020..TTB-022, TTB-027, TTB-033..TTB-040. Fonte
 | `hltbBaseURL` | `https://howlongtobeat.com` (configurável no cliente, `httptest` nos testes) | TTB-012 |
 | `hltbInterval` | 2.000 ms entre requisições (`scrapers.Limiter` próprio) | TTB-010 |
 | `hltbRequestTimeout` | 10 s por requisição | TTB-010 |
-| `hltbSyncTimeout` | 25 s por `refresh` ou `search` (descoberta + busca + nova descoberta) | TTB-020, TTB-021 |
+| `hltbInitPath` | `/api/search/site/init` (com `?t=<epoch ms>`) | TTB-012 |
+| `hltbSearchPath` | `/api/search/site` | TTB-012 |
+| `hltbSyncTimeout` | 25 s por `refresh` ou `search` (token + busca + token novo + busca repetida) | TTB-020, TTB-021 |
 | `hltbPageSize` | 20 resultados pedidos por busca | TTB-004 |
 | `hltbMaxCandidates` | 10 candidatos guardados ou devolvidos | TTB-002, TTB-021 |
 | `hltbMaxBody` | 2 MiB lidos de qualquer resposta (o resto é descartado e conta como formato inválido) | TTB-011 |
@@ -29,27 +32,31 @@ Requisitos: TTB-002..TTB-014, TTB-020..TTB-022, TTB-027, TTB-033..TTB-040. Fonte
 | `ttbTermMax` | 200 caracteres | TTB-021 |
 | `TTB_FETCH_DELAY_MS` (frontend) | 1.000 ms com o mesmo jogo em foco | TTB-015, BBX-059 |
 
-## 2. Descoberta do endpoint de busca [TTB-012]
+## 2. Token da busca [TTB-012]
 
-O site troca o caminho da busca (e às vezes acrescenta uma chave no caminho) a cada versão do front. O cliente descobre em tempo de
-execução:
+· alterado em 2026-11-22 (T05): substitui a descoberta do caminho por script (`_app-` + `/api/<segmento>/<chave>`). O site passou a
+usar Turbopack (chunks `/_next/static/chunks/<hash>.js`, sem `_app-`) e o caminho da busca é **fixo**; o que muda entre sessões é um
+token.
 
-1. `GET {base}/` (página inicial, HTML). Procura as tags `<script src="...">` cujo `src` contém `/_next/static/chunks/pages/_app-`
-   (ou, se não houver, todas as de `/_next/static/chunks/`), na ordem em que aparecem.
-2. Para cada script (no máximo 5), `GET` do script e procura o padrão da busca: uma chamada `fetch` ou `concat` que monta
-   `"/api/<segmento>/"` seguido de uma ou mais partes literais concatenadas (ex.: `"/api/search/".concat("4b4cbe57").concat("0b3e")`).
-   O resultado é o caminho `/api/<segmento>/<chave>` (chave pode ser vazia).
-3. Achou: guarda o caminho em memória (campo do cliente, sob mutex) e o usa em toda busca. Não achou em nenhum script, ou a página
-   não tem script: **falha temporária** "endpoint de busca não encontrado" (TTB-011).
-4. Uma busca que responde **404** apaga o caminho guardado e refaz a descoberta **uma vez**; se a nova busca também falhar, a falha
-   conta normalmente.
+1. **Obter o token:** `GET {base}/api/search/site/init?t=<epoch ms>` (o instante vem do `domain.Clock` do cliente). Resposta aceita:
+   `200` com o objeto JSON `{"token": "<string>"}` e token não vazio. Qualquer outra coisa (rede, status ≠ 200, JSON inválido, sem
+   `token` ou vazio, corpo > `hltbMaxBody`): **falha temporária** "token do HowLongToBeat indisponível" (TTB-011).
+2. **Guardar:** o token fica só em memória, num campo do cliente sob mutex, e é reusado em toda busca enquanto valer. Nunca vai para
+   disco, banco, erro devolvido ou log (só `Debug` "token do HowLongToBeat renovado", sem o valor). Sem token guardado, a busca
+   obtém um antes.
+3. **Renovar:** uma busca que responde **403** (token expirado, pelo código do site) apaga o token guardado, obtém um novo e repete a
+   busca **uma única vez**; um segundo 403 (ou falha ao obter o token novo) é falha temporária.
+4. Um **404** na busca **não** dispara nada especial: é falha temporária (o site respondeu 404 a busca sem token e corpo mínimo).
 
-Cada `GET` da descoberta passa pelo limitador e tem o prazo de `hltbRequestTimeout`. O caminho descoberto não é gravado em disco
-nem em log (só `Debug` "endpoint do HowLongToBeat descoberto" sem o valor da chave).
+Cada requisição (o `init` e cada busca, inclusive a repetida) passa pelo limitador de 2 s e tem o prazo de `hltbRequestTimeout`. O
+pior caso de uma busca é 4 requisições (token, busca 403, token novo, busca), dentro de `hltbSyncTimeout`.
 
 ## 3. Pedido de busca [TTB-003, TTB-027]
 
-`POST {base}{caminho descoberto}` com corpo JSON:
+· alterado em 2026-11-22 (T05): caminho fixo, cabeçalho `x-auth-token`, `year` no lugar de `rangeYear` e `gameplay` sem
+`difficulty`.
+
+`POST {base}/api/search/site` com o cabeçalho `x-auth-token: <token>` (§2) e o corpo JSON:
 
 ```json
 {
@@ -60,8 +67,8 @@ nem em log (só `Debug` "endpoint do HowLongToBeat descoberto" sem o valor da ch
   "searchOptions": {
     "games": { "userId": 0, "platform": "", "sortCategory": "popular", "rangeCategory": "main",
                "rangeTime": { "min": null, "max": null },
-               "gameplay": { "perspective": "", "flow": "", "genre": "", "difficulty": "" },
-               "rangeYear": { "min": "", "max": "" }, "modifier": "" },
+               "gameplay": { "perspective": "", "flow": "", "genre": "" },
+               "year": { "min": "", "max": "" }, "modifier": "" },
     "users": { "sortCategory": "postcount" }, "lists": { "sortCategory": "follows" },
     "filter": "", "sort": 0, "randomizer": 0
   },
@@ -70,20 +77,30 @@ nem em log (só `Debug` "endpoint do HowLongToBeat descoberto" sem o valor da ch
 ```
 
 - `searchTerms`: o termo (TTB-003) dividido por espaços, sem vazios.
-- Cabeçalhos fixos, os mesmos em toda requisição: `Content-Type: application/json`, `Accept: */*`,
-  `Origin: {base}`, `Referer: {base}/`, `User-Agent` de navegador genérico fixo no código (o site recusa clientes sem ele). Nenhum
-  cookie é guardado entre requisições (cliente sem `Jar`). Nada que identifique o usuário, a máquina ou o jogo no Arcadia é enviado.
-- Respostas aceitas: `200` com JSON. `404` → §2 passo 4. `429`, `5xx`, `403` → falha temporária. Outro status → falha temporária
-  (não há "erro permanente": o serviço pode voltar).
+- Cabeçalhos fixos, os mesmos em toda requisição (`init` e busca): `Accept: */*`, `Origin: {base}`, `Referer: {base}/` e
+  `User-Agent` de navegador genérico fixo no código; na busca, também `Content-Type: application/json` e `x-auth-token`. Nenhum
+  `Cookie` é enviado nem guardado entre requisições (cliente sem `Jar`). O único valor variável além do termo é o token (que veio do
+  próprio site) e o `t` do `init`. Nada que identifique o usuário, a máquina ou o jogo no Arcadia é enviado.
+- Respostas: `200` com JSON → §4. `403` → §2 passo 3 (renova e repete uma vez). `429` (limite de taxa; o site mostra "Too many
+  searches, please wait a minute"), `404`, `5xx` e qualquer outro status → falha temporária (não há "erro permanente": o serviço pode
+  voltar).
 
 ## 4. Leitura da resposta [TTB-005]
 
+· alterado em 2026-11-22 (T05): a resposta real é um objeto com `color`, `title`, `category`, `count`, `pageCurrent`, `pageTotal`,
+`pageSize`, `data`, `userData` e `displayModifier`; só `data` é lido. Cada item traz, além dos campos abaixo, outros que são
+**ignorados** (`game_name_date`, `comp_all`, contagens etc.).
+
+Exemplo real (sanitizado, item de "hollow knight"):
+
 ```json
-{ "count": 2, "data": [
-  { "game_id": 26286, "game_name": "Hollow Knight", "game_alias": "", "game_type": "game",
+{ "count": 8, "pageCurrent": 1, "pageTotal": 1, "pageSize": 20, "data": [
+  { "game_id": 26286, "game_name": "Hollow Knight", "game_alias": "Hollow Knight: Voidheart Edition", "game_type": "game",
     "release_world": 2017, "profile_platform": "Nintendo Switch, PC, PlayStation 4, Xbox One",
-    "comp_main": 97200, "comp_plus": 145800, "comp_100": 228600 } ] }
+    "comp_main": 97159, "comp_plus": 149918, "comp_100": 236144 } ] }
 ```
+
+Sem resultado: `200` com `"count": 0` e `"data": []`.
 
 | Campo | Uso | Regra |
 |---|---|---|
@@ -144,9 +161,10 @@ Os valores exatos de pontuação saem de `domain.ScoreGroup`; o teste confere o 
 | Situação | Classe | Efeito |
 |---|---|---|
 | erro de rede, prazo vencido, `ctx` do pedido vencido | temporária | recuo |
-| status 403, 429, 5xx, outro não 2xx (exceto 404 tratado em §2) | temporária | recuo |
+| status 404, 429, 5xx, outro não 2xx da busca | temporária | recuo |
+| 403 da busca | renova o token e repete uma vez (§2); o segundo 403 é temporária | recuo só se a repetição falhar |
 | JSON inválido, `data` ausente, corpo > `hltbMaxBody` | temporária ("formato do HowLongToBeat mudou") | recuo |
-| endpoint não descoberto | temporária | recuo |
+| token não obtido (`init` com rede, status ≠ 200, sem `token`) | temporária | recuo |
 | `200` com `data` vazia | resposta válida | `not-found` gravado |
 | `ctx` do agente cancelado (encerramento) | — | nada gravado, sem recuo, sem log além de `Debug` |
 
@@ -246,11 +264,14 @@ candidato. Erros seguem o cliente IGDB (429/5xx/rede → `ErrUnavailable`).
 
 | Ponto | Esperado nesta spec | Conferido em | Resultado |
 |---|---|---|---|
-| Padrão do caminho de busca no script (`/api/<segmento>/` + partes) | §2 | | |
-| Se a busca exige um passo prévio (token/"init") além do caminho | não | | |
-| Corpo aceito (§3) e campos obrigatórios | §3 | | |
-| Cabeçalhos mínimos aceitos (User-Agent, Referer, Origin) | §3 | | |
-| Nomes e unidades de `comp_main`, `comp_plus`, `comp_100` (segundos) | §4 | | |
-| `game_type` e valores | §4 | | |
-| Limite de taxa observado (429 com 1 requisição a cada 2 s?) | não | | |
-| IGDB `game_time_to_beats`: endpoint, campos `hastily`/`normally`/`completely` em segundos | §10.3 | | |
+| Padrão do caminho de busca no script (`/api/<segmento>/` + partes) | §2 (versão anterior) | 2026-11-22 | **Divergente.** Não existe mais: o site usa Turbopack (chunks `/_next/static/chunks/<hash>.js`, nenhum `_app-`) e o caminho é fixo, `POST /api/search/site`. §2 reescrito. |
+| Se a busca exige um passo prévio (token/"init") além do caminho | não (versão anterior) | 2026-11-22 | **Divergente.** Exige: `GET /api/search/site/init?t=<epoch ms>` → `200 {"token": "<string>"}` (só essa chave); a busca leva `x-auth-token`. Pelo código do site, 403 = token expirado (renovar e repetir uma vez), 429 = limite de taxa. Sem token e com corpo mínimo, a busca respondeu 404. §2, §3 e §7 ajustados. |
+| Corpo aceito (§3) e campos obrigatórios | §3 | 2026-11-22 | **Divergente só no formato:** `year` no lugar de `rangeYear`, `gameplay` sem `difficulty`; o resto igual. "hollow knight" → 200 com 8 resultados. §3 ajustado. |
+| Cabeçalhos mínimos aceitos (User-Agent, Referer, Origin) | §3 | 2026-11-22 | A busca respondeu 200 com `Content-Type: application/json` e `x-auth-token`; os cabeçalhos genéricos de navegador continuam sendo enviados (não se conferiu se são exigidos um a um). Nenhum `Cookie`. |
+| Nomes e unidades de `comp_main`, `comp_plus`, `comp_100` (segundos) | §4 | 2026-11-22 | **Confirmado** (segundos). Ex.: Hollow Knight (26286) 97159 / 149918 / 236144, `release_world` 2017, alias "Hollow Knight: Voidheart Edition". A resposta é um objeto com `color, title, category, count, pageCurrent, pageTotal, pageSize, data, userData, displayModifier`; itens têm campos extras (ignorados). Vazio: `count: 0`, `data: []`. |
+| `game_type` e valores | §4 | 2026-11-22 | **Confirmado:** `"game"` nos resultados de jogo. |
+| Limite de taxa observado (429 com 1 requisição a cada 2 s?) | não | 2026-11-22 | Nenhum 429 nas poucas requisições da conferência; o 429 existe no código do site ("Too many searches, please wait a minute") e é falha temporária (§7). Intervalo de 2 s mantido. |
+| IGDB `game_time_to_beats`: endpoint, campos `hastily`/`normally`/`completely` em segundos | §10.3 | 2026-11-22 | **Conferido apenas pela documentação** (credenciais nunca vão para o chat); confirmar com a chave do usuário no roteiro manual T38. |
+
+Amostras reais sanitizadas da conferência (para o test-writer copiar para `internal/scrapers/testdata/hltb/` na T06): `init.json`,
+`search-results.json` e `search-empty.json`, entregues pela sessão principal.

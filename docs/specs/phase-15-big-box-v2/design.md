@@ -9,7 +9,7 @@ Requisitos em [requirements.md](requirements.md) (aprovados em 2026-11-22; reser
 |---|---|---|
 | `internal/input` | `ButtonA`, `ActionBigBox`, terceiro `comboDetector` (`Back + A`) | implementer |
 | `internal/agent` | roteador: ação `bigbox` (janela própria, `Current()`, abridor); `openBigBox`; serviço `timeToBeat` (fila, trabalhador, recuo, cache, handlers `timeToBeat.*`, notificação); gancho depois de aplicar metadados; gancho na remoção de jogo | implementer |
-| `internal/scrapers` | cliente `HLTB` (descoberta do endpoint, busca, leitura), limitador próprio; `IGDB.TimeToBeat` (`game_time_to_beats`, reserva) | implementer |
+| `internal/scrapers` | cliente `HLTB` (token em memória, busca no caminho fixo, leitura), limitador próprio; `IGDB.TimeToBeat` (`game_time_to_beats`, reserva) | implementer |
 | `internal/domain` | funções puras do tempo para zerar (estado, validade, recuo) | implementer |
 | `internal/store` | migração 10 (`time_to_beat`), consultas, `SchemaVersion = 10` | implementer |
 | `internal/ipc` | tipos e constantes v0.16.0 | implementer |
@@ -183,17 +183,25 @@ type HLTBConfig struct {
     BaseURL string       // default https://howlongtobeat.com
     HTTP    *http.Client // copied; Jar nil, Timeout unset (per-request ctx instead)
     Limiter *Limiter     // 2 s, own instance (newProviderFactory)
+    Clock   domain.Clock // the t=<epoch ms> of the token request
 }
-type HLTB struct { /* cfg, mu sync.Mutex, searchPath string */ }
+type HLTB struct { /* cfg, mu sync.Mutex, token string (memory only) */ }
 func NewHLTB(cfg HLTBConfig) *HLTB
-// Search runs one search (discovering the endpoint when needed, rediscovering once on 404). Every
-// temporary failure wraps ErrUnavailable; a ctx cancelled by the caller returns ctx.Err() as is.
+// Search runs one search on the fixed path /api/search/site with the x-auth-token header, getting a
+// token from /api/search/site/init first when none is kept, and renewing it and retrying once on 403
+// [TTB-012]. Every temporary failure (404, 429, 5xx, second 403, no token) wraps ErrUnavailable; a ctx
+// cancelled by the caller returns ctx.Err() as is. The token never leaves the struct (no log, no error).
 func (h *HLTB) Search(ctx context.Context, term string) ([]HLTBGame, error)
 ```
 
-Cada requisição: `Limiter.Wait(ctx)` → `context.WithTimeout(ctx, 10s)` → `do` com os cabeçalhos de [rules §3](contracts/hltb-rules.md) →
-`io.LimitReader(body, 2 MiB + 1)`. Erros de rede sem URL (`netCause`, como os outros provedores). Nada é logado no cliente além de
-`Debug` da descoberta; quem registra `Warn` é o serviço (uma vez por sequência).
+· alterado em 2026-11-22 (conferência T05): a descoberta do caminho por script saiu (o site usa Turbopack e caminho fixo); entrou o
+token de [rules §2](contracts/hltb-rules.md). Comportamento visível igual.
+
+Cada requisição (`init` e busca): `Limiter.Wait(ctx)` → `context.WithTimeout(ctx, 10s)` → `do` com os cabeçalhos de
+[rules §3](contracts/hltb-rules.md) → `io.LimitReader(body, 2 MiB + 1)`. O token é lido e trocado sob `h.mu`, mas a requisição não
+segura o mutex (o serviço já garante uma requisição por vez com `reqMu`); duas buscas que recebam 403 ao mesmo tempo renovam no
+máximo duas vezes, sem dano. Erros de rede sem URL (`netCause`, como os outros provedores). Nada é logado no cliente além de
+`Debug` "token do HowLongToBeat renovado" (sem o valor); quem registra `Warn` é o serviço (uma vez por sequência).
 
 ### 3.2.1 Reserva do IGDB [TTB-035, TTB-036, TTB-038]
 
@@ -356,12 +364,13 @@ export function setTimeToBeatSettings(enabled: boolean, afterMetadata: boolean):
 
 ### 3.8 Riscos
 
-- **Endpoint e formato mudam:** descoberta em tempo de execução, uma nova descoberta no 404, recuo até 1 h; a conferência
-  ([rules §9](contracts/hltb-rules.md)) vem antes do cliente. Pior caso: "—" em toda parte até uma versão nova.
+- **Endpoint e formato mudam:** o caminho e o passo do token foram conferidos em 2026-11-22 ([rules §9](contracts/hltb-rules.md));
+  uma mudança futura vira falha temporária e recuo até 1 h. Pior caso: "—" em toda parte até uma versão nova. O token expirado se
+  resolve sozinho (403 → token novo, uma repetição).
 - **Bloqueio por excesso de pedidos:** uma requisição por vez, 2 s entre elas, busca na UI só depois de 1 s parado, cache longo
   (inclusive "não encontrado"), recuo. Lote de 1.000 jogos ≈ 35 min, em segundo plano.
 - **Termos de uso do site:** registrado em Limitações 4 e no texto da janela dos provedores; o usuário pode desligar.
-- **`reqMu` e prazos:** um `refresh` pode esperar a busca em curso do trabalhador (até ~30 s no pior caso com descoberta); o prazo
+- **`reqMu` e prazos:** um `refresh` pode esperar a busca em curso do trabalhador (até ~40 s no pior caso: token, busca 403, token novo, busca, cada uma com até 10 s); o prazo
   de 25 s do agente vence antes e responde `-32011`, sem bloquear a goroutine do IPC além disso.
 - **Reserva do IGDB:** o IGDB divide o limitador com a busca de metadados (MET-010); um lote grande de metadados e um lote do tempo
   para zerar se atrasam mutuamente, sem passar do limite. O token do IGDB é o mesmo (renovação pelo cliente existente). Uma linha do
