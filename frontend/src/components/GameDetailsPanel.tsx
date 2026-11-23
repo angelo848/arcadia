@@ -212,13 +212,13 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
           <Field label="Tempo total">
             <span>{formatPlayTime(g.totalPlaySeconds)}</span>
           </Field>
-          <TimeToBeatBlock gameId={g.id} onEdit={onEdit} />
           <Field label="Primeira vez jogado">
             <span>{formatLocalDateTime(g.firstPlayedAt)}</span>
           </Field>
           <Field label="Última vez jogado">
             <span>{formatLocalDateTime(g.lastPlayedAt)}</span>
           </Field>
+          <TimeToBeatBlock gameId={g.id} onEdit={onEdit} />
           {g.completedAt ? (
             <Field label="Concluído em">
               <span>{formatUtcDate(g.completedAt)}</span>
