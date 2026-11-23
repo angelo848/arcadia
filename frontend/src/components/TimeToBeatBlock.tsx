@@ -48,18 +48,18 @@ export function TimeToBeatBlock({ gameId, onEdit }: TimeToBeatBlockProps): JSX.E
   }
   const source = hasTimeToBeatValue(v) ? timeToBeatSource(v) : null
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="col-span-full flex flex-col gap-1">
       <dt className="text-xs font-medium text-muted">Tempo para zerar</dt>
       <dd className="text-sm text-fg">
-        <ul className="flex flex-col">
+        <ul className="grid grid-cols-3 gap-4">
           {timeToBeatRows(v).map((r) => (
-            <li key={r.label} className="flex justify-between gap-3">
+            <li key={r.label} className="flex flex-col gap-0.5">
               <span className="text-muted">{r.label}</span>
               <span>{r.value}</span>
             </li>
           ))}
         </ul>
-        {source !== null && <p className="text-xs text-muted">{`Fonte: ${source}`}</p>}
+        {source !== null && <p className="mt-1 text-xs text-muted">{`Fonte: ${source}`}</p>}
         {v?.state === 'doubt' && (
           <div className="flex items-center gap-2 text-xs text-muted">
             <span>Correspondência incerta</span>
