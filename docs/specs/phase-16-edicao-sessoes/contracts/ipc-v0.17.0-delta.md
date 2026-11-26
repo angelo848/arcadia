@@ -1,8 +1,8 @@
 # IPC v0.17.0 — acréscimo sobre a v0.16.0 (fase 15)
 
 Requisitos: SED-020, SED-022..SED-024, SED-026, SED-027, SED-030..SED-036. Formal (OpenRPC, só o acréscimo):
-[ipc-v0.17.0-delta.openrpc.json](ipc-v0.17.0-delta.openrpc.json). O JSON completo `ipc.openrpc.json` v0.17.0 é gerado por uma
-tarefa a partir da v0.16.0 de [phase-15](../../phase-15-big-box-v2/contracts/ipc.openrpc.json) e deste delta.
+[ipc-v0.17.0-delta.openrpc.json](ipc-v0.17.0-delta.openrpc.json). O JSON completo `ipc.openrpc.json` v0.17.0 foi gerado na T15 por
+script a partir da v0.16.0 de [phase-15](../../phase-15-big-box-v2/contracts/ipc.openrpc.json) e deste delta.
 **Só acréscimos:** nenhum método, valor ou campo existente muda de sentido; quatro resultados ganham campos (§3), o que
 clientes antigos ignoram.
 

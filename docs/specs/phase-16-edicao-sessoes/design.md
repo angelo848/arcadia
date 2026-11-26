@@ -242,7 +242,7 @@ Contrato v0.17.0, só acréscimos (detalhe em [contracts/ipc-v0.17.0-delta.md](c
 - `internal/ipc/session_edit.go`: `MethodSessionCreate`, `MethodSessionUpdate`, `MethodSessionDelete`, `CodeSessionNotFound`,
   `CodeSessionOverlap`, `MsgSessionNotFound`, `MsgSessionOverlap`, `SessionCreateParams`, `SessionUpdateParams`,
   `SessionDeleteParams`, `SessionWriteResult`, `SessionDeleteResult`, `SessionOverlapData`, `InvalidParamsReasonData`.
-- O JSON completo `contracts/ipc.openrpc.json` v0.17.0 é gerado por uma tarefa (v0.16.0 de phase-15 + delta), como na fase 15.
+- O JSON completo `contracts/ipc.openrpc.json` v0.17.0 foi gerado na T15 (v0.16.0 de phase-15 + delta), como na fase 15.
   ⚠️ Os testes de contrato que conferem os campos de `SessionItem` e `GameDetail` contra os tipos Go precisam do campo novo.
 
 ## 7. Desktop `[SED-035, SED-036]`
