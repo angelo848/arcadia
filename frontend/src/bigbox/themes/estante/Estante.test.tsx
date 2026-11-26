@@ -387,7 +387,7 @@ function installShell() {
     ListGames: vi.fn(({ offset, limit }: { offset: number; limit: number }) =>
       Promise.resolve({ games: ROWS.slice(offset, offset + limit), total: ROWS.length, offset })),
     GetGame: vi.fn((id: number) =>
-      Promise.resolve({ ...ROWS[id - 1], description: 'Descrição.', completedAt: null, developers: [], publishers: [], genres: [], playModes: [], launchType: 'exe', launchArgs: '', emulatorId: null })),
+      Promise.resolve({ ...ROWS[id - 1], description: 'Descrição.', completedAt: null, developers: [], publishers: [], genres: [], playModes: [], launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, emulatorId: null })),
     Catalog: vi.fn(() =>
       Promise.resolve({ platforms: [{ id: 1, name: 'Windows', category: 'pc', emulatorId: null, seedKey: 'windows', iconUrl: '', gameCount: 12 }], genres: [], companies: [], playModes: [] })),
     MediaList: vi.fn(() => Promise.resolve({ media: [] })),

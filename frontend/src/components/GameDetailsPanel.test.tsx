@@ -76,6 +76,7 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     playModes: ['single'],
     launchType: 'exe',
     launchArgs: '',
+    sessionPlaySeconds: 0, // alterado em 2026-11-25 (fase 16)
     emulatorId: null,
     ...over,
   }
@@ -105,6 +106,8 @@ function sessionItem(id: number): SessionItemView {
     endedAt: '2026-11-09T11:00:00.000Z',
     activeSeconds: 3600,
     endReason: 'exited',
+    source: 'tracked', // alterado em 2026-11-25 (fase 16)
+    editedAt: '', // alterado em 2026-11-25 (fase 16)
   }
 }
 

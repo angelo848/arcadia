@@ -17,7 +17,7 @@ import { EstanteDetails } from './EstanteDetails'
 const game: GameDetailView = {
   id: 7, platformId: 2, title: 'Chrono Quest', platform: 'Super Nintendo', path: 'C:\\g\\cq.sfc', status: 'none' as GameDetailView['status'],
   favorite: false, year: 1995, totalPlaySeconds: 7260, playCount: 4, firstPlayedAt: '2024-01-01T10:00:00Z', lastPlayedAt: '2026-11-14T12:00:00Z',
-  description: 'Uma descricao longa e completa do jogo '.repeat(30).trim(), emulatorId: null, launchType: 'exe', launchArgs: '', completedAt: null,
+  description: 'Uma descricao longa e completa do jogo '.repeat(30).trim(), emulatorId: null, launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, completedAt: null,
   developers: ['Squaresoft'], publishers: ['Enix'], genres: ['RPG', 'Aventura'], playModes: ['single', 'coop_local'],
 }
 const item = (id: number, kind: MediaItemView['kind']): MediaItemView => ({

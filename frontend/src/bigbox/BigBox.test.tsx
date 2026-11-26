@@ -51,7 +51,7 @@ const ALL = [g(30, 'Celeste', 1), g(20, 'Hades', 1), g(10, 'Hollow Knight', 1), 
 
 const detailOf = (id: number) => ({
   ...ALL.find((x) => x.id === id)!, description: 'Descrição.', completedAt: null, developers: [], publishers: [], genres: [],
-  playModes: [], launchType: 'exe', launchArgs: '', emulatorId: null,
+  playModes: [], launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, emulatorId: null,
 })
 
 function session(over: Record<string, unknown> = {}) {
@@ -650,7 +650,7 @@ function bigLibrary(n: number): Library {
   const lib: Library = { rows, gates: new Map(), failures: new Map(), inflight: { now: 0, max: 0 } }
   app.Catalog.mockResolvedValue({ ...CATALOG, platforms: [{ ...CATALOG.platforms[0], gameCount: n }] })
   app.GetGame.mockImplementation((id: number) =>
-    Promise.resolve({ ...rows[id - 1], description: 'Descrição.', completedAt: null, developers: [], publishers: [], genres: [], playModes: [], launchType: 'exe', launchArgs: '', emulatorId: null }),
+    Promise.resolve({ ...rows[id - 1], description: 'Descrição.', completedAt: null, developers: [], publishers: [], genres: [], playModes: [], launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, emulatorId: null }),
   )
   app.ListGames.mockImplementation(async ({ offset, limit }: { offset: number; limit: number }) => {
     lib.inflight.now += 1

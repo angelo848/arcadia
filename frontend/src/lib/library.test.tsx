@@ -144,6 +144,7 @@ function detail(over: Partial<GameDetailView> & { id?: number } = {}): GameDetai
     publishers: [],
     genres: [],
     playModes: [],
+    sessionPlaySeconds: 0, // alterado em 2026-11-25 (fase 16)
     ...over,
   } as GameDetailView
 }
@@ -180,6 +181,8 @@ function sessionItem(over: Partial<SessionItemView> = {}): SessionItemView {
     endedAt: '2026-11-09T11:00:00Z',
     activeSeconds: 3600,
     endReason: null,
+    source: 'tracked', // alterado em 2026-11-25 (fase 16)
+    editedAt: '', // alterado em 2026-11-25 (fase 16)
     ...over,
   } as SessionItemView
 }

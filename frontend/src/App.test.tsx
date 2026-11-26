@@ -186,6 +186,7 @@ function detail(over: Partial<GameDetailView> = {}): GameDetailView {
     playModes: [],
     launchType: 'exe',
     launchArgs: '',
+    sessionPlaySeconds: 0, // alterado em 2026-11-25 (fase 16)
     emulatorId: null,
     ...over,
   }

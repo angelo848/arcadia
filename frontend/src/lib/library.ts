@@ -31,6 +31,8 @@ export type GameDetailView = GameView & {
   publishers: string[]
   genres: string[]
   playModes: PlayModeName[]
+  // Sum of activeSeconds of the ended sessions (SED-034).
+  sessionPlaySeconds: number
 }
 
 export type PlayModeName = 'single' | 'multi_local' | 'multi_online' | 'coop_local' | 'coop_online'
@@ -56,6 +58,9 @@ export type SessionItemView = {
   endedAt: string | null
   activeSeconds: number
   endReason: SessionEndReason | null
+  source: 'tracked' | 'manual' | 'import'
+  // '' when the session was never edited.
+  editedAt: string
 }
 
 export type SessionListView = { sessions: SessionItemView[]; total: number; offset: number }
@@ -121,11 +126,14 @@ type LibraryApp = {
   UpdateGame?: (id: number, patch: Record<string, unknown>) => Promise<GameDetailView>
   DeleteGame?: (id: number) => Promise<void>
   AddPlatform?: (name: string, category: string) => Promise<PlatformAddView>
+  CreateSession?: (gameId: number, input: Record<string, unknown>) => Promise<{ session: SessionItemView; game: GameDetailView }>
+  UpdateSession?: (sessionId: number, patch: Record<string, unknown>) => Promise<{ session: SessionItemView; game: GameDetailView }>
+  DeleteSession?: (sessionId: number) => Promise<GameDetailView>
 }
 
 type LibraryWindow = { go?: { main?: { App?: LibraryApp } } }
 
-function libraryBinding<K extends keyof LibraryApp>(name: K): NonNullable<LibraryApp[K]> {
+export function libraryBinding<K extends keyof LibraryApp>(name: K): NonNullable<LibraryApp[K]> {
   const fn = (window as unknown as LibraryWindow).go?.main?.App?.[name]
   if (!fn) {
     throw new Error(`wails bindings unavailable: ${name}`)
@@ -134,11 +142,11 @@ function libraryBinding<K extends keyof LibraryApp>(name: K): NonNullable<Librar
 }
 
 // Wails v2 rejects bound calls with a plain string; normalize to Error [UI-008].
-function toError(e: unknown): Error {
+export function toError(e: unknown): Error {
   return e instanceof Error ? e : new Error(String(e))
 }
 
-async function call<T>(fn: () => Promise<T>): Promise<T> {
+export async function call<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch (e) {

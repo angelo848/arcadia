@@ -140,6 +140,7 @@ function detailOf(id: number): GameDetailView {
     emulatorId: null,
     launchType: 'exe',
     launchArgs: '',
+    sessionPlaySeconds: 0, // alterado em 2026-11-25 (fase 16)
     completedAt: null,
     developers: [],
     publishers: [],

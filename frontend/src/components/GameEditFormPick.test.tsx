@@ -15,7 +15,7 @@ function game(over: Partial<GameDetailView> = {}): GameDetailView {
     id: 10, platformId: 1, title: 'Celeste', platform: 'PC', path: 'C:\Games\Celeste\Celeste.exe',
     status: 'not_played', favorite: false, year: 2018, totalPlaySeconds: 0, playCount: 0,
     firstPlayedAt: '', lastPlayedAt: '', description: '', completedAt: null, developers: [], publishers: [],
-    genres: [], playModes: ['single'], launchType: 'exe', launchArgs: '', emulatorId: null, ...over,
+    genres: [], playModes: ['single'], launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, emulatorId: null, ...over,
   }
 }
 

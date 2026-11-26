@@ -26,7 +26,7 @@ const mkGame = (id: number, platformId = 1): GameView => ({
   favorite: false, year: 2000, totalPlaySeconds: 0, playCount: 0, firstPlayedAt: '', lastPlayedAt: '',
 })
 const detail = (id: number, plays = 0): GameDetailView => ({
-  ...mkGame(id), playCount: plays, description: 'd', emulatorId: null, launchType: 'exe', launchArgs: '', completedAt: null,
+  ...mkGame(id), playCount: plays, description: 'd', emulatorId: null, launchType: 'exe', launchArgs: '', sessionPlaySeconds: 0 /* alterado em 2026-11-25 (fase 16) */, completedAt: null,
   developers: [], publishers: [], genres: ['RPG'], playModes: [],
 })
 const session = (state: SessionView['state'], gameId = 1): SessionView => ({
