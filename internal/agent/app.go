@@ -385,6 +385,7 @@ func startAgent(ctx context.Context, cfg config, clock domain.Clock, getenv func
 	maps.Copy(handlers, scrapeHandlers(scrapeSvc))
 	maps.Copy(handlers, locationHandlers(st, os.Stat, log))
 	maps.Copy(handlers, manualEditHandlers(manualEdit{st: st, files: mediaFiles, notes: mediaNotes, clock: clock, log: log}))
+	maps.Copy(handlers, sessionEditHandlers(sessionEdit{st: st, clock: clock, log: log}))
 	// Unified metadata (phase 12): jobs are children of metaCtx, cancelled at shutdown (MET-059).
 	metaCtx, stopMetadata := context.WithCancel(ctx)
 	metadata := newMetadataService(scrapeSvc, st, metaCtx)

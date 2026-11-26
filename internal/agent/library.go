@@ -391,6 +391,8 @@ func gameDetailToIPC(d store.GameDetail) ipc.GameDetail {
 		EmulatorID:  d.EmulatorID,
 		LaunchType:  d.LaunchType,
 		LaunchArgs:  d.LaunchArgs,
+
+		SessionPlaySeconds: d.SessionPlaySeconds,
 	}
 	if !d.CompletedAt.IsZero() {
 		s := domain.FormatCompletedDate(d.CompletedAt)
@@ -408,6 +410,11 @@ func sessionItemToIPC(s store.SessionItem) ipc.SessionItem {
 		State:         string(s.State),
 		StartedAt:     s.StartedAt.UTC(),
 		ActiveSeconds: s.ActiveSeconds,
+		Source:        s.Source,
+	}
+	if !s.EditedAt.IsZero() {
+		t := s.EditedAt.UTC()
+		out.EditedAt = &t
 	}
 	if !s.EndedAt.IsZero() {
 		t := s.EndedAt.UTC()

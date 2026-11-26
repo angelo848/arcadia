@@ -99,14 +99,16 @@ func summaryResult(games []store.GameStat, platforms []store.PlatformStat) ipc.S
 		}
 		out.Games = append(out.Games, ipc.StatsGame{
 			GameID: g.GameID, Title: g.Title, Platform: g.Platform, Sessions: g.Sessions,
-			ActiveSeconds: g.ActiveSeconds, ImportedSeconds: g.ImportedSeconds, LastPlayedAt: last,
+			ActiveSeconds: g.ActiveSeconds, ImportedSeconds: g.ImportedSeconds, ManualSeconds: g.ManualSeconds, LastPlayedAt: last,
 		})
 		out.TotalSeconds += g.ActiveSeconds
 		out.ImportedSeconds += g.ImportedSeconds
+		out.ManualSeconds += g.ManualSeconds
 	}
 	for _, p := range platforms {
 		out.Platforms = append(out.Platforms, ipc.StatsPlatform{
 			PlatformID: p.PlatformID, Name: p.Name, ActiveSeconds: p.ActiveSeconds, ImportedSeconds: p.ImportedSeconds,
+			ManualSeconds: p.ManualSeconds,
 		})
 	}
 	return out

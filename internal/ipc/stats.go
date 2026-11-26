@@ -19,6 +19,7 @@ type StatsGame struct {
 	Sessions        int64  `json:"sessions"`
 	ActiveSeconds   int64  `json:"activeSeconds"`
 	ImportedSeconds int64  `json:"importedSeconds"`
+	ManualSeconds   int64  `json:"manualSeconds"`
 	LastPlayedAt    string `json:"lastPlayedAt"`
 }
 
@@ -28,6 +29,7 @@ type StatsPlatform struct {
 	Name            string `json:"name"`
 	ActiveSeconds   int64  `json:"activeSeconds"`
 	ImportedSeconds int64  `json:"importedSeconds"`
+	ManualSeconds   int64  `json:"manualSeconds"`
 }
 
 // StatsSummaryResult is the result of stats.summary.
@@ -36,6 +38,7 @@ type StatsSummaryResult struct {
 	Platforms       []StatsPlatform `json:"platforms"`
 	TotalSeconds    int64           `json:"totalSeconds"`
 	ImportedSeconds int64           `json:"importedSeconds"`
+	ManualSeconds   int64           `json:"manualSeconds"`
 }
 
 // StatsWeeklyParams are the params of stats.weekly.

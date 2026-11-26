@@ -18,11 +18,13 @@ import (
 // contractPath is the source of truth: the phase-15-big-box-v2 contract (v0.16.0)
 // supersedes phase-13-modo-console (v0.15.0) [IPC-041, TTB-029].
 // alterado em 2026-11-22 (fase 15): antes apontava para phase-13-modo-console (v0.15.0).
-var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-15-big-box-v2", "contracts", "ipc.openrpc.json")
+// alterado em 2026-11-25 (fase 16): agora phase-16-edicao-sessoes (v0.17.0) [SED-030].
+var contractPath = filepath.Join("..", "..", "docs", "specs", "phase-16-edicao-sessoes", "contracts", "ipc.openrpc.json")
 
 // contractRelPath is how the package comment must name the contract.
 // alterado em 2026-11-22 (fase 15): antes phase-13-modo-console.
-const contractRelPath = "docs/specs/phase-15-big-box-v2/contracts/ipc.openrpc.json"
+// alterado em 2026-11-25 (fase 16): antes phase-15-big-box-v2.
+const contractRelPath = "docs/specs/phase-16-edicao-sessoes/contracts/ipc.openrpc.json"
 
 // openRPC is the subset of contracts/ipc.openrpc.json the tests need.
 type openRPC struct {
@@ -339,6 +341,10 @@ var phase6Methods = map[string]bool{
 	ipc.MethodMediaAdd:              false,
 	ipc.MethodMediaRemove:           false,
 	ipc.MethodGameSetPlayTime:       false,
+	// alterado em 2026-11-25 (fase 16): v0.17.0 acrescenta session.create, session.update e session.delete [SED-030].
+	ipc.MethodSessionCreate: false,
+	ipc.MethodSessionUpdate: false,
+	ipc.MethodSessionDelete: false,
 	// Added in v0.15.0 (phase 13) [CON-026, VID-005..VID-008, CON-019].
 	ipc.MethodVideoQueue:         false,
 	ipc.MethodVideoQueueMissing:  false,
@@ -484,6 +490,9 @@ func TestContract(t *testing.T) {
 			"BatchNotFound":   ipc.CodeBatchNotFound,
 			"BatchBusy":       ipc.CodeBatchBusy,
 			"BatchWrongState": ipc.CodeBatchWrongState,
+			// Session edit errors (alterado em 2026-11-25 (fase 16)).
+			"SessionNotFound": ipc.CodeSessionNotFound,
+			"SessionOverlap":  ipc.CodeSessionOverlap,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)
@@ -972,6 +981,9 @@ func TestContract(t *testing.T) {
 			"BatchNotFound":   ipc.CodeBatchNotFound,
 			"BatchBusy":       ipc.CodeBatchBusy,
 			"BatchWrongState": ipc.CodeBatchWrongState,
+			// Session edit errors (alterado em 2026-11-25 (fase 16)).
+			"SessionNotFound": ipc.CodeSessionNotFound,
+			"SessionOverlap":  ipc.CodeSessionOverlap,
 		}
 		if got, w := sortedKeys(c.Components.Errors), sortedKeys(want); !slices.Equal(got, w) {
 			t.Fatalf("contract errors = %v, Go constants cover %v", got, w)

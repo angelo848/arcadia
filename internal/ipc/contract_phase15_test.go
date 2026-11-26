@@ -5,6 +5,7 @@ package ipc_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
@@ -27,15 +28,23 @@ var phase15NewSchemas = []string{
 	"TimeToBeatSearchResult", "TimeToBeatSeconds", "TimeToBeatSettings",
 }
 
+// contractV016Path is the literal phase-15 contract (v0.16.0); contractPath now points to v0.17.0 (phase 16).
+// alterado em 2026-11-25 (fase 16).
+var contractV016Path = filepath.Join("..", "..", "docs", "specs", "phase-15-big-box-v2", "contracts", "ipc.openrpc.json")
+
 func TestTimeToBeatContract(t *testing.T) {
 	t.Parallel()
 	c := loadContract(t)
 	doc := loadGeneric(t, contractPath)
 
-	t.Run("TTB-029/versão 0.16.0", func(t *testing.T) {
+	// alterado em 2026-11-25 (fase 16): a atual é a 0.17.0; o arquivo da fase 15 continua a 0.16.0.
+	t.Run("TTB-029/versão 0.16.0 (arquivo da fase 15)", func(t *testing.T) {
 		t.Parallel()
-		if c.Info.Version != "0.16.0" {
-			t.Fatalf("contract %s info.version = %q, want \"0.16.0\"", contractPath, c.Info.Version)
+		if v := genericSection(t, loadGeneric(t, contractV016Path), "info")["version"]; v != "0.16.0" {
+			t.Fatalf("contract %s info.version = %v, want \"0.16.0\"", contractV016Path, v)
+		}
+		if c.Info.Version < "0.16.0" {
+			t.Fatalf("contract %s info.version = %q, want >= \"0.16.0\"", contractPath, c.Info.Version)
 		}
 	})
 
@@ -369,7 +378,7 @@ func TestTimeToBeatContract(t *testing.T) {
 	t.Run("TTB-029/a v0.16.0 é a v0.15.0 mais acréscimos", func(t *testing.T) {
 		t.Parallel()
 		prev := loadGeneric(t, contractV015Path)
-		next := loadGeneric(t, contractPath)
+		next := loadGeneric(t, contractV016Path) // alterado em 2026-11-25 (fase 16): antes contractPath
 
 		pinfo := genericSection(t, prev, "info")
 		ninfo := genericSection(t, next, "info")

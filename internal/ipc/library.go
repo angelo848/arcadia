@@ -26,6 +26,8 @@ type GameDetail struct {
 	// LaunchType is exe or uri and LaunchArgs the arguments of the launch (EDT-010).
 	LaunchType string `json:"launchType"`
 	LaunchArgs string `json:"launchArgs"`
+	// SessionPlaySeconds is the sum of activeSeconds of the ended sessions (SED-034).
+	SessionPlaySeconds int64 `json:"sessionPlaySeconds"`
 }
 
 // GameDetailResult is the result of game.get and game.update.
@@ -48,6 +50,9 @@ type SessionItem struct {
 	EndedAt       *time.Time `json:"endedAt"`
 	ActiveSeconds int64      `json:"activeSeconds"`
 	EndReason     *string    `json:"endReason"`
+	// Source is tracked, import, manual or an unknown value passed as is; EditedAt is null if never edited.
+	Source   string     `json:"source"`
+	EditedAt *time.Time `json:"editedAt"`
 }
 
 // SessionListResult is the result of session.list. Sessions is never nil.

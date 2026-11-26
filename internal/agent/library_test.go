@@ -133,10 +133,12 @@ func TestGameAddShape(t *testing.T) {
 }
 
 // gameDetailKeys are the members GameDetail adds to Game [STO-026, IPC-044].
-var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes", "launchType", "launchArgs", "emulatorId"}
+// alterado em 2026-11-25 (fase 16): + sessionPlaySeconds [SED-034].
+var gameDetailKeys = []string{"description", "completedAt", "developers", "publishers", "genres", "playModes", "launchType", "launchArgs", "emulatorId", "sessionPlaySeconds"}
 
 // sessionItemKeys are the members of SessionItem [STO-027, IPC-047].
-var sessionItemKeys = []string{"sessionId", "gameId", "state", "startedAt", "endedAt", "activeSeconds", "endReason"}
+// alterado em 2026-11-25 (fase 16): + source e editedAt [SED-033].
+var sessionItemKeys = []string{"sessionId", "gameId", "state", "startedAt", "endedAt", "activeSeconds", "endReason", "source", "editedAt"}
 
 // GameDetail and GameSessions forward to the real store. T19 adds them to
 // gameStore, so the recording wrapper must have them as well.
