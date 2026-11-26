@@ -57,23 +57,7 @@ export function SessionsList({
   const [focusAdd, setFocusAdd] = useState(0)
   const sessions: SessionItemView[] = q.data?.pages.flatMap((p) => p.sessions) ?? []
 
-  // Infinite scroll: the next page is asked for when the end of the list scrolls into view (UI-038).
-  const endRef = useRef<HTMLDivElement>(null)
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = q
-  const canObserve = typeof IntersectionObserver !== 'undefined'
-  useEffect(() => {
-    const el = endRef.current
-    if (!canObserve || el === null || !hasNextPage || isFetchingNextPage) {
-      return
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) {
-        void fetchNextPage()
-      }
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [canObserve, hasNextPage, isFetchingNextPage, fetchNextPage, sessions.length])
 
   // The row that held the focus is gone after a delete: the focus goes to "Adicionar sessão" (SEL-015).
   useEffect(() => {
@@ -177,9 +161,7 @@ export function SessionsList({
         </ul>
       )}
 
-      {hasNextPage && canObserve && <div ref={endRef} aria-hidden="true" className="h-px" />}
-      {isFetchingNextPage && <p className="text-center text-sm text-muted">Carregando sessões…</p>}
-      {hasNextPage && !canObserve && (
+      {hasNextPage && (
         <button
           type="button"
           onClick={() => void fetchNextPage()}

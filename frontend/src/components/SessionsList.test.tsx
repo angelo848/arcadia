@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionsList } from './SessionsList'
 import type { SessionView } from '../lib/games'
@@ -135,31 +135,6 @@ describe('SessionsList', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }))
     await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(2))
     expect(fn).toHaveBeenNthCalledWith(2, GAME_ID, PAGE, PAGE)
-  })
-
-  it('UI-038/com IntersectionObserver, o fim da lista visível pede a próxima página sem botão', async () => {
-    let trigger: (() => void) | null = null
-    class FakeObserver {
-      constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
-        trigger = () => cb([{ isIntersecting: true }])
-      }
-      observe() {}
-      disconnect() {}
-    }
-    vi.stubGlobal('IntersectionObserver', FakeObserver)
-    try {
-      const all = Array.from({ length: 120 }, (_, i) => item({ sessionId: i + 1 }))
-      const fn = install(all)
-      renderList()
-      await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1))
-      expect(screen.queryByRole('button', { name: 'Carregar mais' })).not.toBeInTheDocument()
-      await vi.waitFor(() => expect(trigger).not.toBeNull())
-      await act(async () => trigger?.())
-      await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(2))
-      expect(fn).toHaveBeenNthCalledWith(2, GAME_ID, PAGE, PAGE)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it("UI-038/sessão discarded mostra 'Descartada' e o tempo ativo, sem somar no total", async () => {
