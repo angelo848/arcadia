@@ -110,17 +110,19 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
         )}
         <ul className="flex flex-col divide-y divide-line">
           {(summary.data?.games ?? []).map((g) => (
-            <li key={g.gameId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-              <button type="button" onClick={() => onOpenGame(g.gameId)} className="text-left text-fg hover:underline">
+            <li key={g.gameId} className="grid grid-cols-[minmax(0,1fr)_14rem_7rem_20rem] items-center gap-x-4 gap-y-1 py-2 text-sm">
+              <button type="button" onClick={() => onOpenGame(g.gameId)} className="truncate text-left text-fg hover:underline">
                 {g.title}
               </button>
-              <span className="text-muted">{g.platform}</span>
-              <span className="text-fg">{formatPlayTime(g.activeSeconds)}</span>
-              <span className="text-muted">
+              <span className="truncate text-muted">{g.platform}</span>
+              <span className="text-right text-fg">{formatPlayTime(g.activeSeconds)}</span>
+              <span className="text-right text-muted">
                 {g.sessions} {g.sessions === 1 ? 'sessão' : 'sessões'}
                 {g.lastPlayedAt !== '' && ` · última vez ${formatLocalDateTime(g.lastPlayedAt)}`}
               </span>
-              {g.importedSeconds > 0 && <span className="text-xs text-warning">inclui {formatPlayTime(g.importedSeconds)} importados</span>}
+              {g.importedSeconds > 0 && (
+                <span className="col-span-full text-right text-xs text-warning">inclui {formatPlayTime(g.importedSeconds)} importados</span>
+              )}
             </li>
           ))}
         </ul>
