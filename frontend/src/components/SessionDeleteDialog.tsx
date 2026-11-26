@@ -34,6 +34,7 @@ export function SessionDeleteDialog(p: SessionDeleteDialogProps): JSX.Element {
           <button
             ref={cancelRef}
             type="button"
+            disabled={pending}
             onClick={() => onCancel()}
             className="rounded px-3 py-1 text-sm font-medium text-muted hover:bg-hover"
           >

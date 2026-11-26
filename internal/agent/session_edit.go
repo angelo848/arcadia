@@ -99,10 +99,6 @@ func (e sessionEdit) update(ctx context.Context, params json.RawMessage) (any, e
 		(p.ActiveSeconds.Present && (p.ActiveSeconds.Value < 0 || p.ActiveSeconds.Value > ipc.MaxPlaySeconds)) {
 		return nil, errBadEdit()
 	}
-	if !p.StartedAt.Present && !p.EndedAt.Present && !p.ActiveSeconds.Present {
-		return nil, ipc.NewErrorData(ipc.CodeInvalidParams, ipc.MsgInvalidParams,
-			ipc.InvalidParamsReasonData{Reason: string(domain.ReasonEmptyPatch)})
-	}
 	var patch store.SessionPatch
 	if p.StartedAt.Present {
 		t := p.StartedAt.Value.Truncate(time.Millisecond)

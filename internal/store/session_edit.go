@@ -254,6 +254,9 @@ func (s *Store) EditSession(ctx context.Context, id int64, p SessionPatch, now t
 		if row.State == string(domain.SessionDiscarded) {
 			return &SessionEditError{Reason: domain.ReasonDiscarded}
 		}
+		if p.Start == nil && p.End == nil && p.Active == nil {
+			return &SessionEditError{Reason: domain.ReasonEmptyPatch}
+		}
 		start, end := prev.StartedAt, prev.EndedAt
 		active := time.Duration(row.ActiveSeconds) * time.Second
 		if p.Start != nil {

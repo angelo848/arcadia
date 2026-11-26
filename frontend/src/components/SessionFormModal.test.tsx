@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionFormModal } from './SessionFormModal'
 import type { GameDetailView, SessionItemView } from '../lib/library'
@@ -322,6 +322,26 @@ describe('SessionFormModal', () => {
     release({ session: session(), game: game() })
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
     expect(app.CreateSession).toHaveBeenCalledTimes(1)
+  })
+
+  // Added 2026-11-25 (fase 16 review).
+  it('SEL-011/dois cliques em Salvar no mesmo tick chamam o binding uma única vez', async () => {
+    const props = renderForm()
+    const btn = save()
+    act(() => {
+      fireEvent.click(btn)
+      fireEvent.click(btn)
+    })
+    await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
+    expect(app.CreateSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('SEL-011/durante o envio o botão Cancelar fica desativado', async () => {
+    app.CreateSession.mockImplementationOnce(() => new Promise(() => {}))
+    renderForm()
+    fireEvent.click(save())
+    await screen.findByRole('button', { name: 'Salvando…' })
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled()
   })
 
   it('SEL-015/cada campo tem rótulo associado; campo com erro tem aria-invalid e aria-describedby para a mensagem', () => {

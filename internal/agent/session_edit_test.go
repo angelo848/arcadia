@@ -571,6 +571,41 @@ func TestSessionUpdate(t *testing.T) {
 		wantRaw(t, objectOf(t, e.Data), "sessionId", "9999")
 	})
 
+	// Added 2026-11-25 (fase 16): order of checks in the delta §4 (exists, open, discarded, empty patch).
+	t.Run("SED-024/patch vazio contra sessão inexistente é -32017, não empty-patch", func(t *testing.T) {
+		t.Parallel()
+		f := newSessFix(t)
+		_, err := f.callRaw(ipc.MethodSessionUpdate, `{"sessionId":9999}`)
+		rpcErr(t, err, ipc.CodeSessionNotFound)
+	})
+
+	t.Run("SED-022/patch vazio contra sessão aberta é -32002 com SessionRef", func(t *testing.T) {
+		t.Parallel()
+		f := newSessFix(t)
+		id := f.insert(t, f.game, "tracked", "running", sessT.Add(-10*time.Minute), time.Time{}, 120)
+		_, err := f.callRaw(ipc.MethodSessionUpdate, fmt.Sprintf(`{"sessionId":%d}`, id))
+		e := rpcErr(t, err, ipc.CodeSessionActive)
+		var ref ipc.SessionRef
+		if err := json.Unmarshal(e.Data, &ref); err != nil || ref.SessionID != id || ref.GameID != f.game {
+			t.Errorf("data = %s, want SessionRef for session %d", e.Data, id)
+		}
+	})
+
+	t.Run("SED-023/patch vazio contra sessão descartada é -32602 reason discarded", func(t *testing.T) {
+		t.Parallel()
+		f := newSessFix(t)
+		id := f.insert(t, f.game, "tracked", "discarded", sessT.Add(-2*time.Hour), sessT.Add(-2*time.Hour+20*time.Second), 20)
+		_, err := f.callRaw(ipc.MethodSessionUpdate, fmt.Sprintf(`{"sessionId":%d}`, id))
+		wantReason(t, err, domain.ReasonDiscarded)
+	})
+
+	t.Run("SED-032/patch vazio contra sessão encerrada contada segue empty-patch", func(t *testing.T) {
+		t.Parallel()
+		f, id := tracked(t)
+		_, err := f.callRaw(ipc.MethodSessionUpdate, fmt.Sprintf(`{"sessionId":%d}`, id))
+		wantReason(t, err, domain.ReasonEmptyPatch)
+	})
+
 	t.Run("SED-008/pedido sem mudança responde sucesso com a sessão e o jogo como estão e não registra Info", func(t *testing.T) {
 		t.Parallel()
 		f, id := tracked(t)

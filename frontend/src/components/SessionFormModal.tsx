@@ -39,6 +39,7 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element {
     mode === 'edit' && session !== undefined ? editFormState(session) : createFormState((p.now ?? (() => new Date()))()),
   )
   const [agentError, setAgentError] = useState<string | null>(null)
+  const sending = useRef(false)
   const nowFn = p.now ?? (() => new Date())
 
   const { values } = state
@@ -60,9 +61,10 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element {
   }
 
   async function save() {
-    if (!canSave) {
+    if (!canSave || sending.current) {
       return
     }
+    sending.current = true
     setAgentError(null)
     try {
       if (mode === 'edit' && session !== undefined) {
@@ -77,6 +79,8 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element {
         return
       }
       setAgentError(err instanceof Error ? err.message : String(err))
+    } finally {
+      sending.current = false
     }
   }
 
@@ -102,8 +106,9 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element {
         <>
           <button
             type="button"
+            disabled={pending}
             onClick={() => onClose()}
-            className="rounded px-3 py-1 text-sm font-medium text-muted hover:bg-hover"
+            className="rounded px-3 py-1 text-sm font-medium text-muted hover:bg-hover disabled:opacity-50"
           >
             Cancelar
           </button>

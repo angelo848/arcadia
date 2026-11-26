@@ -86,6 +86,11 @@ describe('SessionDeleteDialog', () => {
     expect(screen.queryByRole('button', { name: 'Excluir' })).toBeNull()
   })
 
+  it('SEL-011/durante a exclusão o botão Cancelar fica desativado', () => {
+    renderDialog({ pending: true })
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled()
+  })
+
   it('SEL-010/erro do agente aparece em role="alert" e o diálogo continua aberto', () => {
     renderDialog({ error: 'Não é possível alterar uma sessão em andamento.' })
     expect(screen.getByRole('alert')).toHaveTextContent('Não é possível alterar uma sessão em andamento.')
