@@ -18,11 +18,12 @@ vi.mock('../lib/stats', async (importOriginal) => {
 const summary: StatsSummary = {
   totalSeconds: 5400,
   importedSeconds: 3600,
+  manualSeconds: 0, // alterado em 2026-11-25 (fase 16)
   games: [
-    { gameId: 7, title: 'Celeste', platform: 'PC', sessions: 2, activeSeconds: 1800, importedSeconds: 0, lastPlayedAt: '' },
-    { gameId: 8, title: 'Hades', platform: 'PC', sessions: 1, activeSeconds: 3600, importedSeconds: 3600, lastPlayedAt: '' },
+    { gameId: 7, title: 'Celeste', platform: 'PC', sessions: 2, activeSeconds: 1800, importedSeconds: 0, manualSeconds: 0, lastPlayedAt: '' }, // alterado em 2026-11-25 (fase 16)
+    { gameId: 8, title: 'Hades', platform: 'PC', sessions: 1, activeSeconds: 3600, importedSeconds: 3600, manualSeconds: 0, lastPlayedAt: '' }, // alterado em 2026-11-25 (fase 16)
   ],
-  platforms: [{ platformId: 1, name: 'PC', activeSeconds: 5400, importedSeconds: 3600 }],
+  platforms: [{ platformId: 1, name: 'PC', activeSeconds: 5400, importedSeconds: 3600, manualSeconds: 0 }], // alterado em 2026-11-25 (fase 16)
 }
 
 describe('StatsPage (phase 8)', () => {
@@ -58,9 +59,50 @@ describe('StatsPage (phase 8)', () => {
   })
 
   it('EST-003/sem tempo no período mostra a mensagem', () => {
-    summaryMock.mockReturnValue({ data: { games: [], platforms: [], totalSeconds: 0, importedSeconds: 0 }, isError: false })
+    summaryMock.mockReturnValue({ data: { games: [], platforms: [], totalSeconds: 0, importedSeconds: 0, manualSeconds: 0 }, isError: false }) // alterado em 2026-11-25 (fase 16)
     render(<StatsPage onOpenGame={vi.fn()} onBack={vi.fn()} />)
     expect(screen.getByText('Nenhum tempo jogado neste período.')).toBeInTheDocument()
+  })
+
+  // SEL-014 (fase 16): marca de tempo adicionado à mão.
+  const withManual: StatsSummary = {
+    ...summary,
+    totalSeconds: 7200,
+    manualSeconds: 1800,
+    games: [{ ...summary.games[0], activeSeconds: 3600, manualSeconds: 1800 }, summary.games[1]],
+  }
+
+  it('SEL-014/total do período com manualSeconds > 0 mostra "· X adicionados à mão" ao lado dos importados', () => {
+    summaryMock.mockReturnValue({ data: withManual, isError: false })
+    render(<StatsPage onOpenGame={vi.fn()} onBack={vi.fn()} />)
+    expect(screen.getByText(/· 30 min adicionados à mão/)).toBeInTheDocument()
+    expect(screen.getByText(/importados do LaunchBox/)).toBeInTheDocument()
+  })
+
+  it('SEL-014/linha de jogo com manualSeconds > 0 mostra "inclui X adicionados à mão"', () => {
+    summaryMock.mockReturnValue({ data: withManual, isError: false })
+    render(<StatsPage onOpenGame={vi.fn()} onBack={vi.fn()} />)
+    expect(screen.getByText(/inclui 30 min adicionados à mão/)).toBeInTheDocument()
+  })
+
+  it('SEL-014/manualSeconds 0 não mostra a marca', () => {
+    render(<StatsPage onOpenGame={vi.fn()} onBack={vi.fn()} />)
+    expect(screen.queryByText(/adicionados à mão/)).toBeNull()
+  })
+
+  it('SEL-014/importados e manuais no mesmo item mostram as duas marcas', () => {
+    summaryMock.mockReturnValue({
+      data: {
+        ...summary,
+        manualSeconds: 0,
+        games: [{ ...summary.games[1], activeSeconds: 5400, importedSeconds: 3600, manualSeconds: 1800 }],
+      },
+      isError: false,
+    })
+    render(<StatsPage onOpenGame={vi.fn()} onBack={vi.fn()} />)
+    // alterado em 2026-11-25 (fase 16)
+    expect(screen.getByText(/inclui 1 h 00 min importados/)).toBeInTheDocument()
+    expect(screen.getByText(/30 min adicionados à mão/)).toBeInTheDocument()
   })
 
   it('EST-002/o gráfico tem uma barra por semana com o tempo no título', () => {

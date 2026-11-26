@@ -61,6 +61,12 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
               {Math.round(importedShare(summary.data.totalSeconds, summary.data.importedSeconds) * 100)}%)
             </span>
           )}
+          {summary.data.manualSeconds > 0 && (
+            <span className="text-muted">
+              {' '}
+              · {formatPlayTime(summary.data.manualSeconds)} adicionados à mão
+            </span>
+          )}
         </p>
       )}
 
@@ -122,6 +128,9 @@ export function StatsPage({ onOpenGame, onBack }: { onOpenGame: (id: number) => 
               </span>
               {g.importedSeconds > 0 && (
                 <span className="col-span-full text-right text-xs text-warning">inclui {formatPlayTime(g.importedSeconds)} importados</span>
+              )}
+              {g.manualSeconds > 0 && (
+                <span className="col-span-full text-right text-xs text-warning">inclui {formatPlayTime(g.manualSeconds)} adicionados à mão</span>
               )}
             </li>
           ))}

@@ -431,6 +431,26 @@ describe('GameDetailsPanel', () => {
     await waitFor(() => expect(app.GameSessions).toHaveBeenCalledTimes(2))
   })
 
+  // alterado em 2026-11-25 (fase 16): a lista de sessões recebe o jogo da página.
+  it('SEL-004/o painel passa o jogo (total e sessionPlaySeconds) para a lista de sessões', async () => {
+    // total 3900 s, sessions 0 s: adjustment of 1 h 05 min offered in the create form (SEL-009).
+    install({ sessions: [] })
+    const { unmount } = renderPanel()
+    await loaded()
+    fireEvent.click(await screen.findByRole('button', { name: 'Adicionar sessão' }))
+    expect(await screen.findByLabelText('Já está no tempo total')).toBeInTheDocument()
+    expect(screen.getByText(/1 h 05 min a mais que as sessões/)).toBeInTheDocument()
+    unmount()
+
+    // total equal to the sessions: no adjustment, no checkbox.
+    install({ detail: detail({ sessionPlaySeconds: 3900 }), sessions: [] })
+    renderPanel()
+    await loaded()
+    fireEvent.click(await screen.findByRole('button', { name: 'Adicionar sessão' }))
+    await screen.findByRole('dialog', { name: 'Adicionar sessão' })
+    expect(screen.queryByLabelText('Já está no tempo total')).toBeNull()
+  })
+
   it('UIX-035/sem resposta mostra "Carregando jogo…" e nada do jogo anterior', async () => {
     install({
       detail: (id) =>

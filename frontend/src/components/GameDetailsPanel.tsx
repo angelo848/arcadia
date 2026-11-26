@@ -256,7 +256,7 @@ export function GameDetailsPanel(props: GameDetailsPanelProps): JSX.Element {
 
         <section className="flex flex-col gap-2">
           <h3 className="text-lg font-medium text-fg">Sessões</h3>
-          <SessionsList gameId={g.id} current={null} />
+          <SessionsList gameId={g.id} current={null} game={g} />
         </section>
       </article>
     </div>

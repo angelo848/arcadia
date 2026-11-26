@@ -22,7 +22,7 @@ export type StatsGame = {
   sessions: number
   activeSeconds: number
   importedSeconds: number
-  manualSeconds?: number
+  manualSeconds: number
   lastPlayedAt: string
 }
 
@@ -31,7 +31,7 @@ export type StatsPlatform = {
   name: string
   activeSeconds: number
   importedSeconds: number
-  manualSeconds?: number
+  manualSeconds: number
 }
 
 export type StatsSummary = {
@@ -39,7 +39,7 @@ export type StatsSummary = {
   platforms: StatsPlatform[]
   totalSeconds: number
   importedSeconds: number
-  manualSeconds?: number
+  manualSeconds: number
 }
 
 export type StatsWeek= { start: string; seconds: number; current: boolean }
