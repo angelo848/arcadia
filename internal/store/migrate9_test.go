@@ -94,8 +94,9 @@ func m9Columns(t *testing.T, db *sql.DB, table string) []string {
 }
 
 // alterado em 2026-11-22 (fase 15): exclui time_to_beat (migração 00010).
+// alterado em 2026-11-25 (fase 16): exclui play_session (migração 00011).
 const m9OtherSchema = `SELECT type, name, tbl_name, COALESCE(sql, '') FROM sqlite_master
-	WHERE tbl_name NOT IN ('media', 'media_job', 'time_to_beat') AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
+	WHERE tbl_name NOT IN ('media', 'media_job', 'time_to_beat', 'play_session') AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
 	  AND name NOT LIKE 'goose%' ORDER BY type, name`
 
 const m9MediaDump = `SELECT id, game_id, kind, provider, source_url, hash, path, thumb_path, created_at FROM media ORDER BY id`
@@ -107,7 +108,7 @@ func TestMigration9(t *testing.T) {
 	t.Run("VID-001/banco novo vai a 9 e aceita video em media e media_job", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		g := m9Game(t, s.DB(), "Jogo")
 
 		if err := m9Media(t, s.DB(), g, "video", "h1"); err != nil {
@@ -151,7 +152,7 @@ func TestMigration9(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		if got := dumpRows(t, s.DB(), m9MediaDump); !slices.Equal(got, mediaBefore) {
 			t.Errorf("media changed:\n before %v\n after  %v", mediaBefore, got)
 		}
@@ -315,12 +316,12 @@ func TestMigration9(t *testing.T) {
 			}
 		}
 		slices.Sort(got)
-		// alterado em 2026-11-22 (fase 15): a lista termina na 00010
-		if len(got) != 10 || got[8] != "00009_video.sql" || got[9] != "00010_time_to_beat.sql" {
-			t.Errorf("migrations = %v, want 10 files ending in 00009_video.sql, 00010_time_to_beat.sql", got)
+		// alterado em 2026-11-25 (fase 16): a lista termina na 00011
+		if len(got) != 11 || got[8] != "00009_video.sql" || got[9] != "00010_time_to_beat.sql" || got[10] != "00011_session_edit.sql" {
+			t.Errorf("migrations = %v, want 11 files ending in 00009_video.sql, 00010_time_to_beat.sql, 00011_session_edit.sql", got)
 		}
-		if store.SchemaVersion != 10 {
-			t.Errorf("SchemaVersion = %d, want 10", store.SchemaVersion)
+		if store.SchemaVersion != 11 {
+			t.Errorf("SchemaVersion = %d, want 11", store.SchemaVersion)
 		}
 	})
 

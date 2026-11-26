@@ -137,7 +137,7 @@ func TestMigrate5(t *testing.T) {
 	t.Run("STO-024/banco novo fica na versão 5 e game_fts existe", func(t *testing.T) {
 		t.Parallel()
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 
 		if n := countRows(t, s.DB(),
 			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'game_fts'`); n != 1 {
@@ -160,7 +160,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		for _, title := range titles {
 			got := matchRowids(t, s.DB(), `"`+title+`"`)
 			if !slices.Equal(got, []int64{ids[title]}) {
@@ -187,7 +187,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		for _, match := range []string{"Cherry", "Devolver", "Metroidvania"} {
 			got := matchRowids(t, s.DB(), match)
 			if !slices.Equal(got, []int64{gameID}) {
@@ -213,7 +213,7 @@ func TestMigrate5(t *testing.T) {
 		})
 
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 10) // alterado em 2026-11-22 (fase 15)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		for i, q := range libraryDumpQueries {
 			after := dumpRows(t, s.DB(), q)
 			if !slices.Equal(after, before[i]) {
@@ -224,14 +224,14 @@ func TestMigrate5(t *testing.T) {
 
 	t.Run("STO-024/SchemaVersion é 5 e a versão do goose é 5", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 10 { // alterado em 2026-11-22 (fase 15): migração 00010
-			t.Errorf("store.SchemaVersion = %d, want 10", store.SchemaVersion)
+		if store.SchemaVersion != 11 { // alterado em 2026-11-25 (fase 16): migração 00011
+			t.Errorf("store.SchemaVersion = %d, want 11", store.SchemaVersion)
 		}
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 10)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		if v := countRows(t, s.DB(),
-			`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`); v != 10 {
-			t.Errorf("goose_db_version max applied version = %d, want 10", v)
+			`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`); v != 11 { // alterado em 2026-11-25 (fase 16)
+			t.Errorf("goose_db_version max applied version = %d, want 11", v)
 		}
 	})
 

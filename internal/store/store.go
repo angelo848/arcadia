@@ -17,8 +17,8 @@ import (
 	"github.com/arcadia-launcher/arcadia/internal/store/dbgen"
 )
 
-// SchemaVersion is the last migration embedded in the binary (10: time_to_beat table, TTB-001).
-const SchemaVersion int64 = 10
+// SchemaVersion is the last migration embedded in the binary (11: play_session.edited_at and started_at index, SED-001).
+const SchemaVersion int64 = 11
 
 // ErrSchemaMismatch is returned when the database schema version differs from
 // SchemaVersion (or the database does not exist) and migration is disabled.

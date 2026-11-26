@@ -58,8 +58,9 @@ func m10Insert(t *testing.T, db *sql.DB, gameID int64, source, state string, con
 	return err
 }
 
+// alterado em 2026-11-25 (fase 16): exclui play_session (migração 00011).
 const m10OtherSchema = `SELECT type, name, tbl_name, COALESCE(sql, '') FROM sqlite_master
-	WHERE tbl_name <> 'time_to_beat' AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
+	WHERE tbl_name NOT IN ('time_to_beat', 'play_session') AND name NOT LIKE 'sqlite\_%' ESCAPE '\'
 	  AND name NOT LIKE 'goose%' ORDER BY type, name`
 
 func TestMigration10(t *testing.T) {
@@ -79,13 +80,13 @@ func TestMigration10(t *testing.T) {
 		}
 	})
 
-	t.Run("TTB-001/SchemaVersion = 10 e a versão do goose é 10", func(t *testing.T) {
+	t.Run("TTB-001/SchemaVersion = 11 e a versão do goose é 11 (alterado em 2026-11-25, fase 16)", func(t *testing.T) {
 		t.Parallel()
-		if store.SchemaVersion != 10 {
-			t.Errorf("SchemaVersion = %d, want 10", store.SchemaVersion)
+		if store.SchemaVersion != 11 {
+			t.Errorf("SchemaVersion = %d, want 11", store.SchemaVersion)
 		}
 		s := openStore(t, dbPath(t), true)
-		requireGooseVersion(t, s, 10)
+		requireGooseVersion(t, s, 11)
 	})
 
 	t.Run("TTB-001/banco na versão 9 com jogos migra sem perder dados e sem criar linhas", func(t *testing.T) {
@@ -101,7 +102,7 @@ func TestMigration10(t *testing.T) {
 			t.Fatalf("precondition: %d games seeded, want 2", len(before))
 		}
 		s := openStore(t, path, true)
-		requireGooseVersion(t, s, 10)
+		requireGooseVersion(t, s, 11) // alterado em 2026-11-25 (fase 16)
 		if after := dumpRows(t, s.DB(), games); !slices.Equal(after, before) {
 			t.Errorf("games changed:\n before %v\n after  %v", before, after)
 		}
