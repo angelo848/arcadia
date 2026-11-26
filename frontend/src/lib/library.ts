@@ -111,7 +111,7 @@ export function isNotFound(err: unknown): boolean {
 }
 
 const gamesPageSize = 50
-const sessionsPageSize = 50
+const sessionsPageSize = 10
 // Failed list calls are retried every 2 s [UI-044].
 const retryEveryMs = 2000
 
@@ -241,7 +241,7 @@ export function useGame(id: number): UseQueryResult<GameDetailView, Error> {
   })
 }
 
-// useGameSessions pages the sessions of a game, 50 per page [UI-038].
+// useGameSessions pages the sessions of a game, 10 per page [UI-038].
 export function useGameSessions(id: number): UseInfiniteQueryResult<InfiniteData<SessionListView>, Error> {
   return useInfiniteQuery({
     queryKey: libraryKeys.sessions(id),

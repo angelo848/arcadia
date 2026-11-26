@@ -426,7 +426,7 @@ describe('GameDetailsPanel', () => {
 
     expect(screen.getByRole('heading', { name: 'Sessões' })).toBeInTheDocument()
     await screen.findByRole('button', { name: 'Carregar mais' })
-    expect(app.GameSessions).toHaveBeenNthCalledWith(1, 10, 0, 50)
+    expect(app.GameSessions).toHaveBeenNthCalledWith(1, 10, 0, 10)
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }))
     await waitFor(() => expect(app.GameSessions).toHaveBeenCalledTimes(2))
   })

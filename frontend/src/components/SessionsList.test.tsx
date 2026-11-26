@@ -13,7 +13,7 @@ import { formatLocalDateTime } from '../lib/formatDate'
 // ---------------------------------------------------------------------------
 
 const GAME_ID = 10
-const PAGE = 50
+const PAGE = 10
 
 type GameSessionsFn = ReturnType<typeof vi.fn>
 
@@ -122,12 +122,12 @@ afterEach(() => {
 })
 
 describe('SessionsList', () => {
-  it("UI-038/lista com 50 por página e 'Carregar mais' pede a próxima página", async () => {
+  it("UI-038/lista com 10 por página e 'Carregar mais' pede a próxima página", async () => {
     const all = Array.from({ length: 120 }, (_, i) => item({ sessionId: i + 1 }))
     const fn = install(all)
     renderList()
 
-    // The first page asks for 50 sessions from offset 0 and says nothing more.
+    // The first page asks for 10 sessions from offset 0 and says nothing more.
     await screen.findByRole('button', { name: 'Carregar mais' })
     expect(fn).toHaveBeenNthCalledWith(1, GAME_ID, 0, PAGE)
     expect(fn).toHaveBeenCalledTimes(1)

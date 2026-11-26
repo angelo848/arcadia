@@ -366,7 +366,7 @@ describe('leituras da biblioteca', () => {
     expect(result.current.data).toEqual(d)
   })
 
-  it('UI-038/useGameSessions pede 50 por página e segue pelo offset', async () => {
+  it('UI-038/useGameSessions pede 10 por página e segue pelo offset', async () => {
     app.GameSessions.mockImplementation((id: number, offset: number, limit: number) =>
       Promise.resolve({
         sessions: Array.from({ length: limit }, (_, i) =>
@@ -380,21 +380,21 @@ describe('leituras da biblioteca', () => {
     const { result } = renderHook(() => useGameSessions(10), { wrapper: wrapperFor(qc) })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(app.GameSessions).toHaveBeenNthCalledWith(1, 10, 0, 50)
+    expect(app.GameSessions).toHaveBeenNthCalledWith(1, 10, 0, 10)
     expect(result.current.hasNextPage).toBe(true)
 
     await act(async () => {
       await result.current.fetchNextPage()
     })
-    expect(app.GameSessions).toHaveBeenNthCalledWith(2, 10, 50, 50)
+    expect(app.GameSessions).toHaveBeenNthCalledWith(2, 10, 10, 10)
     // Checked in the QueryClient cache: the observer delivery is asynchronous.
     await waitFor(() => {
       const cached = qc.getQueryData(libraryKeys.sessions(10)) as
         | InfiniteData<SessionListView>
         | undefined
       const ids = cached?.pages.flatMap((p) => p.sessions.map((s) => s.sessionId)) ?? []
-      expect(ids).toHaveLength(100)
-      expect(new Set(ids).size).toBe(100)
+      expect(ids).toHaveLength(20)
+      expect(new Set(ids).size).toBe(20)
     })
   })
 

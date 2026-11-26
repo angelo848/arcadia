@@ -31,7 +31,7 @@ function durationText(activeSeconds: number): string {
   return activeSeconds > 0 ? formatPlayTime(activeSeconds) : '0 min'
 }
 
-// SessionsList shows the sessions of one game, 50 per page [UI-038]. The open session of
+// SessionsList shows the sessions of one game, 10 per page [UI-038]. The open session of
 // this game is shown with the phase 4 SessionPanel above the list [UI-012, UI-014]. A
 // discarded session shows its own active time but is never summed anywhere [UI-038].
 export function SessionsList({
