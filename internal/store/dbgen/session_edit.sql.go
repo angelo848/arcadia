@@ -37,6 +37,18 @@ func (q *Queries) AddToTotal(ctx context.Context, arg AddToTotalParams) (int64, 
 	return result.RowsAffected()
 }
 
+const deleteClosedSession = `-- name: DeleteClosedSession :execrows
+DELETE FROM play_session WHERE id = ? AND ended_at IS NOT NULL
+`
+
+func (q *Queries) DeleteClosedSession(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteClosedSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const findOverlappingSession = `-- name: FindOverlappingSession :one
 SELECT s.id, s.game_id, g.title, s.started_at, s.ended_at
 FROM play_session s
@@ -74,6 +86,58 @@ func (q *Queries) FindOverlappingSession(ctx context.Context, arg FindOverlappin
 		&i.Title,
 		&i.StartedAt,
 		&i.EndedAt,
+	)
+	return i, err
+}
+
+const getGameUpdatedAt = `-- name: GetGameUpdatedAt :one
+SELECT updated_at FROM game WHERE id = ?
+`
+
+func (q *Queries) GetGameUpdatedAt(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getGameUpdatedAt, id)
+	var updated_at int64
+	err := row.Scan(&updated_at)
+	return updated_at, err
+}
+
+const getSessionForEdit = `-- name: GetSessionForEdit :one
+SELECT s.id, s.game_id, g.title, s.state, s.source, s.started_at, s.ended_at,
+       s.last_seen_at, s.active_seconds, s.end_reason, s.edited_at
+FROM play_session s
+JOIN game g ON g.id = s.game_id
+WHERE s.id = ?
+`
+
+type GetSessionForEditRow struct {
+	ID            int64
+	GameID        int64
+	Title         string
+	State         string
+	Source        string
+	StartedAt     int64
+	EndedAt       sql.NullInt64
+	LastSeenAt    int64
+	ActiveSeconds int64
+	EndReason     sql.NullString
+	EditedAt      sql.NullInt64
+}
+
+func (q *Queries) GetSessionForEdit(ctx context.Context, id int64) (GetSessionForEditRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionForEdit, id)
+	var i GetSessionForEditRow
+	err := row.Scan(
+		&i.ID,
+		&i.GameID,
+		&i.Title,
+		&i.State,
+		&i.Source,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.LastSeenAt,
+		&i.ActiveSeconds,
+		&i.EndReason,
+		&i.EditedAt,
 	)
 	return i, err
 }
@@ -128,6 +192,23 @@ func (q *Queries) RecomputeGamePlayFacts(ctx context.Context, arg RecomputeGameP
 	return result.RowsAffected()
 }
 
+const setGameUpdatedAt = `-- name: SetGameUpdatedAt :execrows
+UPDATE game SET updated_at = ? WHERE id = ?
+`
+
+type SetGameUpdatedAtParams struct {
+	UpdatedAt int64
+	ID        int64
+}
+
+func (q *Queries) SetGameUpdatedAt(ctx context.Context, arg SetGameUpdatedAtParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setGameUpdatedAt, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const sumCountedSeconds = `-- name: SumCountedSeconds :one
 SELECT CAST(COALESCE(SUM(active_seconds), 0) AS INTEGER) AS total
 FROM play_session
@@ -139,4 +220,55 @@ func (q *Queries) SumCountedSeconds(ctx context.Context, gameID int64) (int64, e
 	var total int64
 	err := row.Scan(&total)
 	return total, err
+}
+
+const updatePauseBounds = `-- name: UpdatePauseBounds :exec
+UPDATE pause_interval
+SET paused_at = ?1, resumed_at = ?2
+WHERE id = ?3
+`
+
+type UpdatePauseBoundsParams struct {
+	PausedAt  int64
+	ResumedAt sql.NullInt64
+	ID        int64
+}
+
+func (q *Queries) UpdatePauseBounds(ctx context.Context, arg UpdatePauseBoundsParams) error {
+	_, err := q.db.ExecContext(ctx, updatePauseBounds, arg.PausedAt, arg.ResumedAt, arg.ID)
+	return err
+}
+
+const updateSessionTimes = `-- name: UpdateSessionTimes :execrows
+UPDATE play_session
+SET started_at = ?1,
+    ended_at = ?2,
+    last_seen_at = ?3,
+    active_seconds = ?4,
+    edited_at = ?5
+WHERE id = ?6 AND ended_at IS NOT NULL
+`
+
+type UpdateSessionTimesParams struct {
+	StartedAt     int64
+	EndedAt       sql.NullInt64
+	LastSeenAt    int64
+	ActiveSeconds int64
+	EditedAt      sql.NullInt64
+	ID            int64
+}
+
+func (q *Queries) UpdateSessionTimes(ctx context.Context, arg UpdateSessionTimesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateSessionTimes,
+		arg.StartedAt,
+		arg.EndedAt,
+		arg.LastSeenAt,
+		arg.ActiveSeconds,
+		arg.EditedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
