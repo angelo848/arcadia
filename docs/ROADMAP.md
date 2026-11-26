@@ -1,4 +1,4 @@
-# Roadmap pós-POC (fases 9 a 13)
+# Roadmap pós-POC (fases 9 a 16)
 
 As fases 1 a 8 estão em [ARCHITECTURE.md §9](ARCHITECTURE.md). Este documento agrupa os 10 pontos de melhoria
 levantados depois da primeira versão funcional. Cada fase segue o fluxo SDD ([ADR 0008](adr/0008-spec-driven-development.md)):
@@ -209,6 +209,16 @@ confirmação), `frontend` (`ImportDialog`).
 Na janela "Editar jogo": trocar, adicionar e remover capa, screenshots e fundos a partir de arquivos, e corrigir o tempo
 total jogado. Métodos novos no IPC: `media.add`, `media.remove` e `game.setPlayTime`.
 
+## Fase 16 — Edição de sessões
+
+> **Status:** concluída no código (verificação manual, SEL-017, na T38). Spec em
+> [phase-16-edicao-sessoes](specs/phase-16-edicao-sessoes/requirements.md) (SED-001..SED-037, SEL-001..SEL-017); decisão no
+> [ADR 0041](adr/0041-sessoes-editaveis-pelo-usuario.md); IPC v0.17.0 (só acréscimos); migração 11.
+
+Na lista de sessões do painel de detalhes do jogo: criar uma sessão à mão, editar início, fim e tempo jogado de uma sessão
+encerrada e excluir uma sessão encerrada, com o total, a primeira e a última vez jogado e a contagem de sessões sempre coerentes.
+Métodos novos no IPC: `session.create`, `session.update` e `session.delete`. Sem mudança no tracker.
+
 ## Versão 1.0.0 (2026-11-16)
 
 Primeira versão definitiva: fases 1 a 14 no código, ícones próprios do aplicativo e das plataformas. O executável é
@@ -272,3 +282,22 @@ Ficou para depois: tempo para zerar nos cartões e na Faixa fora dos Detalhes, b
 configurável e movimento reduzido. A verificação manual (ATB-016, TTB-032, MOS-016, ETN-015) é a T38.
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.1.0"`.
+
+## Versão 1.2.0 (2026-11-25)
+
+Fase 16, [phase-16-edicao-sessoes](specs/phase-16-edicao-sessoes/requirements.md) (ADR [0041](adr/0041-sessoes-editaveis-pelo-usuario.md);
+IPC v0.17.0 só com acréscimos; migração 11):
+- **Criar, editar e excluir sessões** de um jogo na lista de sessões do painel de detalhes. Só sessões encerradas; a sessão em andamento
+  nunca é editada, e com o jogo rodando as outras sessões dele continuam editáveis.
+- **Origem e marcas:** a sessão criada à mão é "Manual"; as rastreadas e importadas que o usuário edita ganham a marca "Editada".
+- **Total por diferença:** o total jogado muda pela diferença do tempo e conserva o ajuste da edição manual; a primeira e a última vez e
+  a contagem são recalculadas. Na criação, a caixa "Já está no tempo total" evita contar duas vezes um tempo já ajustado à mão.
+- **Regras:** fim depois do início e nunca no futuro, intervalo de até 24 h, tempo jogado de 30 s até o intervalo e nenhuma
+  sobreposição com outra sessão rastreada ou manual (de qualquer jogo). A exclusão pede confirmação e não tem desfazer.
+- **Estatísticas:** as sessões manuais entram no tempo jogado, marcadas "adicionados à mão", e as estatísticas passam a somar só
+  sessões contadas (a descartada e a aberta saem da conta).
+
+Ficou para depois: nota por sessão, desfazer a exclusão, editar pausas, dividir ou juntar sessões e edição de sessões no Big Box. A
+verificação manual (SEL-017) é a T38.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.2.0"`.

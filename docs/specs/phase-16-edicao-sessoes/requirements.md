@@ -1,7 +1,7 @@
 # Fase 16 — Edição de sessões: requisitos
 
-- **Status:** rascunho para aprovação do usuário (2026-11-25). Nada é planejado nem implementado antes da aprovação deste
-  arquivo. As perguntas em aberto estão no fim; cada uma traz o padrão proposto, que é o que está escrito nos requisitos.
+- **Status:** aprovado em 2026-11-25 (todas as respostas padrão das perguntas 1 a 9 foram confirmadas; ver "Decisões confirmadas" no
+  fim).
 - **Pedido:** "adicione opções para editar, deletar e criar sessões de um game".
 - **Design:** [design.md](design.md) · **Contratos:** [contracts/ipc-v0.17.0-delta.md](contracts/ipc-v0.17.0-delta.md)
   ([OpenRPC do acréscimo](contracts/ipc-v0.17.0-delta.openrpc.json)) · **Tarefas:** [tasks.md](tasks.md) (do planner).
@@ -34,7 +34,7 @@ Vocabulário desta spec:
 
 ---
 
-## Decisões propostas (padrão adotado; o usuário confirma ou troca nas perguntas do fim)
+## Decisões (confirmadas em 2026-11-25; ver "Decisões confirmadas" no fim)
 
 1. **Campos editáveis:** início, fim e tempo jogado. Sem nota/comentário nesta fase (pergunta 1).
 2. **Origem visível:** sessão criada à mão tem origem `manual`; sessão rastreada ou importada que o usuário edita mantém a
@@ -253,7 +253,7 @@ aberta); `-32002` "Não é possível alterar uma sessão em andamento."; `-32602
 [contrato](contracts/ipc-v0.17.0-delta.md#4-erros); `-32001` como hoje.
 
 ### SED-037 — Estatísticas somam só sessões contadas
-· proposto: lacuna encontrada ao escrever esta spec (pergunta 7).
+Lacuna encontrada ao escrever esta spec (pergunta 7), incluída nesta fase.
 Dado um período com uma sessão contada de 1 h, uma descartada de 20 s e uma aberta com 10 min gravados, quando calculo as
 estatísticas, então o tempo é 1 h e a contagem de sessões é 1. Hoje `StatsByGame`, `StatsByPlatform` e `SessionTimesSince`
 somam qualquer `state`, contra UI-038 ("descartada nunca soma em lugar nenhum").
@@ -362,20 +362,16 @@ mostram o tempo manual marcado, e lançar o jogo depois disso rastreia normalmen
 
 ---
 
-## Perguntas em aberto (o padrão proposto já está nos requisitos)
+## Decisões confirmadas (2026-11-25)
 
-1. **Nota por sessão?** Padrão: não nesta fase. Se sim: coluna `note TEXT NOT NULL DEFAULT ''` na mesma migração 11, até 500
-   caracteres, campo "Nota" no formulário e texto na linha (requisitos novos SED/SEL).
-2. **Limite do intervalo** de uma sessão criada ou editada: 24 h (SED-018)? Alternativas: 12 h, 48 h ou sem limite.
-3. **Contagem dupla com o ajuste manual de EDM-005:** caixa "Já está no tempo total" na criação (SED-005, SEL-009)? Alternativas:
-   (a) sem caixa, criar sempre soma; (b) recalcular o total como soma das sessões e descartar o ajuste manual (muda EDM-005).
-4. **Sobreposição** (SED-020): recusar contra sessões de qualquer jogo (padrão, coerente com "um jogo por vez", SES-002)?
-   Alternativas: só do mesmo jogo; ou apenas avisar e deixar salvar.
-5. **Sessão descartada:** só excluir (padrão, SED-023)? Alternativa: permitir editar, e com 30 s ou mais ela passa a `ended` e
-   soma no total.
-6. **Exclusão irreversível** com confirmação (padrão, SEL-012)? Alternativa: "Desfazer" por alguns segundos depois de excluir.
-7. **Lacuna nas estatísticas (SED-037):** hoje elas somam também sessões descartadas e a aberta. Corrigir nesta fase (padrão)
-   ou registrar e deixar para depois?
-8. **Marcas na lista e nas estatísticas** com os textos "Manual", "Importada", "Editada" e "adicionados à mão" (SEL-003,
-   SEL-014)? Algum texto preferido?
-9. **Versão:** esta fase sai como 1.2.0 (funcionalidade nova)?
+O usuário aprovou os requisitos com as respostas padrão das nove perguntas que estavam em aberto:
+
+1. **Nota por sessão:** não nesta fase (fora de escopo).
+2. **Limite do intervalo:** 24 h (SED-018).
+3. **Contagem dupla com o ajuste manual de EDM-005:** a caixa "Já está no tempo total" fica na criação (SED-005, SEL-009).
+4. **Sobreposição:** recusada contra as sessões rastreadas e manuais de todos os jogos, inclusive a aberta (SED-020).
+5. **Sessão descartada:** só pode ser excluída (SED-023).
+6. **Exclusão:** irreversível, com confirmação e sem desfazer (SEL-012).
+7. **Estatísticas só com sessões contadas:** SED-037 está incluído nesta fase.
+8. **Textos das marcas:** "Manual", "Importada", "Editada" e "adicionados à mão" confirmados (SEL-003, SEL-014).
+9. **Versão:** esta fase sai como 1.2.0.

@@ -79,6 +79,7 @@ importação duas vezes não duplica nenhum jogo.
 escolhida e confere também título + plataforma (com o título proposto); a regra não muda.
 
 ### IMP-007 — Tempo jogado importado
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-021): a sessão importada pode ser editada e excluída pelo usuário (sem limite de intervalo e sem checagem de sobreposição).
 Dado um candidato com tempo jogado (LaunchBox), quando o usuário confirma, então é gravada uma sessão de origem `import`
 com a duração total (`active_seconds`) e `ended_at` na data da última partida. `total_play_seconds` passa a incluí-la.
 Dado um jogo que já tem sessões rastreadas, então a importação de tempo não altera essas sessões.

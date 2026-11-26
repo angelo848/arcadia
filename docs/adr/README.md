@@ -30,7 +30,7 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0014](0014-executavel-unico-dois-processos.md) | Executável único com dois processos | aceito |
 | [0015](0015-agente-unico-escritor-do-banco.md) | O agente é o único escritor do banco; a UI escreve via IPC | aceito |
 | [0016](0016-job-do-jogo-permite-breakaway.md) | O Job Object do jogo permite breakaway | aceito |
-| [0017](0017-modelo-de-pausa.md) | Modelo de pausa da sessão | aceito |
+| [0017](0017-modelo-de-pausa.md) | Modelo de pausa da sessão | aceito (ressalva em [0041](0041-sessoes-editaveis-pelo-usuario.md): em sessão editada `active_seconds` é a verdade) |
 | [0018](0018-entrada-global-e-feedback-nativo.md) | Entrada global e feedback nativos no agente | aceito |
 | [0019](0019-lancamento-sem-rastrear.md) | Lançamento sem rastrear | aceito |
 | [0020](0020-indice-de-busca-e-filterspec.md) | Índice de busca e `FilterSpec` | aceito |
@@ -54,3 +54,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0038](0038-big-box-por-pedido-externo.md) | Big Box por pedido externo (Select + A e `--bigbox`) | aceito |
 | [0039](0039-tempo-para-zerar-hltb.md) | Tempo para zerar do HowLongToBeat com cache, reserva do IGDB e falha silenciosa | aceito |
 | [0040](0040-contrato-de-tema-v2.md) | Contrato de tema v2 do Big Box | aceito (estende 0036) |
+| [0041](0041-sessoes-editaveis-pelo-usuario.md) | Sessões editáveis pelo usuário: origem `manual`, total por diferença e sem sobreposição | aceito (ressalva ao 0017: em sessão editada `active_seconds` é a verdade) |

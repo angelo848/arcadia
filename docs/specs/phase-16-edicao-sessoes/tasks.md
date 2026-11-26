@@ -70,7 +70,7 @@ H: T38 (depende de tudo)
 
 ---
 
-## T01 — Testes: regras puras de `internal/domain`
+## T01 — Testes: regras puras de `internal/domain` [concluída]
 - Requisitos: SED-002, SED-009, SED-013, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-021. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivo: `internal/domain/session_edit_test.go` (novo). Tudo table-driven; `now` = `T = 2026-11-25T20:00:00Z`.
 - Testes:
@@ -80,7 +80,7 @@ H: T38 (depende de tudo)
   - `ClampTotal`: `SED-013/negativo vira 0`; `SED-013/acima de 3599996400 vira o teto`; `SED-013/valor dentro da faixa passa igual`;
   - `ClipPause`: `SED-009/pausa dentro do intervalo não muda`; `SED-009/pausa que sai pela esquerda é cortada no início`; `SED-009/pausa que sai pela direita é cortada no fim`; `SED-009/pausa que cobre tudo vira o intervalo todo`; `SED-009/pausa totalmente fora devolve ok=false`; `SED-009/pausa com duração zero depois do corte devolve ok=false`; `SED-009/retomada nula conta como o fim da sessão`.
 
-## T02 — `internal/domain`: regras puras da edição de sessões
+## T02 — `internal/domain`: regras puras da edição de sessões [concluída]
 - Requisitos: SED-002, SED-009, SED-013, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-021. **Responsável:** implementer. Dependência: T01.
 - Arquivo: `internal/domain/session_edit.go` (novo; puro, sem Windows).
 ```go
@@ -110,7 +110,7 @@ func ClipPause(pausedAt time.Time, resumedAt *time.Time, start, end time.Time) (
 ```
 - Ordem das checagens de `ValidateSessionTimes`: too-early, end-not-after-start, in-future, span-too-long (só se `spanChecked`), active-too-short, active-exceeds-span. Constantes de `reason` em inglês (formato de fio). Sem testes novos (T01 cobre).
 
-## T03 — Testes: migração 11 e ajuste dos testes de versão
+## T03 — Testes: migração 11 e ajuste dos testes de versão [concluída]
 - Requisitos: SED-001. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivos: `internal/store/migrate11_test.go` (novo); alterar `internal/store/media_test.go`, `migrate5_test.go`, `migrate8_test.go`, `migrate9_test.go`, `migrate10_test.go` e `internal/agent/metadata_wire_test.go`.
 - Alterações nos antigos (anotar `alterado em 2026-11-25 (fase 16)`):
@@ -125,12 +125,12 @@ func ClipPause(pausedAt time.Time, resumedAt *time.Time, start, end time.Time) (
   - `SED-001/os índices e as outras tabelas continuam iguais (sqlite_master sem play_session é igual ao da v10)`;
   - `SED-001/Down apaga o índice e a coluna e preserva as linhas e as outras colunas`.
 
-## T04 — Migração 11 e `SchemaVersion`
+## T04 — Migração 11 e `SchemaVersion` [concluída]
 - Requisitos: SED-001. **Responsável:** implementer. Dependência: T03.
 - Arquivos: `internal/store/migrations/00011_session_edit.sql` (novo, design §3.1 literal), `internal/store/store.go` (`SchemaVersion` 10 → 11 e o comentário).
 - Sem testes novos (T03 cobre). `go test ./internal/store/... ./internal/agent/...` verde inclusive os antigos ajustados.
 
-## T05 — Testes: leituras do store (`source`, `editedAt`, `sessionPlaySeconds`)
+## T05 — Testes: leituras do store (`source`, `editedAt`, `sessionPlaySeconds`) [concluída]
 - Requisitos: SED-002, SED-033, SED-034. **Responsável:** test-writer. Dependência: T04.
 - Arquivos: `internal/store/sessions_list_test.go` (alterar), `internal/store/library_detail_test.go` (alterar).
 - Testes:
@@ -143,7 +143,7 @@ func ClipPause(pausedAt time.Time, resumedAt *time.Time, start, end time.Time) (
   - `SED-034/total ajustado à mão (SetTotalPlaySeconds) não muda SessionPlaySeconds`;
   - `SED-034/UpdateGame e SetTotalPlaySeconds também devolvem SessionPlaySeconds`.
 
-## T06 — Store: leituras novas
+## T06 — Store: leituras novas [concluída]
 - Requisitos: SED-002, SED-033, SED-034. **Responsável:** implementer. Dependência: T05.
 - Arquivos: `internal/store/queries/sessions.sql` (`ListSessionsByGame` passa a devolver `source` e `edited_at`), `internal/store/queries/session_edit.sql` (novo; começa com `SumCountedSeconds :one`), `internal/store/sessions_list.go`, `internal/store/library.go` (`readGameDetail` lê a soma), `sqlc generate`.
 ```go
@@ -161,7 +161,7 @@ type GameDetail struct { /* existing fields */ SessionPlaySeconds int64 } // sum
 ```
 - Sem testes novos (T05 cobre).
 
-## T07 — Testes: criar sessão manual no store
+## T07 — Testes: criar sessão manual no store [concluída]
 - Requisitos: SED-003, SED-004, SED-005, SED-012, SED-013, SED-014, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-024, SED-028. **Responsável:** test-writer. Dependência: T02, T06.
 - Arquivo: `internal/store/session_edit_create_test.go` (novo; fixture com jogo, sessões rastreadas, importada, descartada e aberta inseridas por SQL direto ou por `StartSession`/`EndSession`). `now` = `W`.
 - Testes (`CreateManualSession`):
@@ -188,7 +188,7 @@ type GameDetail struct { /* existing fields */ SessionPlaySeconds int64 } // sum
   - `SED-024/jogo inexistente devolve erro que satisfaz ErrGameNotFound`;
   - `SED-028/status e completed_at do jogo não mudam (inclusive not_played)`.
 
-## T08 — Store: criar sessão manual
+## T08 — Store: criar sessão manual [concluída]
 - Requisitos: SED-003, SED-004, SED-005, SED-012, SED-013, SED-014, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-024, SED-028. **Responsável:** implementer. Dependência: T07.
 - Arquivos: `internal/store/session_edit.go` (novo), `internal/store/queries/session_edit.sql` (acrescenta `InsertManualSession`, `FindOverlappingSession`, `RecomputeGamePlayFacts`, `AddToTotal`), `sqlc generate`.
 ```go
@@ -227,7 +227,7 @@ func (s *Store) CreateManualSession(ctx context.Context, m ManualSession, now ti
 - `CreateManualSession` segue a ordem do design §3.4 dentro de `Store.Tx`; as consultas do jogo (existência, total, `SumCountedSeconds`) e a checagem de sobreposição ficam na mesma transação. Datas truncadas a ms. `AddToTotal` usa `MIN(MAX(total + delta, 0), ipc.MaxPlaySeconds)`: o store não importa `ipc`, então o teto vem como constante local `maxTotalPlaySeconds = 999_999 * 3600` com comentário apontando para `ipc.MaxPlaySeconds`; um teste da T16 confere que os dois valores são iguais.
 - `FindOverlappingSession` ignora `id = :self`, só considera `state = 'ended' AND source IN ('tracked','manual')` ou `ended_at IS NULL`, e devolve o título do jogo da outra sessão. Sem testes novos (T07 cobre).
 
-## T09 — Testes: editar sessão no store
+## T09 — Testes: editar sessão no store [concluída]
 - Requisitos: SED-006, SED-007, SED-008, SED-009, SED-012, SED-013, SED-014, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-021, SED-022, SED-023, SED-024, SED-025, SED-028. **Responsável:** test-writer. Dependência: T08.
 - Arquivo: `internal/store/session_edit_update_test.go` (novo). Fixtures com pausas em `pause_interval` e jogo com ajuste manual.
 - Testes (`EditSession`):
@@ -264,7 +264,7 @@ func (s *Store) CreateManualSession(ctx context.Context, m ManualSession, now ti
   - `SED-025/com o jogo rodando: editar a sessão anterior de 1 h para 2 h sem cruzar a aberta e depois EndSession da aberta com 30 min ativos soma 1 h 30 ao total; a aberta segue sem mudança de estado, tempo ativo nem pausas; last_played_at é o fim da sessão encerrada`;
   - `SED-028/status e completed_at não mudam`.
 
-## T10 — Store: editar sessão
+## T10 — Store: editar sessão [concluída]
 - Requisitos: SED-006, SED-007, SED-008, SED-009, SED-012, SED-013, SED-014, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-021, SED-022, SED-023, SED-024, SED-025, SED-028. **Responsável:** implementer. Dependência: T09.
 - Arquivos: `internal/store/session_edit.go` (acrescenta), `internal/store/queries/session_edit.sql` (acrescenta `GetSessionForEdit`, `UpdateSessionTimes`, `ListPausesOfSession`, `UpdatePauseBounds`, `DeletePause`), `sqlc generate`.
 ```go
@@ -272,7 +272,7 @@ func (s *Store) EditSession(ctx context.Context, id int64, p SessionPatch, now t
 ```
 - Aplica o patch sobre os valores gravados; `spanChecked = source != import && (patch traz Start ou End)`; sobreposição só se a origem é `tracked`/`manual` e o patch traz início ou fim. `UpdateSessionTimes` roda com `WHERE id = ? AND ended_at IS NOT NULL` e confere `execrows`. Rodar a suíte com `go test -race ./internal/store/...`. Sem testes novos (T09 cobre).
 
-## T11 — Testes: excluir sessão no store
+## T11 — Testes: excluir sessão no store [concluída]
 - Requisitos: SED-010, SED-011, SED-012, SED-013, SED-014, SED-022, SED-024, SED-028. **Responsável:** test-writer. Dependência: T10.
 - Arquivo: `internal/store/session_edit_delete_test.go` (novo).
 - Testes (`RemoveSession`):
@@ -286,7 +286,7 @@ func (s *Store) EditSession(ctx context.Context, id int64, p SessionPatch, now t
   - `SED-024/id inexistente devolve ErrSessionNotFound`;
   - `SED-028/status e completed_at não mudam`.
 
-## T12 — Store: excluir sessão
+## T12 — Store: excluir sessão [concluída]
 - Requisitos: SED-010, SED-011, SED-012, SED-013, SED-014, SED-022, SED-024, SED-028. **Responsável:** implementer. Dependência: T11.
 - Arquivos: `internal/store/session_edit.go` (acrescenta), `internal/store/queries/session_edit.sql` (`DeleteClosedSession :execrows`), `sqlc generate`.
 ```go
@@ -294,7 +294,7 @@ func (s *Store) RemoveSession(ctx context.Context, id int64, now time.Time) (Ses
 ```
 - As pausas saem por `ON DELETE CASCADE` (conferir `PRAGMA foreign_keys` ligado no `Open`, como o `DeleteGame` já depende). Descartada: delta 0 e jogo intocado. Rodar `go test -race ./internal/store/...`. Sem testes novos (T11 cobre).
 
-## T13 — Testes: estatísticas (manualSeconds e só contadas)
+## T13 — Testes: estatísticas (manualSeconds e só contadas) [concluída]
 - Requisitos: SED-027, SED-037. **Responsável:** test-writer. Dependência: T04.
 - Arquivo: `internal/store/stats_test.go` (alterar).
 - Testes:
@@ -306,7 +306,7 @@ func (s *Store) RemoveSession(ctx context.Context, id int64, now time.Time) (Ses
   - `SED-037/SessionTimes só devolve as contadas`;
   - `SED-037/os testes antigos de EST-001..EST-003 continuam verdes` (os fixtures que usavam sessão aberta ou descartada ganham a anotação `alterado em 2026-11-25 (fase 16)`).
 
-## T14 — Store: estatísticas
+## T14 — Store: estatísticas [concluída]
 - Requisitos: SED-027, SED-037. **Responsável:** implementer. Dependência: T13.
 - Arquivos: `internal/store/queries/stats.sql` (`StatsByGame` e `StatsByPlatform` ganham `manual_seconds` e `AND s.state = 'ended'`; `SessionTimesSince` ganha `AND state = 'ended'`; atualizar o comentário do cabeçalho), `internal/store/stats.go`, `sqlc generate`.
 ```go
@@ -315,7 +315,7 @@ type PlatformStat struct { /* existing */ ManualSeconds int64 }
 ```
 - Sem testes novos (T13 cobre).
 
-## T15 — Contrato completo `ipc.openrpc.json` v0.17.0
+## T15 — Contrato completo `ipc.openrpc.json` v0.17.0 [concluída]
 - Requisitos: SED-030, SED-033, SED-034, SED-027. **Responsável:** sessão principal (cópia mecânica de JSON grande, por script, como nas fases 11 a 15). Dependência: nenhuma. Bloqueia a T16 verde.
 - Criar `docs/specs/phase-16-edicao-sessoes/contracts/ipc.openrpc.json` como cópia de `docs/specs/phase-15-big-box-v2/contracts/ipc.openrpc.json` (v0.16.0) mais o [delta](contracts/ipc-v0.17.0-delta.openrpc.json):
   - `info.version = "0.17.0"` e `info.description` atualizada;
@@ -327,7 +327,7 @@ type PlatformStat struct { /* existing */ ManualSeconds int64 }
   - erros novos `SessionNotFound` (-32017) e `SessionOverlap` (-32018); as descrições de `InvalidParams` e `SessionActive` recebem o texto do delta.
 - Em `contracts/ipc-v0.17.0-delta.md` e `design.md` §6, trocar "(gerado por uma tarefa)" pelo arquivo criado.
 
-## T16 — Testes: contrato IPC v0.17.0
+## T16 — Testes: contrato IPC v0.17.0 [concluída]
 - Requisitos: SED-030, SED-033, SED-034, SED-027, SED-013. **Responsável:** test-writer. Dependência: nenhuma (fica vermelho até T15 e T17).
 - Arquivos: `internal/ipc/contract_phase16_test.go` (novo); alterar `internal/ipc/contract_test.go` (`contractPath` e `contractRelPath` passam para `phase-16-edicao-sessoes`; o `assertExactFields` de `GameDetail`, `SessionItem` e dos tipos de estatística passa a incluir os campos novos), `contract_phase15_test.go` (a v0.16.0 passa a ler `contractV016Path` = `docs/specs/phase-15-big-box-v2/contracts/ipc.openrpc.json`; o teste `TTB-029/a v0.16.0 é a v0.15.0 mais acréscimos` compara `contractV015Path` com `contractV016Path` e o "versão 0.16.0" também), `contract_phase13_test.go` e `contract_phase12_test.go` (onde o teste é "≥", conferir; onde compara `contractPath` com versão exata, trocar). Anotar `alterado em 2026-11-25 (fase 16)`.
 - Testes:
@@ -346,7 +346,7 @@ type PlatformStat struct { /* existing */ ManualSeconds int64 }
   - `SED-030/a v0.17.0 é a v0.16.0 mais acréscimos`: normaliza `info.version` e `info.description`, tira os métodos, esquemas e erros novos, os campos acrescentados a `SessionItem`, `GameDetail` e às estatísticas e o texto acrescentado a `InvalidParams` e `SessionActive`, e então `reflect.DeepEqual` com a v0.16.0; confere que nenhum método, parâmetro, resultado, erro ou esquema antigo mudou ou sumiu e que a ordem relativa dos antigos se mantém;
   - `SED-013/o teto do total do store (maxTotalPlaySeconds) é igual a ipc.MaxPlaySeconds` (arquivo `internal/store/session_edit_limits_test.go`, novo; usa uma função exportada de teste `store.MaxTotalPlaySecondsForTest` em `export_test.go`).
 
-## T17 — `internal/ipc`: tipos e constantes v0.17.0
+## T17 — `internal/ipc`: tipos e constantes v0.17.0 [concluída]
 - Requisitos: SED-030, SED-031, SED-032, SED-033, SED-034, SED-027. **Responsável:** implementer. Dependência: T15, T16.
 - Arquivos: `internal/ipc/session_edit.go` (novo), `internal/ipc/library.go` (campos novos), `internal/ipc/stats.go` (campos novos), `internal/ipc/protocol.go` (comentário do pacote aponta para o contrato da fase 16).
 ```go
@@ -392,7 +392,7 @@ type GameDetail struct { /* existing */ SessionPlaySeconds int64 `json:"sessionP
 ```
 - `ipc` não importa `domain` nem `store` (os testes da T16 conferem o enum contra `domain`). Sem testes novos (T16 cobre).
 
-## T18 — Testes: campos novos nas leituras do agente
+## T18 — Testes: campos novos nas leituras do agente [concluída]
 - Requisitos: SED-027, SED-033, SED-034. **Responsável:** test-writer. Dependência: T06, T14, T17.
 - Arquivos: `internal/agent/library_test.go` (alterar), `internal/agent/stats_test.go` (alterar), `internal/agent/games_test.go` (se compara JSON de `session.list`).
 - Testes:
@@ -403,12 +403,12 @@ type GameDetail struct { /* existing */ SessionPlaySeconds int64 `json:"sessionP
   - `SED-027/importedSeconds e manualSeconds convivem sem se misturar`;
   - `SED-027/stats.weekly não ganha campo`.
 
-## T19 — Agente: conversões das leituras
+## T19 — Agente: conversões das leituras [concluída]
 - Requisitos: SED-027, SED-033, SED-034. **Responsável:** implementer. Dependência: T18.
 - Arquivos: `internal/agent/library.go` (`sessionItemToIPC` e `gameDetailToIPC`), `internal/agent/stats.go` (`summaryResult` soma `ManualSeconds` e o expõe).
 - Sem testes novos (T18 cobre).
 
-## T20 — Testes: handlers `session.*` do agente
+## T20 — Testes: handlers `session.*` do agente [concluída]
 - Requisitos: SED-005, SED-008, SED-013, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-022, SED-023, SED-024, SED-025, SED-026, SED-029, SED-031, SED-032. **Responsável:** test-writer. Dependência: T12, T17, T19.
 - Arquivo: `internal/agent/session_edit_test.go` (novo), no estilo de `manual_edit_test.go` (fixture com store real em `t.TempDir()`, `domain.FakeClock`, `slog` capturado em buffer; um segundo teste de integração com servidor IPC real e dois `ipc.Client`, no estilo de `media_changed_test.go`).
 - Testes:
@@ -437,7 +437,7 @@ type GameDetail struct { /* existing */ SessionPlaySeconds int64 `json:"sessionP
   - `SED-029/pedido recusado não registra nada acima de Debug`;
   - `SED-029/falha interna do store é -32603 com Error no log e a mensagem genérica`.
 
-## T21 — Agente: handlers `session.create`, `session.update`, `session.delete`
+## T21 — Agente: handlers `session.create`, `session.update`, `session.delete` [concluída]
 - Requisitos: SED-005, SED-008, SED-013, SED-015, SED-016, SED-017, SED-018, SED-019, SED-020, SED-022, SED-023, SED-024, SED-025, SED-026, SED-029, SED-031, SED-032. **Responsável:** implementer. Dependência: T20.
 - Arquivos: `internal/agent/session_edit.go` (novo), `internal/agent/app.go` (uma linha: `maps.Copy(handlers, sessionEditHandlers(sessionEdit{st: st, clock: clock, log: log}))`, depois de `manualEditHandlers`).
 ```go
@@ -455,7 +455,7 @@ func sessionEditHandlers(e sessionEdit) map[string]ipc.Handler // session.create
 ```
 - Decodifica com `decodeOrInvalid`/`ipc.DecodeParams` (IPC-028); `Optional.Null` em `update` é `-32602` sem `data`; patch vazio é `-32602` com `data.reason = empty-patch`. Traduz erros: `ErrGameNotFound` → `-32001` (`GameNotFoundData`); `ErrSessionNotFound` → `-32017` (`{sessionId}`); `*SessionOpenError` → `-32002` com `SessionRef`; `*SessionEditError` → `-32602` com `InvalidParamsReasonData`; `*SessionOverlapError` → `-32018` com `SessionOverlapData`; resto → `-32603` com `Error` no log. Log `Info` depois do commit e só se `SessionWrite.Changed`; recusa em `Debug`. Resposta via `gameDetailToIPC` e `sessionItemToIPC` (T19). **Sem notificação, sem tracker, sem goroutine.** Rodar `go test -race ./internal/agent/...`. Sem testes novos (T20 cobre).
 
-## T22 — Testes: bindings e mensagens do desktop
+## T22 — Testes: bindings e mensagens do desktop [concluída]
 - Requisitos: SED-027, SED-035, SED-036. **Responsável:** test-writer. Dependência: T17.
 - Arquivos: `cmd/arcadia/session_edit_test.go` (novo, agente falso como `manual_edit` e `library_test.go`), `cmd/arcadia/errors_test.go` (alterar), `cmd/arcadia/library_test.go` e `cmd/arcadia/stats_test.go` (alterar para os campos novos).
 - Testes:
@@ -474,7 +474,7 @@ func sessionEditHandlers(e sessionEdit) map[string]ipc.Handler // session.create
   - `SED-036/-32602 sem reason e -32001 mantêm os textos de hoje`;
   - `SED-036/desconexão e prazo viram "O agente não está respondendo. Tente de novo."`.
 
-## T23 — Desktop: bindings, views e mensagens
+## T23 — Desktop: bindings, views e mensagens [concluída]
 - Requisitos: SED-027, SED-035, SED-036. **Responsável:** implementer. Dependência: T22.
 - Arquivos: `cmd/arcadia/session_edit.go` (novo), `cmd/arcadia/library.go` (`SessionItemView` ganha `Source string` e `EditedAt string`; `GameDetailView` ganha `SessionPlaySeconds int64`; `sessionItemView` e `gameDetailView`), `cmd/arcadia/stats.go` (`ManualSeconds` nas três views), `cmd/arcadia/errors.go` (constantes de texto do SED-036 e `sessionEditError`).
 ```go
@@ -496,11 +496,11 @@ func sessionEditError(err error, log *slog.Logger, loc *time.Location) error
 ```
 - `CreateSession` converte as strings RFC 3339 para `time.Time` antes de montar `ipc.SessionCreateParams` (string inválida vira o texto "Dados inválidos."). `UpdateSession` monta os params por mapa (`sessionId` + só os membros presentes do patch, `null` preservado), como `patchParams` faz para o jogo. A mensagem do `-32018` formata `DD/MM/AAAA HH:MM` na `time.Local` do processo; usar uma variável de pacote `displayLocation = time.Local` que o teste troca. Sem testes novos (T22 cobre).
 
-## T24 — Bindings do Wails
+## T24 — Bindings do Wails [concluída]
 - Requisitos: SED-035. **Responsável:** sessão principal (mecânico). Dependência: T23.
 - Rodar `wails generate module` em `cmd/arcadia` (ou `wails build`) e commitar `frontend/wailsjs/go/main/App.d.ts`, `App.js` e `frontend/wailsjs/go/models.ts`: `CreateSession`, `UpdateSession`, `DeleteSession`, `main.SessionCreateInput`, `main.SessionWriteView`, e os campos novos de `SessionItemView`, `GameDetailView` e das views de estatística. Sem testes (a T38 reconfere com o `wails build` completo).
 
-## T25 — Testes: `lib/sessionForm.ts` (lógica pura)
+## T25 — Testes: `lib/sessionForm.ts` (lógica pura) [concluída]
 - Requisitos: SED-019, SEL-005, SEL-006, SEL-007, SEL-008, SEL-009, SEL-016. **Responsável:** test-writer. Dependência: T24.
 - Arquivo: `frontend/src/lib/sessionForm.test.ts` (novo). O arquivo fixa `process.env.TZ = 'America/Sao_Paulo'` em `beforeAll` (Dúvida 9) e usa `vi.setSystemTime`. A mesma tabela de exemplos do contrato §5 (10 linhas) é replicada aqui.
 - Testes:
@@ -525,7 +525,7 @@ func sessionEditError(err error, log *slog.Logger, loc *time.Location) error
   - `SEL-016/hora local que não existe (início do horário de verão) é ajustada pelo Date e o campo mostra o valor ajustado`;
   - `SEL-016/ida e volta localToUtcIso e utcIsoToLocal para um instante comum`.
 
-## T26 — Frontend: `lib/sessionForm.ts`
+## T26 — Frontend: `lib/sessionForm.ts` [concluída]
 - Requisitos: SED-019, SEL-005, SEL-006, SEL-007, SEL-008, SEL-009, SEL-016. **Responsável:** implementer. Dependência: T25.
 - Arquivo: `frontend/src/lib/sessionForm.ts` (novo; puro, sem React nem bindings; o "agora" é parâmetro).
 ```ts
@@ -553,7 +553,7 @@ export function utcIsoToLocal(iso: string): string
 ```
 - Usa `Date` do navegador para a conversão local ↔ UTC; usa `playTimeParts`/`playTimeSeconds` de `lib/manualEdit.ts` onde servir. Sem testes novos (T25 cobre).
 
-## T27 — Testes: `lib/sessionEdit.ts` (chamadas e hooks) e tipos
+## T27 — Testes: `lib/sessionEdit.ts` (chamadas e hooks) e tipos [concluída]
 - Requisitos: SEL-013. **Responsável:** test-writer. Dependência: T26.
 - Arquivos: `frontend/src/lib/sessionEdit.test.tsx` (novo); alterar `frontend/src/lib/library.test.tsx`, `frontend/src/lib/games.test.tsx` e as fixtures de `GameDetailView` e `SessionItemView` dos testes que as constroem (`App.test.tsx`, `App.invariants.test.tsx`, `App.bigbox-request.test.tsx`, `App.metadata.test.tsx`, `components/GameDetailsPanel.test.tsx`, `GameEditDialog.test.tsx`, `GameEditForm*.test.tsx`, `GameImagesEditor.test.tsx`, `bigbox/**/*.test.tsx` e `bigbox-scan.test.ts` que montam `GameDetailView`), acrescentando `sessionPlaySeconds`, `source` e `editedAt`. Anotar `alterado em 2026-11-25 (fase 16)`.
 - Testes (`QueryClientProvider` real e `window.go.main.App` falso):
@@ -564,7 +564,7 @@ export function utcIsoToLocal(iso: string): string
   - `SEL-013/o erro "Esta sessão não existe mais." é reconhecido por isSessionNotFound`;
   - `SEL-013/sem polling: nenhuma chamada além das invalidações`.
 
-## T28 — Frontend: `lib/sessionEdit.ts` e tipos
+## T28 — Frontend: `lib/sessionEdit.ts` e tipos [concluída]
 - Requisitos: SEL-013. **Responsável:** implementer. Dependência: T27.
 - Arquivos: `frontend/src/lib/sessionEdit.ts` (novo), `frontend/src/lib/library.ts` (`SessionItemView` ganha `source: string` e `editedAt: string`; `GameDetailView` ganha `sessionPlaySeconds: number`), `frontend/src/lib/stats.ts` (`manualSeconds: number` em `StatsGame`, `StatsPlatform` e `StatsSummary`; `importedShare` não muda).
 ```ts
@@ -578,7 +578,7 @@ export function useDeleteSession(gameId: number): UseMutationResult<GameDetailVi
 ```
 - No sucesso: `setQueryData(libraryKeys.game(gameId), game)` e `invalidateQueries` de `libraryKeys.sessions(gameId)`, `libraryGamesKey` (cobre `recent`) e `statsKey`. Chamadas via `window.go.main.App` com o padrão `call`/`toError` de `lib/library.ts` (Wails rejeita com string). Sem testes novos (T27 cobre).
 
-## T29 — Testes: `SessionFormModal`
+## T29 — Testes: `SessionFormModal` [concluída]
 - Requisitos: SEL-005, SEL-006, SEL-007, SEL-008, SEL-009, SEL-010, SEL-011, SEL-015. **Responsável:** test-writer. Dependência: T28.
 - Arquivo: `frontend/src/components/SessionFormModal.test.tsx` (novo; props `now` injetável; bindings falsos).
 - Testes:
@@ -601,7 +601,7 @@ export function useDeleteSession(gameId: number): UseMutationResult<GameDetailVi
   - `SEL-015/o foco começa em Início; Enter num campo salva quando Salvar está ativo; Esc cancela sem chamar o agente`;
   - `SEL-015/ao fechar, o foco volta ao botão que abriu o modal (ou a "Adicionar sessão" quando a linha não existe mais)`.
 
-## T30 — Frontend: `SessionFormModal`
+## T30 — Frontend: `SessionFormModal` [concluída]
 - Requisitos: SEL-005, SEL-006, SEL-007, SEL-008, SEL-009, SEL-010, SEL-011, SEL-015. **Responsável:** implementer. Dependência: T29.
 - Arquivo: `frontend/src/components/SessionFormModal.tsx` (novo).
 ```ts
@@ -617,7 +617,7 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element
 ```
 - Usa `Modal size="compact"`, `<input type="datetime-local" step="60">`, campos numéricos de horas e minutos, `lib/sessionForm.ts` para estado e validação e `useCreateSession`/`useUpdateSession`; o erro do agente fica em `<p role="alert">`; cores só por tokens de tema (`text-muted`, `text-warning`, `text-danger`; ADR 0029). Sem testes novos (T29 cobre).
 
-## T31 — Testes: `SessionDeleteDialog`, `SessionsList` e `GameDetailsPanel`
+## T31 — Testes: `SessionDeleteDialog`, `SessionsList` e `GameDetailsPanel` [concluída]
 - Requisitos: SEL-001, SEL-002, SEL-003, SEL-004, SEL-010, SEL-011, SEL-012, SEL-013, SEL-015. **Responsável:** test-writer. Dependência: T30.
 - Arquivos: `frontend/src/components/SessionDeleteDialog.test.tsx` (novo); alterar `SessionsList.test.tsx` (a prop `game` é nova e obrigatória; anotar `alterado em 2026-11-25 (fase 16)`) e `GameDetailsPanel.test.tsx`.
 - Testes (`SessionDeleteDialog`):
@@ -639,7 +639,7 @@ export function SessionFormModal(p: SessionFormModalProps): JSX.Element
   - `SEL-015/depois de salvar uma edição, o foco volta ao botão "Editar" da linha`.
 - Testes (`GameDetailsPanel`): `SEL-004/o painel passa o jogo (total e sessionPlaySeconds) para a lista de sessões`.
 
-## T32 — Frontend: `SessionDeleteDialog`, `SessionsList` e `GameDetailsPanel`
+## T32 — Frontend: `SessionDeleteDialog`, `SessionsList` e `GameDetailsPanel` [concluída]
 - Requisitos: SEL-001, SEL-002, SEL-003, SEL-004, SEL-010, SEL-011, SEL-012, SEL-013, SEL-015. **Responsável:** implementer. Dependência: T31.
 - Arquivos: `frontend/src/components/SessionDeleteDialog.tsx` (novo), `frontend/src/components/SessionsList.tsx` (botão "Adicionar sessão", ações por linha, marcas), `frontend/src/components/GameDetailsPanel.tsx` (passa `game`).
 ```ts
@@ -656,7 +656,7 @@ export function SessionsList(p: { gameId: number; current: SessionView | null; g
 ```
 - Foco inicial em "Cancelar" (mesmo padrão do `DeleteDialog`). A lista guarda no estado qual modal está aberto e qual botão o abriu para devolver o foco (SEL-015). Marcas com tokens de tema (`text-muted`, `text-warning`). Sem testes novos (T31 cobre).
 
-## T33 — Testes: marca de manuais nas estatísticas
+## T33 — Testes: marca de manuais nas estatísticas [concluída]
 - Requisitos: SEL-014, SED-027. **Responsável:** test-writer. Dependência: T28.
 - Arquivo: `frontend/src/components/StatsPage.test.tsx` (alterar; os fixtures de `StatsGame`/`StatsPlatform`/`StatsSummary` ganham `manualSeconds`).
 - Testes:
@@ -665,17 +665,17 @@ export function SessionsList(p: { gameId: number; current: SessionView | null; g
   - `SEL-014/manualSeconds 0 não mostra a marca`;
   - `SEL-014/importados e manuais no mesmo item mostram as duas marcas`.
 
-## T34 — Frontend: marca de manuais nas estatísticas
+## T34 — Frontend: marca de manuais nas estatísticas [concluída]
 - Requisitos: SEL-014. **Responsável:** implementer. Dependência: T33 (e a Dúvida 10: `StatsPage.tsx` já tem mudanças não commitadas).
 - Arquivo: `frontend/src/components/StatsPage.tsx`; `frontend/src/lib/stats.ts` já tem o campo (T28).
 - Sem testes novos (T33 cobre).
 
-## T35 — ADR 0041
+## T35 — ADR 0041 [concluída]
 - Requisitos: SED-002, SED-007, SED-009, SED-012, SED-020. **Responsável:** sessão principal (docs). Dependência: nenhuma (pode sair a qualquer momento depois de T21).
 - Arquivos: `docs/adr/0041-sessoes-editaveis-pelo-usuario.md` (novo), `docs/adr/README.md` (linha do 0041).
 - Conteúdo (design §9): (1) sessões encerradas são editáveis e excluíveis só pelo agente, a aberta nunca; (2) origem `manual` e marca `edited_at` (a origem não muda ao editar); (3) o total muda pelo delta e conserva o ajuste de EDM-005, enquanto primeira e última vez e contagem são recalculadas das sessões contadas; (4) numa sessão editada `active_seconds` é a verdade e as pausas viram registro auxiliar cortado ao intervalo, ressalva à consequência "tempo recalculável a partir de sessão e pausas" do ADR 0017 (não o substitui); (5) sem sobreposição entre sessões rastreadas e manuais de jogos diferentes. Alternativas descartadas: recalcular o total da soma (apagaria o ajuste da fase 14), origem `edited` no lugar da marca, permitir sobreposição (estatísticas por semana somariam o mesmo tempo duas vezes).
 
-## T36 — Documentação
+## T36 — Documentação [concluída]
 - Requisitos: SED-001, SED-002, SED-033, SED-034, SEL-001, SEL-014 (documentação das mudanças dessas áreas). **Responsável:** sessão principal (docs). Dependência: T32, T34, T35.
 - Arquivos:
   - `docs/ARCHITECTURE.md`: §5 `play_session(..., source[tracked|import|manual], edited_at)` (hoje diz `source[tracked|manual]`, mas o código grava `import`); índice `play_session_started_at_idx`; §4.6 ("log de ajuste" = a linha de log de SED-029); a lista de IPC (métodos `session.*`, erros -32017 e -32018, v0.17.0); migração 11; linha da fase 16 junto da 412 ("Versão 1.2.0");
@@ -684,7 +684,7 @@ export function SessionsList(p: { gameId: number; current: SessionView | null; g
   - `docs/specs/phase-16-edicao-sessoes/requirements.md`: Status passa a "aprovado em 2026-11-25" e "Perguntas em aberto" vira "Decisões confirmadas" com as respostas padrão; as notas "· proposto" de SED-037 saem;
   - anotações `· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, <ID>)` nas specs antigas: `phase-3-tracker` (STO-016, o total deixa de ser sempre a soma das sessões, SED-007), `phase-5-library` (STO-027, IPC-050 e UI-038), `phase-8-estatisticas` (EST-001, EST-002, EST-003, só sessões contadas, SED-037, e EST-005, sessões manuais, SED-027), `phase-6-importers` (IMP-007, a sessão importada pode ser editada e excluída, SED-021) e `phase-14-edicao-manual` (EDM-005, "inalterado; ver SED-007"); o `ADR 0017` ganha só uma linha de ponteiro para o 0041 no `docs/adr/README.md`, sem editar o texto do ADR.
 
-## T37 — Versão 1.2.0
+## T37 — Versão 1.2.0 [concluída]
 - Requisitos: nenhum requisito próprio (decisão de release, resposta 9). **Responsável:** sessão principal (mecânico). Dependência: T36.
 - Arquivos: `cmd/arcadia/wails.json` (`productVersion`), `frontend/package.json` e `frontend/package-lock.json` (os dois campos `version` do topo; não tocar nas versões de dependências), `CLAUDE.md` (comando de build `-X main.version=1.2.0`, "versão atual: 1.2.0"), `README.md`, `docs/GUIA-DO-PROJETO.md` e `docs/ROADMAP.md` (comando de build). Conferir `cmd/arcadia/version.go` e `version_test.go`: a versão vem do `-ldflags`, então não há literal para trocar.
 

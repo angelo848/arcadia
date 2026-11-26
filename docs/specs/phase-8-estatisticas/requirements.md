@@ -25,6 +25,7 @@ Formato: IDs `ÁREA-NNN`, critérios Dado/Quando/Então. Áreas novas: **EST** (
 ## Requisitos de estatísticas
 
 ### EST-001 — Tempo por jogo
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-037): só as sessões contadas (`state = 'ended'`) somam, no tempo e na contagem de sessões.
 · alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-045): escolher um jogo volta à biblioteca com ele em
 foco no painel de detalhes (a página do jogo deixa de existir).
 Dado a página de estatísticas, quando abro, então vejo, por jogo, o tempo total no período, o número de sessões e a
@@ -32,11 +33,13 @@ Dado a página de estatísticas, quando abro, então vejo, por jogo, o tempo tot
 Verificação: teste de componente com sessões de fixture; teste de consulta na store com período.
 
 ### EST-002 — Tempo por semana
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-037): só as sessões contadas (`state = 'ended'`) somam.
 Dado as últimas 12 semanas (ISO, semana começando na segunda, horário local), quando a tela carrega, então vejo um
 gráfico de barras com o tempo de cada semana, e a semana atual marcada. Semanas sem jogo aparecem com barra zero.
 Verificação: teste da função de agregação com relógio fake (`domain.Clock`) e fuso fixo.
 
 ### EST-003 — Tempo por plataforma
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-037): só as sessões contadas (`state = 'ended'`) somam.
 Dado o período escolhido, quando a tela carrega, então vejo o tempo de cada plataforma em ordem decrescente, com a
 porcentagem do total. Plataformas sem tempo no período não aparecem.
 Verificação: teste de agregação na store.
@@ -47,6 +50,7 @@ semanas, plataformas) são recalculados juntos. O período padrão é 7 dias.
 Verificação: teste de componente.
 
 ### EST-005 — Sessões importadas
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-027): as sessões de origem `manual` entram do mesmo jeito, marcadas "adicionados à mão" (SEL-014).
 Dado uma sessão de origem `import` (IMP-007), quando calculo as estatísticas, então ela entra no total, e a
 linha ou o total mostram "importado". As sessões rastreadas não mudam por causa da importação.
 Verificação: teste na store com uma sessão de cada origem.

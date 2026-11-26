@@ -151,6 +151,7 @@ Dada uma sessão aberta, quando a encerro com tempo ativo `a < 30 s`, então ela
 (nem `updated_at`).
 
 ### STO-016 — Total recalculável
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-007): o total deixa de ser sempre a soma das sessões contadas: criar, editar e excluir sessões movem o total pela diferença e a diferença é o ajuste manual (a igualdade já não valia depois de EDM-005).
 Dado um jogo novo, quando encerro em sequência sessões com tempos ativos 10 s, 45 s, 30 s e 3600 s, então
 `total_play_seconds = 3675`, `play_count = 3` e `total_play_seconds` é igual à soma de `active_seconds` das sessões
 do jogo com `state = 'ended'`.

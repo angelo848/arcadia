@@ -164,7 +164,8 @@ Duas situações cobertas:
 - *Heartbeat* a cada 30 s grava `last_seen_at` da sessão → se o PC desligar/travar, perde-se no máximo 30 s
   e a sessão é fechada na próxima inicialização do agente.
 - Sessões com duração < 30 s são marcadas como `discarded` (configurável), não somam.
-- Edição manual de sessões/tempo total pelo usuário (com log de ajuste).
+- Edição manual de sessões/tempo total pelo usuário (com log de ajuste: a linha de log `Info` "sessão criada/editada/excluída"
+  do agente, com valores antigos e novos, SED-029; fase 16, [ADR 0041](adr/0041-sessoes-editaveis-pelo-usuario.md)).
 
 ---
 
@@ -193,7 +194,8 @@ media_asset(id, game_id, kind, path, thumb_path, source, width, height, region, 
 additional_app(id, game_id, name, target, args, track_time)
 tracking_rule(id, game_id, kind[exe_name|exe_path|install_dir], value, learned)
 emulator(id, name, exe_path, args_template)  -- ex.: "-f {rom}"
-play_session(id, game_id, started_at, ended_at, last_seen_at, active_seconds, state, source[tracked|manual])
+play_session(id, game_id, started_at, ended_at, last_seen_at, active_seconds, state, source[tracked|import|manual], edited_at)
+    -- índice play_session_started_at_idx (started_at); edited_at é a marca de "sessão editada" (migração 11, fase 16)
 pause_interval(id, session_id, paused_at, resumed_at, reason[hotkey|gamepad|sleep|idle|minimized])
 playlist(id, name, filter_json?)   -- listas manuais ou "inteligentes"
 game_fts (FTS5: title, description, developer, publisher)
@@ -277,7 +279,7 @@ IPC (v0.13.0, só acréscimos). A plataforma do arquivo é um select, com "Windo
 | **7** | Scrapers e gerenciador de mídia (capas, screenshots, title screen, vídeo) |
 | **8** | Estatísticas (tempo por jogo/semana/plataforma), modo tela cheia navegável por controle ("Big Box") |
 
-As fases 9 a 13 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
+As fases 9 a 16 (melhorias pós-POC) estão em [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -439,3 +441,30 @@ Spec em [phase-15-big-box-v2](specs/phase-15-big-box-v2/requirements.md); decis�
   próprios). O **Roda** continua indisponível. O registro é `themes/registry.ts`; o seletor lê dele.
 - A UI nunca influencia o tempo de jogo; nada mudou em `internal/tracker`, `play_session`, `pause_interval`, `tracking_rule`,
   `media` ou `media_job`.
+
+### Edição de sessões (fase 16)
+
+Spec em [phase-16-edicao-sessoes](specs/phase-16-edicao-sessoes/requirements.md); decisão no
+[ADR 0041](adr/0041-sessoes-editaveis-pelo-usuario.md); IPC v0.17.0 (só acréscimos); migração 11. Versão 1.2.0.
+
+- **Migração 11:** `play_session.edited_at` (INTEGER, nula = nunca editada) e o índice `play_session_started_at_idx` em
+  `(started_at)`, usado pela checagem de sobreposição. A origem (`source`) passa a ser validada no `domain` (`tracked`, `import` ou
+  `manual`).
+- **Regras puras em `internal/domain/session_edit.go`:** `ValidateSessionTimes` (fim depois do início, nada no futuro, início a
+  partir de 1980, intervalo de até 24 h, tempo jogado de 30 s até o intervalo), `Overlaps`, `ClampTotal` e `ClipPause`. As razões
+  de recusa (`EditReason`) viajam em `error.data.reason`.
+- **Store (`internal/store/session_edit.go`):** `CreateManualSession`, `EditSession` e `RemoveSession`, cada um numa transação
+  `BEGIN IMMEDIATE` que também lê a sessão, checa a sobreposição (contra sessões rastreadas e manuais de qualquer jogo, inclusive
+  a aberta), corta as pausas, move o total pela diferença (conserva o ajuste do EDM-005) e recalcula primeira e última vez e a
+  contagem das sessões contadas. Como o `EndSession` do tracker grava pelo mesmo `Store`, as duas escritas se serializam.
+- **Agente:** os handlers `session.create`, `session.update` e `session.delete` (`internal/agent/session_edit.go`) não recebem o
+  tracker, não criam goroutine e **não emitem notificação** (a UI invalida o próprio cache). Erros novos: `-32017` (sessão não
+  encontrada) e `-32018` (cruza outra sessão); `-32002` para sessão em andamento e `-32602` com `reason` para as demais recusas.
+  Cada escrita grava uma linha `Info` com os valores antigos e novos (SED-029).
+- **Leituras:** `session.list` traz `source` e `editedAt`; o detalhe do jogo traz `sessionPlaySeconds`; as estatísticas só somam
+  sessões contadas (SED-037) e trazem `manualSeconds`.
+- **UI:** a lista de sessões do painel de detalhes ganha "Adicionar sessão", editar e excluir por linha (só encerradas), as marcas
+  "Manual", "Importada" e "Editada", um formulário modal e uma confirmação de exclusão (irreversível); as estatísticas mostram
+  "adicionados à mão".
+- A UI nunca influencia o tempo de jogo; nada mudou em `internal/tracker`, `cmd/fake-game`, `tracking_rule`, `media`, `media_job`
+  e `time_to_beat`. `pause_interval` só muda pelo corte de pausas da edição.

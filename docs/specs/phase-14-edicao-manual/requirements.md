@@ -32,6 +32,7 @@ cada tipo com um botão que abre o seletor de arquivos do Explorer ("Adicionar..
 existente). As mudanças de imagem valem na hora, sem esperar "Salvar".
 
 ### EDM-005 — Editar o tempo total jogado
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-007): inalterado; criar, editar e excluir sessões movem o total pela diferença e conservam este ajuste.
 Dado a janela "Editar jogo", então ela mostra o tempo total em horas e minutos. Quando o usuário altera o valor e
 salva, então o total do jogo passa a ser o valor digitado. As sessões registradas não mudam, por isso as estatísticas
 por período continuam vindo delas. Valor inválido (minutos acima de 59, texto que não é número) desativa "Salvar".

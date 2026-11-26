@@ -418,6 +418,7 @@ Dado o jogo `G`, quando chamo `Store.GameDetail(G)`, então recebo os campos de 
 vazias quando não há nada (nunca nulas). Dado um id inexistente, então erro que embrulha `ErrGameNotFound`.
 
 ### STO-027 — Sessões de um jogo
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-033): cada item ganha `source` e `editedAt`.
 · alterado em 2026-11-15 (docs/specs/phase-13-modo-console, CON-017): `endReason` pode ser também `client-no-launch` (já gravado
 desde a fase 6; correção do contrato) e `closed-by-hotkey`.
 Dado o jogo `G` com sessões `ended`, `discarded` e uma aberta, quando chamo `Store.GameSessions(G, offset, limit)`, então
@@ -496,6 +497,7 @@ Dado o banco, quando chamo `library.catalog`, então recebo `{platforms, genres,
 nunca nulas; `playModes` tem os cinco nomes de DOM-014.
 
 ### IPC-050 — Sem notificação de biblioteca
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SED-026): vale também para `session.create`, `session.update` e `session.delete`: nenhum `session.changed` nem outra notificação.
 Dado dois clientes conectados, quando um deles chama `game.add`, `game.update`, `game.delete` ou `platform.add`, então
 nenhum `session.changed` nem outra notificação é enviado por causa disso. `session.changed` segue IPC-027/IPC-037.
 (Decisão f.)
@@ -594,6 +596,7 @@ modos de jogo, desenvolvedora, editora, ano, tempo total (UI-005), primeira e ú
 vídeo (fase 7). A marcação de sessão (UI-006) aparece no topo da página quando o jogo está em sessão.
 
 ### UI-038 — Sessões na página do jogo
+· alterado em 2026-11-25 (docs/specs/phase-16-edicao-sessoes, SEL-001..SEL-004): a lista de sessões ganha "Adicionar sessão", editar e excluir por linha e as marcas "Manual", "Importada" e "Editada"; a descartada nunca soma, nem nas estatísticas (SED-037).
 · alterado em 2026-11-14 (docs/specs/phase-10-nova-interface, UIX-030): a lista fica no painel de detalhes; as regras não
 mudam.
 Dada a página de um jogo, então a lista de sessões (`GameSessions`, 50 por página, "Carregar mais") mostra, por linha:
