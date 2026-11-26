@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionsList } from './SessionsList'
 import type { SessionView } from '../lib/games'
@@ -83,7 +83,11 @@ function gameDetail(over: Partial<GameDetailView> = {}): GameDetailView {
   }
 }
 
-function renderList(current: SessionView | null = null, qc: QueryClient = newClient(), game: GameDetailView = gameDetail()) {
+function renderList(
+  current: SessionView | null = null,
+  qc: QueryClient = newClient(),
+  game: GameDetailView = gameDetail(),
+) {
   const Wrapper = wrapperFor(qc)
   return render(<SessionsList gameId={GAME_ID} current={current} game={game} />, { wrapper: Wrapper })
 }
@@ -118,7 +122,7 @@ afterEach(() => {
 })
 
 describe('SessionsList', () => {
-  it('UI-038/lista com 50 por página e \'Carregar mais\' pede a próxima página', async () => {
+  it("UI-038/lista com 50 por página e 'Carregar mais' pede a próxima página", async () => {
     const all = Array.from({ length: 120 }, (_, i) => item({ sessionId: i + 1 }))
     const fn = install(all)
     renderList()
@@ -133,7 +137,32 @@ describe('SessionsList', () => {
     expect(fn).toHaveBeenNthCalledWith(2, GAME_ID, PAGE, PAGE)
   })
 
-  it('UI-038/sessão discarded mostra \'Descartada\' e o tempo ativo, sem somar no total', async () => {
+  it('UI-038/com IntersectionObserver, o fim da lista visível pede a próxima página sem botão', async () => {
+    let trigger: (() => void) | null = null
+    class FakeObserver {
+      constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+        trigger = () => cb([{ isIntersecting: true }])
+      }
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    try {
+      const all = Array.from({ length: 120 }, (_, i) => item({ sessionId: i + 1 }))
+      const fn = install(all)
+      renderList()
+      await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole('button', { name: 'Carregar mais' })).not.toBeInTheDocument()
+      await vi.waitFor(() => expect(trigger).not.toBeNull())
+      await act(async () => trigger?.())
+      await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(2))
+      expect(fn).toHaveBeenNthCalledWith(2, GAME_ID, PAGE, PAGE)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("UI-038/sessão discarded mostra 'Descartada' e o tempo ativo, sem somar no total", async () => {
     install([
       item({ sessionId: 1, state: 'ended', activeSeconds: 3600 }),
       item({ sessionId: 2, state: 'discarded', activeSeconds: 600, endReason: null }),
@@ -148,7 +177,7 @@ describe('SessionsList', () => {
     expect(screen.queryByText('1 h 10 min')).toBeNull()
   })
 
-  it('UI-038/sessão aberta mostra \'Em andamento\' e o cronômetro a partir de activeMs', async () => {
+  it("UI-038/sessão aberta mostra 'Em andamento' e o cronômetro a partir de activeMs", async () => {
     // Only the clock and Date are faked: the list loads with the real timers.
     vi.useFakeTimers({ toFake: ['Date', 'performance'] })
     vi.setSystemTime(new Date('2026-11-09T10:04:12.400Z'))
@@ -315,7 +344,8 @@ describe('SessionsList', () => {
     await screen.findAllByRole('listitem')
     const row = (n: number) =>
       screen.getByRole('button', { name: `Excluir sessão de ${label(day(n))}` }).closest('li') as HTMLElement
-    const marks = (n: number) => ['Manual', 'Importada', 'Editada'].filter((m) => within(row(n)).queryByText(m) !== null)
+    const marks = (n: number) =>
+      ['Manual', 'Importada', 'Editada'].filter((m) => within(row(n)).queryByText(m) !== null)
     expect(marks(1)).toEqual(['Manual'])
     expect(marks(2)).toEqual(['Importada'])
     expect(marks(3)).toEqual(['Editada'])
