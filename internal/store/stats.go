@@ -15,6 +15,7 @@ type GameStat struct {
 	Sessions        int64
 	ActiveSeconds   int64
 	ImportedSeconds int64
+	ManualSeconds   int64
 	LastStartedAt   time.Time
 }
 
@@ -24,6 +25,7 @@ type PlatformStat struct {
 	Name            string
 	ActiveSeconds   int64
 	ImportedSeconds int64
+	ManualSeconds   int64
 }
 
 // SessionTime is the start and the active time of one session, for the weekly totals (EST-002).
@@ -52,7 +54,7 @@ func (s *Store) StatsByGame(ctx context.Context, since time.Time) ([]GameStat, e
 		out = append(out, GameStat{
 			GameID: r.GameID, Title: r.Title, Platform: r.Platform, Sessions: r.Sessions,
 			ActiveSeconds: r.ActiveSeconds, ImportedSeconds: r.ImportedSeconds,
-			LastStartedAt: time.UnixMilli(r.LastStartedAt),
+			ManualSeconds: r.ManualSeconds, LastStartedAt: time.UnixMilli(r.LastStartedAt),
 		})
 	}
 	return out, nil
@@ -68,6 +70,7 @@ func (s *Store) StatsByPlatform(ctx context.Context, since time.Time) ([]Platfor
 	for _, r := range rows {
 		out = append(out, PlatformStat{
 			PlatformID: r.PlatformID, Name: r.Name, ActiveSeconds: r.ActiveSeconds, ImportedSeconds: r.ImportedSeconds,
+			ManualSeconds: r.ManualSeconds,
 		})
 	}
 	return out, nil

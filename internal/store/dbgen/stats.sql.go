@@ -12,7 +12,7 @@ import (
 const sessionTimesSince = `-- name: SessionTimesSince :many
 SELECT started_at, active_seconds, source
 FROM play_session
-WHERE started_at >= ?1
+WHERE started_at >= ?1 AND state = 'ended'
 ORDER BY started_at
 `
 
@@ -51,11 +51,12 @@ SELECT g.id AS game_id, g.title, p.name AS platform,
        CAST(COUNT(s.id) AS INTEGER) AS sessions,
        CAST(COALESCE(SUM(s.active_seconds), 0) AS INTEGER) AS active_seconds,
        CAST(COALESCE(SUM(CASE WHEN s.source = 'import' THEN s.active_seconds ELSE 0 END), 0) AS INTEGER) AS imported_seconds,
+       CAST(COALESCE(SUM(CASE WHEN s.source = 'manual' THEN s.active_seconds ELSE 0 END), 0) AS INTEGER) AS manual_seconds,
        CAST(MAX(s.started_at) AS INTEGER) AS last_started_at
 FROM play_session s
 JOIN game g ON g.id = s.game_id
 JOIN platform p ON p.id = g.platform_id
-WHERE s.started_at >= ?1
+WHERE s.started_at >= ?1 AND s.state = 'ended'
 GROUP BY g.id, g.title, p.name
 ORDER BY active_seconds DESC, g.title COLLATE NOCASE
 `
@@ -67,11 +68,13 @@ type StatsByGameRow struct {
 	Sessions        int64
 	ActiveSeconds   int64
 	ImportedSeconds int64
+	ManualSeconds   int64
 	LastStartedAt   int64
 }
 
-// Statistics (phase 8, EST-001..EST-005). Sessions count with their source: tracked by the agent or
-// imported from LaunchBox (IMP-007). since is the start instant in ms; 0 means all time.
+// Statistics (phase 8, EST-001..EST-005; phase 16, SED-027, SED-037). Only ended sessions count (an open
+// session has no final time). Sessions count with their source: tracked by the agent, imported from
+// LaunchBox (IMP-007) or created by hand (manual). since is the start instant in ms; 0 means all time.
 func (q *Queries) StatsByGame(ctx context.Context, since int64) ([]StatsByGameRow, error) {
 	rows, err := q.db.QueryContext(ctx, statsByGame, since)
 	if err != nil {
@@ -88,6 +91,7 @@ func (q *Queries) StatsByGame(ctx context.Context, since int64) ([]StatsByGameRo
 			&i.Sessions,
 			&i.ActiveSeconds,
 			&i.ImportedSeconds,
+			&i.ManualSeconds,
 			&i.LastStartedAt,
 		); err != nil {
 			return nil, err
@@ -106,11 +110,12 @@ func (q *Queries) StatsByGame(ctx context.Context, since int64) ([]StatsByGameRo
 const statsByPlatform = `-- name: StatsByPlatform :many
 SELECT p.id AS platform_id, p.name,
        CAST(COALESCE(SUM(s.active_seconds), 0) AS INTEGER) AS active_seconds,
-       CAST(COALESCE(SUM(CASE WHEN s.source = 'import' THEN s.active_seconds ELSE 0 END), 0) AS INTEGER) AS imported_seconds
+       CAST(COALESCE(SUM(CASE WHEN s.source = 'import' THEN s.active_seconds ELSE 0 END), 0) AS INTEGER) AS imported_seconds,
+       CAST(COALESCE(SUM(CASE WHEN s.source = 'manual' THEN s.active_seconds ELSE 0 END), 0) AS INTEGER) AS manual_seconds
 FROM play_session s
 JOIN game g ON g.id = s.game_id
 JOIN platform p ON p.id = g.platform_id
-WHERE s.started_at >= ?1
+WHERE s.started_at >= ?1 AND s.state = 'ended'
 GROUP BY p.id, p.name
 HAVING SUM(s.active_seconds) > 0
 ORDER BY active_seconds DESC, p.name COLLATE NOCASE
@@ -121,6 +126,7 @@ type StatsByPlatformRow struct {
 	Name            string
 	ActiveSeconds   int64
 	ImportedSeconds int64
+	ManualSeconds   int64
 }
 
 func (q *Queries) StatsByPlatform(ctx context.Context, since int64) ([]StatsByPlatformRow, error) {
@@ -137,6 +143,7 @@ func (q *Queries) StatsByPlatform(ctx context.Context, since int64) ([]StatsByPl
 			&i.Name,
 			&i.ActiveSeconds,
 			&i.ImportedSeconds,
+			&i.ManualSeconds,
 		); err != nil {
 			return nil, err
 		}
