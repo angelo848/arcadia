@@ -26,6 +26,38 @@ const stateClasses: Record<SessionState, string> = {
   discarded: 'text-warning',
 }
 
+const iconProps = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+}
+
+function PencilIcon(): JSX.Element {
+  return (
+    <svg {...iconProps}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+function TrashIcon(): JSX.Element {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
 // A session without active time is shown as 0 min; formatPlayTime(0) reads "Nunca jogado".
 function durationText(activeSeconds: number): string {
   return activeSeconds > 0 ? formatPlayTime(activeSeconds) : '0 min'
@@ -137,9 +169,10 @@ export function SessionsList({
                         type="button"
                         aria-label={`Editar sessão de ${formatLocalDateTime(s.startedAt)}`}
                         onClick={() => setForm({ mode: 'edit', session: s })}
-                        className="rounded px-2 py-0.5 text-xs text-fg hover:bg-hover"
+                        title="Editar"
+                        className="rounded p-1 text-fg hover:bg-hover"
                       >
-                        Editar
+                        <PencilIcon />
                       </button>
                     )}
                     <button
@@ -149,9 +182,10 @@ export function SessionsList({
                         setDeleteError(null)
                         setDeleting(s)
                       }}
-                      className="rounded px-2 py-0.5 text-xs text-danger hover:bg-hover"
+                      title="Excluir"
+                      className="rounded p-1 text-danger hover:bg-hover"
                     >
-                      Excluir
+                      <TrashIcon />
                     </button>
                   </span>
                 )}
