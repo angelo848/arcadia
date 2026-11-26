@@ -287,6 +287,8 @@ arredondado para baixo ao minuto, Início = Fim − 1 h e Tempo jogado = 1 h 00.
 jogado mostrado é arredondado para baixo ao minuto).
 
 ### SEL-006 — Tempo jogado acompanha o intervalo
+> **Alterado em 2026-11-26 (criação):** o formulário de criação não pede o Fim: mostra apenas Início e Tempo jogado e exibe "Fim (calculado)" = Início + Tempo jogado, somente leitura. Mudar o Início não altera o Tempo jogado. As validações de Fim (futuro, mais de 24 h) valem sobre o Fim calculado. A edição segue como abaixo.
+
 Dado o formulário com Tempo jogado igual a Fim − Início, quando o usuário muda Início ou Fim, então Tempo jogado passa a ser o
 novo Fim − Início. Dado que o usuário mudou Tempo jogado para outro valor, então mudar Início ou Fim não o altera mais.
 

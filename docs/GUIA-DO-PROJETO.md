@@ -1,4 +1,4 @@
-# Guia do projeto Arcadia (versão 1.0.3)
+# Guia do projeto Arcadia (versão 1.2.0)
 
 Este guia é para você ler o código do Arcadia sem se perder. Ele parte do que você já sabe (Java, JavaScript, React)
 e explica o que muda em Go, onde cada coisa mora e em que ordem ler.
@@ -126,7 +126,7 @@ launchbox-improved/
 │   │   ├── main_windows.go     decide: --agent → agente; senão → janela Wails
 │   │   ├── app.go              struct App: o que o React enxerga
 │   │   ├── supervisor.go       sobe o agente, reconecta, repassa avisos
-│   │   ├── games.go library.go imports.go metadata*.go ...   um arquivo por assunto, só "bindings"
+│   │   ├── games.go library.go imports.go metadata*.go timetobeat.go ...   um arquivo por assunto, só "bindings"
 │   │   ├── media_serve.go      serve as imagens e vídeos da pasta data/ para o WebView
 │   │   └── wails.json, build/  configuração e ícones do Wails
 │   └── fake-game/          jogo falso usado nos testes de rastreamento
@@ -135,14 +135,14 @@ launchbox-improved/
 │   ├── domain/             regras puras: sem banco, sem Windows, sem rede
 │   ├── tracker/            lança o jogo e conta o tempo
 │   ├── store/              SQLite
-│   │   ├── migrations/         00001..00009 (goose)
+│   │   ├── migrations/         00001..00010 (goose)
 │   │   ├── queries/            SQL escrito à mão
 │   │   └── dbgen/              Go gerado pelo sqlc. NÃO editar.
 │   ├── ipc/                protocolo JSON-RPC, cliente, servidor e os tipos de cada método
 │   ├── agent/              o processo agente: handlers, serviços, bandeja, desligamento
-│   ├── input/              atalho global de teclado e controle (XInput): pausa, fechar e volume
+│   ├── input/              atalho global de teclado e controle (XInput): pausa, fechar, abrir o Big Box e volume
 │   ├── feedback/           aviso na tela (fixo durante a pausa) e som ao pausar/retomar
-│   ├── scrapers/           IGDB, SteamGridDB, Steam e ScreenScraper
+│   ├── scrapers/           IGDB, SteamGridDB, Steam, ScreenScraper e HowLongToBeat (tempo para zerar)
 │   ├── importers/          leitura de pastas, Steam, Epic, Xbox, URI e LaunchBox
 │   ├── media/              arquivos de imagem e vídeo no disco
 │   ├── winapi/             chamadas Win32 isoladas, um arquivo por assunto
@@ -161,7 +161,7 @@ launchbox-improved/
 ├── scripts/                geração de ícones e o spec-trace.ps1
 └── docs/
     ├── ARCHITECTURE.md  ROADMAP.md
-    ├── adr/                38 decisões numeradas
+    ├── adr/                40 decisões numeradas (0001 a 0040)
     └── specs/<fase>/       requirements.md, design.md, tasks.md, contracts/
 ```
 
@@ -472,6 +472,10 @@ type Source interface {
 
 - Provedores: `igdb.go`, `steamgriddb.go`, `steamstore.go`, `screenscraper.go`. O `aggregate.go` consulta vários ao
   mesmo tempo e o `merge.go` junta os resultados ([ADR 0033](adr/0033-busca-unificada-de-metadados-com-agregador-e-confirmacao-em-lote.md)).
+- Tempo para zerar (não é um `MetadataProvider`): `hltb.go` e `hltb_parse.go` (cliente do HowLongToBeat: token em
+  memória, `Limiter` de 2 s, `Search(ctx, term)`) e `igdb_ttb.go` (`(*IGDB).TimeToBeat`, a reserva por `game_time_to_beats`).
+  Quem decide o que consultar e gravar é o serviço `agent/timetobeat*.go` (ver 6.6) e as regras puras estão em
+  [domain/timetobeat.go](../internal/domain/timetobeat.go) ([ADR 0039](adr/0039-tempo-para-zerar-hltb.md)).
 - Origens: `folder*.go` (pastas de ROMs, com subpastas e discos agrupados), `file.go`, `steam.go`, `epic.go`,
   `xbox*.go` (jogos instalados pelo app Xbox: lê o registro do Gaming Services e monta a URI `msgamelaunch://`),
   `uri.go` (importar por link) e `launchbox.go`.
@@ -524,11 +528,13 @@ flowchart TD
     K["Ctrl+Alt+P<br/>(RegisterHotKey)"] --> TRG
     P["Controle: Select + Y por 1 s<br/>(XInput, input/combo.go)"] --> TRG
     C["Controle: Select + B por 1 s"] --> TRG
+    BBX["Controle: Select + A por 1 s<br/>(BigBoxMask, Back+A)"] --> TRG
     V["Controle: Select + D-pad cima/baixo<br/>(repete a cada 150 ms)"] --> VOL["winapi.VolumeStep<br/>tecla de volume do Windows"]
     TRG["input.Trigger<br/>(ação + instante)"] --> RT["agent/close_router.go<br/>triggerRouter"]
     PW["Suspender / acordar o PC<br/>(winapi/power_windows.go)"] --> PB["agent/pause.go<br/>powerBridge"]
     RT -->|pausa| TP["Tracker.TogglePause"]
     RT -->|fechar| CH["Tracker.CloseByHotkey"]
+    RT -->|bigbox, sem jogo| OP["uiOpener.OpenBigBox<br/>arcadia.exe --bigbox"]
     PB --> SW["Tracker.Suspend / Wake"]
     TP --> M["Machine: Running ↔ Paused"]
     CH --> M2["Machine: Closing<br/>WM_CLOSE, depois Kill se não fechar"]
@@ -536,6 +542,13 @@ flowchart TD
     M --> DB[("pause_interval")]
     M2 --> EV["game.closedByHotkey → UI"]
 ```
+
+O terceiro acorde, **Select + A** (`BigBoxMask` em `input/pad.go`, `ActionBigBox`), também chega ao `triggerRouter`, mas
+não vai ao tracker: `forwardBigBox` só pergunta `Tracker.Current()`. Com sessão viva, toca o som de recusa; sem ela, o
+`uiOpener` (em `agent/openui.go`) executa `arcadia.exe --bigbox --data-dir <raiz>` destacado. Do outro lado, `cmd/arcadia`
+lê `--bigbox` (`desktopConfig.BigBox`, e `wantsBigBox` na segunda instância), guarda o pedido em `App.bigBoxRequest` e o
+frontend o toma com `TakeBigBoxRequest` ([ADR 0038](adr/0038-big-box-por-pedido-externo.md)). Isso só funciona com o agente
+na bandeja: ele não sobe com o Windows ([ADR 0024](adr/0024-agente-sempre-como-administrador.md)).
 
 O volume do controle não passa pelo tracker: `input/pad.go` chama direto o callback `PadConfig.Volume` (ligado em
 `agent/components_windows.go`), com o `repeatDetector` de `input/combo.go` (primeiro passo na hora, repetição após 400 ms).
@@ -613,6 +626,25 @@ GameEditForm.tsx            monta o "patch" só com o que mudou
                       └─ store/game_edit.go   transação: campos, vínculos, índice de busca
 ```
 
+### 6.6 O tempo para zerar (HowLongToBeat)
+
+```
+TimeToBeatBlock.tsx / TimeToBeatList.tsx   mostram "—" ou os três valores; useTimeToBeat lê o cache e, após 1 s de foco, pede a busca
+  └─ lib/timeToBeat.ts                     hooks, formatTimeToBeat, invalida pelo evento timeToBeat:changed
+      └─ cmd/arcadia/timetobeat.go         TimeToBeatGet/Refresh/Search/Choose/Settings/SetSettings → timeToBeat.*
+          ══════════ named pipe ══════════
+          └─ agent/timetobeat_ipc.go       valida e chama o serviço
+              └─ agent/timetobeat.go       fila (interativa e lote), um trabalhador, recuo por fonte, cache
+                  └─ agent/timetobeat_lookup.go   HowLongToBeat → classifica (domain.RankTimeToBeat) → reserva do IGDB → grava
+                      ├─ scrapers/hltb.go, hltb_parse.go     busca com token em memória, 2 s entre requisições
+                      ├─ scrapers/igdb_ttb.go                game_time_to_beats
+                      └─ store/time_to_beat.go               tabela time_to_beat (migração 10)
+```
+
+O serviço é um dos poucos com goroutine própria no agente (o trabalhador, encerrado no `Close` antes do store). `metadata.apply`
+e o lote de metadados chamam `AfterMetadata(gameID)`; `game.delete` chama `GameRemoved`. Falha nunca vira erro na tela
+([ADR 0039](adr/0039-tempo-para-zerar-hltb.md)).
+
 ---
 
 ## 7. O frontend
@@ -631,6 +663,8 @@ frontend/src/
 │   ├── selection.ts      reducer do "jogo em foco"
 │   ├── gridNav.ts gridLayout.ts   medidas, divisórias e setas da grade (funções puras)
 │   ├── imports.ts metadata.ts metadataBatch.ts video.ts manualEdit.ts   um por assunto
+│   ├── timeToBeat.ts timeToBeatEdit.ts   tempo para zerar: hooks, formatação e ações da edição
+│   │                     (componentes TimeToBeatBlock e TimeToBeatEditor em components/)
 │   └── uiPrefs.ts        preferências no localStorage (grade/lista, tema do Big Box)
 ├── components/       modo desktop
 └── bigbox/           modo console
@@ -649,7 +683,7 @@ frontend/src/
 │              │                                       │ (ou PanelEmpty:   │
 │              │                                       │  jogados recentes)│
 └──────────────┴───────────────────────────────────────┴───────────────────┘
- modais: ImportDialog · GameEditDialog (GameEditForm, GameImagesEditor) · MetadataDialog
+ modais: ImportDialog · GameEditDialog (GameEditForm, GameImagesEditor) · SessionFormModal · SessionDeleteDialog · MetadataDialog
          MetadataReviewDialog · PlatformsDialog · EmulatorsDialog · ProviderKeysDialog · DeleteDialog
  página alternativa: StatsPage
 ```
@@ -664,6 +698,15 @@ Pontos que valem saber antes de mexer:
 - **O carrossel dos detalhes** (`MediaCarousel`) mostra capa, screenshots, **vídeo**, título, seleção, fundo e banner,
   nessa ordem (`carouselKindOrder` em `lib/metadata.ts`). O vídeo toca num `<video controls>` e ganha miniatura própria na
   faixa de miniaturas.
+- **As sessões do jogo são editáveis** (fase 16, [ADR 0041](adr/0041-sessoes-editaveis-pelo-usuario.md)). A `SessionsList`
+  mostra o botão "Adicionar sessão" e, em cada sessão encerrada, os botões de editar e excluir (a sessão em andamento não tem
+  botões; a descartada só tem o de excluir). As marcas são "Manual" (criada à mão), "Importada" e "Editada" (rastreada ou
+  importada que o usuário alterou). O `SessionFormModal` pede início, fim e tempo jogado em hora local; o tempo jogado
+  acompanha o intervalo até o usuário mexer nele, e a caixa "Já está no tempo total" só aparece quando o jogo tem ajuste manual
+  positivo (criar uma sessão cujo tempo já foi somado à mão não muda o total). O `SessionDeleteDialog` pede confirmação e a
+  exclusão não tem desfazer. Quem decide e grava é sempre o agente (`session.create/update/delete`): o formulário só antecipa
+  os erros (`lib/sessionForm.ts`) e a UI recarrega o jogo, as sessões e as estatísticas depois de cada escrita
+  (`lib/sessionEdit.ts`). As estatísticas marcam "adicionados à mão" ao lado de "importados".
 - **A grade é virtualizada.** `LibraryGrid` só põe no DOM as linhas visíveis (`@tanstack/react-virtual`). O desenho das
   linhas e das divisórias por ano vem de `gridLayout.ts`, que é função pura e testável.
 - **Jogo em foco é um reducer** (`selection.ts`): `empty → loading → shown | error`. Não há página do jogo; os
@@ -673,7 +716,8 @@ Pontos que valem saber antes de mexer:
 
 ### 7.2 O modo console (Big Box)
 
-Pasta `frontend/src/bigbox/`. Abre com F11, em tela cheia, e é navegado pelo controle.
+Pasta `frontend/src/bigbox/`. Abre com F11, com Select + A no controle ou por `arcadia.exe --bigbox`, em tela cheia, e é
+navegado pelo controle.
 
 ```mermaid
 flowchart LR
@@ -681,7 +725,7 @@ flowchart LR
     NAV -->|"estado novo + efeitos"| BB["BigBox.tsx"]
     DATA["useBigBoxData<br/>(React Query)"] --> VM["viewModel.ts<br/>buildViewModel"]
     BB --> VM
-    VM -->|"props prontas"| TH["themes/registry.ts<br/>tema Faixa"]
+    VM -->|"props prontas"| TH["themes/registry.ts<br/>Faixa, Mosaico, Estante"]
     EV["useBigBoxEvents<br/>eventos do agente"] --> BB
 ```
 
@@ -691,6 +735,20 @@ som no próximo toque de tecla ou botão. Y liga/desliga o som (`sound` em `nav.
 O mesmo padrão do `Machine` do Go aparece aqui: `nav.ts` é um reducer puro que devolve estado e **efeitos**
 (`enterBigBox`, `bringToFront`...), e o componente executa. O tema recebe um "view model" pronto e só desenha; isso
 permite trocar de tema sem tocar na lógica ([ADR 0036](adr/0036-big-box-com-temas-selecionaveis.md)).
+
+**Contrato de tema v2** ([ADR 0040](adr/0040-contrato-de-tema-v2.md), `themes/types.ts`): cada tema é um `BigBoxThemeDef` no
+`registry.ts` que declara o eixo (`horizontal`, `vertical` ou `grid`), colunas, âncora, capacidade por viewport, fundo
+(`backdrop`), lugar do vídeo (`videoSlot`: fundo ou capa), abas (`platforms` ou `collections`), ordem, se mostra o tempo para
+zerar na navegação e, opcionalmente, o próprio `Details`. A navegação em **grade 2D** é do `nav.ts` (a janela de itens tem no
+máximo 30 nós). Os temas:
+
+- **Faixa** (`themes/faixa/`, estilo PS5): fileira horizontal, vídeo no fundo.
+- **Mosaico** (`themes/mosaico/`, estilo Switch): fileira de cartões 16:9, vídeo na capa do cartão em foco, painel com tempo para zerar.
+- **Estante** (`themes/estante/`, estilo Big Picture): grade de 5 colunas, destaque no alto (`EstanteHero`) que some ao descer,
+  abas Todos, Favoritos, Concluídos e plataformas, e `EstanteDetails`.
+
+O tempo para zerar nos Detalhes vem de `TimeToBeatList.tsx`. O pedido de abrir o Big Box (`--bigbox` / Select + A) é tomado
+pelo `App.tsx` com `TakeBigBoxRequest`; dentro do Big Box ele não faz nada (BBX-057).
 
 ---
 
@@ -710,6 +768,7 @@ erDiagram
     GAME ||--o{ MEDIA : "capa, screenshots, fundo, vídeo"
     GAME ||--o{ MEDIA_JOB : "downloads na fila"
     GAME ||--o{ TRACKING_RULE : "regras de processo"
+    GAME ||--o| TIME_TO_BEAT : "cache do tempo para zerar"
     GAME }o--o{ GENRE : "game_genre"
     GAME }o--o{ COMPANY : "game_developer / game_publisher"
     GAME }o--o{ PLAY_MODE : "game_play_mode"
@@ -742,7 +801,7 @@ erDiagram
     }
 ```
 
-O diagrama mostra o essencial. Os nomes exatos das colunas estão nas migrações `00001` a `00009`. Há também
+O diagrama mostra o essencial. Os nomes exatos das colunas estão nas migrações `00001` a `00010` (a 10 cria `time_to_beat`). Há também
 `app_setting` (chave e valor). As chaves dos provedores **não** ficam no banco: vão para o Credential Manager do
 Windows.
 
@@ -814,11 +873,28 @@ estranho? Procure o ID no teste, depois o mesmo ID em `docs/specs/`, e você tem
 | Mudar como o tempo é contado | `tracker/machine.go` (decisão) e `domain/session_time.go` (cálculo). Só com spec. |
 | Um atalho novo | `internal/input` (detecção) e `agent/close_router.go` (o que fazer); atalho que não passa pelo tracker, como o volume, vira um callback em `PadConfig` |
 | Algo visual no modo desktop | `frontend/src/components`; cores em `index.css` |
-| Algo no Big Box | `bigbox/nav.ts` (navegação), `viewModel.ts` (dados), `themes/faixa` (desenho) |
+| Algo no Big Box | `bigbox/nav.ts` (navegação), `viewModel.ts` (dados), `themes/faixa`, `themes/mosaico` ou `themes/estante` (desenho) |
+| Um tema novo do Big Box | ver a receita abaixo |
+| Mudar o tempo para zerar | regras puras em `domain/timetobeat.go`; cliente em `scrapers/hltb*.go` e `igdb_ttb.go`; fila e cache em `agent/timetobeat*.go`; exibição em `components/TimeToBeatBlock.tsx` e `bigbox/TimeToBeatList.tsx` |
 | Um ícone de plataforma | `scripts/gen-icons.mjs` |
 | Uma chamada Win32 nova | arquivo `*_windows.go` em `internal/winapi`, com handle fechado por `defer` |
 
 Depois de mexer em métodos de `App`, rode `wails dev` ou `wails build` para regerar `frontend/wailsjs`.
+
+### Receita: "quero um tema novo do Big Box"
+
+1. Se o tema muda o contrato (campo novo no `BigBoxThemeDef`, grade diferente, vídeo em outro lugar), comece pela spec e,
+   se for decisão de arquitetura, por um ADR novo ([ADR 0040](adr/0040-contrato-de-tema-v2.md) é a base).
+2. Crie `frontend/src/bigbox/themes/<nome>/` com o componente do tema (recebe `BigBoxThemeProps`: `model`, `details`,
+   `onPick`, `onPlay`, `onDetails`, `onVideoError`; só desenha e repassa cliques) e um `capacity.ts` com a capacidade por viewport.
+   Se o tema tiver Detalhes próprios, um componente com `BigBoxDetailsProps`.
+3. Inclua os tokens `--arc-bb-*` completos para o tema em `frontend/src/index.css` (ADR 0029) e confira o `theme.test.ts`.
+4. Acrescente a entrada em `BIGBOX_THEMES` (`themes/registry.ts`): `id`, `name`, `available`, `axis`, `columns`, `anchor`,
+   `listCapacity` (e `gridRows` se for grade), `backdrop`, `videoSlot`, `tabs`, `sort`, `timeToBeatInBrowse`, `Component` e `Details`.
+5. Acrescente o id a `BigBoxThemeId` em `lib/uiPrefs.ts` e em `viewModel.ts`; o seletor do `App.tsx` lista o registro sozinho.
+6. Teste com o ID do requisito no nome (`themes/<nome>/<Nome>.test.tsx`, `capacity.test.ts`, `registry.test.ts`) e confira
+   `bigbox-scan.test.ts` (que varre o Big Box atrás de chamadas proibidas, como lançar sem pedir ao agente).
+7. Verifique no Big Box real, com o controle, a 3 m de distância: legibilidade, foco, vídeo e tempo para zerar.
 
 ---
 
@@ -832,7 +908,7 @@ go vet ./...
 cd frontend && npx vitest run       # frontend
 cd cmd/arcadia && wails dev         # UI com recarga automática
 go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente, com dados separados
-cd cmd/arcadia && wails build -ldflags "-X main.version=1.0.3"   # gera build/bin/arcadia.exe
+cd cmd/arcadia && wails build -ldflags "-X main.version=1.2.0"   # gera build/bin/arcadia.exe
 sqlc generate                       # depois de alterar internal/store/queries/*.sql
 ```
 
