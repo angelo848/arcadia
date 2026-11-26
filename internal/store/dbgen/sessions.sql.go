@@ -182,7 +182,7 @@ func (q *Queries) ListOpenSessions(ctx context.Context) ([]ListOpenSessionsRow, 
 }
 
 const listSessionsByGame = `-- name: ListSessionsByGame :many
-SELECT id, game_id, state, started_at, ended_at, active_seconds, end_reason FROM play_session
+SELECT id, game_id, state, source, started_at, ended_at, active_seconds, end_reason, edited_at FROM play_session
 WHERE game_id = ?1
 ORDER BY started_at DESC, id DESC
 LIMIT ?3 OFFSET ?2
@@ -198,10 +198,12 @@ type ListSessionsByGameRow struct {
 	ID            int64
 	GameID        int64
 	State         string
+	Source        string
 	StartedAt     int64
 	EndedAt       sql.NullInt64
 	ActiveSeconds int64
 	EndReason     sql.NullString
+	EditedAt      sql.NullInt64
 }
 
 func (q *Queries) ListSessionsByGame(ctx context.Context, arg ListSessionsByGameParams) ([]ListSessionsByGameRow, error) {
@@ -217,10 +219,12 @@ func (q *Queries) ListSessionsByGame(ctx context.Context, arg ListSessionsByGame
 			&i.ID,
 			&i.GameID,
 			&i.State,
+			&i.Source,
 			&i.StartedAt,
 			&i.EndedAt,
 			&i.ActiveSeconds,
 			&i.EndReason,
+			&i.EditedAt,
 		); err != nil {
 			return nil, err
 		}

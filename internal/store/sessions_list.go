@@ -15,10 +15,12 @@ import (
 type SessionItem struct {
 	ID, GameID    int64
 	State         domain.SessionState // tolerant reader (ADR 0012)
+	Source        string              // tolerant reader: unknown values pass through (SED-002)
 	StartedAt     time.Time
 	EndedAt       time.Time // zero = NULL (open session)
 	ActiveSeconds int64
-	EndReason     string // "" = NULL
+	EndReason     string    // "" = NULL
+	EditedAt      time.Time // zero = NULL
 }
 
 // SessionPage is one page of the sessions of a game and the count of all of them.
@@ -62,10 +64,12 @@ func (s *Store) GameSessions(ctx context.Context, gameID int64, offset, limit in
 				ID:            r.ID,
 				GameID:        r.GameID,
 				State:         domain.SessionState(r.State), // tolerant reader (ADR 0012)
+				Source:        r.Source,
 				StartedAt:     MillisToTime(r.StartedAt),
 				EndedAt:       nullMillisToTime(r.EndedAt),
 				ActiveSeconds: r.ActiveSeconds,
 				EndReason:     r.EndReason.String,
+				EditedAt:      nullMillisToTime(r.EditedAt),
 			})
 		}
 		return nil

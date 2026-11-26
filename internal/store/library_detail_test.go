@@ -134,6 +134,99 @@ func TestGameDetail(t *testing.T) {
 	})
 }
 
+// Added 2026-11-25 (fase 16): GameDetail.SessionPlaySeconds (SED-034).
+func TestGameDetailSessionPlaySeconds(t *testing.T) {
+	t.Parallel()
+
+	seed := func(t *testing.T) (*store.Store, int64) {
+		t.Helper()
+		s := openStore(t, dbPath(t), true)
+		return s, seedLibrary(t, s, libGame{Title: "Hades", Seconds: 7200})["Hades"]
+	}
+
+	t.Run("SED-034/GameDetail traz SessionPlaySeconds = soma de active_seconds das sessões ended", func(t *testing.T) {
+		t.Parallel()
+		s, g := seed(t)
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 3600, State: "ended"})
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(2, 10), Ended: libAt(2, 11), Active: 1800, State: "ended"})
+		d, err := s.GameDetail(t.Context(), g)
+		if err != nil {
+			t.Fatalf("GameDetail: %v", err)
+		}
+		if d.SessionPlaySeconds != 5400 {
+			t.Errorf("SessionPlaySeconds = %d, want 5400", d.SessionPlaySeconds)
+		}
+	})
+
+	t.Run("SED-034/descartada e aberta não entram na soma", func(t *testing.T) {
+		t.Parallel()
+		s, g := seed(t)
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 100, State: "ended"})
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(2, 10), Ended: libAt(2, 11), Active: 20, State: "discarded"})
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(3, 10), Active: 999, State: "running"})
+		d, err := s.GameDetail(t.Context(), g)
+		if err != nil {
+			t.Fatalf("GameDetail: %v", err)
+		}
+		if d.SessionPlaySeconds != 100 {
+			t.Errorf("SessionPlaySeconds = %d, want 100", d.SessionPlaySeconds)
+		}
+	})
+
+	t.Run("SED-034/jogo sem sessões tem 0", func(t *testing.T) {
+		t.Parallel()
+		s, g := seed(t)
+		d, err := s.GameDetail(t.Context(), g)
+		if err != nil {
+			t.Fatalf("GameDetail: %v", err)
+		}
+		if d.SessionPlaySeconds != 0 {
+			t.Errorf("SessionPlaySeconds = %d, want 0", d.SessionPlaySeconds)
+		}
+	})
+
+	t.Run("SED-034/total ajustado à mão (SetTotalPlaySeconds) não muda SessionPlaySeconds", func(t *testing.T) {
+		t.Parallel()
+		s, g := seed(t)
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 3600, State: "ended"})
+		d, err := s.SetTotalPlaySeconds(t.Context(), g, 50000, time.UnixMilli(libAt(5, 0)))
+		if err != nil {
+			t.Fatalf("SetTotalPlaySeconds: %v", err)
+		}
+		if d.TotalPlaySeconds != 50000 || d.SessionPlaySeconds != 3600 {
+			t.Errorf("Total/SessionPlaySeconds = %d/%d, want 50000/3600", d.TotalPlaySeconds, d.SessionPlaySeconds)
+		}
+		again, err := s.GameDetail(t.Context(), g)
+		if err != nil {
+			t.Fatalf("GameDetail: %v", err)
+		}
+		if again.SessionPlaySeconds != 3600 {
+			t.Errorf("SessionPlaySeconds = %d, want 3600", again.SessionPlaySeconds)
+		}
+	})
+
+	t.Run("SED-034/UpdateGame e SetTotalPlaySeconds também devolvem SessionPlaySeconds", func(t *testing.T) {
+		t.Parallel()
+		s, g := seed(t)
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 777, State: "ended"})
+		title := "Hades II"
+		d, err := s.UpdateGame(t.Context(), g, store.GamePatch{Title: &title}, time.UnixMilli(libAt(5, 0)))
+		if err != nil {
+			t.Fatalf("UpdateGame: %v", err)
+		}
+		if d.SessionPlaySeconds != 777 {
+			t.Errorf("UpdateGame SessionPlaySeconds = %d, want 777", d.SessionPlaySeconds)
+		}
+		d, err = s.SetTotalPlaySeconds(t.Context(), g, 10, time.UnixMilli(libAt(5, 1)))
+		if err != nil {
+			t.Fatalf("SetTotalPlaySeconds: %v", err)
+		}
+		if d.SessionPlaySeconds != 777 {
+			t.Errorf("SetTotalPlaySeconds SessionPlaySeconds = %d, want 777", d.SessionPlaySeconds)
+		}
+	})
+}
+
 func TestAddGameFields(t *testing.T) {
 	t.Parallel()
 

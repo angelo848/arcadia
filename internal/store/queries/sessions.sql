@@ -41,7 +41,7 @@ SELECT COUNT(*) FROM play_session
 WHERE game_id = ?;
 
 -- name: ListSessionsByGame :many
-SELECT id, game_id, state, started_at, ended_at, active_seconds, end_reason FROM play_session
+SELECT id, game_id, state, source, started_at, ended_at, active_seconds, end_reason, edited_at FROM play_session
 WHERE game_id = sqlc.arg(game_id)
 ORDER BY started_at DESC, id DESC
 LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);

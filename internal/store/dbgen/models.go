@@ -165,6 +165,7 @@ type PlaySession struct {
 	State         string
 	Source        string
 	EndReason     sql.NullString
+	EditedAt      sql.NullInt64
 }
 
 type Playlist struct {

@@ -250,6 +250,7 @@ type GameDetail struct {
 	CompletedAt                    time.Time // zero = NULL
 	Developers, Publishers, Genres []string  // never nil; NOCASE order
 	PlayModes                      []string  // never nil; names of DOM-014
+	SessionPlaySeconds             int64     // sum of active_seconds of ended sessions (SED-034)
 }
 
 // GameDetail returns the game of id with its details, read in one transaction.
@@ -295,6 +296,9 @@ func readGameDetail(ctx context.Context, q *dbgen.Queries, id int64) (GameDetail
 	}
 	if d.PlayModes, err = q.GamePlayModeNames(ctx, id); err != nil {
 		return GameDetail{}, fmt.Errorf("store: play modes of game %d: %w", id, err)
+	}
+	if d.SessionPlaySeconds, err = q.SumCountedSeconds(ctx, id); err != nil {
+		return GameDetail{}, fmt.Errorf("store: session play seconds of game %d: %w", id, err)
 	}
 	return d, nil
 }

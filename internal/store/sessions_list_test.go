@@ -241,6 +241,79 @@ func TestGameSessions(t *testing.T) {
 	})
 }
 
+// Added 2026-11-25 (fase 16): Source and EditedAt of each item (SED-002, SED-033).
+func TestGameSessionsSourceEdited(t *testing.T) {
+	t.Parallel()
+
+	setSourceEdited := func(t *testing.T, s *store.Store, id int64, source string, editedAt int64) {
+		t.Helper()
+		libExec(t, s.DB(), `UPDATE play_session SET source = ?, edited_at = ? WHERE id = ?`, source, libNullMs(editedAt), id)
+	}
+
+	t.Run("SED-033/GameSessions traz Source e EditedAt de cada item, na mesma ordem e paginação de antes", func(t *testing.T) {
+		t.Parallel()
+		s := openStore(t, dbPath(t), true)
+		g := seedLibrary(t, s, libGame{Title: "Hades"})["Hades"]
+		a := libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 3600, State: "ended", EndReason: "exited"})
+		b := libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(2, 10), Ended: libAt(2, 11), Active: 3600, State: "ended"})
+		c := libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(3, 10), Ended: libAt(3, 11), Active: 3600, State: "ended"})
+		setSourceEdited(t, s, a, "tracked", libAt(4, 1))
+		setSourceEdited(t, s, b, "import", 0)
+		setSourceEdited(t, s, c, "manual", libAt(4, 2))
+
+		page := mustGameSessions(t, s, g, 0, domain.DefaultSessionLimit)
+		if got := sessionItemIDs(page.Sessions); !equalIDs(got, []int64{c, b, a}) {
+			t.Fatalf("ids = %v, want %v", got, []int64{c, b, a})
+		}
+		wantSource := []string{"manual", "import", "tracked"}
+		wantEdited := []int64{libAt(4, 2), 0, libAt(4, 1)}
+		for i, it := range page.Sessions {
+			if it.Source != wantSource[i] {
+				t.Errorf("item %d: Source = %q, want %q", i, it.Source, wantSource[i])
+			}
+			if wantEdited[i] == 0 {
+				if !it.EditedAt.IsZero() {
+					t.Errorf("item %d: EditedAt = %v, want zero", i, it.EditedAt)
+				}
+			} else if !it.EditedAt.Equal(time.UnixMilli(wantEdited[i])) {
+				t.Errorf("item %d: EditedAt = %v, want %v", i, it.EditedAt, time.UnixMilli(wantEdited[i]))
+			}
+		}
+		paged := mustGameSessions(t, s, g, 1, 1)
+		if paged.Total != 3 || len(paged.Sessions) != 1 || paged.Sessions[0].ID != b || paged.Sessions[0].Source != "import" {
+			t.Errorf("page offset 1 limit 1 = %+v, want only session %d (import), Total 3", paged, b)
+		}
+	})
+
+	t.Run("SED-033/sessão nunca editada tem EditedAt zero", func(t *testing.T) {
+		t.Parallel()
+		s := openStore(t, dbPath(t), true)
+		g := seedLibrary(t, s, libGame{Title: "Celeste"})["Celeste"]
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 60, State: "ended"})
+		libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(2, 10), Active: 60, State: "running"})
+		for i, it := range mustGameSessions(t, s, g, 0, domain.DefaultSessionLimit).Sessions {
+			if !it.EditedAt.IsZero() {
+				t.Errorf("item %d: EditedAt = %v, want zero", i, it.EditedAt)
+			}
+			if it.Source != "tracked" {
+				t.Errorf("item %d: Source = %q, want tracked", i, it.Source)
+			}
+		}
+	})
+
+	t.Run("SED-002/valor de source desconhecido no banco chega como está e a página não falha", func(t *testing.T) {
+		t.Parallel()
+		s := openStore(t, dbPath(t), true)
+		g := seedLibrary(t, s, libGame{Title: "Futuro"})["Futuro"]
+		id := libInsertSession(t, s.DB(), libSessionRow{GameID: g, Started: libAt(1, 10), Ended: libAt(1, 11), Active: 60, State: "ended"})
+		setSourceEdited(t, s, id, "cloud-sync", 0)
+		page := mustGameSessions(t, s, g, 0, domain.DefaultSessionLimit)
+		if len(page.Sessions) != 1 || page.Sessions[0].Source != "cloud-sync" {
+			t.Errorf("sessions = %+v, want one item with Source cloud-sync", page.Sessions)
+		}
+	})
+}
+
 // equalIDs reports whether a and b hold the same ids in the same order.
 func equalIDs(a, b []int64) bool {
 	if len(a) != len(b) {
