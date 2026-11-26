@@ -67,6 +67,8 @@ type GameDetailView struct {
 	// LaunchType and LaunchArgs are the launch fields of the game (EDT-010); the target is Path.
 	LaunchType string `json:"launchType"`
 	LaunchArgs string `json:"launchArgs"`
+	// SessionPlaySeconds is the sum of the ended sessions' time, as the agent computed it (SED-034).
+	SessionPlaySeconds int64 `json:"sessionPlaySeconds"`
 }
 
 // SessionItemView is a session of a game as listed on the game page. EndedAt and
@@ -79,6 +81,9 @@ type SessionItemView struct {
 	EndedAt       string `json:"endedAt"`
 	ActiveSeconds int64  `json:"activeSeconds"`
 	EndReason     string `json:"endReason"`
+	Source        string `json:"source"`
+	// EditedAt is RFC 3339 or "" when the session was never edited.
+	EditedAt string `json:"editedAt"`
 }
 
 // SessionListView is the page returned by GameSessions. Sessions is never nil.
@@ -175,6 +180,8 @@ func gameDetailView(d ipc.GameDetail) GameDetailView {
 		Publishers:  nonNilStrings(d.Publishers),
 		Genres:      nonNilStrings(d.Genres),
 		PlayModes:   nonNilStrings(d.PlayModes),
+
+		SessionPlaySeconds: d.SessionPlaySeconds,
 	}
 }
 
@@ -191,6 +198,8 @@ func sessionItemView(s ipc.SessionItem) SessionItemView {
 		EndedAt:       optionalTime(s.EndedAt),
 		ActiveSeconds: s.ActiveSeconds,
 		EndReason:     endReason,
+		Source:        s.Source,
+		EditedAt:      optionalTime(s.EditedAt),
 	}
 }
 

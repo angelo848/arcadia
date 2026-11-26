@@ -145,6 +145,7 @@ export namespace main {
 	    playModes: string[];
 	    launchType: string;
 	    launchArgs: string;
+	    sessionPlaySeconds: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new GameDetailView(source);
@@ -173,6 +174,7 @@ export namespace main {
 	        this.playModes = source["playModes"];
 	        this.launchType = source["launchType"];
 	        this.launchArgs = source["launchArgs"];
+	        this.sessionPlaySeconds = source["sessionPlaySeconds"];
 	    }
 	}
 	export class GameView {
@@ -924,6 +926,24 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class SessionCreateInput {
+	    startedAt: string;
+	    endedAt: string;
+	    activeSeconds: number;
+	    includedInTotal: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionCreateInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startedAt = source["startedAt"];
+	        this.endedAt = source["endedAt"];
+	        this.activeSeconds = source["activeSeconds"];
+	        this.includedInTotal = source["includedInTotal"];
+	    }
+	}
 	export class SessionItemView {
 	    sessionId: number;
 	    gameId: number;
@@ -932,6 +952,8 @@ export namespace main {
 	    endedAt: string;
 	    activeSeconds: number;
 	    endReason: string;
+	    source: string;
+	    editedAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionItemView(source);
@@ -946,6 +968,8 @@ export namespace main {
 	        this.endedAt = source["endedAt"];
 	        this.activeSeconds = source["activeSeconds"];
 	        this.endReason = source["endReason"];
+	        this.source = source["source"];
+	        this.editedAt = source["editedAt"];
 	    }
 	}
 	export class SessionListView {
@@ -1012,6 +1036,38 @@ export namespace main {
 	        this.tracking = source["tracking"];
 	    }
 	}
+	export class SessionWriteView {
+	    session: SessionItemView;
+	    game: GameDetailView;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionWriteView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session = this.convertValues(source["session"], SessionItemView);
+	        this.game = this.convertValues(source["game"], GameDetailView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StatsGameView {
 	    gameId: number;
 	    title: string;
@@ -1019,6 +1075,7 @@ export namespace main {
 	    sessions: number;
 	    activeSeconds: number;
 	    importedSeconds: number;
+	    manualSeconds: number;
 	    lastPlayedAt: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1033,6 +1090,7 @@ export namespace main {
 	        this.sessions = source["sessions"];
 	        this.activeSeconds = source["activeSeconds"];
 	        this.importedSeconds = source["importedSeconds"];
+	        this.manualSeconds = source["manualSeconds"];
 	        this.lastPlayedAt = source["lastPlayedAt"];
 	    }
 	}
@@ -1041,6 +1099,7 @@ export namespace main {
 	    name: string;
 	    activeSeconds: number;
 	    importedSeconds: number;
+	    manualSeconds: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new StatsPlatformView(source);
@@ -1052,6 +1111,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.activeSeconds = source["activeSeconds"];
 	        this.importedSeconds = source["importedSeconds"];
+	        this.manualSeconds = source["manualSeconds"];
 	    }
 	}
 	export class StatsSummaryView {
@@ -1059,6 +1119,7 @@ export namespace main {
 	    platforms: StatsPlatformView[];
 	    totalSeconds: number;
 	    importedSeconds: number;
+	    manualSeconds: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new StatsSummaryView(source);
@@ -1070,6 +1131,7 @@ export namespace main {
 	        this.platforms = this.convertValues(source["platforms"], StatsPlatformView);
 	        this.totalSeconds = source["totalSeconds"];
 	        this.importedSeconds = source["importedSeconds"];
+	        this.manualSeconds = source["manualSeconds"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

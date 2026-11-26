@@ -22,12 +22,20 @@ export function Catalog() {
   return window['go']['main']['App']['Catalog']();
 }
 
+export function CreateSession(arg1, arg2) {
+  return window['go']['main']['App']['CreateSession'](arg1, arg2);
+}
+
 export function CurrentSession() {
   return window['go']['main']['App']['CurrentSession']();
 }
 
 export function DeleteGame(arg1) {
   return window['go']['main']['App']['DeleteGame'](arg1);
+}
+
+export function DeleteSession(arg1) {
+  return window['go']['main']['App']['DeleteSession'](arg1);
 }
 
 export function EmulatorAdd(arg1, arg2, arg3) {
@@ -240,6 +248,10 @@ export function TimeToBeatSettings() {
 
 export function UpdateGame(arg1, arg2) {
   return window['go']['main']['App']['UpdateGame'](arg1, arg2);
+}
+
+export function UpdateSession(arg1, arg2) {
+  return window['go']['main']['App']['UpdateSession'](arg1, arg2);
 }
 
 export function VideoCancelPending() {

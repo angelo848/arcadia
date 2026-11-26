@@ -12,6 +12,7 @@ type StatsGameView struct {
 	Sessions        int64  `json:"sessions"`
 	ActiveSeconds   int64  `json:"activeSeconds"`
 	ImportedSeconds int64  `json:"importedSeconds"`
+	ManualSeconds   int64  `json:"manualSeconds"`
 	LastPlayedAt    string `json:"lastPlayedAt"`
 }
 
@@ -21,6 +22,7 @@ type StatsPlatformView struct {
 	Name            string `json:"name"`
 	ActiveSeconds   int64  `json:"activeSeconds"`
 	ImportedSeconds int64  `json:"importedSeconds"`
+	ManualSeconds   int64  `json:"manualSeconds"`
 }
 
 // StatsSummaryView is the result of StatsSummary.
@@ -29,6 +31,7 @@ type StatsSummaryView struct {
 	Platforms       []StatsPlatformView `json:"platforms"`
 	TotalSeconds    int64               `json:"totalSeconds"`
 	ImportedSeconds int64               `json:"importedSeconds"`
+	ManualSeconds   int64               `json:"manualSeconds"`
 }
 
 // StatsWeekView is the time of one week (EST-002).
@@ -54,14 +57,15 @@ func (a *App) StatsSummary(period string) (StatsSummaryView, error) {
 		Platforms:       make([]StatsPlatformView, 0, len(res.Platforms)),
 		TotalSeconds:    res.TotalSeconds,
 		ImportedSeconds: res.ImportedSeconds,
+		ManualSeconds:   res.ManualSeconds,
 	}
 	for _, g := range res.Games {
 		out.Games = append(out.Games, StatsGameView{GameID: g.GameID, Title: g.Title, Platform: g.Platform,
-			Sessions: g.Sessions, ActiveSeconds: g.ActiveSeconds, ImportedSeconds: g.ImportedSeconds, LastPlayedAt: g.LastPlayedAt})
+			Sessions: g.Sessions, ActiveSeconds: g.ActiveSeconds, ImportedSeconds: g.ImportedSeconds, ManualSeconds: g.ManualSeconds, LastPlayedAt: g.LastPlayedAt})
 	}
 	for _, p := range res.Platforms {
 		out.Platforms = append(out.Platforms, StatsPlatformView{PlatformID: p.PlatformID, Name: p.Name,
-			ActiveSeconds: p.ActiveSeconds, ImportedSeconds: p.ImportedSeconds})
+			ActiveSeconds: p.ActiveSeconds, ImportedSeconds: p.ImportedSeconds, ManualSeconds: p.ManualSeconds})
 	}
 	return out, nil
 }

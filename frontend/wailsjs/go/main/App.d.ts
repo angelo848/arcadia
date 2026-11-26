@@ -13,9 +13,13 @@ export function BringToFront():Promise<void>;
 
 export function Catalog():Promise<main.CatalogView>;
 
+export function CreateSession(arg1:number,arg2:main.SessionCreateInput):Promise<main.SessionWriteView>;
+
 export function CurrentSession():Promise<main.SessionView>;
 
 export function DeleteGame(arg1:number):Promise<void>;
+
+export function DeleteSession(arg1:number):Promise<main.GameDetailView>;
 
 export function EmulatorAdd(arg1:string,arg2:string,arg3:string):Promise<main.EmulatorView>;
 
@@ -122,6 +126,8 @@ export function TimeToBeatSetSettings(arg1:boolean,arg2:boolean):Promise<main.Ti
 export function TimeToBeatSettings():Promise<main.TimeToBeatSettingsView>;
 
 export function UpdateGame(arg1:number,arg2:jsontext.Value):Promise<main.GameDetailView>;
+
+export function UpdateSession(arg1:number,arg2:jsontext.Value):Promise<main.SessionWriteView>;
 
 export function VideoCancelPending():Promise<number>;
 

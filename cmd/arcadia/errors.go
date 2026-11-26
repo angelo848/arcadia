@@ -54,6 +54,27 @@ const (
 	msgPauseUnavailable = "Não foi possível pausar agora."
 )
 
+// SED-036 texts of the session edit.
+const (
+	msgSessionEditActive = "Não é possível alterar uma sessão em andamento."
+	msgSessionGone       = "Esta sessão não existe mais."
+	msgSessionOverlapFmt = "O horário cruza outra sessão de «%s», de %s a %s."
+	sessionTimeLayout    = "02/01/2006 15:04"
+)
+
+// sessionReasonTexts maps the data.reason of a -32602 of the session edit to its text.
+var sessionReasonTexts = map[string]string{
+	"end-not-after-start": "O fim precisa ser depois do início.",
+	"in-future":           "O fim não pode estar no futuro.",
+	"too-early":           "O início não pode ser antes de 1980.",
+	"span-too-long":       "Uma sessão pode ter no máximo 24 horas.",
+	"active-too-short":    "O tempo jogado precisa ter pelo menos 1 minuto.",
+	"active-exceeds-span": "O tempo jogado não pode passar do intervalo entre início e fim.",
+	"discarded":           "Sessões descartadas não podem ser editadas, só excluídas.",
+	"exceeds-adjustment":  "O tempo jogado é maior que a parte do tempo total que não vem de sessões.",
+	"empty-patch":         "Nada para salvar.",
+}
+
 // userError converts a binding error into the Portuguese text of DSK-011.
 // Errors other than -32002..-32004 and connection errors are logged at Error.
 func userError(err error, log *slog.Logger) error {

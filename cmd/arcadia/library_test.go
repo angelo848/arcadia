@@ -274,7 +274,8 @@ func TestLibraryReads(t *testing.T) {
 		}
 		wantJSON(t, got, `{"id":3,"title":"Celeste","platformId":0,"platform":"PC","path":"","status":"completed",`+
 			`"favorite":true,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"","emulatorId":null,`+
-			`"description":"Platformer","completedAt":"","developers":[],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":""}`)
+			`"description":"Platformer","completedAt":"","developers":[],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":"","sessionPlaySeconds":0}`)
+		// alterado em 2026-11-25 (fase 16): sessionPlaySeconds (SED-034).
 
 		done := "2026-11-12"
 		detail2 := ipc.GameDetail{
@@ -290,7 +291,8 @@ func TestLibraryReads(t *testing.T) {
 		}
 		wantJSON(t, got2, `{"id":3,"title":"Celeste","platformId":0,"platform":"","path":"","status":"",`+
 			`"favorite":false,"year":null,"totalPlaySeconds":0,"playCount":0,"firstPlayedAt":"","lastPlayedAt":"","emulatorId":null,`+
-			`"description":"","completedAt":"2026-11-12","developers":["Maddy Makes Games"],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":""}`)
+			`"description":"","completedAt":"2026-11-12","developers":["Maddy Makes Games"],"publishers":[],"genres":[],"playModes":[],"launchType":"","launchArgs":"","sessionPlaySeconds":0}`)
+		// alterado em 2026-11-25 (fase 16): sessionPlaySeconds (SED-034).
 	})
 
 	t.Run("DSK-016/GameSessions repassa offset e limit e devolve sessions nunca nil", func(t *testing.T) {
