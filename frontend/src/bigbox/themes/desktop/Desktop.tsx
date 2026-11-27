@@ -18,7 +18,7 @@ export function Desktop(p: BigBoxThemeProps): JSX.Element {
   const panel = m.screen === 'details'
   const gamesFocused = !panel && m.zone === 'games'
   const platformsFocused = !panel && m.zone === 'platforms'
-  const Items =m.view === 'list' ? DesktopList : DesktopGrid
+  const Items = m.view === 'list' ? DesktopList : DesktopGrid
 
   const empty = m.tab === 0 ? 'Nenhum jogo na biblioteca' : 'Nenhum jogo nesta plataforma'
   const center = m.loading ? (
