@@ -2704,6 +2704,58 @@ describe('App: Big Box novo (T41)', () => {
     expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'faixa')
   })
 
+  // Fase 17 (T07): o App só repassa a ordenação e a visualização da janela normal; o tema falso herda a ordem.
+  describe('BBX-067/BBX-068 ordem e visualização herdadas', () => {
+    function inheritingTheme() {
+      localStorage.setItem(THEME_KEY, 'mosaico')
+      const mosaico = BIGBOX_THEMES.find((t) => t.id === 'mosaico')!
+      Object.assign(mosaico, {
+        available: true,
+        sort: 'inherit',
+        Component: ({ model }: BigBoxThemeProps) => (
+          <div data-testid="fake-theme" data-view={model.view} data-sortlabel={model.sortLabel}>{model.games.length}</div>
+        ),
+      })
+    }
+
+    it('BBX-067/BBX-068/o App passa query.sort e a visualização da janela normal ao BigBox', async () => {
+      inheritingTheme()
+      bigBoxLibrary()
+      renderApp()
+      await findRow('Hollow Knight')
+      fireEvent.click(screen.getByRole('button', { name: 'Mostrar em lista' }))
+      fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'totalPlayed' } })
+      await waitFor(() => expect(app.ListGames).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'totalPlayed' })))
+      app.ListGames.mockClear()
+
+      await enterBigBoxByButton()
+
+      const fake = await screen.findByTestId('fake-theme')
+      await waitFor(() => expect(app.ListGames).toHaveBeenCalled())
+      for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('totalPlayed')
+      expect(fake).toHaveAttribute('data-view', 'list')
+      expect(fake).toHaveAttribute('data-sortlabel', 'Tempo jogado')
+    })
+
+    it('BBX-067/BBX-068/com a janela normal em grade e ordem por título o tema recebe view grid e Título', async () => {
+      inheritingTheme()
+      bigBoxLibrary()
+      renderApp()
+      await findRow('Hollow Knight')
+      fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'title' } })
+      await waitFor(() => expect(app.ListGames).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'title' })))
+      app.ListGames.mockClear()
+
+      await enterBigBoxByButton()
+
+      const fake = await screen.findByTestId('fake-theme')
+      await waitFor(() => expect(app.ListGames).toHaveBeenCalled())
+      for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('title')
+      expect(fake).toHaveAttribute('data-view', 'grid')
+      expect(fake).toHaveAttribute('data-sortlabel', 'Título')
+    })
+  })
+
   describe('BBX-022 confirmação de metadados sob o Big Box', () => {
     let batch: Record<string, unknown> | null = null
     const batchOf = (over: Record<string, unknown> = {}) => ({

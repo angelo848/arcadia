@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { stripWindow } from './viewModel'
-import type { BigBoxViewModel } from './viewModel'
+import type { BigBoxViewModel, LibraryView } from './viewModel'
+import { gridPageSize } from './useBigBoxData'
+import type { SortKey } from '../lib/filters'
 import { BIGBOX_THEMES } from './themes/registry'
 import type { BigBoxThemeProps } from './themes/registry'
 import { BigBox } from './BigBox'
@@ -204,7 +206,14 @@ function subscribed(): number {
   return [...handlers.values()].reduce((n, s) => n + s.size, 0)
 }
 
-type Props = { initialPlatformId?: number | null; initialGameId?: number | null; themeId?: 'faixa' | 'mosaico' | 'roda' }
+// alterado em 2026-11-27 (fase 17): + librarySort e libraryView, as duas props novas do BigBox (BBX-067, BBX-068)
+type Props = {
+  initialPlatformId?: number | null
+  initialGameId?: number | null
+  themeId?: 'faixa' | 'mosaico' | 'roda'
+  librarySort?: SortKey
+  libraryView?: LibraryView
+}
 function setup(p: Props = {}) {
   const onExit = vi.fn()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -219,7 +228,14 @@ function setup(p: Props = {}) {
     </QueryClientProvider>
   )
   const r = render(
-    <BigBox initialPlatformId={p.initialPlatformId ?? null} initialGameId={p.initialGameId ?? null} themeId={p.themeId ?? 'faixa'} onExit={onExit} />,
+    <BigBox
+      initialPlatformId={p.initialPlatformId ?? null}
+      initialGameId={p.initialGameId ?? null}
+      themeId={p.themeId ?? 'faixa'}
+      librarySort={p.librarySort ?? 'title'}
+      libraryView={p.libraryView ?? 'grid'}
+      onExit={onExit}
+    />,
     { wrapper },
   )
   return { onExit, ...r }
@@ -1044,7 +1060,8 @@ describe('BigBox v2: contrato de tema e grade (BBX-047, BBX-050, BBX-055)', () =
     expect(simple()).toHaveTextContent(c.next)
     key(c.back)
     expect(simple()).toHaveTextContent('Jogo 001')
-    for (const keys of propKeys) expect(keys).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
+    // alterado em 2026-11-27 (fase 17): onTab (opcional, BBX-065) pode ou não vir; as demais props continuam as mesmas
+    for (const keys of propKeys) expect(keys.filter((k) => k !== 'onTab')).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
     expect(modelLog.at(-1)).toMatchObject({ axis: c.axis, columns: c.columns })
   })
 
@@ -1066,7 +1083,8 @@ describe('BigBox v2: contrato de tema e grade (BBX-047, BBX-050, BBX-055)', () =
     key('ArrowLeft')
     expect(simple()).toHaveTextContent('Jogo 001')
     expect(modelLog.at(-1)).toMatchObject({ axis: 'grid', columns: 3 })
-    for (const keys of propKeys) expect(keys).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
+    // alterado em 2026-11-27 (fase 17): onTab (opcional, BBX-065) pode ou não vir
+    for (const keys of propKeys) expect(keys.filter((k) => k !== 'onTab')).toEqual(['details', 'model', 'onDetails', 'onPick', 'onPlay', 'onVideoError'])
   })
 
   it('BBX-047/o shell pergunta a capacidade ao tema e, na grade, as fileiras (gridRows) com o viewport', async () => {
@@ -1465,5 +1483,494 @@ describe('BigBox v2: tempo para zerar (BBX-059, TTB-013, TTB-016, TTB-017, TTB-0
     await screen.findByText('Tempo para zerar')
     await flush()
     for (const n of called) expect(n).not.toMatch(/^TimeToBeat(Refresh|Search|Choose|SetSettings)$/)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// Fase 17 (T07): shell com layout `columns`, rolagem pelas bordas, Detalhes em Navegar e onTab, com um tema falso
+// registrado sobre a entrada 'roda' (restaurada em uninstall()). Marcação do tema falso: data-testid="cols" com
+// data-{zone,screen,tab,focus,start,columns,view,layout,sortlabel}, abas role="tab", cartões data-testid="col-card".
+// O Details falso fica em data-testid="col-details-node" com data-{active,game,icon,preview-*,has-labels}.
+// ---------------------------------------------------------------------------------------------------------
+
+function ColumnsTheme(p: BigBoxThemeProps) {
+  const { model, details, onTab, onPick } = p
+  modelLog.push(model)
+  propKeys.push(Object.keys(p).sort())
+  return (
+    <div
+      data-testid="cols"
+      data-zone={model.zone}
+      data-screen={model.screen}
+      data-tab={model.tab}
+      data-focus={model.focus}
+      data-start={model.stripStart}
+      data-columns={model.columns}
+      data-view={model.view}
+      data-layout={model.layout}
+      data-sortlabel={model.sortLabel}
+    >
+      <div role="tablist">
+        {model.tabs.map((t, i) => (
+          <button key={t.key} role="tab" aria-selected={i === model.tab} onClick={() => onTab?.(i)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <ol>
+        {model.games.map((gm, i) => (
+          <li key={gm.id} data-testid="col-card" data-index={model.stripStart + i} onClick={() => onPick(model.stripStart + i)}>
+            {gm.title}
+          </li>
+        ))}
+      </ol>
+      <div data-testid="col-details">{details}</div>
+    </div>
+  )
+}
+
+function ColumnsDetails(p: BigBoxDetailsProps) {
+  return (
+    <div
+      data-testid="col-details-node"
+      data-active={String(p.active)}
+      data-game={p.game.id}
+      data-icon={p.platformIconUrl ?? ''}
+      data-preview-game={p.preview?.gameId ?? ''}
+      data-preview-url={p.preview?.videoUrl ?? ''}
+      data-preview-active={String(p.preview?.active)}
+      data-has-labels={String(p.labels !== undefined)}
+    >
+      <button onClick={p.onPlay}>Iniciar</button>
+    </div>
+  )
+}
+
+function useCols(patch: Partial<BigBoxThemeDef> = {}) {
+  useFake('roda', {
+    axis: 'grid', columns: 1, layout: 'columns', gridColumns: () => 5, gridRows: () => 1, maxNodes: 200, gridScroll: 'edges',
+    sort: 'inherit', videoSlot: 'panel', tabs: 'platforms', backdrop: 'plain', timeToBeatInBrowse: true, listCapacity: () => 5,
+    Component: ColumnsTheme, Details: ColumnsDetails, ...patch,
+  })
+}
+const colCards = () => screen.queryAllByTestId('col-card')
+const colTitles = () => colCards().map((c) => c.textContent)
+const colsRoot = () => screen.getByTestId('cols')
+const readyCols = () => waitFor(() => expect(colCards().length).toBeGreaterThan(0))
+const colDetails = () => screen.findByTestId('col-details-node')
+const tabButton = (name: string) => screen.getByRole('tab', { name })
+const downTimes = async (n: number) => {
+  for (let i = 0; i < n; i++) {
+    key('ArrowDown')
+    await settle()
+  }
+}
+
+describe('BigBox fase 17: capacidade e páginas (BBX-061, BBX-062)', () => {
+  it('BBX-061/tema sem os campos novos usa colunas, fileiras e 30 nós como hoje', async () => {
+    bigLibrary(100)
+    useFake('roda', { axis: 'grid', columns: 5, listCapacity: () => 5, gridRows: () => 9, Component: ColumnsTheme })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    // R' = min(9, ⌊30 / 5⌋ − 1) = 5: pages of (5 + 1 + 3) × 5 = 45 and at most 30 cards
+    expect(limits()[0]).toBe(45)
+    expect(colCards().length).toBeLessThanOrEqual(30)
+    expect(colsRoot()).toHaveAttribute('data-layout', 'screens')
+    expect(colsRoot()).toHaveAttribute('data-zone', 'games')
+    expect(colsRoot()).toHaveAttribute('data-columns', '5')
+  })
+
+  it('BBX-062/o limit do ListGames é gridPageSize(C, R\', N) do tema falso (N = 200)', async () => {
+    bigLibrary(100)
+    useCols({ gridColumns: () => 6, gridRows: () => 2 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    expect(limits()[0]).toBe(gridPageSize(6, 2, 200))
+    expect(limits()[0]).toBe(36) // (2 + 1 + 3) × 6
+  })
+
+  it('BBX-062/nunca mais de (R\'+1)·C cartões no DOM', async () => {
+    bigLibrary(120)
+    useCols({ gridColumns: () => 6, gridRows: () => 2 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await downTimes(6)
+    expect(colCards().length).toBeLessThanOrEqual(18)
+    for (const m of modelLog) expect(m.games.length).toBeLessThanOrEqual(18)
+  })
+})
+
+describe('BigBox fase 17: rolagem pelas bordas (BBX-063)', () => {
+  it('BBX-063/andar para baixo só rola ao passar da última fileira inteira', async () => {
+    bigLibrary(120)
+    useCols({ gridColumns: () => 6, gridRows: () => 2 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    expect(colTitles()[0]).toBe('Jogo 001')
+    await downTimes(1) // row 1, still whole on screen
+    expect(colsRoot()).toHaveAttribute('data-focus', '6')
+    expect(colTitles()[0]).toBe('Jogo 001')
+    await downTimes(1) // row 2 passes the last whole row: one row scrolls
+    expect(colsRoot()).toHaveAttribute('data-focus', '12')
+    expect(colTitles()[0]).toBe('Jogo 007')
+    key('ArrowUp') // row 1 is still inside [1, 2]
+    expect(colTitles()[0]).toBe('Jogo 007')
+    key('ArrowUp') // row 0 is above the first whole row
+    expect(colTitles()[0]).toBe('Jogo 001')
+  })
+
+  it('BBX-063/na entrada e na troca de aba a fileira do foco fica no meio', async () => {
+    bigLibrary(120)
+    useCols({ gridColumns: () => 6, gridRows: () => 3 })
+    setup({ themeId: 'roda', initialGameId: 31 }) // index 30, row 5 (inside the first page of 42)
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-focus', '30'))
+    expect(colTitles()[0]).toBe('Jogo 025') // centeredRow(5, 3, 20) = 4
+    fireEvent.click(tabButton('Windows'))
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-tab', '1'))
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-focus', '0'))
+    expect(colTitles()[0]).toBe('Jogo 001')
+  })
+
+  it('BBX-063/depois de game:closedByHotkey a fileira do foco fica no meio', async () => {
+    bigLibrary(120)
+    useCols({ gridColumns: () => 6, gridRows: () => 3 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await downTimes(4) // row 4: edges scroll to start row 2
+    expect(colsRoot()).toHaveAttribute('data-focus', '24')
+    expect(colTitles()[0]).toBe('Jogo 013')
+    key('Enter')
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledWith(25))
+    await flush()
+
+    emit('game:closedByHotkey', { gameId: 25 })
+
+    await waitFor(() => expect(app.BringToFront).toHaveBeenCalled())
+    await waitFor(() => expect(colTitles()[0]).toBe('Jogo 019')) // centeredRow(4, 3, 20) = 3
+    expect(colsRoot()).toHaveAttribute('data-focus', '24')
+  })
+
+  it('BBX-063/clicar num cartão (onPick) não recentra', async () => {
+    bigLibrary(120)
+    useCols({ gridColumns: () => 6, gridRows: () => 3 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await downTimes(4)
+    expect(colTitles()[0]).toBe('Jogo 013')
+
+    fireEvent.click(screen.getByText('Jogo 015')) // row 2, inside the whole rows [2, 4]
+
+    expect(colsRoot()).toHaveAttribute('data-focus', '14')
+    expect(colTitles()[0]).toBe('Jogo 013') // centering would give 'Jogo 007'
+  })
+})
+
+describe('BigBox fase 17: Detalhes em Navegar (BBX-064, TDK-010, TDK-011)', () => {
+  it('BBX-064/layout columns monta o Details também em Navegar, com active=false', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    const d = await colDetails()
+    expect(colsRoot()).toHaveAttribute('data-screen', 'browse')
+    expect(d).toHaveAttribute('data-active', 'false')
+    expect(d).toHaveAttribute('data-game', '30')
+    expect(d).toHaveAttribute('data-has-labels', 'true')
+    expect(d.getAttribute('data-icon')).toBeTruthy() // the tab of the platform of the game (p:1)
+    key('ArrowRight')
+    await waitFor(() => expect(screen.getByTestId('col-details-node')).toHaveAttribute('data-game', '20'))
+    expect(screen.getByTestId('col-details-node')).toHaveAttribute('data-active', 'false')
+  })
+
+  it('BBX-064/em Detalhes active=true', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await colDetails()
+    key('d')
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'details'))
+    expect(screen.getByTestId('col-details-node')).toHaveAttribute('data-active', 'true')
+    key('Escape')
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'browse'))
+    expect(screen.getByTestId('col-details-node')).toHaveAttribute('data-active', 'false')
+  })
+
+  it('BBX-064/mesmos bindings chamados que num tema screens (nenhuma leitura nova)', async () => {
+    useFake('mosaico', { timeToBeatInBrowse: true })
+    const a = setup({ themeId: 'mosaico' })
+    await readySimple()
+    key('d')
+    await screen.findByTestId('simple-details')
+    await flush()
+    const screensCalls = new Set(called)
+    a.unmount()
+    called.splice(0)
+
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await colDetails()
+    key('d')
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'details'))
+    await flush()
+
+    expect(screensCalls.size).toBeGreaterThan(0)
+    expect(new Set(called)).toEqual(screensCalls)
+  })
+
+  it('TDK-010/videoSlot panel: o fundo nunca toca vídeo; preview.active é true em Navegar e false em Detalhes', async () => {
+    app.MediaList.mockResolvedValue({ media: [SHOT, VIDEO] })
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await colDetails()
+    await waitFor(() => expect(screen.getByTestId('col-details-node')).toHaveAttribute('data-preview-url', '/m/v.mp4'))
+    const d = () => screen.getByTestId('col-details-node')
+    expect(d()).toHaveAttribute('data-preview-game', '30')
+    expect(d()).toHaveAttribute('data-preview-active', 'true')
+    await wait(2100) // longer than the 2.000 ms of the background video
+    expect(screen.queryByTestId('bb-video')).toBeNull()
+
+    key('d')
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'details'))
+    expect(d()).toHaveAttribute('data-preview-active', 'false')
+    expect(screen.queryByTestId('bb-video')).toBeNull()
+  }, 10000)
+
+  it('TDK-011/tempo para zerar: cache lido na hora, busca depois de 1000 ms em Navegar (timeToBeatInBrowse)', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    const t0 = Date.now()
+    await waitFor(() => expect(fetchFalse(30).length).toBeGreaterThan(0))
+    expect(fetchTrue()).toHaveLength(0)
+    await waitFor(() => expect(fetchTrue()).toHaveLength(1), { timeout: 4000 })
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(800)
+    expect(fetchTrue()[0]).toEqual([30, true])
+  }, 10000)
+
+  it('TDK-011/tempo para zerar: na hora ao entrar em Detalhes', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    await colDetails()
+    key('d')
+    await waitFor(() => expect(fetchTrue()).toHaveLength(1), { timeout: 700 })
+    expect(fetchTrue()[0]).toEqual([30, true])
+  })
+})
+
+describe('BigBox fase 17: onTab (BBX-065)', () => {
+  it('BBX-065/onTab(i) ativa a aba, foco no primeiro jogo e lê a lista da aba nova', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    key('ArrowRight') // Hades
+    expect(colsRoot()).toHaveAttribute('data-focus', '1')
+
+    fireEvent.click(tabButton('PlayStation 2'))
+
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-tab', '2'))
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledWith(expect.objectContaining({ filter: { version: 1, platformIds: [2] } })))
+    await waitFor(() => expect(colTitles()).toEqual(['Gran Turismo']))
+    expect(colsRoot()).toHaveAttribute('data-focus', '0')
+  })
+
+  it('BBX-065/onTab da aba ativa não faz nada', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    key('ArrowRight')
+    await flush()
+    const before = app.ListGames.mock.calls.length
+
+    fireEvent.click(tabButton('Todos'))
+    await flush()
+
+    expect(colsRoot()).toHaveAttribute('data-tab', '0')
+    expect(colsRoot()).toHaveAttribute('data-focus', '1')
+    expect(app.ListGames.mock.calls.length).toBe(before)
+  })
+
+  it('BBX-065/onTab durante a suspensão é ignorado', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    key('Enter')
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledTimes(1))
+    await flush()
+
+    fireEvent.click(tabButton('Windows'))
+    await flush()
+
+    expect(colsRoot()).toHaveAttribute('data-tab', '0')
+    expect(app.ListGames.mock.calls.some((c) => (c[0] as { filter: { platformIds?: number[] } }).filter.platformIds)).toBe(false)
+  })
+
+  it('BBX-065/onTab a partir de Detalhes volta a Navegar', async () => {
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    key('d')
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'details'))
+
+    fireEvent.click(tabButton('PlayStation 2'))
+
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'browse'))
+    expect(colsRoot()).toHaveAttribute('data-tab', '2')
+    expect(colsRoot()).toHaveAttribute('data-focus', '0')
+  })
+})
+
+describe('BigBox fase 17: ordem e visualização herdadas (BBX-067, BBX-068)', () => {
+  it('BBX-067/sort inherit envia o librarySort ao ListGames (totalPlayed) e o rótulo do modelo é o do seletor', async () => {
+    useCols()
+    setup({ themeId: 'roda', librarySort: 'totalPlayed' })
+    await readyCols()
+    expect(app.ListGames.mock.calls.length).toBeGreaterThan(0)
+    for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('totalPlayed')
+    expect(colsRoot()).toHaveAttribute('data-sortlabel', 'Tempo jogado')
+  })
+
+  it('BBX-067/um tema com sort próprio ignora o librarySort', async () => {
+    useCols({ sort: 'lastPlayed' })
+    setup({ themeId: 'roda', librarySort: 'year' })
+    await readyCols()
+    for (const c of app.ListGames.mock.calls) expect((c[0] as { sort: string }).sort).toBe('lastPlayed')
+  })
+
+  it('BBX-068/libraryView list dá C=1 em gridColumns e gridRows', async () => {
+    bigLibrary(30)
+    const cols = vi.fn((_vp: unknown, view: LibraryView) => (view === 'list' ? 1 : 6))
+    const rows = vi.fn((_vp: unknown, view?: LibraryView) => (view === 'list' ? 5 : 2))
+    useCols({ gridColumns: cols, gridRows: rows })
+    setup({ themeId: 'roda', libraryView: 'list' })
+    await readyCols()
+    expect(cols).toHaveBeenCalledWith({ width: 1920, height: 1080 }, 'list')
+    expect(rows).toHaveBeenCalledWith({ width: 1920, height: 1080 }, 'list')
+    expect(colsRoot()).toHaveAttribute('data-columns', '1')
+    expect(colsRoot()).toHaveAttribute('data-view', 'list')
+    expect(limits()[0]).toBe(gridPageSize(1, 5, 200)) // (5 + 1 + 3) × 1 = 9
+    key('ArrowDown')
+    expect(colsRoot()).toHaveAttribute('data-focus', '1') // one game per row
+  })
+
+  it('BBX-068/a visualização não é gravada pelo Big Box (localStorage intacto)', async () => {
+    const before = JSON.stringify(Object.entries(localStorage).sort())
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    try {
+      useCols()
+      setup({ themeId: 'roda', libraryView: 'list' })
+      await readyCols()
+      for (const k of ['ArrowDown', 'ArrowUp', 'd', 'Escape', 'PageDown']) key(k)
+      await flush()
+      expect(setItem).not.toHaveBeenCalled()
+      expect(JSON.stringify(Object.entries(localStorage).sort())).toBe(before)
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+})
+
+describe('BigBox fase 17: leitura por aba e entrada com controle (TDK-020, TDK-033)', () => {
+  beforeEach(installPad)
+  afterEach(uninstallPad)
+  const SELECT = 8
+
+  it('TDK-020/uma leitura em voo por aba, sem repetir nem cancelar ao mover o foco; troca de aba cancela; ↓ com a página seguinte pendente não passa de M', async () => {
+    const lib = bigLibrary(60)
+    const openPage2 = gate(lib, 25)
+    useCols({ gridColumns: () => 5, gridRows: () => 1 })
+    setup({ themeId: 'roda' })
+    await readyCols()
+    expect(offsets()).toEqual([0])
+    expect(limits()).toEqual([25])
+    await downTimes(4) // f = 20, the last loaded row (M = 24)
+    await waitFor(() => expect(offsets()).toEqual([0, 25]))
+    await downTimes(3)
+    expect(colsRoot()).toHaveAttribute('data-focus', '20') // does not pass M while page 2 is pending
+    expect(offsets()).toEqual([0, 25]) // no repeated read for the same tab
+    expect(lib.inflight.max).toBe(1)
+
+    fireEvent.click(tabButton('Windows')) // changing tab drops the pending read of the old one
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledWith(expect.objectContaining({ filter: { version: 1, platformIds: [1] } })))
+    openPage2()
+    await settle()
+    expect(colsRoot()).toHaveAttribute('data-tab', '1')
+    expect(colsRoot()).toHaveAttribute('data-focus', '0')
+    expect(offsets().filter((o) => o === 25)).toHaveLength(1)
+    const windowsPages = app.ListGames.mock.calls.filter((c) => (c[0] as { filter: { platformIds?: number[] } }).filter.platformIds)
+    expect(windowsPages.map((c) => (c[0] as { offset: number }).offset)).toEqual([0])
+  }, 15000)
+
+  it('TDK-033/entrada suspensa com o jogo lançado', async () => {
+    bigLibrary(40)
+    useCols()
+    const { onExit } = setup({ themeId: 'roda' })
+    await readyCols()
+    frame()
+    tap(PAD.RIGHT)
+    tap(PAD.A)
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledWith(2))
+    await flush()
+
+    tap(PAD.A)
+    tap(PAD.RIGHT)
+    tap(PAD.B)
+    tap(PAD.DOWN)
+    await flush()
+
+    expect(app.LaunchGame).toHaveBeenCalledTimes(1)
+    expect(onExit).not.toHaveBeenCalled()
+    expect(colsRoot()).toHaveAttribute('data-focus', '1')
+    emit('session:changed', session({ gameId: 2, state: 'ended', endedAt: '2026-11-15T10:10:00.000Z' }))
+    tap(PAD.RIGHT)
+    expect(colsRoot()).toHaveAttribute('data-focus', '2')
+  })
+
+  it('TDK-033/Select segurado bloqueia A, B, Y e ↑/↓', async () => {
+    bigLibrary(40)
+    useCols()
+    const { onExit } = setup({ themeId: 'roda' })
+    await readyCols()
+    frame()
+    padPressed.add(SELECT)
+    frame()
+
+    tap(PAD.A)
+    tap(PAD.B)
+    tap(PAD.Y)
+    tap(PAD.DOWN)
+    await flush()
+
+    expect(app.LaunchGame).not.toHaveBeenCalled()
+    expect(onExit).not.toHaveBeenCalled()
+    expect(colsRoot()).toHaveAttribute('data-focus', '0')
+    padPressed.delete(SELECT)
+    frame()
+    tap(PAD.DOWN)
+    expect(colsRoot()).toHaveAttribute('data-focus', '5')
+  })
+
+  it('TDK-033/depois de Select+B o foco volta ao jogo que rodava com zona games', async () => {
+    bigLibrary(40)
+    useCols()
+    setup({ themeId: 'roda' })
+    await readyCols()
+    key('ArrowLeft') // column 0: the platforms column takes the selection
+    expect(colsRoot()).toHaveAttribute('data-zone', 'platforms')
+    key('d') // the panel opens from any zone
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'details'))
+    key('Enter')
+    await waitFor(() => expect(app.LaunchGame).toHaveBeenCalledWith(1))
+    await flush()
+
+    emit('game:closedByHotkey', { gameId: 1 })
+
+    await waitFor(() => expect(app.BringToFront).toHaveBeenCalled())
+    await waitFor(() => expect(colsRoot()).toHaveAttribute('data-screen', 'browse'))
+    expect(colsRoot()).toHaveAttribute('data-zone', 'games')
+    expect(colsRoot()).toHaveAttribute('data-focus', '0')
+    key('ArrowRight')
+    expect(colsRoot()).toHaveAttribute('data-focus', '1') // the entry is free again
   })
 })

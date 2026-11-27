@@ -12,8 +12,11 @@ import { shouldPrefetch, shouldPrefetchGrid, useFocusedData, useTabGames } from 
 import { useViewport } from './useViewport'
 import { useBigBoxInput } from './useBigBoxInput'
 import type { InputAction } from './useBigBoxInput'
-import { buildTabs, buildViewModel, gridWindow, sessionMark, stripWindow } from './viewModel'
-import type { BigBoxThemeId, BigBoxTab } from './viewModel'
+import { buildTabs, buildViewModel, effectiveRows, gridWindowAt, sessionMark, stripWindow, GRID_MAX_NODES } from './viewModel'
+import type { BigBoxThemeId, BigBoxTab, LibraryView } from './viewModel'
+import { desktopLabels } from './desktopLabels'
+import { useGridStart } from './useGridStart'
+import type { SortKey } from '../lib/filters'
 import { Faixa } from './themes/faixa/Faixa'
 import { bringToFront, enterBigBox } from '../lib/bigbox'
 import { launchGame, launchGameUntracked } from '../lib/games'
@@ -25,6 +28,8 @@ export type BigBoxProps = {
   initialPlatformId: number | null
   initialGameId: number | null
   themeId: BigBoxThemeId
+  librarySort: SortKey // order of the normal window, used by themes with sort 'inherit' [BBX-067]
+  libraryView: LibraryView // view of the normal window; read only [BBX-068]
   onExit: () => void
 }
 
@@ -49,7 +54,7 @@ export function BigBox(p: BigBoxProps): JSX.Element {
   if (catalog.isPending) {
     return <div data-bigbox-theme={theme.id} className="relative h-full w-full overflow-hidden bg-bb-bg" />
   }
-  const { tabs, initial } = buildTabs(catalog.data, p.initialPlatformId, theme.tabs)
+  const { tabs, initial } = buildTabs(catalog.data, p.initialPlatformId, theme.tabs, theme.layout === 'columns')
   return <BigBoxShell {...p} tabs={tabs} initialTab={initial} />
 }
 
@@ -60,7 +65,11 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
 
   const [nav, setNav] = useState<NavState>(() => ({ ...initialNav, tab: initialTab }))
   const navRef = useRef(nav)
-  const ctxRef = useRef<NavCtx>({ tabs: tabs.length, total: 0, loaded: 0, galleryCount: 0, focusedGameId: null, videoVisible: false, columns: theme.columns, axis: theme.axis, layout: 'screens' })
+  const ctxRef = useRef<NavCtx>({
+    tabs: tabs.length, total: 0, loaded: 0, galleryCount: 0, focusedGameId: null, videoVisible: false,
+    columns: theme.columns, axis: theme.axis, layout: theme.layout ?? 'screens',
+  })
+  const recenterRef = useRef<() => void>(() => {})
   const effectRef = useRef<(e: NavEffect) => void>(() => {})
   const gamesRef = useRef<Array<{ id: number }>>([])
   const pendingRef = useRef(false)
@@ -71,6 +80,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   const dispatchNav = useCallback((a: NavAction) => {
     let action = a
     if (action.type === 'gameClosed') {
+      recenterRef.current()
       const closedId = action.gameId
       const idx = gamesRef.current.findIndex((g) => g.id === closedId)
       action = { ...action, indexInTab: idx >= 0 ? idx : null }
@@ -84,21 +94,33 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   const tabDef = tabs[nav.tab] ?? tabs[0]
   const viewport = useViewport()
   const isGrid = theme.axis === 'grid'
-  const columns = theme.columns
-  const rows = isGrid ? Math.max(theme.gridRows?.(viewport) ?? 1, 1) : 1
+  const layout = theme.layout ?? 'screens'
+  const view = p.libraryView
+  const columns = isGrid ? Math.max(theme.gridColumns?.(viewport, view) ?? theme.columns, 1) : theme.columns
+  // Themes that predate the view receive it only when it is not the default grid.
+  const rawRows = theme.gridRows ? (view === 'grid' ? theme.gridRows(viewport) : theme.gridRows(viewport, view)) : 1
+  const maxNodes = theme.maxNodes ?? GRID_MAX_NODES
+  const rows = isGrid ? effectiveRows(rawRows, columns, maxNodes) : 1
   const listCapacity = theme.listCapacity(viewport)
-  // A grid theme shows R whole rows of C cards; a strip theme shows V whole covers.
+  // A grid theme shows R' whole rows of C cards; a strip theme shows V whole covers.
   const capacity = isGrid ? columns * rows : listCapacity
-  const sort = theme.sort === 'inherit' ? 'title' : theme.sort // T08 reads the order of the normal window
-  const tabGames = useTabGames(tabDef, sort, isGrid ? { kind: 'grid', columns, rows } : { kind: 'strip', capacity })
+  const inherited = theme.sort === 'inherit'
+  const sort: SortKey = theme.sort === 'inherit' ? p.librarySort : theme.sort
+  const tabGames = useTabGames(tabDef, sort, isGrid ? { kind: 'grid', columns, rows, maxNodes } : { kind: 'strip', capacity })
   const games = tabGames.games
   gamesRef.current = games
   const { loaded, total, exhausted, error: pageError, isPending, isFetchingNextPage, fetchNextPage } = tabGames
   const needMore = useCallback(
     (focus: number) =>
-      isGrid ? shouldPrefetchGrid(loaded, total, focus, columns, rows, exhausted) : shouldPrefetch(loaded, total, focus, capacity, exhausted),
-    [isGrid, loaded, total, columns, rows, capacity, exhausted],
+      isGrid
+        ? shouldPrefetchGrid(loaded, total, focus, columns, rows, exhausted, maxNodes)
+        : shouldPrefetch(loaded, total, focus, capacity, exhausted),
+    [isGrid, loaded, total, columns, rows, capacity, exhausted, maxNodes],
   )
+  const { startRow, recenter } = useGridStart({
+    mode: theme.gridScroll ?? 'focusTop', focus: nav.focus, total, columns, rows, tabKey: tabDef.key,
+  })
+  recenterRef.current = recenter
 
   // Entry [BBX-027]: the first tab shows "Carregando jogos…" until the game of the normal window has its strip complete.
   const [entryDone, setEntryDone] = useState(false)
@@ -112,9 +134,10 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
       if (!isFetchingNextPage) fetchNextPage()
       return
     }
+    recenter()
     dispatchNav({ type: 'listLoaded', initialIndex: idx >= 0 ? idx : null })
     setEntryDone(true)
-  }, [entering, isPending, games, initialGameId, pageError, needMore, isFetchingNextPage, fetchNextPage, dispatchNav])
+  }, [entering, isPending, games, initialGameId, pageError, needMore, isFetchingNextPage, fetchNextPage, dispatchNav, recenter])
 
   // Read ahead of the focus: one page at a time, retried after a failure only when the focus moves [BBX-007].
   const lastAsk = useRef<string | null>(null)
@@ -130,7 +153,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   const focusedId = loading ? null : (games[nav.focus]?.id ?? null)
   const data = useFocusedData(focusedId)
 
-  const win = isGrid ? gridWindow(total, nav.focus, columns, rows) : stripWindow(total, nav.focus, capacity, theme.anchor)
+  const win = isGrid ? gridWindowAt(total, startRow, columns, rows) : stripWindow(total, nav.focus, capacity, theme.anchor)
   const coverKey = loading ? '' : games.slice(win.start, Math.min(win.end, loaded)).map((g) => g.id).join(',')
   const covers = useCardImages(useMemo(() => (coverKey === '' ? [] : coverKey.split(',').map(Number)), [coverKey]))
   const gallery = galleryOf(data.media)
@@ -144,9 +167,14 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   const now = useMinuteClock()
   const model = buildViewModel({
     axis: theme.axis,
-    columns: theme.columns,
+    columns,
     anchor: theme.anchor,
     sort,
+    sortInherited: inherited,
+    layout,
+    zone: nav.zone,
+    view,
+    startRow: isGrid ? startRow : undefined,
     now,
     timeToBeat: ttb.data,
     tabsLabel: theme.tabs === 'collections' ? 'Aba' : 'Plataforma',
@@ -177,9 +205,9 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
     galleryCount: gallery.length,
     focusedGameId: focusedId,
     videoVisible: model.videoVisible,
-    columns: theme.columns,
+    columns,
     axis: theme.axis,
-    layout: 'screens',
+    layout,
   }
 
   // The gallery of the focused game can shrink while the details are open [BBX-032, BBX-034].
@@ -242,9 +270,29 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   })
 
   const Details = theme.Details ?? BigBoxDetails
+  const columnsLayout = layout === 'columns'
+  const detail = data.detail
+  const extra =
+    columnsLayout && detail
+      ? {
+          active: nav.screen === 'details',
+          platformIconUrl: tabs.find((t) => t.key === `p:${detail.platformId}`)?.iconUrl ?? null,
+          coverUrl: covers[detail.id]?.url ?? null,
+          preview: {
+            gameId: detail.id,
+            videoUrl: model.focused?.videoUrl ?? null,
+            active: nav.screen === 'browse' && !nav.suspended,
+            failed: nav.videoFailed === detail.id,
+            sound: nav.sound,
+            onVideoError: (gameId: number) => dispatchNav({ type: 'videoFailed', gameId }),
+          },
+          labels: desktopLabels(detail),
+        }
+      : {}
   const details =
-    nav.screen === 'details' && data.detail ? (
+    (nav.screen === 'details' || columnsLayout) && data.detail ? (
       <Details
+        {...extra}
         game={data.detail}
         media={data.media}
         session={sessionMark(data.session, data.detail.id)}
@@ -288,6 +336,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
             }}
             onDetails={() => dispatchNav({ type: 'details' })}
             onVideoError={(gameId) => dispatchNav({ type: 'videoFailed', gameId })}
+            {...(columnsLayout ? { onTab: (index: number) => dispatchNav({ type: 'tabSet', index }) } : {})}
           />
         </div>
         <Footer hints={model.hints} />

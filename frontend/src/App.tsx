@@ -398,6 +398,8 @@ export default function App() {
           initialPlatformId={platformIds?.length === 1 ? platformIds[0] : null}
           initialGameId={focusedId}
           themeId={bbTheme}
+          librarySort={query.sort}
+          libraryView={view}
           onExit={leaveBigBox}
         />
       </main>

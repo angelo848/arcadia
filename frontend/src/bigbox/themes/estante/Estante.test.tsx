@@ -474,7 +474,17 @@ function setupShell() {
       <Events>{children}</Events>
     </QueryClientProvider>
   )
-  const r = render(<BigBox initialPlatformId={null} initialGameId={null} themeId="estante" onExit={onExit} />, { wrapper })
+  const r = render(
+    <BigBox
+      initialPlatformId={null}
+      initialGameId={null}
+      themeId="estante"
+      librarySort="title"
+      libraryView="grid"
+      onExit={onExit}
+    />,
+    { wrapper },
+  )
   return { onExit, ...r }
 }
 async function readyShell() {
