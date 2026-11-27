@@ -17,7 +17,27 @@ export function mapDirection(axis: Axis, dir: Dir): 'prev' | 'next' | 'up' | 'do
 }
 
 const BTN = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, SELECT: 8, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 }
-const pressedBtn = (pad: Gamepad, i: number) => !!pad.buttons[i]?.pressed
+type ReadPad = { buttons: { pressed: boolean }[]; axes: number[] }
+const pressedBtn = (pad: ReadPad, i: number) => !!pad.buttons[i]?.pressed
+
+// readPads merges every connected gamepad into one reading: a button is pressed when any pad presses it and each axis
+// takes the value of largest magnitude. With one pad it is that pad. This matters when a physical pad and a virtual one
+// (for example the Sunshine pad of a Moonlight stream) are connected at the same time.
+export function readPads(pads: ArrayLike<Gamepad | null> | undefined): ReadPad | null {
+  const connected = Array.from(pads ?? []).filter((p): p is Gamepad => !!p && p.connected)
+  if (connected.length === 0) return null
+  const buttons: { pressed: boolean }[] = []
+  const axes: number[] = []
+  for (const p of connected) {
+    p.buttons.forEach((b, i) => {
+      buttons[i] = { pressed: !!buttons[i]?.pressed || !!b?.pressed }
+    })
+    p.axes.forEach((v, i) => {
+      if (axes[i] === undefined || Math.abs(v) > Math.abs(axes[i])) axes[i] = v
+    })
+  }
+  return { buttons, axes }
+}
 
 type Opts = { enabled: boolean; axis: Axis; screen: 'browse' | 'details'; onAction: (type: InputAction) => void }
 
@@ -85,7 +105,7 @@ export function useBigBoxInput(o: Opts): void {
 
     const tick = (t: number) => {
       raf = window.requestAnimationFrame(tick)
-      const pad = Array.from(navigator.getGamepads?.() ?? []).find((p) => p && p.connected)
+      const pad = readPads(navigator.getGamepads?.())
       if (!pad) {
         held.clear()
         return

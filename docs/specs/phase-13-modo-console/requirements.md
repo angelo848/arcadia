@@ -568,6 +568,7 @@ Box.
 · verificação: teste do reducer e de componente (eventos de janela e de sessão simulados).
 
 ### BBX-019 — Select segurado bloqueia B e Y na UI
+· alterado em 2026-11-27 (fix rápido, vários controles): a UI lê todos os controles conectados e soma a entrada (botão apertado em qualquer um; eixo de maior valor absoluto), em vez de só o primeiro; o Select de um controle bloqueia B e Y de qualquer outro.
 · alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-057): bloqueia também A (Select + A é o Big Box do agente) e ↑/↓ do
 direcional (volume do agente).
 Dado o botão Select/Back (botão 8 do mapeamento padrão) pressionado, então a UI ignora B e Y (inclusive a borda de subida que

@@ -333,6 +333,59 @@ describe('useBigBoxInput gamepad', () => {
 })
 
 // alterado em 2026-11-22 (fase 15): eixo 'grid' (BBX-048).
+// fix rápido 2026-11-27 (vários controles): com mais de um controle conectado (por exemplo um físico parado e o
+// virtual do Sunshine), a entrada de qualquer um deles vale.
+describe('useBigBoxInput vários controles', () => {
+  function twoPads(second: { pressed?: number[]; axes?: number[] }) {
+    getGamepads.mockImplementation(() => [
+      makePad(), // first pad: idle (uses the shared pressed/axes, which stay empty)
+      {
+        connected: true,
+        mapping: 'standard',
+        buttons: Array.from({ length: 17 }, (_, i) => ({
+          pressed: (second.pressed ?? []).includes(i), touched: false, value: 0,
+        })),
+        axes: second.axes ?? [0, 0, 0, 0],
+      } as unknown as Gamepad,
+    ])
+  }
+
+  it('BBX-019/vários controles: o segundo aperta A e a ação sai mesmo com o primeiro parado', () => {
+    const { calls } = setup()
+    twoPads({ pressed: [A] })
+    advance(32)
+    expect(calls).toEqual(['accept'])
+  })
+
+  it('BBX-006/vários controles: direcional e analógico do segundo controle valem', () => {
+    const { calls } = setup()
+    twoPads({ pressed: [RIGHT] })
+    advance(16)
+    expect(calls).toEqual(['next'])
+    twoPads({ axes: [-0.9, 0, 0, 0] })
+    advance(32)
+    expect(calls).toContain('prev')
+  })
+
+  it('BBX-019/vários controles: Select de um controle bloqueia B de outro (a soma é um controle só)', () => {
+    const { calls } = setup()
+    pressed.add(SELECT) // first pad holds Select
+    twoPads({ pressed: [B] })
+    advance(32)
+    expect(calls).toEqual([])
+  })
+
+  it('BBX-019/vários controles: controle desconectado na lista é ignorado', () => {
+    const { calls } = setup()
+    getGamepads.mockImplementation(() => [
+      null,
+      { connected: false, mapping: 'standard', buttons: [{ pressed: true }], axes: [] } as unknown as Gamepad,
+    ])
+    advance(64)
+    expect(calls).toEqual([])
+  })
+})
+
 describe('useBigBoxInput eixo grid', () => {
   it('BBX-048/grid: direcional emite prev/next para ←/→ e up/down para ↑/↓ em Navegar', () => {
     const { calls } = setup({ axis: 'grid' })
