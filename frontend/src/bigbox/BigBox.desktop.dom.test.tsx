@@ -55,7 +55,7 @@ function install() {
     TimeToBeatGet: vi.fn(() => Promise.resolve(null)),
   }
   const proxy = new Proxy(app, {
-    get: (t, name: string) => (typeof name === 'string' ? (...a: unknown[]) => (t[name] ? t[name](...a) : Promise.resolve(undefined)) : undefined),
+    get: (t, name: string) => (typeof name === 'string' ? (...a: unknown[]) => (t[name] ? (t[name] as unknown as (...x: unknown[]) => unknown)(...a) : Promise.resolve(undefined)) : undefined),
   })
   const w = window as unknown as { go?: unknown; runtime?: unknown }
   w.go = { main: { App: proxy } }

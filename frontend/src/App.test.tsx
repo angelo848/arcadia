@@ -2635,18 +2635,19 @@ describe('App: Big Box novo (T41)', () => {
   })
 
   // alterado em 2026-11-22 (fase 15): estado final de BBX-046 (faixa, mosaico, estante disponíveis; roda "em breve")
-  it('BBX-023/BBX-046/o seletor lista Faixa, Mosaico, Estante e "Roda (em breve)"; só Roda desativada', async () => {
+  // alterado em 2026-11-27 (fase 17): BBX-060 acrescenta Desktop antes de Roda (5 opções)
+  it('BBX-023/BBX-046/BBX-060/o seletor lista Faixa, Mosaico, Estante, Desktop e "Roda (em breve)"; só Roda desativada', async () => {
     bigBoxLibrary()
     renderApp()
     await findRow('Hollow Knight')
 
     const options = within(themeSelect()).getAllByRole('option') as HTMLOptionElement[]
 
-    expect(options).toHaveLength(4)
-    expect(options.map((o) => o.textContent)).toEqual(['Faixa', 'Mosaico', 'Estante', 'Roda (em breve)'])
-    expect(options.map((o) => o.value)).toEqual(['faixa', 'mosaico', 'estante', 'roda'])
-    for (const i of [0, 1, 2]) expect(options[i]).toBeEnabled()
-    expect(options[3]).toBeDisabled()
+    expect(options).toHaveLength(5)
+    expect(options.map((o) => o.textContent)).toEqual(['Faixa', 'Mosaico', 'Estante', 'Desktop', 'Roda (em breve)'])
+    expect(options.map((o) => o.value)).toEqual(['faixa', 'mosaico', 'estante', 'desktop', 'roda'])
+    for (const i of [0, 1, 2, 3]) expect(options[i]).toBeEnabled()
+    expect(options[4]).toBeDisabled()
     expect(themeSelect()).toHaveValue('faixa')
   })
 
@@ -2678,6 +2679,19 @@ describe('App: Big Box novo (T41)', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(bigBoxRoot()).toBeNull())
     expect(themeSelect()).toHaveValue('mosaico')
+  })
+
+  it('BBX-060/escolher "Desktop" grava desktop em arcadia.bigBoxTheme e a próxima entrada monta data-bigbox-theme="desktop"', async () => {
+    bigBoxLibrary()
+    renderApp()
+    await findRow('Hollow Knight')
+
+    fireEvent.change(themeSelect(), { target: { value: 'desktop' } })
+
+    expect(localStorage.getItem(THEME_KEY)).toBe('desktop')
+    expect(themeSelect()).toHaveValue('desktop')
+    await enterBigBoxByButton()
+    expect(bigBoxRoot()).toHaveAttribute('data-bigbox-theme', 'desktop')
   })
 
   it('BBX-023/tema indisponível salvo vira Faixa', async () => {

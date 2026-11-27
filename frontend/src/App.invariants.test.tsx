@@ -953,6 +953,25 @@ describe('invariantes da UI', () => {
     expect(calls('LaunchGameUntracked')).toHaveLength(0)
   })
 
+  it('TDK-032/a navegação do tema Desktop (zonas, abas, painel, som) não chama PauseSession, ResumeSession, ToggleSession nem fecha jogo', async () => {
+    localStorage.setItem('arcadia.bigBoxTheme', 'desktop')
+    renderApp()
+    await findCard('Hades')
+    fireEvent.keyDown(window, { key: 'F11' })
+    await waitFor(() => expect(document.querySelector('[data-bigbox-theme="desktop"]')).not.toBeNull())
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'PageDown', 'PageUp', 'd', 'ArrowDown', 'ArrowUp', 'm', 'Escape']) {
+      fireEvent.keyDown(window, { key })
+      await flush()
+    }
+    if (document.querySelector('[data-bigbox-theme]') !== null) {
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => expect(document.querySelector('[data-bigbox-theme]')).toBeNull())
+    }
+    for (const n of forbiddenSession) expect(calls(n), n).toHaveLength(0)
+    expect(calledNames().filter((n) => closeLike.test(n)), 'ação de fechar jogo ou encerrar sessão').toEqual([])
+    localStorage.removeItem('arcadia.bigBoxTheme')
+  })
+
   it('CON-024/LaunchGame e LaunchGameUntracked uma vez por ação, sem repetição por tecla mantida', async () => {
     renderApp()
     await findCard('Hades')

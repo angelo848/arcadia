@@ -211,7 +211,7 @@ describe('DesktopDetails: foco e rolagem', () => {
     act(() => { rerender(<DesktopDetails {...props({ scrollSignal: -1 })} />) })
     const last = scrollBy.mock.calls.at(-1)?.[0] as { top?: number } | undefined
     expect(last?.top === undefined || last.top < 0).toBe(true)
-    expect(container.querySelectorAll('[data-focused="true"]')).toEqual([screen.getByRole('button', { name: 'Jogar' })])
+    expect(Array.from(container.querySelectorAll('[data-focused="true"]'))).toEqual([screen.getByRole('button', { name: 'Jogar' })])
     scrollBy.mockClear()
     act(() => { rerender(<DesktopDetails {...props({ scrollSignal: 5, active: false })} />) })
     expect(scrollBy).not.toHaveBeenCalled()

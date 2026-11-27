@@ -5,6 +5,9 @@ import { mosaicoCapacity } from './mosaico/capacity'
 import { ESTANTE_COLUMNS, estanteRows } from './estante/capacity'
 import { Estante } from './estante/Estante'
 import { EstanteDetails } from './estante/EstanteDetails'
+import { Desktop } from './desktop/Desktop'
+import { DesktopDetails } from './desktop/DesktopDetails'
+import { DESKTOP_MAX_NODES, desktopGrid } from '../desktopLayout'
 import { STRIP_FALLBACK_CAPACITY } from '../viewModel'
 import type { BigBoxThemeDef, BigBoxThemeProps } from './types'
 
@@ -26,6 +29,16 @@ export const BIGBOX_THEMES: BigBoxThemeDef[] = [
     listCapacity: (vp) => ESTANTE_COLUMNS * estanteRows(vp), gridRows: estanteRows,
     backdrop: 'cover', videoSlot: 'background', tabs: 'collections', sort: 'lastPlayed', timeToBeatInBrowse: false,
     Component: Estante, Details: EstanteDetails,
+  },
+  {
+    id: 'desktop', name: 'Desktop', available: true, axis: 'grid', columns: 1, anchor: 0, layout: 'columns',
+    gridColumns: (vp, view) => desktopGrid(vp, view).columns, gridRows: (vp, view) => desktopGrid(vp, view ?? 'grid').rows,
+    listCapacity: (vp) => {
+      const g = desktopGrid(vp, 'grid')
+      return g.columns * g.rows
+    },
+    maxNodes: DESKTOP_MAX_NODES, gridScroll: 'edges', backdrop: 'plain', videoSlot: 'panel', tabs: 'platforms',
+    sort: 'inherit', timeToBeatInBrowse: true, Component: Desktop, Details: DesktopDetails,
   },
   {
     id: 'roda', name: 'Roda', available: false, axis: 'vertical', columns: 1, anchor: 2,

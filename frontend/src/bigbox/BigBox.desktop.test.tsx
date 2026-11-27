@@ -187,7 +187,10 @@ async function ready() {
   frame() // primes the edge detector of the gamepad
 }
 const hints = () => {
-  const ul = screen.getAllByText('LB/RB')[0].closest('ul') as HTMLElement
+  // the shell's footer: the <ul> of hints (li > two spans), outside the platform nav and the details panel
+  const ul = Array.from(document.querySelectorAll('ul')).find(
+    (u) => !u.closest('nav, aside') && u.querySelector(':scope > li > span + span'),
+  ) as HTMLElement
   return Array.from(ul.querySelectorAll('li')).map((li) => Array.from(li.querySelectorAll('span')).map((s) => s.textContent).join(' '))
 }
 const GRID = () => desktopGrid({ width: 1920, height: 1080 }, 'grid')
@@ -220,7 +223,7 @@ describe('BigBox + Desktop: zonas e foco', () => {
     expect(within(panel()).getByRole('heading', { name: title(5) })).toBeInTheDocument()
     for (let i = 0; i < 12; i++) tap(PAD.LEFT)
     expect(zoneMarks()).toEqual({ games: 0, platforms: 1, panel: 0 })
-    expect(within(panel()).getByRole('heading', { name: /Jogo/ })).toBeInTheDocument()
+    expect(await within(panel()).findByRole('heading', { name: /Jogo/ })).toBeInTheDocument()
     expect(marks().filter((m) => !panel().contains(m))).toHaveLength(1)
   })
 
@@ -236,11 +239,12 @@ describe('BigBox + Desktop: zonas e foco', () => {
     await ready()
     tap(PAD.RB)
     await waitFor(() => expect(nav().querySelector('[aria-current="true"]')).toHaveTextContent('Windows'))
-    expect(zoneMarks().games).toBe(1)
+    await waitFor(() => expect(zoneMarks().games).toBe(1))
     for (let i = 0; i < 12; i++) tap(PAD.LEFT)
     expect(zoneMarks().platforms).toBe(1)
     tap(PAD.RB)
     await waitFor(() => expect(nav().querySelector('[aria-current="true"]')).toHaveTextContent('PlayStation 2'))
+    await waitFor(() => expect(options().length).toBeGreaterThan(0))
     expect(zoneMarks().platforms).toBe(1) // the zone did not change
     tap(PAD.X)
     const play = await within(panel()).findByRole('button', { name: 'Jogar' })
@@ -554,9 +558,14 @@ describe('BigBox + Desktop: suspensão, Select e retorno do jogo', () => {
     const { columns, rows } = GRID()
     setup()
     await ready()
-    const target = 40 * columns + 1 // first game of row 40
-    // walk down to row 40, then open the panel and launch from there
-    for (let r = 0; r < 40; r++) key('ArrowDown')
+    const target = 30 * columns + 1 // first game of row 30 (200 games = 34 rows of 6)
+    // walk down to row 30, then open the panel and launch from there
+    for (let r = 0; r < 30; r++) {
+      key('ArrowDown')
+      // wait for each step: the prefetch of the next page has to land before the focus can go further
+      await waitFor(() => expect(focusedOption()).toHaveAttribute('aria-label', title((r + 1) * columns + 1)))
+    }
+    await waitFor(() => expect(focusedOption()).toBeDefined())
     expect(focusedOption()).toHaveAttribute('aria-label', title(target))
     tap(PAD.X)
     await within(panel()).findByRole('button', { name: 'Jogar' })

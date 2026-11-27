@@ -114,6 +114,22 @@ describe('uiPrefs: tema do Big Box', () => {
     expect(w.data.get('arcadia.bigBoxTheme')).toBe('estante')
   })
 
+  // alterado em 2026-11-27 (fase 17)
+  it('BBX-060/readBigBoxTheme lê "desktop" e writeBigBoxTheme o grava; ausente, desconhecido e "roda" viram faixa', () => {
+    const s = memoryStorage()
+    s.data.set('arcadia.bigBoxTheme', 'desktop')
+    expect(readBigBoxTheme(s)).toBe('desktop')
+    const w = memoryStorage()
+    writeBigBoxTheme('desktop', w)
+    expect(w.data.get('arcadia.bigBoxTheme')).toBe('desktop')
+    expect(readBigBoxTheme(memoryStorage())).toBe('faixa')
+    for (const v of ['', 'xyz', 'roda']) {
+      const x = memoryStorage()
+      x.data.set('arcadia.bigBoxTheme', v)
+      expect(readBigBoxTheme(x), v).toBe('faixa')
+    }
+  })
+
   it('BBX-023/a escolha fica em localStorage na chave arcadia.bigBoxTheme', () => {
     const w = memoryStorage()
     writeBigBoxTheme('faixa', w)
