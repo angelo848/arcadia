@@ -5,6 +5,7 @@ export type DetailsButton = 'play' | 'playUntracked'
 
 export type NavState = {
   screen: 'browse' | 'details'
+  zone: 'games' | 'platforms'
   tab: number
   focus: number
   detailsFocus: DetailsFocus
@@ -25,6 +26,8 @@ export type NavCtx = {
   focusedGameId: number | null
   videoVisible: boolean
   columns: number // 1 on the strip themes [BBX-048]
+  axis: 'horizontal' | 'vertical' | 'grid'
+  layout: 'screens' | 'columns'
 }
 
 export type NavAction =
@@ -46,6 +49,7 @@ export type NavAction =
   | { type: 'listLoaded'; initialIndex: number | null }
   | { type: 'videoFailed'; gameId: number }
   | { type: 'galleryChanged'; count: number }
+  | { type: 'tabSet'; index: number }
 export type NavEffect =
   | { kind: 'launch'; gameId: number }
   | { kind: 'launchUntracked'; gameId: number }
@@ -55,6 +59,7 @@ export type NavEffect =
 
 export const initialNav: NavState = {
   screen: 'browse',
+  zone: 'games',
   tab: 0,
   focus: 0,
   detailsFocus: 'play',
@@ -68,8 +73,81 @@ export const initialNav: NavState = {
 }
 
 const inputTypes = new Set<NavAction['type']>([
-  'prev', 'next', 'up', 'down', 'tabPrev', 'tabNext', 'accept', 'details', 'back', 'toggleSound',
+  'prev', 'next', 'up', 'down', 'tabPrev', 'tabNext', 'accept', 'details', 'back', 'toggleSound', 'tabSet',
 ])
+
+// Reducer branch of the `columns` layout [TDK-012..TDK-018]; returns null for actions handled as in `screens`.
+function columnsNav(s: NavState, a: NavAction, c: NavCtx): { state: NavState; effects: NavEffect[] } | null {
+  const none = (state: NavState = s) => ({ state, effects: [] as NavEffect[] })
+  const C = Math.max(c.columns, 1)
+  const M = Math.max(Math.min(c.total, c.loaded) - 1, 0)
+  const hasGames = Math.min(c.total, c.loaded) > 0
+
+  if (s.screen === 'details') {
+    switch (a.type) {
+      case 'up':
+        if (s.detailsFocus === 'playUntracked') return none({ ...s, detailsFocus: 'play', detailsButton: 'play' })
+        if (s.detailsFocus === 'play' && c.galleryCount > 0) return none({ ...s, detailsFocus: 'gallery' })
+        return none()
+      case 'down':
+        if (s.detailsFocus === 'gallery') return none({ ...s, detailsFocus: 'play', detailsButton: 'play' })
+        if (s.detailsFocus === 'play') return none({ ...s, detailsFocus: 'playUntracked', detailsButton: 'playUntracked' })
+        return none()
+      case 'prev':
+      case 'next': {
+        if (s.detailsFocus === 'gallery') return null
+        if (a.type === 'next') return none()
+        return none({ ...s, screen: 'browse', zone: 'games' })
+      }
+      case 'back':
+        return none({ ...s, screen: 'browse', zone: 'games' })
+      default:
+        return null
+    }
+  }
+
+  if (s.zone === 'platforms') {
+    switch (a.type) {
+      case 'up':
+      case 'down': {
+        const tab = s.tab + (a.type === 'down' ? 1 : -1)
+        if (tab < 0 || tab >= c.tabs) return none()
+        return none({ ...s, tab, focus: 0, videoFailed: null })
+      }
+      case 'next':
+      case 'accept':
+      case 'back':
+        return none({ ...s, zone: 'games' })
+      case 'prev':
+        return none()
+      default:
+        return null
+    }
+  }
+
+  switch (a.type) {
+    case 'prev': {
+      if (hasGames && s.focus % C > 0) return none({ ...s, focus: s.focus - 1, videoFailed: null })
+      return none({ ...s, zone: 'platforms' })
+    }
+    case 'next': {
+      if (hasGames && s.focus % C < C - 1 && s.focus < M) return none({ ...s, focus: s.focus + 1, videoFailed: null })
+      if (!hasGames || c.focusedGameId === null) return none()
+      return none({ ...s, screen: 'details', detailsFocus: 'play', detailsButton: 'play', gallery: 0 })
+    }
+    case 'down': {
+      const f = s.focus
+      let focus = f
+      if (f + C <= M) focus = f + C
+      else if (Math.floor(f / C) < Math.floor(M / C)) focus = M
+      return none({ ...s, focus, videoFailed: null })
+    }
+    case 'up':
+      return none(s.focus - C >= 0 ? { ...s, focus: s.focus - C, videoFailed: null } : s)
+    default:
+      return null
+  }
+}
 
 export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavState; effects: NavEffect[] } {
   const none = (state: NavState = s) => ({ state, effects: [] as NavEffect[] })
@@ -78,7 +156,16 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     return none()
   }
 
+  if (c.layout === 'columns') {
+    const r = columnsNav(s, a, c)
+    if (r) return r
+  }
+
   switch (a.type) {
+    case 'tabSet': {
+      if (a.index < 0 || a.index >= c.tabs || a.index === s.tab) return none()
+      return none({ ...s, screen: 'browse', tab: a.index, focus: 0, videoFailed: null })
+    }
     case 'prev':
     case 'next': {
       const dir = a.type === 'next' ? 1 : -1
@@ -98,7 +185,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     case 'down': {
       if (s.screen !== 'details') {
         const cols = c.columns
-        if (cols <= 1) return none()
+        if (c.axis !== 'grid' || cols <= 1) return none()
         // Grid [BBX-048]: one row down/up; a partial last row is reached with the last item.
         const max = Math.max(Math.min(c.total, c.loaded) - 1, 0)
         const f = s.focus
@@ -168,6 +255,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
         state: {
           ...s,
           screen: 'browse',
+          zone: 'games',
           suspended: false,
           awaitingFocusAfterBlur: false,
           launchedGameId: null,
@@ -176,7 +264,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
         effects: [{ kind: 'bringToFront' }, { kind: 'enterBigBox' }],
       }
     case 'listLoaded':
-      return none({ ...s, focus: a.initialIndex ?? 0 })
+      return none({ ...s, zone: 'games', focus: a.initialIndex ?? 0 })
     case 'videoFailed':
       return none({ ...s, videoFailed: a.gameId })
   }

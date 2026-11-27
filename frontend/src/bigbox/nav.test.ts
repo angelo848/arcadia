@@ -10,6 +10,8 @@ const ctx = (o: Partial<NavCtx> = {}): NavCtx => ({
   focusedGameId: 7,
   videoVisible: false,
   columns: 1, // alterado em 2026-11-22 (fase 15): NavCtx.columns (BBX-048)
+  axis: 'horizontal', // alterado em 2026-11-27 (fase 17): NavCtx.axis e NavCtx.layout (contrato §2)
+  layout: 'screens',
   ...o,
 })
 const st = (o: Partial<NavState> = {}): NavState => ({ ...initialNav, ...o })
@@ -220,7 +222,8 @@ describe('bigBoxNav', () => {
 
 // Grade 2D (fase 15, temas-v2 §3.1).
 describe('bigBoxNav grade', () => {
-  const grid = (total: number, loaded: number) => ctx({ columns: 5, total, loaded })
+  // alterado em 2026-11-27 (fase 17): a grade depende de axis = 'grid'
+  const grid = (total: number, loaded: number) => ctx({ columns: 5, total, loaded, axis: 'grid' })
 
   it.each([
     [23, 23, 2, 'down', 7],
@@ -272,5 +275,208 @@ describe('bigBoxNav grade', () => {
     const r = run(st({ focus: 2, videoFailed: 9 }), { type: 'down' }, grid(23, 23))
     expect(r.state.videoFailed).toBeNull()
     expect(r.effects).toEqual([])
+  })
+})
+
+// Fase 17 (contrato §2): zonas, layout columns e tabSet.
+describe('bigBoxNav layout columns', () => {
+  const cc = (o: Partial<NavCtx> = {}) =>
+    ctx({ columns: 6, total: 20, loaded: 20, tabs: 4, galleryCount: 3, layout: 'columns', axis: 'grid', ...o })
+  const f = (focus: number, o: Partial<NavState> = {}) => st({ focus, ...o })
+  const det = (o: Partial<NavState> = {}) => st({ screen: 'details', ...o })
+  const pf = (o: Partial<NavState> = {}) => st({ zone: 'platforms', ...o })
+
+  it('TDK-012/estado inicial tem zone games', () => {
+    expect(initialNav.zone).toBe('games')
+  })
+
+  it('TDK-012/listLoaded e gameClosed levam a zone games (a partir de platforms)', () => {
+    expect(run(pf(), { type: 'listLoaded', initialIndex: 2 }, cc()).state.zone).toBe('games')
+    expect(run(pf(), { type: 'gameClosed', gameId: 7, indexInTab: 2 }, cc()).state.zone).toBe('games')
+  })
+
+  it.each([
+    [0, 'prev', { zone: 'platforms', focus: 0 }],
+    [3, 'prev', { zone: 'games', focus: 2 }],
+    [4, 'next', { zone: 'games', focus: 5 }],
+    [5, 'next', { screen: 'details', detailsFocus: 'play', detailsButton: 'play', gallery: 0 }],
+    [19, 'next', { screen: 'details', detailsFocus: 'play' }],
+    [13, 'down', { focus: 19 }],
+    [14, 'down', { focus: 19 }],
+    [18, 'down', { focus: 18 }],
+    [8, 'up', { focus: 2 }],
+    [2, 'up', { focus: 2 }],
+  ] as const)('TDK-013/vetores de games com C=6: f %i %s', (focus, action, want) => {
+    expect(run(f(focus), { type: action }, cc()).state).toMatchObject(want)
+  })
+
+  it('TDK-013/T=0: prev leva a platforms e next não faz nada', () => {
+    const c = cc({ total: 0, loaded: 0, focusedGameId: null })
+    expect(run(f(0), { type: 'prev' }, c).state.zone).toBe('platforms')
+    const s = f(0)
+    expect(run(s, { type: 'next' }, c).state).toEqual(s)
+  })
+
+  it('TDK-013/nunca entra em jogo não lido (loaded < total: down e next param em M = loaded-1)', () => {
+    const c = cc({ total: 40, loaded: 15 })
+    expect(run(f(13), { type: 'next' }, c).state.focus).toBe(14)
+    expect(run(f(8), { type: 'down' }, c).state.focus).toBe(14)
+    expect(run(f(14), { type: 'down' }, c).state.focus).toBe(14)
+    expect(run(f(14), { type: 'next' }, c).state.focus).toBe(14)
+  })
+
+  it('TDK-013/next sem jogo em foco não vai a details', () => {
+    const s = f(5)
+    expect(run(s, { type: 'next' }, cc({ focusedGameId: null })).state).toEqual(s)
+  })
+
+  it('TDK-014/C=1, T=5: up/down/prev/next em 0/0/2/2 dão 0/1/platforms/details', () => {
+    const c = cc({ columns: 1, total: 5, loaded: 5 })
+    expect(run(f(0), { type: 'up' }, c).state.focus).toBe(0)
+    expect(run(f(0), { type: 'down' }, c).state.focus).toBe(1)
+    expect(run(f(2), { type: 'prev' }, c).state.zone).toBe('platforms')
+    expect(run(f(2), { type: 'next' }, c).state.screen).toBe('details')
+  })
+
+  it('TDK-015/platforms: up em tab 0 e down em tab 3 (tabs 4) ficam iguais', () => {
+    const a = pf({ tab: 0 })
+    expect(run(a, { type: 'up' }, cc()).state).toEqual(a)
+    const b = pf({ tab: 3 })
+    expect(run(b, { type: 'down' }, cc()).state).toEqual(b)
+  })
+
+  it('TDK-015/up e down trocam a aba com focus 0 e videoFailed null', () => {
+    expect(run(pf({ tab: 2, focus: 9, videoFailed: 7 }), { type: 'up' }, cc()).state)
+      .toMatchObject({ tab: 1, focus: 0, videoFailed: null, zone: 'platforms' })
+    expect(run(pf({ tab: 0, focus: 9, videoFailed: 7 }), { type: 'down' }, cc()).state)
+      .toMatchObject({ tab: 1, focus: 0, videoFailed: null, zone: 'platforms' })
+  })
+
+  it('TDK-015/next, accept e back levam a games sem effects (nem launch nem exit)', () => {
+    for (const type of ['next', 'accept', 'back'] as const) {
+      const r = run(pf({ focus: 3 }), { type }, cc())
+      expect(r.state).toMatchObject({ zone: 'games', screen: 'browse', focus: 3 })
+      expect(r.effects).toEqual([])
+    }
+  })
+
+  it('TDK-015/prev não faz nada', () => {
+    const s = pf({ focus: 3 })
+    const r = run(s, { type: 'prev' }, cc())
+    expect(r.state).toEqual(s)
+    expect(r.effects).toEqual([])
+  })
+
+  it('TDK-015/accept em platforms com aba vazia também volta a games', () => {
+    const c = cc({ total: 0, loaded: 0, focusedGameId: null })
+    const r = run(pf(), { type: 'accept' }, c)
+    expect(r.state.zone).toBe('games')
+    expect(r.effects).toEqual([])
+  })
+
+  it('TDK-016/tabPrev e tabNext são circulares, focus 0 e mantêm a zona (games e platforms)', () => {
+    for (const zone of ['games', 'platforms'] as const) {
+      expect(run(st({ zone, tab: 3, focus: 9 }), { type: 'tabNext' }, cc()).state).toMatchObject({ tab: 0, focus: 0, zone })
+      expect(run(st({ zone, tab: 0, focus: 9 }), { type: 'tabPrev' }, cc()).state).toMatchObject({ tab: 3, focus: 0, zone })
+    }
+  })
+
+  it('TDK-016/details (X) a partir de platforms com jogo em foco abre details com foco em play; sem jogo não faz nada', () => {
+    expect(run(pf({ focus: 4 }), { type: 'details' }, cc()).state)
+      .toMatchObject({ screen: 'details', detailsFocus: 'play', gallery: 0 })
+    const s = pf()
+    expect(run(s, { type: 'details' }, cc({ focusedGameId: null })).state).toEqual(s)
+  })
+
+  it('TDK-017/games: accept com jogo → launch; accept sem jogo nada; back → exit', () => {
+    expect(run(f(3), { type: 'accept' }, cc()).effects).toEqual([{ kind: 'launch', gameId: 7 }])
+    expect(run(f(3), { type: 'accept' }, cc({ focusedGameId: null })).effects).toEqual([])
+    expect(run(f(3), { type: 'back' }, cc()).effects).toEqual([{ kind: 'exit' }])
+  })
+
+  it('TDK-018/details, play: up → gallery; down → playUntracked; prev → browse games com o mesmo focus; next igual; back → browse games', () => {
+    const d = det({ focus: 4, detailsFocus: 'play', detailsButton: 'play', zone: 'platforms' })
+    expect(run(d, { type: 'up' }, cc()).state.detailsFocus).toBe('gallery')
+    expect(run(d, { type: 'down' }, cc()).state.detailsFocus).toBe('playUntracked')
+    expect(run(d, { type: 'prev' }, cc()).state).toMatchObject({ screen: 'browse', zone: 'games', focus: 4 })
+    expect(run(d, { type: 'next' }, cc()).state).toEqual(d)
+    expect(run(d, { type: 'back' }, cc()).state).toMatchObject({ screen: 'browse', zone: 'games', focus: 4 })
+  })
+
+  it('TDK-018/play sem galeria: up igual', () => {
+    const d = det({ detailsFocus: 'play' })
+    expect(run(d, { type: 'up' }, cc({ galleryCount: 0 })).state).toEqual(d)
+  })
+
+  it('TDK-018/gallery: down → play; prev/next limitados a [0, galleryCount-1]; up igual', () => {
+    const g = det({ detailsFocus: 'gallery', detailsButton: 'play', gallery: 1 })
+    expect(run(g, { type: 'down' }, cc()).state.detailsFocus).toBe('play')
+    expect(run(g, { type: 'up' }, cc()).state).toEqual(g)
+    expect(run(g, { type: 'prev' }, cc()).state.gallery).toBe(0)
+    expect(run({ ...g, gallery: 0 }, { type: 'prev' }, cc()).state.gallery).toBe(0)
+    expect(run(g, { type: 'next' }, cc()).state.gallery).toBe(2)
+    expect(run({ ...g, gallery: 2 }, { type: 'next' }, cc()).state.gallery).toBe(2)
+  })
+
+  it('TDK-018/playUntracked: up → play e down igual', () => {
+    const d = det({ detailsFocus: 'playUntracked', detailsButton: 'playUntracked' })
+    expect(run(d, { type: 'up' }, cc()).state.detailsFocus).toBe('play')
+    expect(run(d, { type: 'down' }, cc()).state).toEqual(d)
+  })
+
+  it('TDK-018/galleryChanged(0) com foco no visor → play', () => {
+    const g = det({ detailsFocus: 'gallery', detailsButton: 'play' })
+    expect(run(g, { type: 'galleryChanged', count: 0 }, cc()).state.detailsFocus).toBe('play')
+  })
+
+  it('TDK-018/accept em play e playUntracked dá launch e launchUntracked; no visor nada', () => {
+    expect(run(det({ detailsFocus: 'play' }), { type: 'accept' }, cc()).effects).toEqual([{ kind: 'launch', gameId: 7 }])
+    expect(run(det({ detailsFocus: 'playUntracked' }), { type: 'accept' }, cc()).effects)
+      .toEqual([{ kind: 'launchUntracked', gameId: 7 }])
+    expect(run(det({ detailsFocus: 'gallery' }), { type: 'accept' }, cc()).effects).toEqual([])
+  })
+
+  it('BBX-065/tabSet: índice diferente e válido → browse, tab i, focus 0', () => {
+    expect(run(st({ tab: 0, focus: 9, zone: 'platforms' }), { type: 'tabSet', index: 2 }, cc()).state)
+      .toMatchObject({ screen: 'browse', tab: 2, focus: 0, zone: 'platforms' })
+  })
+
+  it('BBX-065/tabSet: índice igual, -1 e tabs ficam iguais', () => {
+    const s = st({ tab: 1, focus: 5 })
+    for (const index of [1, -1, 4, 9]) {
+      expect(run(s, { type: 'tabSet', index }, cc()).state).toEqual(s)
+    }
+  })
+
+  it('BBX-065/tabSet a partir de details volta a browse', () => {
+    expect(run(det({ tab: 0, focus: 5 }), { type: 'tabSet', index: 3 }, cc()).state)
+      .toMatchObject({ screen: 'browse', tab: 3, focus: 0 })
+  })
+
+  it('BBX-065/tabSet é ignorado com suspended (e windowFocus ainda libera)', () => {
+    const s = st({ suspended: true, launchedGameId: 7, tab: 0 })
+    expect(run(s, { type: 'tabSet', index: 2 }, cc()).state).toEqual(s)
+    const b = run(s, { type: 'windowBlur' }, cc()).state
+    expect(run(b, { type: 'windowFocus' }, cc()).state.suspended).toBe(false)
+  })
+
+  it('TDK-033/gameClosed volta a browse, zone games, focus = indexInTab, com os effects bringToFront e enterBigBox', () => {
+    const r = run(det({ suspended: true, launchedGameId: 7, zone: 'platforms', focus: 1 }),
+      { type: 'gameClosed', gameId: 7, indexInTab: 12 }, cc())
+    expect(r.state).toMatchObject({ screen: 'browse', zone: 'games', focus: 12, suspended: false })
+    expect(r.effects).toEqual([{ kind: 'bringToFront' }, { kind: 'enterBigBox' }])
+  })
+
+  it('BBX-048/layout screens: ←/→ passam de fileira e zone fica games', () => {
+    const c = ctx({ columns: 5, total: 23, loaded: 23, axis: 'grid', layout: 'screens' })
+    expect(run(f(0), { type: 'prev' }, c).state).toMatchObject({ focus: 0, zone: 'games' })
+    expect(run(f(4), { type: 'next' }, c).state).toMatchObject({ focus: 5, zone: 'games', screen: 'browse' })
+    expect(run(f(5), { type: 'prev' }, c).state).toMatchObject({ focus: 4, zone: 'games' })
+  })
+
+  it('BBX-048/axis horizontal com columns 1: up/down não fazem nada', () => {
+    const c = ctx({ columns: 1, axis: 'horizontal', layout: 'screens' })
+    expect(run(f(5), { type: 'up' }, c).state).toEqual(f(5))
+    expect(run(f(5), { type: 'down' }, c).state).toEqual(f(5))
   })
 })

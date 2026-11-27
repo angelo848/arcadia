@@ -60,7 +60,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
 
   const [nav, setNav] = useState<NavState>(() => ({ ...initialNav, tab: initialTab }))
   const navRef = useRef(nav)
-  const ctxRef = useRef<NavCtx>({ tabs: tabs.length, total: 0, loaded: 0, galleryCount: 0, focusedGameId: null, videoVisible: false, columns: theme.columns })
+  const ctxRef = useRef<NavCtx>({ tabs: tabs.length, total: 0, loaded: 0, galleryCount: 0, focusedGameId: null, videoVisible: false, columns: theme.columns, axis: theme.axis, layout: 'screens' })
   const effectRef = useRef<(e: NavEffect) => void>(() => {})
   const gamesRef = useRef<Array<{ id: number }>>([])
   const pendingRef = useRef(false)
@@ -177,6 +177,8 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
     focusedGameId: focusedId,
     videoVisible: model.videoVisible,
     columns: theme.columns,
+    axis: theme.axis,
+    layout: 'screens',
   }
 
   // The gallery of the focused game can shrink while the details are open [BBX-032, BBX-034].
