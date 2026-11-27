@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react'
 import { queueResultLabel, useVideoCredentials, videoQueue } from '../lib/video'
-import type { GameStatus } from '../lib/filters'
+import { statusLabels } from '../lib/gameLabels'
 import type { SessionView } from '../lib/games'
 import { formatPlayTime } from '../lib/games'
 import { isNotFound, playModeLabels, useCatalog, useGame } from '../lib/library'
@@ -13,14 +13,6 @@ import { MediaCarousel } from './MediaCarousel'
 import { PlatformIcon } from './PlatformIcon'
 import { SessionsList } from './SessionsList'
 import { TimeToBeatBlock } from './TimeToBeatBlock'
-
-const statusLabels: Record<GameStatus, string> = {
-  not_played: 'Não jogado',
-  playing: 'Jogando',
-  completed: 'Concluído',
-  abandoned: 'Abandonado',
-  backlog: 'Na fila',
-}
 
 export type GameDetailsPanelProps = {
   gameId: number

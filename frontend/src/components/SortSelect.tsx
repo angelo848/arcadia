@@ -1,19 +1,5 @@
 import type { JSX } from 'react'
-import type { SortKey } from '../lib/filters'
-
-// Sort options in the order of the spec (UI-034).
-const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
-  { key: 'title', label: 'Título' },
-  { key: 'lastPlayed', label: 'Última vez jogado' },
-  { key: 'totalPlayed', label: 'Tempo jogado' },
-  { key: 'year', label: 'Ano' },
-]
-
-const sortKeys: ReadonlySet<string> = new Set(sortOptions.map((o) => o.key))
-
-function isSortKey(v: string): v is SortKey {
-  return sortKeys.has(v)
-}
+import { isSortKey, sortOptions, type SortKey } from '../lib/filters'
 
 // SortSelect chooses the library sort order [UI-034]. The page reset is done by the caller.
 export function SortSelect({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => void }): JSX.Element {

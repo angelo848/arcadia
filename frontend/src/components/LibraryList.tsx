@@ -4,10 +4,10 @@ import type { LibraryGrid } from './LibraryGrid'
 import { liveOf } from './GameCard'
 import { formatLocalDateTime } from '../lib/formatDate'
 import { formatPlayTime } from '../lib/games'
-import { GRID_INSET, isNavKey, nextIndex } from '../lib/gridNav'
+import { GRID_INSET, isNavKey, LIST_ROW_HEIGHT, nextIndex } from '../lib/gridNav'
 
 // Row metrics in px. The list is one column of rows [UIX-020].
-const ROW_HEIGHT = 64
+const ROW_HEIGHT = LIST_ROW_HEIGHT
 const OVERSCAN_ROWS = 4
 // The next page is asked for when the last rendered row is past loaded - 10 [UI-036].
 const PREFETCH_AHEAD = 10

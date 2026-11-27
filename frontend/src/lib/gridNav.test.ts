@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_MIN_WIDTH, CARD_TITLE_HEIGHT, GRID_GAP, GRID_INSET, columnsFor, isNavKey, nextIndex, usableWidth } from './gridNav'
+import {
+  CARD_MIN_WIDTH,
+  CARD_TITLE_HEIGHT,
+  GRID_GAP,
+  GRID_INSET,
+  LIST_ROW_HEIGHT,
+  columnsFor,
+  isNavKey,
+  nextIndex,
+  usableWidth,
+} from './gridNav'
+
+describe('LIST_ROW_HEIGHT (fase 17)', () => {
+  it('TDK-034/LIST_ROW_HEIGHT = 64', () => {
+    expect(LIST_ROW_HEIGHT).toBe(64)
+  })
+})
 
 describe('usableWidth (fase 10.1)', () => {
   it('AJU-003/usableWidth(484) = 464 e usableWidth(1132) = 1112', () => {

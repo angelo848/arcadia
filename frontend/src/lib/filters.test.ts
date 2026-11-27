@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { defaultQuery, resetQuery, withPlatforms, withText } from './filters'
+import { defaultQuery, isSortKey, resetQuery, sortLabel, sortOptions, withPlatforms, withText } from './filters'
 import type { FilterSpec, GameStatus, LibraryQuery, SortKey } from './filters'
+
+describe('ordenação (fase 17)', () => {
+  it('BBX-067/sortOptions na ordem Título, Última vez jogado, Tempo jogado, Ano com as chaves title, lastPlayed, totalPlayed, year', () => {
+    expect(sortOptions).toEqual([
+      { key: 'title', label: 'Título' },
+      { key: 'lastPlayed', label: 'Última vez jogado' },
+      { key: 'totalPlayed', label: 'Tempo jogado' },
+      { key: 'year', label: 'Ano' },
+    ])
+  })
+
+  it('BBX-067/sortLabel(k) devolve o rótulo de cada chave', () => {
+    expect(sortLabel('title')).toBe('Título')
+    expect(sortLabel('lastPlayed')).toBe('Última vez jogado')
+    expect(sortLabel('totalPlayed')).toBe('Tempo jogado')
+    expect(sortLabel('year')).toBe('Ano')
+  })
+
+  it('BBX-067/isSortKey aceita as quatro chaves e recusa "" e "desktop"', () => {
+    for (const k of ['title', 'lastPlayed', 'totalPlayed', 'year']) expect(isSortKey(k)).toBe(true)
+    expect(isSortKey('')).toBe(false)
+    expect(isSortKey('desktop')).toBe(false)
+  })
+})
 
 describe('filters', () => {
   it('UI-032/cada faceta entra no FilterSpec e lista vazia ou nula não aparece', () => {

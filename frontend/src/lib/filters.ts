@@ -9,6 +9,25 @@ export type PlayedFilter = 'any' | 'played' | 'notPlayed'
 
 export type SortKey = 'title' | 'lastPlayed' | 'totalPlayed' | 'year'
 
+// Sort options in the order of the spec (UI-034, BBX-067).
+export const sortOptions: ReadonlyArray<{ key: SortKey; label: string }> = [
+  { key: 'title', label: 'Título' },
+  { key: 'lastPlayed', label: 'Última vez jogado' },
+  { key: 'totalPlayed', label: 'Tempo jogado' },
+  { key: 'year', label: 'Ano' },
+]
+
+const sortKeys: ReadonlySet<string> = new Set(sortOptions.map((o) => o.key))
+
+export function isSortKey(v: string): v is SortKey {
+  return sortKeys.has(v)
+}
+
+// sortLabel is the label of a sort key.
+export function sortLabel(k: SortKey): string {
+  return sortOptions.find((o) => o.key === k)?.label ?? k
+}
+
 export type FilterSpec = {
   version: 1
   platformIds?: number[]
