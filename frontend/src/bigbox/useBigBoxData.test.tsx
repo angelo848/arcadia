@@ -110,6 +110,55 @@ describe('useBigBoxData', () => {
     expect(shouldPrefetchGrid(40, 40, 20, 5, 1, false)).toBe(false)
   })
 
+  // fase 17 (T05): limite de nós por tema (maxNodes) e ordenação herdada.
+  it.each([
+    [6, 2, 200, 36],
+    [17, 6, 200, 170],
+    [1, 13, 200, 17],
+  ])('BBX-062/gridPageSize(C %i, R %i, N %i) = %i', (c, r, n, want) => {
+    expect(gridPageSize(c, r, n)).toBe(want)
+  })
+
+  it('BBX-062/gridPageSize sem o 3º argumento segue como hoje', () => {
+    expect(gridPageSize(5, 99)).toBe(45)
+  })
+
+  it('BBX-062/shouldPrefetchGrid com maxNodes 200 pede quando L < min(T, (⌊f/C⌋ + R + 1 + 3)·C)', () => {
+    expect(shouldPrefetchGrid(30, 500, 0, 6, 2, false, 200)).toBe(true) // precisa de 36
+    expect(shouldPrefetchGrid(36, 500, 0, 6, 2, false, 200)).toBe(false)
+    expect(shouldPrefetchGrid(36, 500, 6, 6, 2, false, 200)).toBe(true) // fileira 1 precisa de 42
+    expect(shouldPrefetchGrid(16, 500, 0, 1, 13, false, 200)).toBe(true) // precisa de 17
+    expect(shouldPrefetchGrid(17, 500, 0, 1, 13, false, 200)).toBe(false)
+  })
+
+  it('BBX-062/shouldPrefetchGrid com maxNodes não pede com exhausted nem com L = T', () => {
+    expect(shouldPrefetchGrid(30, 500, 0, 6, 2, true, 200)).toBe(false)
+    expect(shouldPrefetchGrid(20, 20, 0, 6, 2, false, 200)).toBe(false)
+  })
+
+  it('TDK-020/useTabGames com paging grid e maxNodes envia limit = gridPageSize(columns, rows, maxNodes)', async () => {
+    setup(500)
+    const paging = { kind: 'grid', columns: 6, rows: 2, maxNodes: 200 } as const
+    const { result } = renderHook(() => useTabGames(TAB_ALL, 'title', paging), { wrapper })
+    await waitFor(() => expect(result.current.loaded).toBe(36))
+    expect(app.ListGames.mock.calls[0][0]).toMatchObject({ offset: 0, limit: gridPageSize(6, 2, 200) })
+    act(() => result.current.fetchNextPage())
+    await waitFor(() => expect(result.current.loaded).toBe(72))
+    expect(app.ListGames.mock.calls[1][0]).toMatchObject({ offset: 36, limit: 36 })
+  })
+
+  it('BBX-067/useTabGames envia sort totalPlayed e a chave da consulta o inclui', async () => {
+    setup(120)
+    const { result, rerender } = renderHook(({ s }: { s: 'title' | 'totalPlayed' }) => useTabGames(TAB_ALL, s, strip(12)), {
+      wrapper,
+      initialProps: { s: 'title' as 'title' | 'totalPlayed' },
+    })
+    await waitFor(() => expect(result.current.isPending).toBe(false))
+    rerender({ s: 'totalPlayed' })
+    await waitFor(() => expect(app.ListGames).toHaveBeenCalledTimes(2))
+    expect(app.ListGames.mock.calls[1][0]).toMatchObject({ sort: 'totalPlayed', offset: 0 })
+  })
+
   it('BBX-050/faixa: pageSize e shouldPrefetch inalterados', () => {
     expect(pageSize(12)).toBe(15)
     expect(shouldPrefetch(15, 40, 1, 12, false)).toBe(true)

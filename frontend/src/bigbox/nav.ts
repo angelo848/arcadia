@@ -3,9 +3,11 @@
 export type DetailsFocus = 'play' | 'playUntracked' | 'gallery'
 export type DetailsButton = 'play' | 'playUntracked'
 
+export type NavZone = 'games' | 'platforms'
+
 export type NavState = {
   screen: 'browse' | 'details'
-  zone: 'games' | 'platforms'
+  zone: NavZone
   tab: number
   focus: number
   detailsFocus: DetailsFocus

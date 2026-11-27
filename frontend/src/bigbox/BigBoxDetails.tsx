@@ -5,6 +5,7 @@ import { formatPlayTime } from '../lib/games'
 import { playModeLabels } from '../lib/library'
 import type { GameDetailView } from '../lib/library'
 import type { MediaItemView } from '../lib/metadata'
+import type { DesktopLabels } from './desktopLabels'
 import type { DetailsFocus } from './nav'
 import type { TimeToBeatRow } from '../lib/timeToBeat'
 import { Panel } from './Panel'
@@ -24,6 +25,19 @@ export type BigBoxDetailsProps = {
   onPlayUntracked: () => void
   timeToBeat: TimeToBeatRow[]
   timeToBeatSource: string | null
+  // Desktop panel [BBX-064, TDK-008..TDK-010]; the other themes leave them out.
+  active?: boolean // default true
+  platformIconUrl?: string | null
+  coverUrl?: string | null
+  preview?: {
+    gameId: number
+    videoUrl: string | null
+    active: boolean
+    failed: boolean
+    sound: boolean
+    onVideoError: (id: number) => void
+  }
+  labels?: DesktopLabels
 }
 
 const SCROLL_STEP = 120

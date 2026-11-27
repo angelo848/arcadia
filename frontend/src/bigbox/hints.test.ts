@@ -84,4 +84,64 @@ describe('hintsFor', () => {
   it('BBX-021/lista vazia: só "LB/RB Plataforma" e "B Sair"', () => {
     expect(pairs(hintsFor('browse', { empty: true, videoVisible: false }))).toEqual(['LB/RB Plataforma', 'B Sair'])
   })
+
+  // fase 17 (T05): opções layout e zone; contrato bigbox-tema-desktop §8.
+  const col = { layout: 'columns' as const }
+  it('TDK-024/Jogos com jogos', () => {
+    const o = { empty: false, videoVisible: false, ...col, zone: 'games' as const }
+    expect(pairs(hintsFor('browse', o))).toEqual(['A Jogar', 'X Detalhes', 'LB/RB Plataforma', 'Select+B Fechar o jogo', 'B Sair'])
+    expect(pairs(hintsFor('browse', { ...o, videoVisible: true }))).toEqual([
+      'A Jogar', 'X Detalhes', 'LB/RB Plataforma', 'Select+B Fechar o jogo', 'B Sair', 'Y Som',
+    ])
+  })
+
+  it('TDK-024/Jogos aba vazia', () => {
+    expect(pairs(hintsFor('browse', { empty: true, videoVisible: false, ...col, zone: 'games' }))).toEqual([
+      'LB/RB Plataforma', '← Plataformas', 'B Sair',
+    ])
+  })
+
+  it('TDK-024/Plataformas', () => {
+    expect(pairs(hintsFor('browse', { empty: false, videoVisible: false, ...col, zone: 'platforms' }))).toEqual([
+      '↑/↓ Plataforma', 'A Ver jogos', 'LB/RB Plataforma', 'B Voltar', 'Select+B Fechar o jogo',
+    ])
+  })
+
+  it('TDK-024/Painel com foco em Jogar e em Jogar sem contar tempo', () => {
+    const o = { empty: false, videoVisible: false, hasGallery: true, ...col }
+    expect(pairs(hintsFor('details', { ...o, detailsFocus: 'play' }))).toEqual([
+      'A Jogar', '↑/↓ Mover', 'B Voltar', 'Select+B Fechar o jogo',
+    ])
+    expect(pairs(hintsFor('details', { ...o, detailsFocus: 'playUntracked' }))).toEqual([
+      'A Jogar sem contar tempo', '↑/↓ Mover', 'B Voltar', 'Select+B Fechar o jogo',
+    ])
+  })
+
+  it('TDK-024/Painel no visor', () => {
+    expect(pairs(hintsFor('details', { empty: false, videoVisible: false, hasGallery: true, detailsFocus: 'gallery', ...col }))).toEqual([
+      '←/→ Imagem', '↓ Botões', 'B Voltar', 'Select+B Fechar o jogo',
+    ])
+  })
+
+  it('TDK-024/nenhuma dica de Select+A com layout columns', () => {
+    for (const screen of ['browse', 'details'] as const) {
+      for (const zone of ['games', 'platforms'] as const) {
+        for (const empty of [false, true]) {
+          for (const detailsFocus of [undefined, 'play', 'playUntracked', 'gallery'] as const) {
+            for (const h of hintsFor(screen, { empty, videoVisible: true, detailsFocus, hasGallery: true, layout: 'columns', zone })) {
+              expect(`${h.button} ${h.label}`).not.toMatch(/Select\s*\+\s*A\b/)
+            }
+          }
+        }
+      }
+    }
+  })
+
+  it('TDK-024/layout screens devolve exatamente o de hoje (↑ Botões no visor)', () => {
+    const g = { empty: false, videoVisible: false, hasGallery: true, detailsFocus: 'gallery' as const }
+    expect(pairs(hintsFor('details', { ...g, layout: 'screens', zone: 'games' }))).toEqual(pairs(hintsFor('details', g)))
+    expect(pairs(hintsFor('details', { ...g, layout: 'screens' }))).toContain('↑ Botões')
+    const b = { empty: false, videoVisible: false }
+    expect(pairs(hintsFor('browse', { ...b, layout: 'screens', zone: 'games' }))).toEqual(pairs(hintsFor('browse', b)))
+  })
 })

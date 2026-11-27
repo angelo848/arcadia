@@ -47,6 +47,7 @@ const TABS = [
   { key: 'p:7', label: 'Nintendo 64', filter: { platformId: 7 } },
 ]
 // Row 0 of a 5-column grid: the window starts at 0 with two rows (10 games); `focus` is the absolute index.
+// alterado em 2026-11-27 (fase 17): o modelo ganha layout, zone e view.
 function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
   const games = Array.from({ length: 10 }, (_, i) => game(i + 1))
   const focus = o.focus ?? 2
@@ -55,7 +56,8 @@ function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
     screen: 'browse', tabs: TABS, tab: 0, loading: false, games, total: 40, focus, stripStart: start, counter: `${focus + 1} / 40`,
     focused: focused(games[focus - start] ?? games[0]),
     axis: 'grid', columns: 5, tabTotal: 23, sortLabel: 'Jogado recentemente', videoFailed: false, videoVisible: false, sound: false,
-    hints: hintsFor('browse', { empty: false, videoVisible: false }, 'Aba'), alert: null, ...o,
+    hints: hintsFor('browse', { empty: false, videoVisible: false }, 'Aba'), alert: null,
+    layout: 'screens', zone: 'games', view: 'grid', ...o,
   }
 }
 const noop = () => {}

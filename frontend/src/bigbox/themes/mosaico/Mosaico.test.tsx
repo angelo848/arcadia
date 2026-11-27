@@ -29,6 +29,7 @@ const focused = (g: BigBoxGame, o: Partial<BigBoxFocused> = {}): BigBoxFocused =
   ],
   timeToBeatSource: 'HowLongToBeat', ...o,
 })
+// alterado em 2026-11-27 (fase 17): o modelo ganha layout, zone e view.
 function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
   const games = Array.from({ length: 15 }, (_, i) => game(i + 1))
   return {
@@ -41,7 +42,8 @@ function model(o: Partial<BigBoxViewModel> = {}): BigBoxViewModel {
     tab: 1, loading: false, games, total: 120, focus: 7, stripStart: 0, counter: '8 / 120', focused: focused(games[7]),
     axis: 'horizontal', columns: 1, tabTotal: 120, sortLabel: 'Título', videoFailed: false,
     videoVisible: false, sound: false,
-    hints: hintsFor('browse', { empty: false, videoVisible: false }), alert: null, ...o,
+    hints: hintsFor('browse', { empty: false, videoVisible: false }), alert: null,
+    layout: 'screens', zone: 'games', view: 'grid', ...o,
   }
 }
 const inPanel = (el: HTMLElement) => el.closest('[data-bb-panel]') !== null

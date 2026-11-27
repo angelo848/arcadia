@@ -1,4 +1,5 @@
 import { resolveTheme } from '../bigbox/themes/registry'
+import type { BigBoxThemeId } from '../bigbox/viewModel'
 import type { FilterSpec } from './filters'
 
 // Local UI preferences; they never go to the agent [UI-030, UIX-012, UIX-020].
@@ -27,7 +28,7 @@ export function writeLibraryView(v: LibraryView, storage?: Pick<Storage, 'setIte
   }
 }
 
-export type BigBoxThemeId = 'faixa' | 'mosaico' | 'estante' | 'roda'
+export type { BigBoxThemeId }
 
 const BIGBOX_THEME_KEY = 'arcadia.bigBoxTheme'
 

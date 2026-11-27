@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildTabs, buildViewModel, gridWindow, infoLine, pickBackground, pickVideo, relativeDays, sessionMark, shortDescription,
+  buildTabs, buildViewModel, centeredRow, edgeScrollRow, effectiveRows, gridWindow, gridWindowAt, infoLine, pickBackground, pickVideo, relativeDays, sessionMark, shortDescription,
   stripCounter, stripWindow,
   GRID_MAX_NODES, GRID_MAX_ROWS, SHORT_DESCRIPTION_MAX, STRIP_ANCHOR, STRIP_FALLBACK_CAPACITY, STRIP_MAX,
 } from './viewModel'
@@ -8,6 +8,8 @@ import type { ViewModelInput } from './viewModel'
 import type { CatalogView, GameView } from '../lib/library'
 import type { MediaItemView } from '../lib/metadata'
 import type { SessionView } from '../lib/games'
+import { formatPlayTime } from '../lib/games'
+import { genericIconUrl, seedIconUrls } from '../lib/platformIcons'
 
 const plat = (id: number, name: string, gameCount: number) => ({
   id, name, category: '', emulatorId: null, seedKey: null, iconUrl: 'x.png', gameCount,
@@ -290,5 +292,191 @@ describe('viewModel', () => {
   it('BBX-056/relativeDays sem data ou inválida é "Nunca jogado"', () => {
     expect(relativeDays(null, NOW)).toBe('Nunca jogado')
     expect(relativeDays('', NOW)).toBe('Nunca jogado')
+  })
+})
+
+// fase 17 (T05): janela por tema, rolagem pelas bordas, abas com ícone, rótulo herdado e campos do layout columns.
+describe('viewModel (fase 17)', () => {
+  it.each([
+    [1, 5, 30, 1],
+    [9, 5, 30, 5],
+    [0, 5, 30, 1],
+    [3, 40, 30, 1],
+    [2, 6, 200, 2],
+    [6, 17, 200, 6],
+    [13, 1, 200, 13],
+  ])('BBX-062/effectiveRows(R %i, C %i, N %i) = %i', (r, c, n, want) => {
+    expect(effectiveRows(r, c, n)).toBe(want)
+  })
+
+  it('BBX-062/effectiveRows sem N vale 30', () => {
+    expect(effectiveRows(9, 5)).toBe(effectiveRows(9, 5, 30))
+    expect(effectiveRows(9, 5)).toBe(5)
+  })
+
+  it.each([
+    [23, 0, 5, 1, 0, 10],
+    [23, 4, 5, 2, 20, 23],
+    [60, 0, 6, 2, 0, 18],
+    [60, 3, 6, 2, 18, 36],
+    [20, 1, 6, 2, 6, 20],
+    [500, 0, 17, 6, 0, 119],
+    [200, 0, 1, 13, 0, 14],
+  ])('BBX-062/gridWindowAt(T %i, s %i, C %i, R %i) = [%i, %i)', (t, s, c, r, start, end) => {
+    expect(gridWindowAt(t, s, c, r)).toEqual({ start, end })
+  })
+
+  it('BBX-062/gridWindowAt com T = 0 devolve {0, 0}', () => {
+    expect(gridWindowAt(0, 0, 6, 2)).toEqual({ start: 0, end: 0 })
+    expect(gridWindowAt(0, 3, 6, 2)).toEqual({ start: 0, end: 0 })
+  })
+
+  it('BBX-062/nunca desenha mais de (R + 1)·C cartões nem passa de N = 200', () => {
+    for (const [c, r] of [[6, 2], [17, 6], [1, 13], [4, 1]]) {
+      const rr = effectiveRows(r, c, 200)
+      for (let s = 0; s < 40; s += 3) {
+        const w = gridWindowAt(500, s, c, rr)
+        expect(w.end - w.start).toBeLessThanOrEqual((rr + 1) * c)
+        expect((rr + 1) * c).toBeLessThanOrEqual(200)
+        expect(w.end).toBeLessThanOrEqual(500)
+      }
+    }
+  })
+
+  it('BBX-062/gridWindow com maxNodes 200 usa o limite do tema', () => {
+    expect(gridWindow(60, 0, 6, 2, 200)).toEqual({ start: 0, end: 18 })
+    expect(gridWindow(500, 0, 17, 6, 200)).toEqual({ start: 0, end: 119 })
+  })
+
+  it('BBX-049/gridWindow sem maxNodes continua igual (rede de segurança)', () => {
+    expect(gridWindow(23, 7, 5, 1)).toEqual({ start: 5, end: 15 })
+    expect(gridWindow(23, 22, 5, 2)).toEqual({ start: 15, end: 23 })
+  })
+
+  it.each([
+    [0, 0, 2, 10, 0],
+    [0, 1, 2, 10, 0],
+    [0, 2, 2, 10, 1],
+    [3, 2, 2, 10, 2],
+    [0, 9, 2, 10, 8],
+    [8, 9, 2, 10, 8],
+    [0, 1, 1, 5, 1],
+    [0, 1, 3, 2, 0],
+  ])('BBX-063/edgeScrollRow(prev %i, r %i, R %i, rows %i) = %i', (prev, r, vr, rows, want) => {
+    expect(edgeScrollRow(prev, r, vr, rows)).toBe(want)
+  })
+
+  it('BBX-063/edgeScrollRow fica limitado a [0, max(rows - R, 0)]', () => {
+    for (const rows of [0, 1, 3, 10]) {
+      for (let prev = 0; prev < 12; prev++) {
+        for (let r = 0; r < 12; r++) {
+          const s = edgeScrollRow(prev, r, 3, rows)
+          expect(s).toBeGreaterThanOrEqual(0)
+          expect(s).toBeLessThanOrEqual(Math.max(rows - 3, 0))
+        }
+      }
+    }
+  })
+
+  it.each([
+    [5, 3, 10, 4],
+    [0, 3, 10, 0],
+    [9, 3, 10, 7],
+    [4, 2, 10, 4],
+  ])('BBX-063/centeredRow(r %i, R %i, rows %i) = %i', (r, vr, rows, want) => {
+    expect(centeredRow(r, vr, rows)).toBe(want)
+  })
+
+  const pl = (id: number, name: string, gameCount: number, seedKey: string | null, iconUrl: string | null) => ({
+    id, name, category: '', emulatorId: null, seedKey, iconUrl, gameCount,
+  })
+  const cat = (ps: ReturnType<typeof pl>[]) => ({ platforms: ps, genres: [], companies: [], playModes: [] }) as unknown as CatalogView
+
+  it('BBX-066/buildTabs com withIcons: ícone personalizado, embutido ou genérico e count = gameCount', () => {
+    const c = cat([pl(1, 'A', 4, null, 'custom.png'), pl(2, 'B', 6, 'n64', null), pl(3, 'C', 2, null, null), pl(4, 'D', 0, 'snes', null)])
+    const { tabs } = buildTabs(c, null, 'platforms', true)
+    expect(tabs.map((t) => t.key)).toEqual(['all', 'p:1', 'p:2', 'p:3'])
+    expect(tabs[1]).toMatchObject({ iconUrl: 'custom.png', count: 4 })
+    expect(tabs[2]).toMatchObject({ iconUrl: seedIconUrls.n64, count: 6 })
+    expect(tabs[3]).toMatchObject({ iconUrl: genericIconUrl, count: 2 })
+  })
+
+  it('BBX-066/"Todos" soma as plataformas com jogos', () => {
+    const c = cat([pl(1, 'A', 4, null, null), pl(2, 'B', 6, null, null), pl(3, 'C', 0, null, null)])
+    expect(buildTabs(c, null, 'platforms', true).tabs[0].count).toBe(10)
+  })
+
+  it('BBX-066/sem withIcons as abas são iguais às de hoje (toEqual)', () => {
+    const c = cat([pl(1, 'A', 4, null, 'custom.png'), pl(2, 'B', 6, 'n64', null)])
+    const want = [
+      { key: 'all', label: 'Todos', filter: { platformId: null } },
+      { key: 'p:1', label: 'A', filter: { platformId: 1 } },
+      { key: 'p:2', label: 'B', filter: { platformId: 2 } },
+    ]
+    expect(buildTabs(c, null, 'platforms').tabs).toEqual(want)
+    expect(buildTabs(c, null, 'platforms', false).tabs).toEqual(want)
+  })
+
+  const gv2 = (id: number, o: Record<string, unknown> = {}) =>
+    ({ id, title: `J${id}`, platform: 'N64', year: 1996, totalPlaySeconds: 0, lastPlayedAt: '', playCount: 0, ...o }) as unknown as GameView
+  const base = (o: Partial<ViewModelInput> = {}): ViewModelInput =>
+    ({
+      axis: 'grid', columns: 6, sort: 'title', now: new Date('2026-11-22T12:00:00Z'), screen: 'browse',
+      tabs: [{ key: 'all', label: 'Todos', filter: { platformId: null } }], tab: 0,
+      games: Array.from({ length: 60 }, (_, i) => gv2(i + 1)), total: 60, loaded: 60, focus: 0, capacity: 12, loading: false,
+      covers: {}, media: [], description: '', genres: null, session: null, sound: false, videoFailed: null, alert: null,
+      ...o,
+    }) as ViewModelInput
+
+  it.each([
+    ['title', 'Título'],
+    ['lastPlayed', 'Última vez jogado'],
+    ['totalPlayed', 'Tempo jogado'],
+    ['year', 'Ano'],
+  ] as const)('BBX-067/sortLabel do modelo com sortInherited e %s = %s', (k, want) => {
+    expect(buildViewModel(base({ sort: k, sortInherited: true })).sortLabel).toBe(want)
+  })
+
+  it('BBX-067/sem herança sortLabel continua "Título" e "Jogado recentemente"', () => {
+    expect(buildViewModel(base({ sort: 'title' })).sortLabel).toBe('Título')
+    expect(buildViewModel(base({ sort: 'lastPlayed' })).sortLabel).toBe('Jogado recentemente')
+  })
+
+  it('BBX-068/o modelo repassa layout, zone, view e columns', () => {
+    const m = buildViewModel(base({ layout: 'columns', zone: 'platforms', view: 'list', columns: 1 }))
+    expect(m).toMatchObject({ layout: 'columns', zone: 'platforms', view: 'list', columns: 1 })
+  })
+
+  it('BBX-068/sem opções o modelo é screens, games e grid', () => {
+    expect(buildViewModel(base())).toMatchObject({ layout: 'screens', zone: 'games', view: 'grid' })
+  })
+
+  it('TDK-005/TDK-006/com layout columns os jogos trazem coverFit, platform, playTimeText e lastPlayedText', () => {
+    const games = [gv2(1, { totalPlaySeconds: 3600, lastPlayedAt: '2026-11-15T12:00:00Z' }), gv2(2)]
+    const covers = { 1: { url: 'c1', fit: 'cover' as const }, 2: { url: 'c2', fit: 'contain' as const } }
+    const m = buildViewModel(base({ layout: 'columns', games, loaded: 2, total: 2, covers }))
+    expect(m.games[0]).toMatchObject({ coverFit: 'cover', platform: 'N64', playTimeText: formatPlayTime(3600) })
+    expect(m.games[0].lastPlayedText).toBeTruthy()
+    expect(m.games[0].lastPlayedText).not.toBe('Nunca')
+    expect(m.games[1]).toMatchObject({ coverFit: 'contain', platform: 'N64', lastPlayedText: 'Nunca' })
+  })
+
+  it('TDK-005/sem layout columns esses campos não existem', () => {
+    const m = buildViewModel(base({ games: [gv2(1)], loaded: 1, total: 1, covers: { 1: { url: 'c1', fit: 'cover' } } }))
+    for (const k of ['coverFit', 'platform', 'playTimeText', 'lastPlayedText']) expect(k in m.games[0]).toBe(false)
+    expect(m.games[0]).toEqual({ id: 1, title: 'J1', coverUrl: 'c1', session: null, playTimeLabel: 'Nunca jogado' })
+  })
+
+  it('TDK-019/buildViewModel com startRow usa gridWindowAt e stripStart = startRow·C', () => {
+    const m = buildViewModel(base({ layout: 'columns', startRow: 3, focus: 20, capacity: 12 }))
+    expect(m.stripStart).toBe(18)
+    expect(m.games.map((g) => g.id)).toEqual(Array.from({ length: 18 }, (_, i) => i + 19))
+  })
+
+  it('TDK-004/total e rótulos do modelo', () => {
+    const m = buildViewModel(base({ layout: 'columns', total: 60, sort: 'totalPlayed', sortInherited: true }))
+    expect(m.total).toBe(60)
+    expect(m.tabTotal).toBe(60)
+    expect(m.sortLabel).toBe('Tempo jogado')
   })
 })

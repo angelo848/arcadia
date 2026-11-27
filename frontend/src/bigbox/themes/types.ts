@@ -1,8 +1,12 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { BigBoxDetailsProps } from '../BigBoxDetails'
-import type { BigBoxThemeId, BigBoxViewModel } from '../viewModel'
+import type { BigBoxThemeId, BigBoxViewModel, LibraryView } from '../viewModel'
 
-// Theme contract v2 [BBX-024, BBX-047]: a theme only draws the model and forwards clicks.
+export type { LibraryView }
+
+type Viewport = { width: number; height: number }
+
+// Theme contract v2 [BBX-024, BBX-047, BBX-061]: a theme only draws the model and forwards clicks.
 export type BigBoxThemeProps = {
   model: BigBoxViewModel
   details: ReactNode
@@ -10,6 +14,7 @@ export type BigBoxThemeProps = {
   onPlay: (index: number) => void
   onDetails: () => void
   onVideoError: (gameId: number) => void
+  onTab?: (index: number) => void // BBX-065
 }
 
 export type BigBoxThemeDef = {
@@ -19,13 +24,17 @@ export type BigBoxThemeDef = {
   axis: 'horizontal' | 'vertical' | 'grid'
   columns: number
   anchor: number
-  listCapacity: (viewport: { width: number; height: number }) => number
-  gridRows?: (viewport: { width: number; height: number }) => number
+  listCapacity: (viewport: Viewport) => number
+  gridRows?: (viewport: Viewport, view?: LibraryView) => number // existing themes ignore `view`
   backdrop: 'contain' | 'cover' | 'plain'
-  videoSlot: 'background' | 'cover'
+  videoSlot: 'background' | 'cover' | 'panel'
   tabs: 'platforms' | 'collections'
-  sort: 'title' | 'lastPlayed'
+  sort: 'title' | 'lastPlayed' | 'inherit'
   timeToBeatInBrowse: boolean
+  layout?: 'screens' | 'columns'
+  gridColumns?: (viewport: Viewport, view: LibraryView) => number
+  maxNodes?: number
+  gridScroll?: 'focusTop' | 'edges'
   Component?: ComponentType<BigBoxThemeProps>
   Details?: ComponentType<BigBoxDetailsProps>
 }

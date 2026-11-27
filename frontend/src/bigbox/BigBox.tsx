@@ -89,7 +89,8 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
   const listCapacity = theme.listCapacity(viewport)
   // A grid theme shows R whole rows of C cards; a strip theme shows V whole covers.
   const capacity = isGrid ? columns * rows : listCapacity
-  const tabGames = useTabGames(tabDef, theme.sort, isGrid ? { kind: 'grid', columns, rows } : { kind: 'strip', capacity })
+  const sort = theme.sort === 'inherit' ? 'title' : theme.sort // T08 reads the order of the normal window
+  const tabGames = useTabGames(tabDef, sort, isGrid ? { kind: 'grid', columns, rows } : { kind: 'strip', capacity })
   const games = tabGames.games
   gamesRef.current = games
   const { loaded, total, exhausted, error: pageError, isPending, isFetchingNextPage, fetchNextPage } = tabGames
@@ -145,7 +146,7 @@ function BigBoxShell(p: BigBoxProps & { tabs: BigBoxTab[]; initialTab: number })
     axis: theme.axis,
     columns: theme.columns,
     anchor: theme.anchor,
-    sort: theme.sort,
+    sort,
     now,
     timeToBeat: ttb.data,
     tabsLabel: theme.tabs === 'collections' ? 'Aba' : 'Plataforma',

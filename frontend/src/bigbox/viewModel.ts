@@ -1,11 +1,15 @@
 // Display model of the Big Box and its pure helpers [BBX-004, BBX-006, BBX-008..BBX-010, BBX-017, BBX-021].
+import { formatLocalDateTime } from '../lib/formatDate'
+import { sortLabel as sortKeyLabel } from '../lib/filters'
+import type { SortKey } from '../lib/filters'
 import { formatPlayTime } from '../lib/games'
 import type { SessionView } from '../lib/games'
 import type { CatalogView, GameView } from '../lib/library'
 import type { CardImage, MediaItemView } from '../lib/metadata'
+import { platformIconSrc } from '../lib/platformIcons'
 import { hintsFor } from './hints'
 import type { Hint } from './hints'
-import type { DetailsFocus } from './nav'
+import type { DetailsFocus, NavZone } from './nav'
 import { timeToBeatRows, timeToBeatSource } from '../lib/timeToBeat'
 import type { TimeToBeatRow, TimeToBeatView } from '../lib/timeToBeat'
 
@@ -17,11 +21,14 @@ export const STRIP_FALLBACK_CAPACITY = 12
 export const GRID_MAX_ROWS = 5
 export const GRID_MAX_NODES = 30
 
-export type BigBoxThemeId = 'faixa' | 'mosaico' | 'estante' | 'roda'
+export type BigBoxThemeId = 'faixa' | 'mosaico' | 'estante' | 'desktop' | 'roda'
+export type LibraryView = 'grid' | 'list'
 export type BigBoxTab = {
   key: string // 'all' | 'favorites' | 'completed' | `p:${platformId}`
   label: string
   filter: { platformId: number | null; favorite?: true; status?: 'completed' }
+  iconUrl?: string | null // only with `withIcons` [BBX-066]
+  count?: number | null
 }
 export type BigBoxGame = {
   id: number
@@ -29,6 +36,11 @@ export type BigBoxGame = {
   coverUrl: string | null
   session: 'running' | 'paused' | null
   playTimeLabel?: string
+  // Only with layout `columns` [TDK-005, TDK-006].
+  coverFit?: 'contain' | 'cover'
+  platform?: string
+  playTimeText?: string
+  lastPlayedText?: string
 }
 export type BigBoxFocused = {
   game: BigBoxGame
@@ -70,13 +82,21 @@ export type BigBoxViewModel = {
   sound: boolean
   hints: Hint[]
   alert: string | null
+  layout: 'screens' | 'columns'
+  zone: NavZone
+  view: LibraryView
 }
 
 export type ViewModelInput = {
   axis: 'horizontal' | 'vertical' | 'grid'
   columns: number
   anchor?: number // strip themes; default STRIP_ANCHOR
-  sort: 'title' | 'lastPlayed'
+  sort: SortKey
+  sortInherited?: boolean // the order comes from the normal window [BBX-067]
+  layout?: 'screens' | 'columns'
+  zone?: NavZone
+  view?: LibraryView
+  startRow?: number // first row of the window, kept by the shell [BBX-063]
   now: Date
   timeToBeat?: TimeToBeatView
   tabsLabel?: 'Plataforma' | 'Aba'
@@ -105,14 +125,28 @@ export function buildTabs(
   catalog: CatalogView | undefined,
   initialPlatformId: number | null,
   kind: 'platforms' | 'collections',
+  withIcons = false,
 ): { tabs: BigBoxTab[]; initial: number } {
-  const tabs: BigBoxTab[] = [{ key: 'all', label: 'Todos', filter: { platformId: null } }]
+  const all: BigBoxTab = { key: 'all', label: 'Todos', filter: { platformId: null } }
+  const tabs: BigBoxTab[] = [all]
   if (kind === 'collections') {
     tabs.push({ key: 'favorites', label: 'Favoritos', filter: { platformId: null, favorite: true } })
     tabs.push({ key: 'completed', label: 'Concluídos', filter: { platformId: null, status: 'completed' } })
   }
+  let sum = 0
   for (const p of catalog?.platforms ?? []) {
-    if (p.gameCount > 0) tabs.push({ key: `p:${p.id}`, label: p.name, filter: { platformId: p.id } })
+    if (p.gameCount <= 0) continue
+    sum += p.gameCount
+    const tab: BigBoxTab = { key: `p:${p.id}`, label: p.name, filter: { platformId: p.id } }
+    if (withIcons) {
+      tab.iconUrl = platformIconSrc(p)
+      tab.count = p.gameCount
+    }
+    tabs.push(tab)
+  }
+  if (withIcons) {
+    all.iconUrl = null
+    all.count = sum
   }
   const idx = initialPlatformId === null ? -1 : tabs.findIndex((t) => t.key === `p:${initialPlatformId}`)
   return { tabs, initial: idx > 0 ? idx : 0 }
@@ -174,15 +208,47 @@ export function stripWindow(
   return { start, end: Math.min(start + v + 1, total) }
 }
 
-// gridWindow is the half-open range of cards drawn by a grid theme: the focus row first, R whole rows plus a cut one [BBX-049].
-export function gridWindow(total: number, focus: number, columns: number, rows: number): { start: number; end: number } {
+// effectiveRows limits R so that (R + 1)·C cards never pass the node budget N of the theme [BBX-062].
+export function effectiveRows(rows: number, columns: number, maxNodes: number = GRID_MAX_NODES): number {
+  const c = Math.max(columns, 1)
+  return Math.min(Math.max(rows, 1), Math.max(Math.floor(maxNodes / c) - 1, 1))
+}
+
+// gridWindowAt is the half-open range of cards drawn from row `startRow`: R whole rows plus a cut one [BBX-062].
+export function gridWindowAt(total: number, startRow: number, columns: number, rows: number): { start: number; end: number } {
   if (total <= 0) return { start: 0, end: 0 }
   const c = Math.max(columns, 1)
-  const r = Math.min(Math.max(rows, 1), GRID_MAX_ROWS)
+  const start = Math.max(startRow, 0) * c
+  return { start, end: Math.min(start + (Math.max(rows, 1) + 1) * c, total) }
+}
+
+// gridWindow is the half-open range of cards drawn by a grid theme: the focus row first, R whole rows plus a cut one [BBX-049].
+export function gridWindow(
+  total: number,
+  focus: number,
+  columns: number,
+  rows: number,
+  maxNodes: number = GRID_MAX_NODES,
+): { start: number; end: number } {
+  if (total <= 0) return { start: 0, end: 0 }
+  const c = Math.max(columns, 1)
+  const r = effectiveRows(rows, c, maxNodes)
   const totalRows = Math.ceil(total / c)
   const startRow = Math.min(Math.max(Math.floor(focus / c), 0), Math.max(totalRows - r, 0))
-  const start = startRow * c
-  return { start, end: Math.min(start + (r + 1) * c, total) }
+  return gridWindowAt(total, startRow, c, r)
+}
+
+const maxStartRow = (visibleRows: number, totalRows: number) => Math.max(totalRows - visibleRows, 0)
+
+// edgeScrollRow keeps the first row still while the focus row stays inside the window [BBX-063].
+export function edgeScrollRow(prev: number, row: number, visibleRows: number, totalRows: number): number {
+  const s = row < prev ? row : row > prev + visibleRows - 1 ? row - visibleRows + 1 : prev
+  return Math.min(Math.max(s, 0), maxStartRow(visibleRows, totalRows))
+}
+
+// centeredRow puts the focus row in the middle of the window [BBX-063].
+export function centeredRow(row: number, visibleRows: number, totalRows: number): number {
+  return Math.min(Math.max(row - Math.floor((visibleRows - 1) / 2), 0), maxStartRow(visibleRows, totalRows))
 }
 
 // stripCounter renders "position / total" of the focused game [BBX-045].
@@ -211,16 +277,28 @@ export function sessionsLabel(playCount: number): string {
 }
 
 export function buildViewModel(i: ViewModelInput): BigBoxViewModel {
+  const layout = i.layout ?? 'screens'
   const toGame = (g: GameView): BigBoxGame => ({
     id: g.id,
     title: g.title,
     coverUrl: i.covers[g.id]?.url ?? null,
     session: sessionMark(i.session, g.id),
     playTimeLabel: g.totalPlaySeconds > 0 ? `Jogou por ${formatPlayTime(g.totalPlaySeconds)}` : 'Nunca jogado',
+    ...(layout === 'columns'
+      ? {
+          coverFit: i.covers[g.id]?.fit ?? 'contain',
+          platform: g.platform,
+          playTimeText: formatPlayTime(g.totalPlaySeconds),
+          lastPlayedText: formatLocalDateTime(g.lastPlayedAt || ''),
+        }
+      : {}),
   })
+  const gridRows = Math.max(Math.floor(i.capacity / Math.max(i.columns, 1)), 1)
   const win =
     i.axis === 'grid'
-      ? gridWindow(i.total, i.focus, i.columns, Math.max(Math.floor(i.capacity / Math.max(i.columns, 1)), 1))
+      ? i.startRow !== undefined
+        ? gridWindowAt(i.total, i.startRow, i.columns, gridRows)
+        : gridWindow(i.total, i.focus, i.columns, gridRows)
       : stripWindow(i.total, i.focus, i.capacity, i.anchor ?? STRIP_ANCHOR)
   const games = i.loading ? [] : i.games.slice(win.start, Math.min(win.end, i.loaded)).map(toGame)
   const g = i.loading ? undefined : i.games[i.focus]
@@ -255,7 +333,7 @@ export function buildViewModel(i: ViewModelInput): BigBoxViewModel {
     axis: i.axis,
     columns: i.columns,
     tabTotal: i.loading ? null : i.total,
-    sortLabel: i.sort === 'lastPlayed' ? 'Jogado recentemente' : 'Título',
+    sortLabel: i.sortInherited ? sortKeyLabel(i.sort) : i.sort === 'lastPlayed' ? 'Jogado recentemente' : 'Título',
     videoFailed: !!g && i.videoFailed === g.id,
     screen: i.screen,
     tabs: i.tabs,
@@ -271,9 +349,12 @@ export function buildViewModel(i: ViewModelInput): BigBoxViewModel {
     sound: i.sound,
     hints: hintsFor(
       i.screen,
-      { empty: i.total === 0, videoVisible, detailsFocus: i.detailsFocus, hasGallery: i.hasGallery },
+      { empty: i.total === 0, videoVisible, detailsFocus: i.detailsFocus, hasGallery: i.hasGallery, layout, zone: i.zone },
       i.tabsLabel ?? 'Plataforma',
     ),
     alert: i.alert,
+    layout,
+    zone: i.zone ?? 'games',
+    view: i.view ?? 'grid',
   }
 }

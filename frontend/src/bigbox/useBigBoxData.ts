@@ -1,7 +1,7 @@
 // Read-only data of the Big Box [BBX-004, BBX-007, BBX-017, BBX-027..BBX-029]. Never writes anything.
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GRID_MAX_ROWS, STRIP_MAX } from './viewModel'
+import { GRID_MAX_NODES, STRIP_MAX, effectiveRows } from './viewModel'
 import type { BigBoxTab } from './viewModel'
 import type { FilterSpec, SortKey } from '../lib/filters'
 import { currentSession, currentSessionKey } from '../lib/games'
@@ -33,11 +33,9 @@ export function pageSize(capacity: number): number {
   return Math.min(clampCapacity(capacity) + PAGE_EXTRA, PAGE_MAX)
 }
 
-const clampRows = (rows: number) => Math.min(Math.max(rows, 1), GRID_MAX_ROWS)
-
-// gridPageSize is the `limit` of each ListGames call on a grid theme [BBX-050].
-export function gridPageSize(columns: number, rows: number): number {
-  return Math.min((clampRows(rows) + 1 + PAGE_EXTRA) * columns, PAGE_MAX)
+// gridPageSize is the `limit` of each ListGames call on a grid theme [BBX-050, BBX-062].
+export function gridPageSize(columns: number, rows: number, maxNodes: number = GRID_MAX_NODES): number {
+  return Math.min((effectiveRows(rows, columns, maxNodes) + 1 + PAGE_EXTRA) * columns, PAGE_MAX)
 }
 
 // shouldPrefetchGrid: fewer games read than the focus row, the window and PAGE_EXTRA more rows need [BBX-050].
@@ -48,8 +46,9 @@ export function shouldPrefetchGrid(
   columns: number,
   rows: number,
   exhausted: boolean,
+  maxNodes: number = GRID_MAX_NODES,
 ): boolean {
-  const need = Math.min(total, (Math.floor(focus / columns) + clampRows(rows) + 1 + PAGE_EXTRA) * columns)
+  const need = Math.min(total, (Math.floor(focus / columns) + effectiveRows(rows, columns, maxNodes) + 1 + PAGE_EXTRA) * columns)
   return !exhausted && loaded < total && loaded < need
 }
 
@@ -69,7 +68,7 @@ export type TabGames = {
   fetchNextPage: () => void
 }
 
-export type TabPaging = { kind: 'strip'; capacity: number } | { kind: 'grid'; columns: number; rows: number }
+export type TabPaging = { kind: 'strip'; capacity: number } | { kind: 'grid'; columns: number; rows: number; maxNodes?: number }
 
 function tabFilter(tab: BigBoxTab): FilterSpec {
   const f = tab.filter
@@ -83,7 +82,7 @@ function tabFilter(tab: BigBoxTab): FilterSpec {
 // useTabGames reads the games of a tab (its filter, in the order of the theme) page by page [BBX-007, BBX-038, BBX-050, BBX-055].
 export function useTabGames(tab: BigBoxTab, sort: SortKey, paging: TabPaging): TabGames {
   const qc = useQueryClient()
-  const limit = paging.kind === 'grid' ? gridPageSize(paging.columns, paging.rows) : pageSize(paging.capacity)
+  const limit = paging.kind === 'grid' ? gridPageSize(paging.columns, paging.rows, paging.maxNodes) : pageSize(paging.capacity)
   const limitRef = useRef(limit)
   limitRef.current = limit
   const tabKey = tab.key
