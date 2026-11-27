@@ -323,4 +323,10 @@ Fase 17, [phase-17-tema-desktop](specs/phase-17-tema-desktop/requirements.md) (A
 
 Ficou para depois: tema Roda, área segura para TV, busca e filtros dentro do Big Box. A verificação manual (TDK-035, TDK-036) é a T19.
 
-O executável é gerado com `wails build -ldflags "-X main.version=1.3.0"`.
+O executável é gerado com `wails build -ldflags "-X main.version=1.3.1"`.
+
+## Versão 1.3.1 (2026-11-27)
+
+Correção: o Big Box lia só o primeiro controle conectado. Com outros controles no PC (por exemplo, o do Sunshine/Moonlight junto de controles físicos), a navegação não respondia. Agora todos os controles conectados são lidos e as entradas são somadas (botão vale se algum aperta; em cada eixo vale o de maior valor absoluto; Select de um controle bloqueia B e Y de qualquer outro).
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.3.1"`.

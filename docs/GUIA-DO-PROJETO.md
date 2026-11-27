@@ -1,4 +1,4 @@
-# Guia do projeto Arcadia (versão 1.3.0)
+# Guia do projeto Arcadia (versão 1.3.1)
 
 Este guia é para você ler o código do Arcadia sem se perder. Ele parte do que você já sabe (Java, JavaScript, React)
 e explica o que muda em Go, onde cada coisa mora e em que ordem ler.
@@ -910,7 +910,7 @@ go vet ./...
 cd frontend && npx vitest run       # frontend
 cd cmd/arcadia && wails dev         # UI com recarga automática
 go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente, com dados separados
-cd cmd/arcadia && wails build -ldflags "-X main.version=1.3.0"   # gera build/bin/arcadia.exe
+cd cmd/arcadia && wails build -ldflags "-X main.version=1.3.1"   # gera build/bin/arcadia.exe
 sqlc generate                       # depois de alterar internal/store/queries/*.sql
 ```
 
