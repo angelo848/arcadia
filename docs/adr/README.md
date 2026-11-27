@@ -55,3 +55,4 @@ Registros **curtos** das decisões de arquitetura: o que decidimos, por quê e o
 | [0039](0039-tempo-para-zerar-hltb.md) | Tempo para zerar do HowLongToBeat com cache, reserva do IGDB e falha silenciosa | aceito |
 | [0040](0040-contrato-de-tema-v2.md) | Contrato de tema v2 do Big Box | aceito (estende 0036) |
 | [0041](0041-sessoes-editaveis-pelo-usuario.md) | Sessões editáveis pelo usuário: origem `manual`, total por diferença e sem sobreposição | aceito (ressalva ao 0017: em sessão editada `active_seconds` é a verdade) |
+| [0042](0042-layout-em-colunas-no-contrato-de-tema-do-big-box.md) | Layout em colunas no contrato de tema do Big Box | aceito (estende 0040) |

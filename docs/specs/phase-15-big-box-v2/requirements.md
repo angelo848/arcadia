@@ -559,6 +559,8 @@ jogos do HowLongToBeat, e escolher um grava `found` confirmado com fonte `hltb`,
 Contrato completo em [contracts/bigbox-temas-v2.md](contracts/bigbox-temas-v2.md).
 
 ### BBX-046 — Temas disponíveis
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-060): `desktop` ("Desktop") entra disponível, depois de `estante` e
+antes de `roda`; o seletor lista os cinco.
 Dado o registro de temas, então existem, nesta ordem, `faixa` ("Faixa"), `mosaico` ("Mosaico") e `estante` ("Estante"),
 disponíveis, e `roda` ("Roda"), indisponível. O seletor "Tema do Big Box" do cabeçalho da janela normal lista os quatro pelo nome do
 registro, com "Roda (em breve)" desativado; a escolha fica em `localStorage` (`arcadia.bigBoxTheme`, `lib/uiPrefs.ts`); valor
@@ -566,6 +568,9 @@ ausente, desconhecido ou indisponível vira `faixa` (BBX-023).
 · verificação: teste do registro, de `uiPrefs` e de componente do cabeçalho.
 
 ### BBX-047 — Contrato de tema v2
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-061): campos novos opcionais (layout `screens`/`columns`, colunas e
+fileiras por janela e visualização, limite de nós, rolagem `focusTop`/`edges`, vídeo `panel`, ordem `inherit`); ausentes, valem os
+padrões de hoje.
 Dado um tema, então ele declara, além de `id`, `name`, `available` e `listCapacity`: o eixo (`horizontal`, `vertical` ou `grid`,
 com o número de colunas na grade), a âncora da faixa, o fundo (`contain`, `cover` ou `plain`), o lugar do vídeo (`background` ou
 `cover`), o conjunto de abas (`platforms` ou `collections`), a ordem da lista (`title` ou `lastPlayed`), se mostra o tempo para
@@ -576,6 +581,8 @@ reducer.
 · verificação: teste do registro (campos obrigatórios de cada tema) e do shell com temas falsos.
 
 ### BBX-048 — Grade 2D no reducer
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-013, TDK-014): no layout `columns` (Desktop), ←/→ não passam de
+fileira e, nas pontas, levam às zonas vizinhas (Plataformas e Painel); nos outros temas, como aqui.
 Dado um tema com eixo `grid` de `C` colunas, a aba com `T` jogos, `L` lidos e o último índice navegável `M = min(T, L) − 1`, na tela
 Navegar: ← / → movem o foco um jogo (passando de fileira), limitado a `[0, M]`; ↓ leva o foco a `f + C` quando `f + C ≤ M`, ou a `M`
 quando há fileira abaixo (`⌊f/C⌋ < ⌊M/C⌋`), e senão não faz nada; ↑ leva a `f − C` quando `f − C ≥ 0` e senão não faz nada. Nos
@@ -584,12 +591,16 @@ eixos `horizontal` e `vertical` nada muda (BBX-006, BBX-024). Na tela Detalhes a
 `L`) e do hook de entrada (eixo `grid` emite `up`/`down` em Navegar).
 
 ### BBX-049 — Janela da grade
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-062, BBX-063): o limite de cartões no DOM é do tema (30 por padrão,
+Desktop 200), com `R'` no lugar de `R`; com rolagem `edges` a fileira inicial segue BBX-063. Com os padrões, como aqui.
 Dado a grade com `C` colunas, `R` fileiras inteiras visíveis (capacidade do tema) e o foco na fileira `r = ⌊f/C⌋`, então são
 desenhados os jogos `[s, min(s + (R + 1)·C, T))` com `s = clamp(r, 0, max(⌈T/C⌉ − R, 0))·C`: a fileira do foco é a primeira
 desenhada (a última fileira pode aparecer cortada embaixo) e nunca há mais de 30 cartões no DOM. A janela é recortada em `L`.
 · verificação: teste da função pura `gridWindow` (começo, meio, fim, fileira parcial, `T = 0`) e de componente (contagem de nós).
 
 ### BBX-050 — Páginas e pré-busca da grade
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-062): a página e a pré-busca usam `R'` (fileiras limitadas pelo limite
+de nós do tema); com o limite padrão de 30, como aqui.
 Dado um tema `grid`, então cada página de `ListGames` tem `P = min((R + 1 + 3)·C, 500)` jogos, e a próxima página é pedida quando
 `L < T` e `L < min(T, (r + R + 1 + 3)·C)` (a janela de três fileiras abaixo do foco ainda não foi lida), com as demais regras de
 BBX-007 e BBX-038 (uma leitura em voo por aba, sem repetir nem cancelar ao mover o foco, troca de aba cancela). Para temas de faixa,
@@ -610,6 +621,8 @@ só `--arc-bb-bg`, sem arte e sem vídeo (Mosaico). A transição de 300 ms vale
 · verificação: teste de componente de `BackgroundStage` (um caso por fundo).
 
 ### BBX-053 — Vídeo na capa em foco
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-010): o lugar de vídeo `panel` (Desktop) toca o vídeo no visor do
+painel da direita, com as mesmas regras.
 Dado um tema com vídeo `cover`, então o fundo nunca toca vídeo, e o vídeo do jogo em foco toca **dentro da capa em foco**
 (`FocusVideo`, `object-fit: contain` sobre `--arc-bb-surface`) com as regras de BBX-011..BBX-013: depois de 2.000 ms parado, só na
 tela Navegar e fora da suspensão, um único `<video>` na tela, `src` removido ao trocar de foco, sem nova tentativa depois de
@@ -625,11 +638,15 @@ inicial é a plataforma da janela normal, se houver, senão "Todos". O rodapé d
 · verificação: teste de `buildTabs` (filtros de cada aba) e de componente (rótulo com total; dica).
 
 ### BBX-055 — Ordem da lista por tema
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-067): a ordem `inherit` (Desktop) usa a ordenação da janela normal
+(`title`, `lastPlayed`, `totalPlayed` ou `year`).
 Dado o tema ativo, então `ListGames` da aba usa a ordem que ele declara: `title` (Faixa, Mosaico) ou `lastPlayed` (Estante, jogados
 mais recentes primeiro, nunca jogados por último). Trocar de tema só vale na próxima entrada no Big Box.
 · verificação: teste do hook de dados (parâmetro `sort` enviado).
 
 ### BBX-056 — Detalhes próprios do tema
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-064, TDK-018): no layout `columns` (Desktop) o componente de Detalhes
+é montado também em Navegar, com `active = false` (sem marca de foco); o foco em Detalhes é empilhado e as dicas seguem TDK-024.
 Dado um tema com componente de Detalhes, então a tela Detalhes usa esse componente com as mesmas propriedades de `BigBoxDetails`
 (jogo, mídia, sessão, foco, item da galeria, som, sinal de rolagem, tempo para zerar, ações), os mesmos estados de foco
 (BBX-032..BBX-036), uma única marca de foco (BBX-035) e as mesmas dicas (BBX-015); sem componente, vale `BigBoxDetails`.

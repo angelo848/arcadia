@@ -422,6 +422,8 @@ janela normal não mudam (voltam iguais ao sair).
 · verificação: teste de componente com runtime do Wails falso.
 
 ### BBX-002 — Sair do Big Box
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-015, TDK-017): no tema Desktop, B só sai do Big Box a partir da zona
+Jogos; em Plataformas e no Painel, B volta a Jogos.
 Dado a tela Navegar, quando aperto B (Esc), então a janela sai da tela cheia (volta ao estado anterior, UIX-003) e a biblioteca de
 três colunas reaparece como estava. Na tela Detalhes, B (Esc) volta a Navegar (BBX-016).
 · verificação: teste de componente.
@@ -437,6 +439,8 @@ busca de metadados nem "Buscar vídeo"; não abre modal; e não chama nenhum bin
 espiões.
 
 ### BBX-004 — Abas de plataforma
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-066): no layout `columns` (Desktop) a aba de plataforma mostra ícone e
+contagem; nos outros temas, só texto, como aqui.
 · alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-054): um tema pode declarar abas de coleção (Todos, Favoritos,
 Concluídos) antes das plataformas; com abas de plataforma, vale este critério.
 Dado o catálogo, então a barra de plataformas mostra "Todos" e cada plataforma com pelo menos um jogo (`gameCount > 0`, como
@@ -522,6 +526,8 @@ Jogar e Detalhes funcionam como A e X. Um lançamento pendente bloqueia novo lan
 · verificação: teste de componente com espiões.
 
 ### BBX-015 — Rodapé com dicas do gamepad
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-024): no tema Desktop as dicas seguem a zona (Jogos, Plataformas,
+Painel); nos outros temas, como aqui.
 · alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, BBX-054): com abas de coleção a dica é "LB/RB Aba"; nenhuma dica de
 Select + A (ATB-013).
 · alterado em 2026-11-16: na tela Detalhes as dicas seguem a zona em foco (BBX-032), e "Rolar" deixa de existir (a descrição não
@@ -534,6 +540,8 @@ segue BBX-013 na tela Navegar; na tela Detalhes ela não aparece (Y nos detalhes
 · verificação: teste de componente.
 
 ### BBX-016 — Tela de detalhes
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-018, TDK-037, BBX-064): no layout `columns` (Desktop) a tela Detalhes
+é o painel da direita, sempre visível, com foco empilhado (↑/↓) e só os botões "Jogar" e "Jogar sem contar tempo".
 · alterado em 2026-11-22 (docs/specs/phase-15-big-box-v2, TTB-016, BBX-056): a tela mostra o tempo para zerar (três valores e a
 fonte); um tema pode ter tela de Detalhes própria com os mesmos estados de foco.
 · alterado em 2026-11-15: sem discos (resposta 7).
@@ -661,6 +669,8 @@ fileira de miniaturas cortada embaixo e à direita, e trocar de item só movia u
 "preso" na galeria e a imagem sem trocar. BBX-032..BBX-035 fecham a lacuna; um teste do shell com controle falso cobre a fiação.
 
 ### BBX-032 — Foco dos detalhes entre os botões e a galeria
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-018): no layout `columns` (Desktop) o foco anda com ↑/↓ na ordem
+visual visor → Jogar → Jogar sem contar tempo; nos outros temas, como aqui.
 Dado a tela Detalhes de um jogo com galeria (vídeo ou screenshots) e o foco num botão, quando aperto ↓ (direcional, analógico
 esquerdo, seta), então o foco vai para a galeria; com o foco na galeria, ↑ devolve o foco ao último botão focado (Jogar ou Jogar
 sem contar tempo). ↑ nos botões e ↓ na galeria não fazem nada. Sem galeria, ↓ não faz nada. Dada a galeria que fica vazia com o
@@ -668,6 +678,8 @@ foco nela (`media:changed`), então o foco volta ao último botão focado.
 · verificação: teste do reducer e teste do shell com `navigator.getGamepads` falso (X, ↓, ↑).
 
 ### BBX-033 — ←/→ entre os botões
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, TDK-018): no layout `columns` (Desktop) ← num botão volta a Jogos e → não
+faz nada (os botões ficam empilhados); nos outros temas, como aqui.
 Dado o foco num botão da tela Detalhes, quando aperto →, então o foco vai de **Jogar** para **Jogar sem contar tempo**; ←
 volta; sem dar a volta nas pontas. A imagem da galeria não muda.
 · verificação: teste do reducer e teste do shell com controle falso.
@@ -750,6 +762,8 @@ Dado uma capa da faixa ou uma miniatura da galeria dos detalhes, então a imagem
 · verificação: teste de componente.
 
 ### BBX-042 — Área segura
+· alterado em 2026-11-27 (docs/specs/phase-17-tema-desktop, BBX-069): o recuo vem dos tokens `--arc-bb-safe-*` do tema; Faixa, Mosaico
+e Estante mantêm 5 %, o Desktop usa 0.
 Dado o Big Box em qualquer tela, então todo o conteúdo (abas, faixa, bloco de informações, tela Detalhes, aviso e rodapé) fica
 dentro da área segura: 5 % da altura da janela no topo e embaixo e 5 % da largura nas laterais; só o fundo (BBX-040) ocupa a
 janela inteira.
