@@ -60,7 +60,7 @@ I: T19                              (depende de tudo)
 
 ---
 
-## T01 — Testes: movimentos mínimos para `lib/`
+## T01 — Testes: movimentos mínimos para `lib/` [concluída]
 - Requisitos: BBX-066, BBX-067, TDK-008, TDK-034. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivos (testes):
   - `frontend/src/lib/platformIcons.test.ts` (novo)
@@ -73,7 +73,7 @@ I: T19                              (depende de tudo)
   - `gridNav`: `TDK-034/LIST_ROW_HEIGHT = 64`.
   - `filters`: `BBX-067/sortOptions na ordem Título, Última vez jogado, Tempo jogado, Ano com as chaves title, lastPlayed, totalPlayed, year`; `BBX-067/sortLabel(k) devolve o rótulo de cada chave`; `BBX-067/isSortKey aceita as quatro chaves e recusa "" e "desktop"`.
 
-## T02 — Frontend: movimentos mínimos para `lib/`
+## T02 — Frontend: movimentos mínimos para `lib/` [concluída]
 - Requisitos: BBX-066, BBX-067, TDK-008, TDK-034. **Responsável:** implementer. Dependência: T01.
 - Arquivos:
   - `frontend/src/lib/platformIcons.ts` (novo): move `iconModules`, `seedIconUrls`, `genericIconUrl` e `platformIconSrc` de `lib/platforms.ts`, sem funções de escrita (a varredura de BBX-003 proíbe `lib/platforms` em `bigbox/`; `platformIcons` não casa com o padrão).
@@ -101,7 +101,7 @@ export function isSortKey(v: string): v is SortKey
 ```
 - Sem mudança de comportamento: os testes atuais de plataformas, lista, ordenação e painel passam como estão.
 
-## T03 — Testes: reducer com zonas, layout `columns` e `tabSet`
+## T03 — Testes: reducer com zonas, layout `columns` e `tabSet` [concluída]
 - Requisitos: BBX-065, TDK-012, TDK-013, TDK-014, TDK-015, TDK-016, TDK-017, TDK-018, TDK-033. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivo: `frontend/src/bigbox/nav.test.ts` (alterar o helper `ctx` e acrescentar). `ctx({ columns: 6, total: 20, loaded: 20, tabs: 4, galleryCount: 3, layout: 'columns', axis: 'grid' })` para os vetores do contrato §2.
 - Testes (um caso por linha das tabelas do contrato §2):
@@ -117,7 +117,7 @@ export function isSortKey(v: string): v is SortKey
   - `TDK-033/gameClosed volta a browse, zone games, focus = indexInTab, com os effects bringToFront e enterBigBox`.
   - Regressão `layout: 'screens'` (casos atuais, com o `ctx` novo): `BBX-048/layout screens: ←/→ passam de fileira e zone fica games`; `BBX-048/axis horizontal com columns 1: up/down não fazem nada`.
 
-## T04 — Frontend: reducer com zonas e layout `columns`
+## T04 — Frontend: reducer com zonas e layout `columns` [concluída]
 - Requisitos: BBX-065, TDK-012, TDK-013, TDK-014, TDK-015, TDK-016, TDK-017, TDK-018, TDK-033. **Responsável:** implementer. Dependência: T03.
 - Arquivo: `frontend/src/bigbox/nav.ts`.
 - Assinaturas (acréscimos):
@@ -130,7 +130,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
 ```
 - Regras (contrato §2): o ramo `up`/`down` de Navegar passa de `cols <= 1` para `c.axis !== 'grid'`; com `columns`, `zone = platforms` desvia para troca de aba; `prev`/`next` seguem a tabela (sem passar de fileira, zonas nas pontas); em Detalhes com `columns`, `up`/`down` na ordem empilhada visor ↔ Jogar ↔ Jogar sem contar tempo (atualizando `detailsButton`) e `prev` num botão volta a `browse`/`games`; `back`, `accept`, `next` em `platforms` voltam a `games` **antes** da checagem de `focusedGameId`; `listLoaded` e `gameClosed` forçam `zone = games`; `tabSet` fora de `inputTypes`, mas ignorado com `suspended` por checagem própria. Com `layout = screens` o código atual fica intacto.
 
-## T05 — Testes: contrato de tema, capacidade, janela, modelo, dados, dicas
+## T05 — Testes: contrato de tema, capacidade, janela, modelo, dados, dicas [concluída]
 - Requisitos: BBX-061, BBX-062, BBX-063, BBX-066, BBX-067, BBX-068, TDK-004, TDK-005, TDK-006, TDK-007, TDK-008, TDK-019, TDK-020, TDK-024, TDK-034. **Responsável:** test-writer. Dependência: T01.
 - Arquivos (testes):
   - `frontend/src/bigbox/viewModel.test.ts` (acrescentar)
@@ -175,7 +175,7 @@ export function bigBoxNav(s: NavState, a: NavAction, c: NavCtx): { state: NavSta
     - `TDK-005/coverPlaceholderUrl é uma string não vazia`.
   - `desktopLabels.test.ts` (fixture com os mesmos textos de `GameDetailsPanel` linhas ~205-245): `TDK-008/status, tempo total, primeira e última vez, concluído em (só se houver), modos, gêneros, desenvolvedora, editora e ano`; `TDK-008/vazio vira "—"`; `TDK-008/favorito`.
 
-## T06 — Frontend: contrato de tema, capacidade, janela, modelo, dados, dicas
+## T06 — Frontend: contrato de tema, capacidade, janela, modelo, dados, dicas [concluída]
 - Requisitos: BBX-061, BBX-062, BBX-063, BBX-066, BBX-067, BBX-068, TDK-004, TDK-005, TDK-006, TDK-007, TDK-008, TDK-019, TDK-020, TDK-024, TDK-034. **Responsável:** implementer. Dependência: T05, T02, T04.
 - Arquivos:
   - `frontend/src/bigbox/themes/types.ts`
@@ -247,7 +247,7 @@ export type BigBoxDetailsProps = { /* atual */
 ```
 - `buildViewModel`: com `layout = columns` preenche os campos novos de jogo e `withIcons` fica por conta do chamador; `sortLabel` usa `sortLabel(k)` de `lib/filters` quando `sortInherited`; com `startRow` a janela é `gridWindowAt(total, startRow, columns, ⌊capacity/columns⌋)`, senão o `gridWindow` atual. `hintsFor` segue o contrato §8 com `layout = columns` e devolve o de hoje com `screens`. Fórmulas de `desktopGrid` no contrato §3.
 
-## T07 — Testes: shell com layout `columns` (tema falso), `useGridStart`, `App` repassa ordem e visualização
+## T07 — Testes: shell com layout `columns` (tema falso), `useGridStart`, `App` repassa ordem e visualização [concluída]
 - Requisitos: BBX-061, BBX-062, BBX-063, BBX-064, BBX-065, BBX-067, BBX-068, TDK-010, TDK-011, TDK-019, TDK-020, TDK-033. **Responsável:** test-writer. Dependência: T04 (tipos), T05.
 - Arquivos (testes):
   - `frontend/src/bigbox/useGridStart.test.tsx` (novo, `renderHook`)
@@ -283,7 +283,7 @@ export type BigBoxDetailsProps = { /* atual */
     - `TDK-033/entrada suspensa com o jogo lançado; Select segurado bloqueia A, B, Y e ↑/↓; depois de Select+B o foco volta ao jogo que rodava com zona games`.
   - `App.test.tsx`: `BBX-067/BBX-068/o App passa query.sort e a visualização da janela normal ao BigBox` (tema falso `sort: 'inherit'`; ListGames recebe a ordenação da janela; com visualização em lista o tema falso recebe `view = 'list'`).
 
-## T08 — Frontend: shell com colunas, rolagem pelas bordas, Detalhes em Navegar e `onTab`
+## T08 — Frontend: shell com colunas, rolagem pelas bordas, Detalhes em Navegar e `onTab` [concluída]
 - Requisitos: BBX-061, BBX-062, BBX-063, BBX-064, BBX-065, BBX-067, BBX-068, TDK-010, TDK-011, TDK-017, TDK-019, TDK-020, TDK-025, TDK-031, TDK-033. **Responsável:** implementer. Dependência: T07, T06.
 - Arquivos:
   - `frontend/src/bigbox/useGridStart.ts` (novo)
@@ -301,7 +301,7 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
 - Mudanças no shell: `C = theme.gridColumns?.(viewport, libraryView) ?? theme.columns`, `R = theme.gridRows?.(viewport, libraryView) ?? 1`, `N = theme.maxNodes ?? GRID_MAX_NODES`, `R' = effectiveRows(R, C, N)`; `C` vai para `NavCtx.columns`, `NavCtx.axis`/`layout`, `buildViewModel` e `useTabGames({ kind: 'grid', columns: C, rows: R', maxNodes: N })`; `shouldPrefetchGrid(..., N)`; `sort = theme.sort === 'inherit' ? p.librarySort : theme.sort` em `useTabGames` e no modelo (`sortInherited`); `startRow` de `useGridStart` (`recenter()` na entrada, em `gameClosed` e nunca em `onPick`) vai ao modelo e à chave de capas; `buildTabs(..., theme.layout === 'columns')`; com `layout = columns` o nó de Detalhes é montado sempre que há `data.detail`, com `active = nav.screen === 'details'`, `platformIconUrl` (aba `p:${platformId}`), `coverUrl`, `preview` e `labels = desktopLabels(detail)`; `BackgroundStage` só recebe vídeo com `videoSlot = 'background'`; `onTab={(i) => { setAlert(null); dispatchNav({ type: 'tabSet', index: i }) }}`.
 - Nada de binding novo: `useFocusedData` já lê detalhe, mídia e sessão do jogo em foco.
 
-## T09 — Testes: tokens e CSS do Desktop
+## T09 — Testes: tokens e CSS do Desktop [concluída]
 - Requisitos: BBX-069, TDK-001, TDK-027, TDK-028, TDK-034. **Responsável:** test-writer. Dependência: nenhuma.
 - Arquivo: `frontend/src/theme.test.ts` (acrescentar; reusa `block`, `luminance`, `contrast`).
 - Testes:
@@ -314,11 +314,11 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
   - `TDK-001/o rodapé do Desktop tem height 48px pela regra [data-bigbox-theme="desktop"] [data-bb-footer]`.
   - `TDK-034/--col-left e --col-right continuam únicos e com os clamp de UIX-005` (o Desktop não os redefine).
 
-## T10 — Frontend: bloco de tokens do Desktop
+## T10 — Frontend: bloco de tokens do Desktop [concluída]
 - Requisitos: BBX-069, TDK-027, TDK-028. **Responsável:** implementer. Dependência: T09.
 - Arquivo: `frontend/src/index.css`: bloco `[data-bigbox-theme="desktop"]` aninhado em `[data-theme="dark"]` (depois do `estante`), com os valores do contrato §7 (`--arc-bb-bg: #16181d`, `--arc-bb-bg-2: #1e2128`, `--arc-bb-scrim: #00000000`, `--arc-bb-panel: #1e2128`, `--arc-bb-text: #e6e8ec`, `--arc-bb-text-muted: #9aa3b2`, `--arc-bb-heading: #e6e8ec`, `--arc-bb-accent: #238636`, `--arc-bb-on-accent: #ffffff`, `--arc-bb-surface: #272b34`, `--arc-bb-placeholder: #343a46`, `--arc-bb-chip: #323744`, `--arc-bb-on-chip: #e6e8ec`, `--arc-bb-focus: #79b8ff`, `--arc-bb-danger: #ff6b64`, `--arc-bb-safe-y: 0`, `--arc-bb-safe-x: 0`) e a regra `[data-bigbox-theme="desktop"] [data-bb-footer] { height: 48px }`. Valores copiados como literais (o teste de contraste lê hexadecimais); literais só dentro do bloco do tema (`theme-scan`).
 
-## T11 — Testes: componentes do tema Desktop e registro
+## T11 — Testes: componentes do tema Desktop e registro [concluída]
 - Requisitos: BBX-060, BBX-061, BBX-065, TDK-001, TDK-002, TDK-003, TDK-004, TDK-005, TDK-006, TDK-008, TDK-009, TDK-010, TDK-011, TDK-018, TDK-019, TDK-021, TDK-022, TDK-023, TDK-025, TDK-026, TDK-029, TDK-030. **Responsável:** test-writer. Dependência: T05 (fixtures do modelo), T06.
 - Arquivos (testes):
   - `frontend/src/bigbox/themes/desktop/Desktop.test.tsx` (novo)
@@ -373,7 +373,7 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
     - `TDK-025/Jogar e Jogar sem contar tempo chamam onPlay e onPlayUntracked`.
     - `TDK-030/nenhum Editar, Buscar metadados, Buscar vídeo, Abrir local do arquivo, Remover, Adicionar sessão, Carregar mais, Ampliar, lista de sessões, painel de sessão, "Sem emulador configurado" nem "Rastreio por processo" no DOM`.
 
-## T12 — Testes de DOM: painel só com os dois botões (TDK-037) e nenhum controle fora da lista (TDK-038)
+## T12 — Testes de DOM: painel só com os dois botões (TDK-037) e nenhum controle fora da lista (TDK-038) [concluída]
 - Requisitos: TDK-002, TDK-030, TDK-037, TDK-038. **Responsável:** test-writer. Dependência: T06 (usa o registro real do Desktop, vermelho até a T15).
 - Arquivos (testes):
   - `frontend/src/bigbox/themes/desktop/DesktopDetails.buttons.test.tsx` (novo; TDK-037)
@@ -391,7 +391,7 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
     - `TDK-038/nenhum elemento tem nome acessível ou texto igual a um dos rótulos proibidos` (Big Box, Tema do Big Box, Importar, Provedores, Emuladores, Estatísticas, Editar, Buscar metadados, Buscar vídeo, Abrir local do arquivo, Remover, Tentar de novo, Confirmar…, Escolher outro…, Buscar, Nenhum destes, Adicionar sessão, Carregar mais, Ampliar, Limpar filtros, Pausar, Retomar) por `queryByRole` e `queryByText` exatos; "Plataformas" só como texto do título da coluna.
     - `TDK-002/o cabeçalho do tema não tem acionável em nenhum desses estados`.
 
-## T13 — Testes: shell com o tema Desktop real (zonas, controle, mouse, só leituras)
+## T13 — Testes: shell com o tema Desktop real (zonas, controle, mouse, só leituras) [concluída]
 - Requisitos: TDK-011, TDK-012, TDK-016, TDK-017, TDK-018, TDK-019, TDK-020, TDK-024, TDK-025, TDK-031, TDK-033. **Responsável:** test-writer. Dependência: T08 (e vermelho até a T15).
 - Arquivo: `frontend/src/bigbox/BigBox.desktop.test.tsx` (novo). `navigator.getGamepads` falso para controle e `KeyboardEvent` para teclado; bindings falsos com espiões em todos.
 - Testes:
@@ -407,7 +407,7 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
   - `TDK-031/em toda a navegação só são chamados ListGames, GetGame, MediaList, Catalog, CurrentSession, TimeToBeatGet, LaunchGame, LaunchGameUntracked e BringToFront; nenhum download de imagem ou vídeo`.
   - `TDK-033/suspensão enquanto o jogo roda; Select segurado bloqueia A, B, Y e ↑/↓; depois de game:closedByHotkey o Big Box volta com zona Jogos, foco no jogo que rodava e a fileira dele no meio`.
 
-## T14 — Testes: varreduras do Big Box com o tema Desktop
+## T14 — Testes: varreduras do Big Box com o tema Desktop [concluída]
 - Requisitos: BBX-066, BBX-070, TDK-030, TDK-034. **Responsável:** test-writer. Dependência: nenhuma (fica vermelho até a T15).
 - Arquivos (testes): `frontend/src/bigbox/bigbox-scan.test.ts` (acrescentar). `theme-scan.test.ts` não muda (varre todo `.tsx`, inclusive o Desktop).
 - Testes:
@@ -422,7 +422,7 @@ export type BigBoxProps = { /* atual */ librarySort: SortKey; libraryView: Libra
   - `TDK-034/o tema usa var(--col-left) e var(--col-right) e não redefine constantes de layout (nenhum literal 160, 16, 60, 6 ou 64 fora de desktopLayout.ts)`.
   - `BBX-037/nenhum --arc-bb-scrim fora do BackgroundStage` (regra atual, vale também para o Desktop).
 
-## T15 — Frontend: tema Desktop (componentes) e entrada no registro
+## T15 — Frontend: tema Desktop (componentes) e entrada no registro [concluída]
 - Requisitos: BBX-060, BBX-061, BBX-065, BBX-070, TDK-001, TDK-002, TDK-003, TDK-004, TDK-005, TDK-006, TDK-008, TDK-009, TDK-010, TDK-011, TDK-018, TDK-019, TDK-021, TDK-022, TDK-023, TDK-025, TDK-026, TDK-029, TDK-030, TDK-031, TDK-034, TDK-037, TDK-038. **Responsável:** implementer. Dependência: T06, T08, T10, T11, T12, T13, T14.
 - Arquivos (todos novos, exceto o registro): `frontend/src/bigbox/themes/desktop/{Desktop,DesktopSidebar,DesktopToolbar,DesktopGrid,DesktopList,DesktopDetails}.tsx` e `frontend/src/bigbox/themes/registry.ts` (entrada `desktop` depois de `estante` e antes de `roda`, como no design §2).
 - Assinaturas:
@@ -453,7 +453,7 @@ export function DesktopDetails(p: BigBoxDetailsProps): JSX.Element
 ```
 - Regras de implementação: sem `components/` nem `lib/` (formatação vem do shell em `labels`); tokens só por utilitários `bb-*` e `var(--arc-bb-*)`; um `<video>` por vez (o `FocusVideo` do visor só com `!active`, o `Video` da galeria só com `active`); `scrollIntoView?.()` com `?.`; nenhum `button` fora dos itens de plataforma e dos dois botões do painel; cartões e linhas `role="option"` sem foco do DOM; nenhuma classe/estilo de cor literal.
 
-## T16 — Testes: seletor, preferência e invariantes da UI com o Desktop
+## T16 — Testes: seletor, preferência e invariantes da UI com o Desktop [concluída]
 - Requisitos: BBX-060, TDK-032. **Responsável:** test-writer. Dependência: T15. Esperado verde; se algum caso falhar, o implementer corrige em `frontend/src/App.tsx` (nenhuma mudança esperada além do repasse da T08).
 - Arquivos (testes): `frontend/src/App.test.tsx` (seção do Big Box: opções do seletor, anotado), `frontend/src/lib/uiPrefs.test.ts` (acrescentar), `frontend/src/App.invariants.test.tsx` (acrescentar).
 - Testes:
@@ -462,7 +462,7 @@ export function DesktopDetails(p: BigBoxDetailsProps): JSX.Element
   - `BBX-060/uiPrefs: readBigBoxTheme lê "desktop" e writeBigBoxTheme o grava; ausente, desconhecido e "roda" viram faixa`.
   - `TDK-032/a navegação do tema Desktop (zonas, abas, painel, som, lançar) não chama PauseSession, ResumeSession, ToggleSession nem fecha jogo, e a UI não encerra sessão`.
 
-## T17 — Documentação
+## T17 — Documentação [concluída]
 - Requisitos: documentação das mudanças de BBX-060..BBX-070 e TDK-001..TDK-038 (sem requisito próprio). **Responsável:** sessão principal (docs). Dependência: T15.
 - Arquivos:
   - `docs/ARCHITECTURE.md`: seção do Big Box (temas, contrato com `layout`, zonas, tema Desktop, ADR 0042).
@@ -472,7 +472,7 @@ export function DesktopDetails(p: BigBoxDetailsProps): JSX.Element
   - `README.md` e `docs/ROADMAP.md` (seção "Fase 17" e "Versão 1.3.0"); `docs/GUIA-DO-PROJETO.md` (tema Desktop, navegação por zonas, comandos).
   - `docs/specs/phase-17-tema-desktop/tasks.md` (este arquivo): marcar tarefas `[concluída]`.
 
-## T18 — Versão 1.3.0
+## T18 — Versão 1.3.0 [concluída]
 - Requisitos: nenhum requisito próprio (decisão de release). **Responsável:** sessão principal (mecânico). Dependência: T17.
 - Arquivos: `cmd/arcadia/wails.json` (`productVersion`), `frontend/package.json` e `frontend/package-lock.json` (os dois campos `version` do topo; não tocar nas dependências), `CLAUDE.md` (comando de build `-X main.version=1.3.0` e "versão atual: 1.3.0"), `README.md` ("Current version" e comando de build), `docs/GUIA-DO-PROJETO.md` e `docs/ROADMAP.md` (comando de build). `cmd/arcadia/version.go` e `version_test.go` não mudam (a versão vem do `-ldflags`).
 

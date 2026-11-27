@@ -442,6 +442,14 @@ Spec em [phase-15-big-box-v2](specs/phase-15-big-box-v2/requirements.md); decis�
 - A UI nunca influencia o tempo de jogo; nada mudou em `internal/tracker`, `play_session`, `pause_interval`, `tracking_rule`,
   `media` ou `media_job`.
 
+### Tema Desktop do Big Box (fase 17)
+
+O contrato de tema ganhou o layout `columns` ([ADR 0042](adr/0042-layout-em-colunas-no-contrato-de-tema-do-big-box.md)): o reducer
+(`nav.ts`) tem zonas (Plataformas, jogos e painel), o painel de detalhes fica montado também em Navegar, colunas e fileiras vêm da
+janela e da visualização herdada da janela normal, e a rolagem é por fileiras inteiras. O tema `desktop`
+(`themes/desktop/`) desenha a marcação com as constantes de layout do desktop e tokens `--arc-bb-*` copiados dos `--arc-*` do tema
+escuro, e só tem os botões "Jogar" e "Jogar sem contar tempo". Só frontend: agente, IPC, banco e tracker não mudam.
+
 ### Edição de sessões (fase 16)
 
 Spec em [phase-16-edicao-sessoes](specs/phase-16-edicao-sessoes/requirements.md); decisão no

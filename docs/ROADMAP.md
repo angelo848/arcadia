@@ -219,6 +219,16 @@ Na lista de sessões do painel de detalhes do jogo: criar uma sessão à mão, e
 encerrada e excluir uma sessão encerrada, com o total, a primeira e a última vez jogado e a contagem de sessões sempre coerentes.
 Métodos novos no IPC: `session.create`, `session.update` e `session.delete`. Sem mudança no tracker.
 
+## Fase 17 — Tema Desktop do Big Box
+
+> **Status:** concluída no código (verificação manual, TDK-035 e TDK-036, na T19). Spec em
+> [phase-17-tema-desktop](specs/phase-17-tema-desktop/requirements.md) (BBX-060..BBX-070, TDK-001..TDK-038); decisão no
+> [ADR 0042](adr/0042-layout-em-colunas-no-contrato-de-tema-do-big-box.md). Só frontend: nada muda no agente, no IPC, no banco nem no tracker.
+
+Novo tema do Big Box, "Desktop", que reproduz a janela normal em três colunas (Plataformas, jogos em grade ou lista, painel de
+detalhes) e se navega só pelo controle. O painel tem apenas "Jogar" e "Jogar sem contar tempo"; não há botões de importar, provedores,
+emuladores, editar nem buscar metadados.
+
 ## Versão 1.0.0 (2026-11-16)
 
 Primeira versão definitiva: fases 1 a 14 no código, ícones próprios do aplicativo e das plataformas. O executável é
@@ -301,3 +311,16 @@ Ficou para depois: nota por sessão, desfazer a exclusão, editar pausas, dividi
 verificação manual (SEL-017) é a T38.
 
 O executável é gerado com `wails build -ldflags "-X main.version=1.2.0"`.
+
+## Versão 1.3.0 (2026-11-27)
+
+Fase 17, [phase-17-tema-desktop](specs/phase-17-tema-desktop/requirements.md) (ADR [0042](adr/0042-layout-em-colunas-no-contrato-de-tema-do-big-box.md)):
+- **Tema Desktop no Big Box:** Plataformas, jogos (grade ou lista, como na janela normal) e painel de detalhes em colunas, navegáveis
+  pelo controle por zonas. O painel só tem "Jogar" e "Jogar sem contar tempo"; sem botões de adicionar jogos, provedores, emuladores,
+  editar ou buscar metadados.
+- **Sessões:** a lista passa a carregar 10 por página, Editar e Excluir viram ícones, e criar uma sessão pede só o início e o tempo
+  jogado (o fim é calculado).
+
+Ficou para depois: tema Roda, área segura para TV, busca e filtros dentro do Big Box. A verificação manual (TDK-035, TDK-036) é a T19.
+
+O executável é gerado com `wails build -ldflags "-X main.version=1.3.0"`.

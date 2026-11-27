@@ -1,4 +1,4 @@
-# Guia do projeto Arcadia (versão 1.2.0)
+# Guia do projeto Arcadia (versão 1.3.0)
 
 Este guia é para você ler o código do Arcadia sem se perder. Ele parte do que você já sabe (Java, JavaScript, React)
 e explica o que muda em Go, onde cada coisa mora e em que ordem ler.
@@ -725,7 +725,7 @@ flowchart LR
     NAV -->|"estado novo + efeitos"| BB["BigBox.tsx"]
     DATA["useBigBoxData<br/>(React Query)"] --> VM["viewModel.ts<br/>buildViewModel"]
     BB --> VM
-    VM -->|"props prontas"| TH["themes/registry.ts<br/>Faixa, Mosaico, Estante"]
+    VM -->|"props prontas"| TH["themes/registry.ts<br/>Faixa, Mosaico, Estante, Desktop"]
     EV["useBigBoxEvents<br/>eventos do agente"] --> BB
 ```
 
@@ -744,6 +744,8 @@ máximo 30 nós). Os temas:
 
 - **Faixa** (`themes/faixa/`, estilo PS5): fileira horizontal, vídeo no fundo.
 - **Mosaico** (`themes/mosaico/`, estilo Switch): fileira de cartões 16:9, vídeo na capa do cartão em foco, painel com tempo para zerar.
+- **Desktop** (`themes/desktop/`, fase 17): a janela normal em três colunas (Plataformas, grade ou lista, painel de detalhes), navegada por zonas
+  (D-pad, A, B, X, LB/RB); o painel só tem Jogar e Jogar sem contar tempo.
 - **Estante** (`themes/estante/`, estilo Big Picture): grade de 5 colunas, destaque no alto (`EstanteHero`) que some ao descer,
   abas Todos, Favoritos, Concluídos e plataformas, e `EstanteDetails`.
 
@@ -908,7 +910,7 @@ go vet ./...
 cd frontend && npx vitest run       # frontend
 cd cmd/arcadia && wails dev         # UI com recarga automática
 go run ./cmd/arcadia --agent --data-dir ./.devdata   # só o agente, com dados separados
-cd cmd/arcadia && wails build -ldflags "-X main.version=1.2.0"   # gera build/bin/arcadia.exe
+cd cmd/arcadia && wails build -ldflags "-X main.version=1.3.0"   # gera build/bin/arcadia.exe
 sqlc generate                       # depois de alterar internal/store/queries/*.sql
 ```
 
