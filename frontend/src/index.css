@@ -86,6 +86,31 @@
     --arc-bb-chip: #2a2e37;
     --arc-bb-on-chip: #f2f4f8;
   }
+
+  [data-bigbox-theme="desktop"] {
+    --arc-bb-bg: #16181d;
+    --arc-bb-bg-2: #1e2128;
+    --arc-bb-scrim: #00000000;
+    --arc-bb-panel: #1e2128;
+    --arc-bb-safe-y: 0;
+    --arc-bb-safe-x: 0;
+    --arc-bb-text: #e6e8ec;
+    --arc-bb-text-muted: #9aa3b2;
+    --arc-bb-accent: #238636;
+    --arc-bb-on-accent: #ffffff;
+    --arc-bb-surface: #272b34;
+    --arc-bb-focus: #79b8ff;
+    --arc-bb-danger: #ff6b64;
+    --arc-bb-heading: #e6e8ec;
+    --arc-bb-placeholder: #343a46;
+    --arc-bb-chip: #323744;
+    --arc-bb-on-chip: #e6e8ec;
+  }
+}
+
+/* Desktop theme footer (TDK-001). */
+[data-bigbox-theme="desktop"] [data-bb-footer] {
+  height: 48px;
 }
 
 /* Themed scrollbars (AJU-004, AJU-005). */

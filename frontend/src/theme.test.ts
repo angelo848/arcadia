@@ -498,3 +498,95 @@ describe('theme: scrollbar and cursor (fase 10.1)', () => {
     }
   })
 })
+
+// ---- Fase 17 (BBX-069, TDK-001, TDK-027, TDK-028, TDK-034): tokens e CSS do Desktop (contrato §7) ----
+const desktopHeader = /\[data-bigbox-theme=["']desktop["']\]\s*\{/
+const desktopBlock = block(css, desktopHeader)
+const dsk = (name: string): string => {
+  const m = new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(desktopBlock)
+  return m ? m[1].trim() : ''
+}
+const dskSolid = (name: string) => toHex(parseColor(dsk(name)))
+const darkSolid = (name: string) => toHex(parseColor(tokenValue(name)))
+
+describe('theme: Desktop (fase 17)', () => {
+  it('TDK-027/o bloco [data-bigbox-theme="desktop"] está dentro de [data-theme="dark"] e define os 15 tokens --arc-bb-* mais --arc-bb-safe-y e --arc-bb-safe-x', () => {
+    expect(desktopBlock).not.toBe('')
+    expect(block(darkBlock, desktopHeader)).not.toBe('')
+    expect(Object.keys(bbTokensV2)).toHaveLength(15)
+    for (const name of [...Object.keys(bbTokensV2), '--arc-bb-safe-y', '--arc-bb-safe-x']) {
+      expect(dsk(name), `valor de ${name}`).not.toBe('')
+    }
+  })
+
+  const pairs: [string, string][] = [
+    ['--arc-bb-bg', '--arc-bg'],
+    ['--arc-bb-bg-2', '--arc-surface'],
+    ['--arc-bb-panel', '--arc-surface'],
+    ['--arc-bb-text', '--arc-text'],
+    ['--arc-bb-text-muted', '--arc-text-muted'],
+    ['--arc-bb-heading', '--arc-text'],
+    ['--arc-bb-accent', '--arc-play'],
+    ['--arc-bb-on-accent', '--arc-on-accent'],
+    ['--arc-bb-surface', '--arc-surface-2'],
+    ['--arc-bb-placeholder', '--arc-border'],
+    ['--arc-bb-chip', '--arc-surface-3'],
+    ['--arc-bb-on-chip', '--arc-text'],
+    ['--arc-bb-focus', '--arc-focus'],
+    ['--arc-bb-danger', '--arc-danger'],
+  ]
+  for (const [bbName, arcName] of pairs) {
+    it(`TDK-027/cada token de cor tem o valor do token do tema escuro da tabela do contrato §7: ${bbName} = ${arcName}`, () => {
+      expect(dsk(bbName), `valor de ${bbName}`).not.toBe('')
+      expect(dskSolid(bbName)).toBe(darkSolid(arcName))
+    })
+  }
+
+  it('TDK-027/scrim do Desktop é transparente (#00000000)', () => {
+    expect(dsk('--arc-bb-scrim').toLowerCase()).toBe('#00000000')
+  })
+
+  it('TDK-028/text, text-muted, heading e danger têm contraste ≥ 4,5 com panel, bg e surface', () => {
+    for (const t of ['--arc-bb-text', '--arc-bb-text-muted', '--arc-bb-heading', '--arc-bb-danger']) {
+      for (const b of ['--arc-bb-panel', '--arc-bb-bg', '--arc-bb-surface']) {
+        const r = contrast(dskSolid(t), dskSolid(b))
+        expect(r, `${t} sobre ${b}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('TDK-028/on-accent sobre accent e on-chip sobre chip ≥ 4,5', () => {
+    expect(contrast(dskSolid('--arc-bb-on-accent'), dskSolid('--arc-bb-accent'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(dskSolid('--arc-bb-on-chip'), dskSolid('--arc-bb-chip'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('TDK-028/focus ≥ 3 contra panel, bg e surface', () => {
+    for (const b of ['--arc-bb-panel', '--arc-bb-bg', '--arc-bb-surface']) {
+      const r = contrast(dskSolid('--arc-bb-focus'), dskSolid(b))
+      expect(r, `focus sobre ${b}: ${r.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('BBX-069/safe-y e safe-x: faixa, mosaico e estante 5vh/5vw; desktop 0/0', () => {
+    for (const get of [bb, mos, est]) {
+      expect(get('--arc-bb-safe-y')).toBe('5vh')
+      expect(get('--arc-bb-safe-x')).toBe('5vw')
+    }
+    expect(dsk('--arc-bb-safe-y')).toBe('0')
+    expect(dsk('--arc-bb-safe-x')).toBe('0')
+  })
+
+  it('TDK-001/o rodapé do Desktop tem height 48px pela regra [data-bigbox-theme="desktop"] [data-bb-footer]', () => {
+    const bodies = bodiesFor((s) => /\[data-bigbox-theme=["']desktop["']\]/.test(s) && s.includes('[data-bb-footer]'))
+    expect(bodies.length).toBeGreaterThan(0)
+    expect(bodies.some((b) => /(^|[;\s])height\s*:\s*48px/.test(b))).toBe(true)
+  })
+
+  it('TDK-034/--col-left e --col-right continuam únicos e com os clamp de UIX-005 (o Desktop não os redefine)', () => {
+    expect(css.match(/--col-left\s*:/g) ?? []).toHaveLength(1)
+    expect(css.match(/--col-right\s*:/g) ?? []).toHaveLength(1)
+    expect(css).toMatch(/--col-left\s*:\s*clamp\(\s*220px\s*,\s*16vw\s*,\s*300px\s*\)/)
+    expect(css).toMatch(/--col-right\s*:\s*clamp\(\s*320px\s*,\s*26vw\s*,\s*480px\s*\)/)
+    expect(desktopBlock).not.toMatch(/--col-(left|right)/)
+  })
+})
