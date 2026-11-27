@@ -167,4 +167,94 @@ describe('varredura do Big Box', () => {
     }
     expect(bad, `imports de vídeo ou escrita:\n${bad.join('\n')}`).toEqual([])
   })
+
+  // alterado em 2026-11-27 (fase 17): varreduras do tema Desktop.
+  const desktop = files.filter(([p]) => p.startsWith('./themes/desktop/'))
+  const desktopTsx = desktop.filter(([p]) => p.endsWith('.tsx'))
+  const desktopImports = imports.filter((i) => i.path.startsWith('./themes/desktop/'))
+
+  it('BBX-070/sanidade: os arquivos Desktop.tsx, DesktopSidebar.tsx, DesktopToolbar.tsx, DesktopGrid.tsx, DesktopList.tsx e DesktopDetails.tsx de themes/desktop/ entram na varredura', () => {
+    for (const f of ['Desktop', 'DesktopSidebar', 'DesktopToolbar', 'DesktopGrid', 'DesktopList', 'DesktopDetails']) {
+      expect(
+        desktopTsx.some(([p]) => p === `./themes/desktop/${f}.tsx`),
+        `${f}.tsx entra na varredura`,
+      ).toBe(true)
+    }
+  })
+
+  it('BBX-070/nenhum import de components/ em bigbox/ (BBX-003), sem exceção nova', () => {
+    const bad = imports.filter((i) => /\/components\//.test(i.from)).map((i) => `${i.path}:${i.line}: ${i.from}`)
+    expect(bad, `imports de components/:\n${bad.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-070/os arquivos de themes/desktop/ não importam lib/ nem bindings (BBX-047); só bigbox/ e o asset', () => {
+    const bad = desktopImports
+      .filter((i) => /\/lib\/|wailsjs|\/useBigBox|\/useFocusedData/.test(i.from))
+      .map((i) => `${i.path}:${i.line}: ${i.from}`)
+    expect(bad, `imports proibidos no Desktop:\n${bad.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-070/nenhuma cor literal nem classe de paleta em themes/desktop/ (BBX-025)', () => {
+    const hits: string[] = []
+    for (const [path, src] of desktopTsx) {
+      for (const m of src.matchAll(palette)) hits.push(`${path}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      const regions: { text: string; index: number }[] = [...classNames(src)]
+      for (const m of src.matchAll(/style\s*=\s*\{\{[\s\S]*?\}\}/g)) regions.push({ text: m[0], index: m.index ?? 0 })
+      for (const r of regions) {
+        for (const c of r.text.matchAll(literalColor)) hits.push(`${path}:${lineOf(src, r.index)}: ${c[0]}`)
+      }
+    }
+    expect(hits, `cores literais ou paleta:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-070/nenhum binding de escrita nem window.go em themes/desktop/ (BBX-003, BBX-029)', () => {
+    const re =
+      /\b(window\.go|\.go\.main|PauseSession|ResumeSession|ToggleSession|UpdateGame|DeleteGame|ImportApply|ScrapeApply|MetadataApply|MediaQueue|MediaCancel|ProviderSetKey|ProviderDeleteKey|LaunchGame\w*|BringToFront)\b/g
+    const hits = desktop.flatMap(([p, src]) => [...src.matchAll(re)].map((m) => `${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`))
+    expect(hits, `chamadas proibidas:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-070/o tempo para zerar só pelo modelo: nenhum useTimeToBeat nem fetchAfterMs em themes/desktop/ (BBX-059)', () => {
+    const hits = desktop.flatMap(([p, src]) =>
+      [...src.matchAll(/\buseTimeToBeat\w*\b|fetchAfterMs/g)].map((m) => `${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`),
+    )
+    expect(hits, `Desktop lendo o tempo para zerar por conta própria:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-066/o import de lib/platformIcons é aceito e o de lib/platforms continua proibido em bigbox/', () => {
+    const forbidden = /\/lib\/platforms(\/|$)/
+    const bad = imports.filter((i) => forbidden.test(i.from)).map((i) => `${i.path}:${i.line}: ${i.from}`)
+    expect(bad, `import de lib/platforms:\n${bad.join('\n')}`).toEqual([])
+    // The BBX-003 rule must not catch platformIcons (the module name is not "platforms").
+    expect(forbidden.test('../../lib/platformIcons')).toBe(false)
+    expect(/\/lib\/(stats|emulators|platforms|providers|imports|importers|edit)/i.test('../../lib/platformIcons')).toBe(false)
+  })
+
+  it('TDK-030/nenhum arquivo de themes/desktop/ importa PlatformNav, GameDetailsPanel, SessionsList, GameCard, CoverImage, LibraryGrid nem LibraryList', () => {
+    const name = /\b(PlatformNav|GameDetailsPanel|SessionsList|GameCard|CoverImage|LibraryGrid|LibraryList)\b/
+    const bad = desktopImports
+      .filter((i) => name.test(i.names) || name.test(i.from))
+      .map((i) => `${i.path}:${i.line}: ${i.names} from ${i.from}`)
+    expect(bad, `reuso de componentes da biblioteca:\n${bad.join('\n')}`).toEqual([])
+  })
+
+  it('TDK-034/o tema usa var(--col-left) e var(--col-right) e não redefine constantes de layout (nenhum literal 160, 16, 60, 6 ou 64 fora de desktopLayout.ts)', () => {
+    const all = desktopTsx.map(([, s]) => s).join('\n')
+    expect(all).toContain('var(--col-left)')
+    expect(all).toContain('var(--col-right)')
+    const hits: string[] = []
+    for (const [p, src] of desktopTsx) {
+      for (const m of src.matchAll(/(?<![\w.#-])(160|16|60|6|64)(?![\w.%-])/g)) {
+        hits.push(`${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`)
+      }
+    }
+    expect(hits, `constantes de layout repetidas:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('BBX-037/nenhum --arc-bb-scrim fora do BackgroundStage (vale também para o Desktop)', () => {
+    const hits = desktop.flatMap(([p, src]) =>
+      [...src.matchAll(/--arc-bb-scrim|\bbg-bb-scrim\b|\bbb-scrim\b/g)].map((m) => `${p}:${lineOf(src, m.index ?? 0)}: ${m[0]}`),
+    )
+    expect(hits, `scrim fora do fundo:\n${hits.join('\n')}`).toEqual([])
+  })
 })
